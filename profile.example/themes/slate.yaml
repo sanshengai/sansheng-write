@@ -1,0 +1,16 @@
+# 主题：slate · 钢青（默认，中性、克制，适合技术与资讯类）
+# 与 brand.yaml 的默认 colors 一致；显式写出，便于对照另外两套。
+colors:
+  primary: "#2F6F8F"
+  secondary: "#7FB0C4"
+  primary_deep: "#245a75"
+  primary_soft: "rgba(47, 111, 143,0.05)"
+  row_tint: "rgba(47, 111, 143,0.03)"
+  surface_soft: "#f2f7f9"
+  surface_inset: "#eaf1f5"
+  surface: "#eef0f2"
+  border_card: "#d7e3ea"
+  text_strong: "#333333"
+  text_title: "#26333a"
+  text_mute: "#8a929a"
+  text_link: "#4a6b7a"

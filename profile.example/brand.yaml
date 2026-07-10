@@ -1,0 +1,72 @@
+# ============================================================================
+#  品牌 profile -- 中性示例值。复制整个 profile.example/ 改成你自己的，
+#  然后 export SANSHENG_WRITE_PROFILE_DIR=/path/to/your/profile
+#
+#  这里放「私有但非密」的东西：配色、署名、身份卡、语料指针。
+#  API key 不放这里 —— 那是 .env 的事（见 .env.example）。
+# ============================================================================
+
+# 站点/专栏名。出现在排版产出的页脚、封面署名、发布命令的 --author。
+name: "Your Column"
+author: "Your Name"
+tagline: "一个用 AI 写作的人"
+
+# 主题：留空用下面的 colors；填 themes/ 下的文件名可整套换皮
+# 内置：slate（默认，钢青）/ ink（近墨黑）/ sage（草木绿）
+theme: ""
+
+# ============================================================================
+#  设计令牌（Design Tokens）-- 排版引擎渲染期会把默认值替换成这里的值
+#  改一处，全局生效：HTML 组件模板、format_layout.py、发布命令 --color 统一读它
+# ============================================================================
+colors:
+  primary: "#2F6F8F"            # 一级强调：H3 / 表头 / 重点文字 / 一级标识
+  secondary: "#7FB0C4"          # 二级强调：次级标识 / 辅助强调（同色系偏浅）
+  primary_deep: "#245a75"       # 主色深一档（渐变用）
+  primary_soft: "rgba(47, 111, 143,0.05)"   # 强调卡底（极弱通透层）
+  row_tint: "rgba(47, 111, 143,0.03)"       # 表格交替行（最淡）
+  surface_soft: "#f2f7f9"       # 容器模块底（深读 / 链接 / 音乐卡）
+  surface_inset: "#eaf1f5"      # 内嵌 URL / 图标框
+  surface: "#eef0f2"            # 内分隔线 / 表格行分隔
+  border_card: "#d7e3ea"        # 卡片 / 模块外框
+  text_strong: "#333333"        # 正文
+  text_title: "#26333a"         # 深色标题 / 引文
+  text_mute: "#8a929a"          # 副标题 / 说明 / 出处
+  text_link: "#4a6b7a"          # URL 文字
+
+radius:
+  sm: "6px"                 # 序号块 / 图标底 / URL 框
+  media: "8px"              # 图片 / 缩略图
+  card: "10px"              # 卡片 / 表格 / 链接卡
+  module: "12px"            # 大模块（导读 / 深读）
+  pill: "999px"             # 胶囊（标签 / 徽章）
+
+# ============================================================================
+#  身份卡 -- 排版产出的「关注卡片」需要。
+#  🔴 下面全是明显假值，发布前**必须**改成你自己的，否则页脚会渲染出占位内容。
+#  微信公众号的 data-id / data-headimg 在公众号后台「账号详情」可查。
+# ============================================================================
+identity:
+  platform: "wechat"                    # wechat | none
+  nickname: "YOUR_ACCOUNT_NAME"         # 必须改
+  alias: "YOUR_ACCOUNT_ALIAS"           # 必须改
+  biz_id: "REPLACE_WITH_YOUR_BIZ_ID"    # 必须改（公众号 biz，base64）
+  headimg: ""                           # 必须改（头像 URL；留空则不渲染头像）
+  signature: "一句话简介"                 # 必须改
+  site: "https://example.com"
+
+# ============================================================================
+#  写作偏好
+# ============================================================================
+writing:
+  # 风格路由：指向 corpus/authors/<name>.compact.md
+  # 公开仓只带一套虚构示例（example-author）。要长出你的风格，请自建手册，
+  # 方法见 corpus/authors/README.md（教你怎么从喜欢的作者作品逆向出手册）。
+  default_style: "example-author"
+  # 无自备语料时，注入仓内原创的「人味示例集」做基础去 AI 味兜底
+  fallback_voice_samples: true
+  # 单篇加粗口号式金句上限
+  max_bold_slogans: 2
+  # 日更类文章的标题前缀：命中的不进「推荐阅读」卡片池（日报会淹没推荐位）
+  # 留空 [] 则不过滤
+  daily_title_prefixes: []

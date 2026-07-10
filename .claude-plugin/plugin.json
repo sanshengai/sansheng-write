@@ -1,0 +1,19 @@
+{
+  "name": "sansheng-write",
+  "description": "A Chinese long-form writing engine for Claude Code: topic to outline to draft to revision to typeset HTML to cover art. Bring your own corpus, it learns your voice.",
+  "version": "0.1.0",
+  "author": { "name": "叁笙 (sansheng)", "email": "sandypoli@gmail.com" },
+  "homepage": "https://github.com/sandypoli-boop/sansheng-write",
+  "repository": "https://github.com/sandypoli-boop/sansheng-write",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-code-skills",
+    "claude-skills",
+    "agent-skills",
+    "writing",
+    "chinese",
+    "wechat",
+    "typesetting"
+  ]
+}

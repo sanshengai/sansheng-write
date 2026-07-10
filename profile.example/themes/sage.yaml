@@ -1,0 +1,16 @@
+# 主题：sage · 草木绿（温和、自然，适合随笔与读书笔记）
+# 主题文件必须给**完整**调色板 -- 只写一半会导致换皮换一半。
+colors:
+  primary: "#3F7A5E"
+  secondary: "#8FB9A4"
+  primary_deep: "#2F5C46"
+  primary_soft: "rgba(63, 122, 94,0.05)"
+  row_tint: "rgba(63, 122, 94,0.03)"
+  surface_soft: "#f2f7f4"
+  surface_inset: "#eaf2ed"
+  surface: "#eef0ef"
+  border_card: "#d7e5dd"
+  text_strong: "#333333"
+  text_title: "#26332c"
+  text_mute: "#8a9690"
+  text_link: "#4a6b5b"

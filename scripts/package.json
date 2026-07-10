@@ -1,0 +1,13 @@
+{
+  "name": "sansheng-write-scripts",
+  "version": "0.1.0",
+  "description": "Node helper for sansheng-write: stamps a logo watermark onto generated images.",
+  "main": "add_logo.js",
+  "keywords": ["sansheng-write", "image", "watermark"],
+  "author": "叁笙 (sansheng) <sandypoli@gmail.com>",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "jimp": "^1.6.0"
+  }
+}

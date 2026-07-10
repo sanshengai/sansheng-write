@@ -1,0 +1,28 @@
+<!--
+  要点提炼组件（Key Takeaway / 划重点）
+
+  使用场景：长段文字之后，帮助读者快速抓住核心要点。
+  建议频率：每 800-1200 字出现一次，或每个 H2 模块末尾使用一次。
+  不使用场景：段落本身已经很短（<200 字）、开篇钩子区域。
+
+  变量说明：
+  | 变量                | 说明                                | 字数限制            |
+  |--------------------|------------------------------------|--------------------|
+  | {{TAKEAWAY_TITLE}} | 标题文字（如"划重点"、"核心结论"等）   | ≤6 汉字            |
+  | {{TAKEAWAY_ITEMS}} | 要点列表（每条用 <section> 包裹）     | 2-4 条，每条 ≤30 字 |
+-->
+
+<!-- 要点提炼卡片 -->
+<section style="margin: 24px 8px; padding: 20px; background: rgba(47, 111, 143,0.05); border-radius: 10px; border-left: 4px solid #2F6F8F;">
+  <section style="font-size: 14px; font-weight: bold; color: #2F6F8F; letter-spacing: 2px; margin-bottom: 12px;">{{TAKEAWAY_TITLE}}</section>
+  {{TAKEAWAY_ITEMS}}
+</section>
+
+<!--
+  {{TAKEAWAY_ITEMS}} 替换为多条要点，每条格式如下：
+
+  <section style="display:table; width:100%; font-size: 15px; color: #333333; line-height: 1.75; margin-bottom: 8px;">
+    <span style="display:table-cell; width:1em; vertical-align:top; color: #2F6F8F; font-weight: bold;">·</span>
+    <span style="display:table-cell; vertical-align:top;">要点内容</span>
+  </section>
+-->

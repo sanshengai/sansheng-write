@@ -1,0 +1,78 @@
+<!--
+  文末「深读入口 / 附加框栏」模块模板
+  =====================================================
+  🔴 2026-06-26 · 拍板新增（修旧版毛病：深读入口是「手动加粗、字号与正文一样、
+     不换行、不成块」，且周边框是浅蓝/浅灰、与品牌绿系不搭、还嵌黑块在浅色模式刺眼）。
+
+  本模块 = 一个【独立成块】的文末引流栏：
+  - 独立标题（DEEP READ 小标 + 大标题），不靠手动加粗充数；
+  - 整体走品牌绿系浅底（#f2f7f9），不嵌黑块、不出现浅蓝/浅灰杂色；
+  - 内含 1-N 张「资源卡」：缩略图(可选) + 资源名 + 一句说明 + 可复制 URL（左对齐浅绿框）；
+  - 与 link-card.html 同一套链接视觉语言（URL 左对齐 + word-break + 浅绿框 + 「复制到浏览器打开」）。
+
+  位置：正文结束后、推荐阅读+关注卡片之前（仍须在 <div id="output"> 内部，否则微信丢弃）。
+
+  微信安全：仅 section + 内联 style + border / border-radius / background / display:table；
+  缩略图用 <img>（须配 data-local-path 走发布脚本上传）或纯图标兜底，二选一。
+
+  ── 模块外壳变量 ──────────────────────────────
+  | 变量          | 说明                                  | 字数限制     |
+  |---------------|--------------------------------------|-------------|
+  | {{DEEP_LABEL}}| 顶部小标（英文，全大写）               | 默认 DEEP READ |
+  | {{DEEP_TITLE}}| 模块大标题                            | ≤14 汉字     |
+  | {{DEEP_INTRO}}| 一段引导说明（为什么值得深读 + 怎么打开）| ≤60 汉字     |
+  | {{RESOURCE_CARDS}} | 1-N 张资源卡（用下方两种卡之一拼接） | —          |
+
+  ── 主次字号规范（58 号实证，拉开层级）──────────
+  模块大标题 18px/800 > 资源名 15px/800 > 说明 12px/normal > URL 13px/600 > 提示/免责 12px 浅灰
+-->
+<section style="margin:22px 8px;border:1px solid #d7e3ea;border-radius:12px;overflow:hidden;background:#f2f7f9;">
+  <!-- 模块标题条 -->
+  <section style="padding:16px 16px 12px;border-bottom:1px solid #eef0f2;">
+    <section style="font-size:11px;font-weight:bold;color:#2F6F8F;letter-spacing:2px;">{{DEEP_LABEL}}</section>
+    <section style="font-size:18px;font-weight:bold;color:#26333a;margin-top:3px;">{{DEEP_TITLE}}</section>
+    <section style="font-size:13px;color:#8a929a;line-height:1.7;margin-top:7px;">{{DEEP_INTRO}}</section>
+  </section>
+  {{RESOURCE_CARDS}}
+</section>
+
+<!--
+  ════ 资源卡 · A 型（带真实缩略图，推荐用于「在线解析 / 文章 / 截图」）════
+  把 {{...}} 填好后整段塞进 {{RESOURCE_CARDS}}；多张就重复多段。
+  缩略图建议 2.35:1 或方形封面；走发布脚本须带 data-local-path（绝对路径用正斜杠）。
+
+  <section style="padding:14px 16px 4px;">
+    <section style="display:table;width:100%;">
+      <section style="display:table-cell;width:64px;vertical-align:top;">
+        <img src="素材/deep-thumb-1.png" data-local-path="素材/deep-thumb-1.png" style="width:56px;height:56px;border-radius:8px;display:block;object-fit:cover;">
+      </section>
+      <section style="display:table-cell;vertical-align:top;padding-left:4px;">
+        <section style="font-size:15px;font-weight:bold;color:#26333a;">{{RES_NAME}}</section>
+        <section style="font-size:12px;color:#8a929a;margin-top:2px;">{{RES_META}}</section>
+        <section style="font-size:13px;color:#4a6b7a;font-weight:600;line-height:1.55;margin-top:7px;word-break:break-all;background:#eaf1f5;border-radius:6px;padding:7px 9px;">{{RES_URL}}</section>
+      </section>
+    </section>
+  </section>
+
+  ════ 资源卡 · B 型（图标兜底，无封面时用，如「PDF 下载 / GitHub / 表单」）════
+  图标用 emoji 单字符（📄 PDF / 📦 GitHub / 📝 表单 / 🔗 通用），底色二选一：
+    实底 background:#2F6F8F + 白 emoji ｜ 浅底 background:#eaf1f5;border:1px solid #d7e3ea + 绿 emoji
+
+  <section style="padding:12px 16px 16px;">
+    <section style="display:table;width:100%;">
+      <section style="display:table-cell;width:64px;vertical-align:top;">
+        <section style="width:56px;height:56px;border-radius:8px;overflow:hidden;background:#eaf1f5;border:1px solid #d7e3ea;text-align:center;">
+          <span style="display:inline-block;line-height:56px;color:#2F6F8F;font-size:22px;">📄</span>
+        </section>
+      </section>
+      <section style="display:table-cell;vertical-align:top;padding-left:4px;">
+        <section style="font-size:15px;font-weight:bold;color:#26333a;">{{RES_NAME}}</section>
+        <section style="font-size:12px;color:#8a929a;margin-top:2px;">{{RES_META}}</section>
+        <section style="font-size:13px;color:#4a6b7a;font-weight:600;line-height:1.55;margin-top:7px;word-break:break-all;background:#eaf1f5;border-radius:6px;padding:7px 9px;">{{RES_URL}}</section>
+      </section>
+    </section>
+  </section>
+
+  注意：最后一张资源卡的下 padding 用 16px 收口；中间卡用 4px 让卡间更紧凑。
+  如只有 1 张资源卡，用 padding:14px 16px 16px。
+-->

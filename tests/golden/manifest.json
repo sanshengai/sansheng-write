@@ -1,0 +1,12 @@
+{
+  "note": "公开仓不含真实文章 golden（版权 + 隐私）。纯变换夹具在 _pure/，合成夹具在 _synthetic_*/。",
+  "fixtures": {
+    "pure_transform": "_pure/",
+    "final_html": "_synthetic_final/",
+    "cover": "_synthetic_cover/",
+    "infographic": "_synthetic_infographic/",
+    "research": "_synthetic_research/",
+    "review": "_synthetic_review/",
+    "content_enhance": "_synthetic_content_enhance/"
+  }
+}

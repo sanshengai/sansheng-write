@@ -1,0 +1,13 @@
+# lessons.yaml -- 飞轮的原始记录层（learn_edits.py 写入，人不要手改）
+#
+# 与 playbook.md 的关系：
+#   lessons.yaml  = 原始观察（每条 diff 提炼出的候选 pattern，含出处）
+#   playbook.md   = 已固化的规则（confidence 够高、被反复验证的那些）
+#
+# 新仓库里这里是空的。它应该由**你自己的改稿**填满 --
+# 预置别人的观察，等于把别人的写作口味装进你的引擎。
+#
+# 怎么开始：见 playbook.md 的「怎么开始攒」。
+
+version: 1
+lessons: []

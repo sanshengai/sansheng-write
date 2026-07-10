@@ -1,0 +1,60 @@
+<!--
+  文章结尾组件：推荐阅读（3 篇卡片）+ 关注卡片
+
+  使用方式：
+    1. 推荐卡片（2026-05-30 纯封面版）：**优先运行 generate_recommend_html.py 自动生成**
+       （线上以 recommend_articles.html 为准）。数据源是 <数据目录>/works.yaml(SSOT)，
+       取「仅有封面」的已发布文章按一三五规则第 1/3/5 篇。每篇 = 一张全宽封面图、整图可点击，
+       无右侧文字。手动兜底时只需替换 {{LINK}} / {{COVER}} / {{TITLE}}（TITLE 仅作 img alt）。
+    2. 关注卡片：使用微信官方 mp-common-profile 组件，参数固定不变。
+
+  插入位置：信息图之后，</div> 闭合标签之前（在 div#output 内部）。
+-->
+
+<!-- 推荐阅读 -->
+<section style="margin: 48px 8px 0;">
+  <section style="text-align: center; margin-bottom: 20px;">
+    <section style="display: inline-block; font-size: 17px; font-weight: bold; color: #333333; letter-spacing: 2px;">推荐阅读</section>
+    <section style="width: 56px; height: 4px; background: #2F6F8F; border-radius: 2px; margin: 8px auto 0;"></section>
+  </section>
+
+  <!-- 卡片 1（纯封面长条：<section> 包 <a> 包 <img>，整图可点击，无右侧文字）-->
+  <section style="margin: 0 0 12px; line-height: 0;">
+    <a href="{{LINK_1}}"><img src="{{COVER_1}}" alt="{{TITLE_1}}" style="display:block; width:100%; height:auto; border-radius:8px;" /></a>
+  </section>
+
+  <!-- 卡片 2 -->
+  <section style="margin: 0 0 12px; line-height: 0;">
+    <a href="{{LINK_2}}"><img src="{{COVER_2}}" alt="{{TITLE_2}}" style="display:block; width:100%; height:auto; border-radius:8px;" /></a>
+  </section>
+
+  <!-- 卡片 3 -->
+  <section style="margin: 0 0 12px; line-height: 0;">
+    <a href="{{LINK_3}}"><img src="{{COVER_3}}" alt="{{TITLE_3}}" style="display:block; width:100%; height:auto; border-radius:8px;" /></a>
+  </section>
+</section>
+
+<!-- 关注卡片（微信官方组件） -->
+<!--
+  ⚠️ 下面五个 {{...}} 占位符由 scripts/generate_recommend_html.py 从你的 profile 填入
+     （profile/brand.yaml → identity 节）。在公众号后台「账号详情」可查到 biz_id / headimg。
+     identity.platform 设为 none 时整块不渲染。
+
+  ⚠️ 经验教训（排查确认，照抄勿改结构）：
+  1. data-id 必须是完整的 Base64 编码（含正确数量的 = padding），否则微信后台保存报错
+  2. 必须使用 <section class="mp_profile_iframe_wrp"> 外层包裹
+  3. <mp-common-profile> 必须带 class="mpprofile js_uneditable custom_select_card mp_profile_iframe"
+  4. 缺少以上任一条件，通过 API 提交时微信后台均会拒绝保存
+-->
+<section class="mp_profile_iframe_wrp custom_select_card_wrp">
+  <mp-common-profile
+    class="mpprofile js_uneditable custom_select_card mp_profile_iframe"
+    data-pluginname="mpprofile"
+    data-nickname="{{IDENTITY_NICKNAME}}"
+    data-alias="{{IDENTITY_ALIAS}}"
+    data-headimg="{{IDENTITY_HEADIMG}}"
+    data-signature="{{IDENTITY_SIGNATURE}}"
+    data-id="{{IDENTITY_BIZ_ID}}"
+    data-service_type="1">
+  </mp-common-profile>
+</section>

@@ -1,12 +1,35 @@
+# secrets -- 永不提交
 .env
 *.env
 !.env.example
+
+# 本地特化的提交护栏（含机器 / 品牌专属字面值，只在维护者本机）
 .githooks/pre-commit.local
+
+# 你的数据：文章、作品库、渲染视图
+data/
+articles.md
+works-dashboard.html
+recommend_articles.html
+
+# 你的 profile（如果你把它放进了仓库目录）
+profile/
+
+# 运行观察日志（本地自省用；默认只写文章名哈希，不写明文标题）
+_skill-observations.jsonl
+
+# Node
+scripts/node_modules/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 .venv/
-scripts/node_modules/
+venv/
+
+# OS / editor
 .DS_Store
 Thumbs.db
 .idea/

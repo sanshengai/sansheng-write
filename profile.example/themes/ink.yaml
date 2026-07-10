@@ -1,0 +1,16 @@
+# 主题：ink · 近墨黑（克制、正式，适合评论与长文）
+# 主题文件必须给**完整**调色板 -- 只写一半会导致换皮换一半。
+colors:
+  primary: "#2B2B2B"
+  secondary: "#7A7A7A"
+  primary_deep: "#1A1A1A"
+  primary_soft: "rgba(43, 43, 43,0.04)"
+  row_tint: "rgba(43, 43, 43,0.03)"
+  surface_soft: "#f5f5f5"
+  surface_inset: "#ececec"
+  surface: "#eeeeee"
+  border_card: "#dcdcdc"
+  text_strong: "#1A1A1A"
+  text_title: "#2B2B2B"
+  text_mute: "#8a8a8a"
+  text_link: "#5a5a5a"

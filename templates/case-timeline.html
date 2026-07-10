@@ -1,0 +1,33 @@
+<!--
+  Case 时间线 HTML 模板（圆点 + 竖线 + 徽章）
+
+  使用场景：文章有并列案例/场景时使用此组件，BADGE 编号递增。
+  不使用场景：观点论证型（无案例）→ H3 用普通样式（左侧品牌绿圆点 + 3px 左边线 + 加粗标题）
+
+  变量说明：
+  | 变量               | 说明                                | 字数限制            |
+  |--------------------|------------------------------------|--------------------|
+  | {{BADGE}}          | 徽章文字（CASE 01 / 场景一 等）      | ≤8 字母或 4 汉字    |
+  | {{CASE_TITLE}}     | 标题文字                             | ≤20 汉字           |
+  | {{CASE_SUBTITLE}}  | 灰色小字副标题（可选）                | ≤20 汉字           |
+  | {{CASE_BODY}}      | 正文内容                             | 不限               |
+  | {{CASE_IMAGE_URL}} | 配图（可选）                          | 无图时删除整个图片 section |
+  | {{IMAGE_DISPLAY}}  | 图片显示控制（block 或 none）         | —                  |
+-->
+
+<section style="margin: 30px 8px;">
+  <section style="line-height: 1.2;">
+    <span style="display: inline-block; width: 12px; height: 12px; border: 3px solid #2F6F8F; border-radius: 50%; background-color: #ffffff; vertical-align: middle; margin-right: 8px; box-sizing: border-box;"></span>
+    <span style="display: inline-block; background-color: #2F6F8F; color: #ffffff; font-size: 12px; font-weight: bold; padding: 3px 10px; border-radius: 999px; vertical-align: middle; margin-right: 8px; letter-spacing: 1px;">{{BADGE}}</span>
+    <span style="display: inline-block; font-size: 16px; font-weight: bold; color: #333333; vertical-align: middle;">{{CASE_TITLE}}</span>
+  </section>
+  <section style="border-left: 2px solid rgba(0,0,0,0.06); margin-left: 5px; padding-left: 18px; margin-top: 6px; padding-bottom: 20px;">
+    <section style="font-size: 12px; color: #8a929a; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;">{{CASE_SUBTITLE}}</section>
+    <section style="font-size: 15px; color: #333333; line-height: 1.75; text-align: justify; margin-bottom: 16px;">
+      {{CASE_BODY}}
+    </section>
+    <section style="text-align: left; display: {{IMAGE_DISPLAY}};">
+      <img src="{{CASE_IMAGE_URL}}" style="width: 100%; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+    </section>
+  </section>
+</section>

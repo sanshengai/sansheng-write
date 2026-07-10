@@ -1,0 +1,34 @@
+{
+ "pure_fixtures": [
+  {
+   "func": "process_colors",
+   "in": "process_colors.in.html",
+   "expected": "process_colors.expected.html"
+  },
+  {
+   "func": "process_h2",
+   "in": "process_h2.in.html",
+   "expected": "process_h2.expected.html"
+  },
+  {
+   "func": "process_table",
+   "in": "process_table.in.html",
+   "expected": "process_table.expected.html"
+  },
+  {
+   "func": "process_table",
+   "in": "process_table_term.in.html",
+   "expected": "process_table_term.expected.html"
+  },
+  {
+   "func": "process_takeaway",
+   "in": "process_takeaway.in.html",
+   "expected": "process_takeaway.expected.html"
+  },
+  {
+   "func": "process_highlights",
+   "in": "process_highlights.in.html",
+   "expected": "process_highlights.expected.html"
+  }
+ ]
+}

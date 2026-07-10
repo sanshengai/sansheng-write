@@ -1,0 +1,53 @@
+name: Bug 反馈
+description: 某个环节跑不起来 / 产出不对
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        动手之前，先跑一次体检，把结果贴进来会快很多：
+        ```bash
+        python scripts/setup_check.py
+        ```
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      placeholder: 我跑了 X，期望 Y，实际 Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup_check
+    attributes:
+      label: setup_check.py 的输出
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: 你用到第几档
+      options:
+        - ① 纯方法论（选题/大纲/正文/改稿）
+        - ② + 排版出 HTML
+        - ③ 全自动到发布
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: no_secrets
+    attributes:
+      label: 确认
+      options:
+        - label: 我贴的日志里没有 API key、个人路径或未公开的文章内容
+          required: true

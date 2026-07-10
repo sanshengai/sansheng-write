@@ -1,0 +1,38 @@
+<!--
+  链接卡模板（可复制的文档 / GitHub / 在线工具链接）
+  =====================================================
+  🔴 2026-06-26 · 拍板新增。解决痛点：文章里放文档 / GitHub / 在线页链接时，
+     以往要么只写「点左下角阅读原文」（读者找不到、无法复制），要么裸贴 URL 被微信
+     两端对齐拉成大字间距、分类不清。本卡 = 明确分类标题 + 「复制到浏览器打开」提示
+     + URL 左对齐浅绿框（word-break 一键复制），配色入品牌绿系。
+
+  使用场景：
+  - 正文里单独给出一个需要读者复制访问的链接（在线 Demo / GitHub 仓库 / 文档 / 表单）。
+  - 多个去向（在线版 + PDF 下载 + ...）→ 用 deep-read-section.html 的多资源版，不要堆多张本卡。
+
+  微信安全：仅用 section + 内联 style + border / border-radius / background；
+  URL 行必须 `word-break:break-all` + `text-align:left`，否则微信把长 URL 两端对齐、字间距炸开。
+
+  规格：
+  - 外框：`border:1px solid #d7e3ea; border-radius:10px; background:#f2f7f9`（极浅，不嵌黑块）
+  - 标题行：🔗 + 品牌绿 13px 加粗分类名；右侧可跟一句浅灰说明（≤12 字）
+  - 提示行：浅灰 12px「复制到浏览器打开 ▾」
+  - URL 行：深绿 #4a6b7a / 600 / 13px，浅绿底 `#eaf1f5` 圆角框，**左对齐 + word-break:break-all**
+
+  变量：
+  | 变量          | 说明                          | 字数/格式            |
+  |---------------|------------------------------|---------------------|
+  | {{LINK_TITLE}}| 分类标题（如「在线交互解析」） | ≤8 汉字              |
+  | {{LINK_HINT}} | 标题右侧浅灰说明（可删整段）   | ≤12 汉字，不需要可整段删 |
+  | {{LINK_URL}}  | 完整 URL（https:// 全写）     | 纯文本，不要套 MD 链接语法 |
+-->
+<section style="margin:18px 8px;border:1px solid #d7e3ea;border-radius:10px;overflow:hidden;background:#f2f7f9;">
+  <section style="padding:11px 14px;border-bottom:1px solid #eef0f2;">
+    <span style="font-size:13px;font-weight:bold;color:#2F6F8F;">🔗 {{LINK_TITLE}}</span>
+    <span style="font-size:12px;color:#8a929a;">　{{LINK_HINT}}</span>
+  </section>
+  <section style="padding:11px 14px;">
+    <section style="font-size:12px;color:#8a929a;margin-bottom:5px;">复制到浏览器打开 ▾</section>
+    <section style="font-size:13px;color:#4a6b7a;font-weight:600;line-height:1.6;text-align:left;word-break:break-all;background:#eaf1f5;border-radius:6px;padding:8px 10px;">{{LINK_URL}}</section>
+  </section>
+</section>
