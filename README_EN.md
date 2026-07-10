@@ -16,6 +16,10 @@
 
 ## See the output before you install
 
+**↓ 20-second screen recording: a full WeChat long-form article, from locked topic to finished typesetting, running the whole chain.**
+
+https://github.com/user-attachments/assets/7b5d8a8c-7caf-41e3-957e-5c2428859c79
+
 Say "write me an article about X" and it runs:
 
 ```
