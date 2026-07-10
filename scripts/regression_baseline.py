@@ -83,7 +83,7 @@ def _git_guard(rel_path: str) -> str:
     `git diff --quiet <ref>` 在 ref 缺失时返回 128，不能与 dirty(1) 混判；
     故先 rev-parse 探测 main ref；ref 不存在或 git 不可用 → 'unavailable'
     （由调用方计 harness_error，绝不伪报"脚本被改"）。"""
-    repo = SW.parents[1]
+    repo = SW  # 扁平仓：SKILL 根即 git 仓根
     # encoding/errors 仅为解码健壮性（git 输出走 utf-8，Windows locale=GBK
     # 隐式 decode 会抛 UnicodeDecodeError warning）。判定仍纯看 returncode
     # （0/1/128/异常 → clean/dirty/unavailable），三态逻辑一字不动。
@@ -115,7 +115,7 @@ def _git_numstat(rel_path: str):
     （由调用方计 harness_error，绝不伪报"被改"）。
     与 _git_guard 同样的 main ref 探测 + utf-8 解码加固（GBK 防护），
     判定仍纯看 numstat 数字，不臆断。"""
-    repo = SW.parents[1]
+    repo = SW  # 扁平仓：SKILL 根即 git 仓根
     try:
         chk = subprocess.run(
             ["git", "rev-parse", "--verify", "--quiet", BASE_REF],
