@@ -20,6 +20,14 @@ import shutil
 import sys
 from pathlib import Path
 
+# Windows GBK 控制台默认无法编码本文用到的 ✅/⚠️/❌ 等符号，强制 UTF-8 避免体检自身崩溃
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 OK, WARN, BAD = "✅", "⚠️ ", "❌"

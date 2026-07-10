@@ -43,11 +43,20 @@ ENV_DATA = "SANSHENG_WRITE_DATA_DIR"
 _cache: dict[str, Any] = {}
 
 
+def _env_or_dotenv(name: str) -> str:
+    """os 环境变量优先，其次 clone 根 .env。
+
+    让**一个** .env 同时配 profile/data 指针与密钥（与 load_secret 同源），
+    家里电脑复刻只需拷一份 .env，不必再另设系统级环境变量。
+    """
+    return os.environ.get(name, "").strip() or _load_dotenv().get(name, "").strip()
+
+
 # ===== 【第 1 节】目录解析 =====
 
 def profile_dir() -> Path:
     """返回生效的 profile 目录。未配置 env 时回退 profile.example（正常路径）。"""
-    p = os.environ.get(ENV_PROFILE, "").strip()
+    p = _env_or_dotenv(ENV_PROFILE)
     if p:
         d = Path(p).expanduser()
         if not d.is_dir():
@@ -66,7 +75,7 @@ def using_example_profile() -> bool:
 
 def data_dir() -> Path:
     """文章与作品库所在目录。缺省 <仓根>/data/，首次使用自动创建。"""
-    p = os.environ.get(ENV_DATA, "").strip()
+    p = _env_or_dotenv(ENV_DATA)
     d = Path(p).expanduser() if p else SKILL_DIR / "data"
     d.mkdir(parents=True, exist_ok=True)
     return d
