@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# redact-guard (public layer)
+#
+# GENERIC patterns only. NEVER hard-code a real secret VALUE in this file --
+# it ships with the repo. Machine/brand specific literals belong in
+# .githooks/pre-commit.local (gitignored, see bottom).
+#
+# Enable in every clone:  git config core.hooksPath .githooks
+
+set -uo pipefail
+
+patterns='(AIza[0-9A-Za-z_-]{20,})'
+patterns+='|(AQ\.[A-Za-z0-9_-]{20,})'
+patterns+='|(sk-[A-Za-z0-9]{20,})'
+patterns+='|(ghp_[A-Za-z0-9]{30,})'
+patterns+='|(fc-[0-9a-f]{32})'
+patterns+='|(-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+patterns+='|([Cc]:\\Users\\)'
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+hits=0
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  case "$f" in .githooks/*) continue ;; esac
+  if git show ":$f" 2>/dev/null | grep -nEI "$patterns" >/dev/null 2>&1; then
+    echo "redact-guard: secret-shaped content in $f" >&2
+    git show ":$f" | grep -nEI "$patterns" | head -5 >&2
+    hits=1
+  fi
+done <<< "$staged"
+
+if [ "$hits" -ne 0 ]; then
+  echo "" >&2
+  echo "Commit rejected. Remove the values above (use .env / profile instead)." >&2
+  echo "Never loosen these patterns to get a commit through." >&2
+  exit 1
+fi
+
+# Local, gitignored layer: machine/brand specific literals.
+if [ -x .githooks/pre-commit.local ]; then
+  .githooks/pre-commit.local || exit 1
+fi
+
+exit 0

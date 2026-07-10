@@ -1,0 +1,13 @@
+.env
+*.env
+!.env.example
+.githooks/pre-commit.local
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+scripts/node_modules/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
