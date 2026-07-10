@@ -2,6 +2,25 @@
 
 本项目的变更记录。版本号遵循 [semver](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] -- 2026-07-11
+
+### 新增
+
+- **发布后·朋友圈文案**（`references/publish.md`）：发布链路的最后一拍 --
+  拿到正式链接、归档、部署后自动产出一条 3-4 行朋友圈文案（钩子 → 价值 → 固定引流尾巴）。
+  尾巴走 profile（`identity.site` + `writing.moments_cta`），仓库里不含任何具体品牌 / 域名。
+- **一份 `.env` 配齐**：`profile_config` 现在也能从仓根 `.env` 读 `SANSHENG_WRITE_PROFILE_DIR` /
+  `SANSHENG_WRITE_DATA_DIR` 指针（`os` 环境变量仍优先）。换机器只需拷一份 `.env`。
+
+### 修复
+
+- `setup_check.py` 在 GBK 控制台（Windows 默认）打 emoji 会崩，补 UTF-8 stdout 兜底。
+
+### 测试
+
+- `conftest.py` 与 `regression_baseline.py` 显式把测试钉死在 `profile.example` + 临时数据目录，
+  与本机 `.env` 隔离，保证冻结 fixture（断言中性默认色）的确定性，且任何测试都不碰真实数据。
+
 ## [0.1.0] -- 2026-07-11
 
 首次公开发布。这个 skill 在作者的真实写作流里跑了半年多，现在脱敏开源。
@@ -34,4 +53,5 @@
 - **不含任何真实文章作为测试夹具**。所有 golden 都是合成的（`tests/golden/_synthetic_*/`）
 - **不捆绑任何第三方源码**。`jimp`（MIT）等运行依赖由你 `npm install` / `pip install`
 
+[0.1.1]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.1
 [0.1.0]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.0
