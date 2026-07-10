@@ -107,7 +107,7 @@ STAGE_HINTS = {
         "content_enhance 已产出 / 冷读外审 _stutter-list.md 已生成（跨会话恢复时这三步无状态记账，易静默漏）。\n"
         "🔴 实际执行走 gen_img.py（见 image-routing.md §54/§⑥），baoyu-cover-image 为概念名——\n"
         "  python $SKILL/scripts/gen_img.py prompts/cover.md 素材/cover.png gemini-3-pro-image-preview 1024 436\n"
-        "  （别照 --provider google / --quick 跑废弃路径，该路径 441/505 版均 404）\n"
+        "  （--provider 默认 google；勿再走历史上的 baoyu quick 封面路径——早已 404 废弃）\n"
         "  输出 素材/cover.png。完成后：pipeline.py verify cover"
     ),
     "infographic": (

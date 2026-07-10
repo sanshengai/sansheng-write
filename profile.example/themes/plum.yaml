@@ -1,0 +1,16 @@
+# 主题：plum · 梅子紫（沉静、雅致，适合书评与人文类）
+# 主题文件必须给**完整**调色板 -- 只写一半会导致换皮换一半。
+colors:
+  primary: "#8A4E7E"
+  secondary: "#B48AAC"
+  primary_deep: "#6e3a63"
+  primary_soft: "rgba(138, 78, 126,0.05)"
+  row_tint: "rgba(138, 78, 126,0.03)"
+  surface_soft: "#f8f4f7"
+  surface_inset: "#f2eaf0"
+  surface: "#f0edef"
+  border_card: "#e3d5e0"
+  text_strong: "#333333"
+  text_title: "#33262f"
+  text_mute: "#948a92"
+  text_link: "#6b4a64"

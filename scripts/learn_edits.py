@@ -43,10 +43,12 @@ except ImportError:
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
-LESSONS_FILE = SKILL_DIR / "lessons.yaml"
-PLAYBOOK_FILE = SKILL_DIR / "playbook.md"
 sys.path.insert(0, str(SCRIPT_DIR))
-from profile_config import corpus_dir  # noqa: E402
+from profile_config import corpus_dir, lessons_file, playbook_file  # noqa: E402
+# 飞轮状态归 profile 层（配置了 profile 时在 <profile>/flywheel/，随私有仓版本化；
+# 未配置时回退仓根空壳——复核 B-4：个人数据不写 git 跟踪文件、不再依赖 skip-worktree）
+LESSONS_FILE = lessons_file()
+PLAYBOOK_FILE = playbook_file()
 # 声纹库落盘走 profile 覆盖层（未配置 SANSHENG_WRITE_PROFILE_DIR 时回退
 # profile.example/corpus/voice-samples.md）。prep_writing.py §一·声 读同一个文件，
 # 确保写=读同一处。

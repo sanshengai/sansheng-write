@@ -125,10 +125,10 @@ cp .env.example .env              # your own keys
 | Pillow | ③ | No image resize / compression | `pip install pillow` |
 | bun | ② | markdown→HTML conversion fails | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | No logo watermark | `cd scripts && npm install` |
-| markdown→HTML converter | ② | Typesetting breaks at step 1 | see Credits |
+| **baoyu-skills plugin** | hard dep from ② | md→HTML / publish / infographics / image-cards all break | in Claude Code: `/plugin marketplace add JimLiu/baoyu-skills`; its keys live in **its own** `~/.baoyu-skills/.env` (WeChat keys `WECHAT_APP_ID`/`WECHAT_APP_SECRET`) |
 | `GOOGLE_API_KEY` | ③ | No image generation (OpenAI-compatible endpoint can stand in) | AI Studio or Vertex Express; the script routes by key prefix |
 | `MINIMAX_API_KEY` | ③ optional | Article BGM is skipped | pure easter egg |
-| WeChat appid/secret | ③ | Output lands as HTML; you paste it yourself | Official Account console |
+| WeChat appid/secret | ③ | Output lands as HTML; you paste it yourself | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP in the console |
 | playwright / matplotlib | ③ optional | No SVG→PNG, no data charts | `pip install playwright matplotlib` |
 
 ---
@@ -171,7 +171,7 @@ That is a normal path, not an error.
 **Reskin in one line** (`profile/brand.yaml`):
 
 ```yaml
-theme: "sage"      # slate (default) | ink | sage
+theme: "sage"      # slate (default) | ink | sage | jade | amber | plum
 ```
 
 You never touch a hex in the templates -- `process_theme()` swaps them at the end of typesetting.
@@ -220,6 +220,21 @@ stripped the private bits, and opened it up. Use it, or make it yours.
   the upstream markdown→HTML converter, infographic and publishing toolchain. This skill's
   typesetting post-processor runs on top of its output, and borrows from how it organizes skills.
   **Not bundled -- install it yourself.**
+
+- **[gzh-design-skill](https://github.com/isjiamu/gzh-design-skill)** by 甲木 × 摸鱼小李 (AGPL-3.0) --
+  a major methodological reference for the typesetting layer: the "article type → component recipe"
+  table, visual hierarchy and per-article color quotas, cover copy strategy, the dual gate of
+  "template-source lint + output HTML verification", and the centered placeholder convention.
+  Ideas only: this repo's component HTML and verification scripts are independent implementations
+  containing none of its code or templates. **Not bundled; the two projects do not depend on each other.**
+
+- **[WeWrite](https://github.com/oaker-io/wewrite)** by [oaker-io](https://github.com/oaker-io) (MIT) --
+  the overall design of the "learn from my edits" flywheel (lessons → playbook aggregation,
+  pattern taxonomy) and the four-strategy content-enhancement framing come from this project;
+  the scripts are independent implementations. **Not bundled.**
+
+- **[humanizer](https://github.com/blader/humanizer)** by [blader](https://github.com/blader) (MIT) --
+  the taxonomy of four high-frequency AI sentence patterns in the anti-AI filter comes from this project.
 
 Where `references/` cites Orwell, Asimov, Zhu Guangqian or Corey Haines, those are **attributed
 citations of a method** (the six rules, the window-pane metaphor, the four reader relations,

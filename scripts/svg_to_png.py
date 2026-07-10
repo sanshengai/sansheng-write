@@ -17,7 +17,7 @@
     -o / --output    输出 PNG 路径，默认与 SVG 同目录同名
     --scale          DPR（device pixel ratio），默认 2 = 高清
     --width          强制输出宽度（px），等比缩放，默认按 SVG viewBox
-    --check-brand    校验 SVG 内只用主题色（默认 #2F6F8F + 黑/白/灰），违规报错
+    --check-brand    校验 SVG 内只用主题色（profile 生效令牌 + 主色派生浅/深档 + 黑/白/灰），违规报错
 """
 
 import argparse
@@ -27,25 +27,62 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 
-# 主题色白名单（小写 hex / rgb 名）。默认中性 slate；换主题后可按需扩这里。
-ALLOWED_COLORS = {
-    # 主题色系
-    "#2F6F8F",
-    "#B6D2DE",       # 浅色（信息图辅助）
-    "#e9f2f5",       # 极浅色
-    "#12252E",       # 深色
-    # 黑白灰
-    "#000000", "#ffffff",
-    "#1a1a1a", "#0e0e10", "#030712",  # 深色底
-    "#2a2a30", "#2c2c2c",              # 深灰
-    "#444444", "#666666", "#999999",   # 中灰
-    "#cccccc", "#eeeeee", "#f5f5f5",   # 浅灰
-    # 颜色关键字（CSS 命名色）
-    "none", "transparent", "currentcolor", "inherit",
-    "white", "black",
-    "gray", "grey", "darkgray", "darkgrey", "lightgray", "lightgrey",
-    "silver", "dimgray", "dimgrey",
-}
+# 主题色白名单 —— 从 profile 生效令牌动态生成（复核 B-5 修复：原先写死 slate 默认色，
+# 私有主题下「拒真放假」；且旧白名单存大写、扫描值转小写，连自家主色都匹配不上）。
+import sys as _sys
+import os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import profile_config as _pc
+
+
+def _hex_norm(c: str) -> str:
+    """任意 hex/rgb(a) 字符串 → 小写 #rrggbb；解析不了返回空串。"""
+    c = c.strip().lower()
+    m = re.match(r'rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)', c)
+    if m:
+        return "#{:02x}{:02x}{:02x}".format(*(int(m.group(i)) for i in (1, 2, 3)))
+    if re.match(r'^#[0-9a-f]{3}$', c):
+        c = "#" + "".join(ch * 2 for ch in c[1:])
+    return c if re.match(r'^#[0-9a-f]{6}$', c) else ""
+
+
+def _mix(hex_color: str, other: tuple[int, int, int], ratio: float) -> str:
+    """hex 与 other(rgb) 按 ratio 线性混合 → 小写 hex。给主色派生浅/深档辅助色。"""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    mixed = tuple(round(v * (1 - ratio) + o * ratio) for v, o in zip((r, g, b), other))
+    return "#{:02x}{:02x}{:02x}".format(*mixed)
+
+
+def _build_allowed() -> set[str]:
+    allowed = {
+        # 黑白灰（主题无关的中性梯度）
+        "#000000", "#ffffff",
+        "#1a1a1a", "#0e0e10", "#030712",
+        "#2a2a30", "#2c2c2c",
+        "#444444", "#666666", "#999999",
+        "#cccccc", "#eeeeee", "#f5f5f5",
+        # 颜色关键字（CSS 命名色）
+        "none", "transparent", "currentcolor", "inherit",
+        "white", "black",
+        "gray", "grey", "darkgray", "darkgrey", "lightgray", "lightgrey",
+        "silver", "dimgray", "dimgrey",
+    }
+    tokens = _pc.colors()
+    for v in tokens.values():
+        n = _hex_norm(str(v))
+        if n:
+            allowed.add(n)
+    primary = _hex_norm(str(tokens.get("primary", "")))
+    if primary:
+        # 信息图常用的主色派生档：浅（掺白 25/50/75%）+ 深（掺黑 60%），任何主题都成立
+        for ratio in (0.25, 0.5, 0.75):
+            allowed.add(_mix(primary, (255, 255, 255), ratio))
+        allowed.add(_mix(primary, (0, 0, 0), 0.6))
+    return allowed
+
+
+ALLOWED_COLORS = _build_allowed()
 
 
 def parse_svg_dimensions(svg_content: str) -> tuple[int, int]:
@@ -163,7 +200,8 @@ def main():
                 for c in violations:
                     print(f"   - {c}", file=sys.stderr)
         if any_violation:
-            print(f"\n💡 修复建议：让 baoyu-diagram 的 prompt 显式覆写所有 stroke/fill 为主题色 #2F6F8F", file=sys.stderr)
+            print(f"\n💡 修复建议：让 baoyu-diagram 的 prompt 显式覆写所有 stroke/fill 为主题色 "
+                  f"{_pc.colors().get('primary', '')}", file=sys.stderr)
             return 1
         print(f"✅ 品牌色校验通过 ({len(svg_paths)} 个 SVG)")
 

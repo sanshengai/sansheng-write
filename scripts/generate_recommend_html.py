@@ -311,8 +311,8 @@ def main():
             print("\n" + html)
 
     else:
-        # 保存到文件
-        output_path = Path(__file__).resolve().parent.parent / "templates" / "recommend_articles.html"
+        # 保存到数据目录（SEP-10：产物含你的真实身份卡，属个人数据，不落公开仓工作树）
+        output_path = pc.data_dir() / "recommend_articles.html"
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
         print(f"✅ HTML 已保存到: {output_path}")

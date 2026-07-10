@@ -9,7 +9,7 @@
 **本阶段只能在以下条件全部满足时执行：**
 
 1. ✅ **排版已完成**：工作目录存在 `定稿.html`，且已通过 layout.md 步骤 4 的全部检查（品牌色一致性、导读栏、H2 格式、表格样式、封面图、推荐阅读、关注卡片、信息图、水印、插图质量、系列一致性--共 11 项）
-2. ✅ `定稿.html` 包含品牌色 `#2F6F8F`、组件模板、导读栏等
+2. ✅ `定稿.html` 包含 **profile 生效主题色**（`colors.primary`，跑 `python scripts/profile_config.py` 可查；默认 slate 为 `#2F6F8F`）、组件模板、导读栏等
 
 **如果工作目录中只有 `定稿.md`，还没有 `定稿.html`，说明 layout 步骤未完成。** 此时拒绝发布，提示用户先走排版流程。
 
@@ -53,7 +53,7 @@
 
 ### 微信发文默认设置
 
-- 主题色：`#2F6F8F`（取自 `profile/brand.yaml` 的 primary）
+- 主题色：`profile/brand.yaml` 的 `colors.primary`（默认 slate 为 `#2F6F8F`；换主题后以生效值为准）
 - 作者：取自 `profile/brand.yaml` 的署名字段
 - 发布方式：API 首选
 - 评论：开启，所有人可评论
@@ -63,6 +63,19 @@
 调用 baoyu-post-to-wechat 或 baoyu-markdown-to-html 前，先将自定义 CSS 覆盖到主题目录。详见 `~/.baoyu-skills/baoyu-post-to-wechat/EXTEND.md`。
 
 ---
+
+## 缺微信凭证时的降级路径（G-4）
+
+没配公众号 appid/secret（在 **baoyu 侧** `~/.baoyu-skills/.env` 的 `WECHAT_APP_ID` / `WECHAT_APP_SECRET`，
+不是本仓 `.env`）时，发布档降级为**落盘交付**，链路不断：
+
+1. 排版照常跑完，产物就是文章目录里的 `定稿.html`；
+2. 打开微信公众号后台 → 新建图文 → 把 `定稿.html` 的正文区（`<div id="output">` 内）整体复制粘贴进编辑器；
+3. 封面图手动上传 `素材/cover.png`；
+4. 核对推荐阅读卡片与关注卡片渲染正常后存草稿。
+
+⚠️ 配好凭证走 API 推送时，公众号后台还需把本机出口 IP 加入「IP 白名单」（后台 → 设置与开发 →
+基本配置），否则 40164 报错。
 
 ## 发布执行
 
@@ -173,7 +186,7 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 
 ### 2. 自动生成推荐文章 HTML
 
-**时机：** `articles.md` 覆写完成后，调用 `generate_recommend_html.py` 重生成 `recommend_articles.html`。
+**时机：** `articles.md` 覆写完成后，调用 `generate_recommend_html.py` 重生成 `<数据目录>/recommend_articles.html`（个人数据落数据目录，不进仓）。
 
 **自动执行步骤：**
 1. ✅ 从 `<数据目录>/works.yaml` 按「一三五」规则取已发布第 1 / 3 / 5 篇（按发布日倒序，跳过第 2、4 篇，**需 ≥5 篇「有封面」的已发布文章**；缺封面顺延就近、不足则该区块静默跳过）
@@ -181,7 +194,7 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 > ⏱ **时序说明**：footer/推荐卡片在**排版阶段**注入（读 `works.yaml`），而本篇要到**发布后 `pipeline.py archive`** 才入库--所以推荐卡片读到的是「上一批已入库文章」，**本篇自身不会出现在自己的推荐里，这是设计而非 bug**。
 2. ✅ 提取标题、摘要、封面、链接
 3. ✅ 按照微信排版样式生成 HTML
-4. ✅ 输出到 `recommend_articles.html`，可直接粘贴到 `定稿.html`
+4. ✅ 输出到 `<数据目录>/recommend_articles.html`，可直接粘贴到 `定稿.html`
 
 **生成的 HTML 样式：**
 ```html
@@ -274,6 +287,8 @@ recommend_articles.html 重生成 ✅
 [价值行 1-2：这东西谁能用上、解决什么，说人话]
 
 {writing.moments_cta}
-{identity.site}
 ```
+
+- 末行只发 `writing.moments_cta` 一行；若它**未**包含官网地址，才补一行 `identity.site`
+  （避免同一域名出现两次）。两者都为空则不带尾巴。
 

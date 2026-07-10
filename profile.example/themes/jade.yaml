@@ -1,0 +1,16 @@
+# 主题：jade · 青玉绿（清润、明快，适合教程与工具实测类）
+# 主题文件必须给**完整**调色板 -- 只写一半会导致换皮换一半。
+colors:
+  primary: "#0E926F"
+  secondary: "#56B39A"
+  primary_deep: "#0a7d56"
+  primary_soft: "rgba(14,146,111,0.05)"
+  row_tint: "rgba(14,146,111,0.03)"
+  surface_soft: "#f6faf8"
+  surface_inset: "#eef6f2"
+  surface: "#eef0f2"
+  border_card: "#dce8e2"
+  text_strong: "#333333"
+  text_title: "#23332c"
+  text_mute: "#8a958f"
+  text_link: "#3f6b5b"

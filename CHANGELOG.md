@@ -2,6 +2,41 @@
 
 本项目的变更记录。版本号遵循 [semver](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] -- 2026-07-11
+
+发布后的第一轮全面复核（5 维度审计 + 逐条对抗校验，39 项发现全部修复/处置）。
+
+### 新增
+
+- **三套新预置主题**：`jade`（青玉绿）/ `amber`（琥珀赭）/ `plum`（梅子紫），预置主题增至六套
+- **OpenAI 兼容生图兜底实装**：`gen_img.py --provider openai -m <模型>`（此前文档承诺但未实现）；
+  新增 `--dry-run` 打印请求摘要；`setup_check` 对兜底做真实探测，不再发假绿灯
+- **快速上手一页化** + 依赖矩阵点名 baoyu-skills（安装命令、双 `.env` 体系、微信凭证正确位置）
+- **缺微信凭证的落盘降级路径**写入 publish.md（含 IP 白名单提醒）
+
+### 修复
+
+- **换肤零残留**：`_THEME_DEFAULTS` 11 → 17 条（补 surface / text_strong + 4 个主色衍生 alpha），
+  两段式替换防误染；ink/sage 等非默认主题不再混出钢青蓝
+- **BGM**：key 读取接通仓根 `.env`（此前只读 shell env，正确实现是死代码）；无 key 时按承诺
+  「跳过并明说」而非硬报错；docstring 凭证位置纠正
+- **logo 水印**：`add_logo.js` 支持从仓根 `.env` 读 profile 指针；缺 logo 打印说明后跳过不再崩溃
+- **`svg_to_png --check-brand`**：白名单从 profile 生效令牌动态生成（此前写死默认色，
+  自定义主题下拒真放假；且大小写不一致连默认主色都匹配不上）
+- **学习飞轮归位 profile 层**：playbook / lessons / observations 迁至 `<profile>/flywheel/`
+  （个人数据不再写进 git 跟踪文件）；个性化规则由 prep_writing 解析注入，模型不再读固定路径
+- **推荐阅读产物落数据目录**（含身份卡的个人数据不再写进仓库工作树）
+- **作品库可 env 直指**：`SANSHENG_WRITE_WORKS_FILE` 支持指向你既有的 yaml
+- `lint_templates` 调色板基线钉规范默认值（私有主题机上不再报满屏伪 WARN）；
+  遥测 detail 字段在匿名态下同步打码文章名；biz_id/headimg 获取指引纠正
+- cover-styles 残留的两处旧色值令牌化；封面/信息图不随主题自动换色已在文档明示
+
+### 合规
+
+- 两个校验脚本中与 gzh-design-skill（AGPL-3.0）近似的正则常量块**独立重写**
+- 致谢补齐：gzh-design-skill、WeWrite、humanizer（此前只有 baoyu-skills）
+- 一处真实文章引文按「逐字引文换原创例句」纪律改写为虚构等效例句
+
 ## [0.1.1] -- 2026-07-11
 
 ### 新增
@@ -53,5 +88,6 @@
 - **不含任何真实文章作为测试夹具**。所有 golden 都是合成的（`tests/golden/_synthetic_*/`）
 - **不捆绑任何第三方源码**。`jimp`（MIT）等运行依赖由你 `npm install` / `pip install`
 
+[0.1.2]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.2
 [0.1.1]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.1
 [0.1.0]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.0

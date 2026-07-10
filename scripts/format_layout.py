@@ -97,7 +97,23 @@ TEXT_TITLE = _c("text_title", "#26333a")    # 深色标题 / 引文
 TEXT_MUTED = _c("text_mute", "#8a929a")     # 副标题 / 说明 / 出处
 TEXT_FAINT = "#b0b6bb"                      # 极弱提示（中性，不随主题）
 
+def _primary_alpha(fmt: str, default: str) -> str:
+    """主色衍生半透明：用 BRAND_PRIMARY 的 RGB 填充 fmt（如 "rgba({r}, {g}, {b},0.12)"）。
+
+    模板 / f-string 里有几处「主色 @ 低 alpha」的装饰值（PART 分节线、金句卡发丝线、
+    引用块底），它们不是独立令牌、必须随 primary 换算。主色不是 #RRGGBB 时回退 default
+    （映射自换自 → no-op），绝不因主题问题卡排版。
+    """
+    m = re.fullmatch(r"#([0-9a-fA-F]{6})", BRAND_PRIMARY.strip())
+    if not m:
+        return default
+    h = m.group(1)
+    return fmt.format(**{k: int(h[i:i + 2], 16) for k, i in (("r", 0), ("g", 2), ("b", 4))})
+
+
 # 模板里写死的默认值 → 当前主题值 的映射（process_theme 用；值相同则整体 no-op）
+# 🔴 全量令牌：13 色令牌 12 个在此（TEXT_FAINT #b0b6bb 设计上不随主题，刻意不映射），
+#    另加 4 个「主色衍生 alpha」装饰值。新增模板硬编码色值前先想清楚归哪一行。
 _THEME_DEFAULTS = {
     "#2F6F8F": BRAND_PRIMARY,
     "#7FB0C4": BRAND_SECONDARY,
@@ -106,10 +122,17 @@ _THEME_DEFAULTS = {
     "#f2f7f9": TINT_SOFT,
     "#eaf1f5": TINT_INSET,
     "#d7e3ea": BORDER_CARD,
+    "#eef0f2": BORDER_HAIR,   # surface：内分隔线 / 表格行分隔（深读条目线等）
     "#26333a": TEXT_TITLE,
     "#8a929a": TEXT_MUTED,
+    "#333333": TEXT_BODY,     # text_strong：正文 / PART 标题行 / 时间线正文
     "rgba(47, 111, 143,0.05)": TINT_CARD,
     "rgba(47, 111, 143,0.03)": TINT_ROW,
+    # 主色衍生 alpha（随 primary 换算，非独立令牌）：
+    "rgba(47, 111, 143,0.12)": _primary_alpha("rgba({r}, {g}, {b},0.12)", "rgba(47, 111, 143,0.12)"),    # H2 PART 底部分节线
+    "rgba(47, 111, 143,0.3)": _primary_alpha("rgba({r}, {g}, {b},0.3)", "rgba(47, 111, 143,0.3)"),       # H2 PART 编号右竖线
+    "rgba(47, 111, 143,0.14)": _primary_alpha("rgba({r}, {g}, {b},0.14)", "rgba(47, 111, 143,0.14)"),    # 金句卡出处发丝分隔线
+    "rgba(47, 111, 143, 0.05)": _primary_alpha("rgba({r}, {g}, {b}, 0.05)", "rgba(47, 111, 143, 0.05)"), # process_colors 引用块底（历史带空格写法）
 }
 
 
@@ -117,12 +140,23 @@ def process_theme(html: str) -> str:
     """把模板里写死的默认色，换成当前 profile 的主题色（E-1：一处改完，全局换皮）。
 
     默认 profile 下每一项映射都是"自己换自己"，整体 no-op、零行为变更。
+
+    两段式替换（默认值 → 占位符 → 主题值）+ 默认值按长度降序：
+      ① 防「主题值恰好等于另一条映射的默认值」时被后续映射二次误替换（如某主题把
+         text_title 配成 #333333，直接单遍替换会让标题再被 text_strong 那条错染）；
+      ② 防未来出现「一个默认值是另一个默认值的前缀」时短值先替换啃坏长值。
     """
     import re as _re
-    for default, active in _THEME_DEFAULTS.items():
+    pending = []
+    for i, (default, active) in enumerate(
+            sorted(_THEME_DEFAULTS.items(), key=lambda kv: len(kv[0]), reverse=True)):
         if default == active:
             continue
-        html = _re.sub(_re.escape(default), active, html, flags=_re.IGNORECASE)
+        placeholder = f"\x00SSTHEME{i}\x00"  # NUL 包裹，正常 HTML 不可能撞车
+        html = _re.sub(_re.escape(default), placeholder, html, flags=_re.IGNORECASE)
+        pending.append((placeholder, active))
+    for placeholder, active in pending:
+        html = html.replace(placeholder, active)
     return html
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1245,7 +1279,10 @@ def process_footer(html):
 
     # 先运行 generate_recommend_html.py 更新推荐列表
     gen_script = SCRIPT_DIR / "generate_recommend_html.py"
-    recommend_file = SCRIPT_DIR.parent / "templates" / "recommend_articles.html"
+    # 产物落数据目录（SEP-10 修复：它渲染的是你的真实身份卡+文章清单，属个人数据，
+    # 不该写进公开仓工作树的 templates/——那里只放中性模板）
+    from profile_config import data_dir as _data_dir
+    recommend_file = _data_dir() / "recommend_articles.html"
 
     if gen_script.exists():
         log("正在调用 generate_recommend_html.py 生成最新推荐...")

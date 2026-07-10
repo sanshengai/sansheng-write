@@ -39,6 +39,8 @@ EXAMPLE_PROFILE = SKILL_DIR / "profile.example"
 
 ENV_PROFILE = "SANSHENG_WRITE_PROFILE_DIR"
 ENV_DATA = "SANSHENG_WRITE_DATA_DIR"
+ENV_WORKS = "SANSHENG_WRITE_WORKS_FILE"
+ENV_FLYWHEEL = "SANSHENG_WRITE_FLYWHEEL_DIR"
 
 _cache: dict[str, Any] = {}
 
@@ -82,7 +84,16 @@ def data_dir() -> Path:
 
 
 def works_file() -> Path:
-    """作品库（单一数据源）。"""
+    """作品库（单一数据源）。
+
+    可用 SANSHENG_WRITE_WORKS_FILE 直指一个已存在的 yaml（比如你的作品库
+    本来就叫别的名字）——比「另起硬链/软链对齐文件名」可靠：链接会被
+    另一侧仓库的 git pull/checkout 替换文件时静默摘断，而 env 直指没有中间层。
+    未配置则默认 <数据目录>/works.yaml。
+    """
+    p = _env_or_dotenv(ENV_WORKS)
+    if p:
+        return Path(p).expanduser()
     return data_dir() / "works.yaml"
 
 
@@ -141,6 +152,42 @@ def colors() -> dict:
 def identity() -> dict:
     """公众号/站点身份卡。示例 profile 里全是明显假值，**必须改成你自己的**。"""
     return brand().get("identity", {})
+
+
+# ===== 【第 2.5 节】学习飞轮状态（playbook / lessons / observations） =====
+#
+# 飞轮文件是「越用越像你」攒出来的**个人数据**，不该写进公开仓的 git 跟踪文件里
+# （公开仓只带空壳模板）。解析顺序：
+#   1. SANSHENG_WRITE_FLYWHEEL_DIR 显式指定
+#   2. 配置了自己的 profile → <profile>/flywheel/（个人数据跟着 profile 走，随你的
+#      私有仓版本化备份——放仓根的话既无备份、又会被 git 操作误伤）
+#   3. 未配置 profile（试用/开发态）→ 仓根（向后兼容，空壳文件就在那里）
+
+def flywheel_dir() -> Path:
+    p = _env_or_dotenv(ENV_FLYWHEEL)
+    if p:
+        d = Path(p).expanduser()
+    elif not using_example_profile():
+        d = profile_dir() / "flywheel"
+    else:
+        return SKILL_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def playbook_file() -> Path:
+    """learn_edits 编译产物：带置信度的个性化写作规则（写作 Step 4 注入）。"""
+    return flywheel_dir() / "playbook.md"
+
+
+def lessons_file() -> Path:
+    """learn_edits 原始 pattern 记录。"""
+    return flywheel_dir() / "lessons.yaml"
+
+
+def observations_file() -> Path:
+    """运行观察日志（本地自省遥测）。"""
+    return flywheel_dir() / "_skill-observations.jsonl"
 
 
 # ===== 【第 3 节】语料指针（BYO：自带语料才长出你的风格） =====
@@ -217,6 +264,7 @@ if __name__ == "__main__":
     print(f"profile   : {profile_dir()}{'  (示例，未配置 ' + ENV_PROFILE + ')' if using_example_profile() else ''}")
     print(f"data      : {data_dir()}")
     print(f"works     : {works_file()}")
+    print(f"flywheel  : {flywheel_dir()}  (playbook / lessons / observations)")
     b = brand()
     print(f"brand     : {b.get('name')}  theme={b.get('theme') or '(default)'}")
     print(f"colors    : {colors()}")

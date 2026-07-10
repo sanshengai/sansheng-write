@@ -30,10 +30,15 @@ SW = pathlib.Path(__file__).resolve().parents[1]
 
 # P0-P6 门必须确定性地跑在 profile.example 上（冻结 fixture 断言的是中性默认色，
 # 如 #2F6F8F / #d7e3ea），且绝不受维护者本机 .env（SANSHENG_WRITE_* 指向真实品牌
-# profile / 文稿成品数据）影响。os.environ 优先级高于 .env，故在 import format_layout
+# profile / 真实数据目录）影响。os.environ 优先级高于 .env，故在 import format_layout
 # 之前显式钉死；data 也指到临时目录，多一道保险不碰真实作品库。
 os.environ["SANSHENG_WRITE_PROFILE_DIR"] = str(SW / "profile.example")
-os.environ.setdefault("SANSHENG_WRITE_DATA_DIR", tempfile.mkdtemp(prefix="sansheng-write-p0-"))
+# 硬钉（不用 setdefault——外部预设的 env 同样会打破确定性，SEP-08）；
+# 同族指针必须钉非空实路径：空串挡不住解析器回落 .env
+_P0_DATA = tempfile.mkdtemp(prefix="sansheng-write-p0-")
+os.environ["SANSHENG_WRITE_DATA_DIR"] = _P0_DATA
+os.environ["SANSHENG_WRITE_WORKS_FILE"] = str(pathlib.Path(_P0_DATA) / "works.yaml")
+os.environ["SANSHENG_WRITE_FLYWHEEL_DIR"] = _P0_DATA
 
 # 冻结 golden 文章清单锚点（3 篇基线）。P6.1 起 P6 门改走结构等价
 # 三断言、不再重跑 golden 比字节，故此常量当前不被 main() 直接消费；

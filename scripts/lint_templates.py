@@ -6,7 +6,9 @@
 常量全局变；但 9 个静态 templates/*.html + generate_article_bgm.py 内嵌 HTML 是手写字面
 色值/圆角，改令牌要手工三处对齐、无守护。本 lint 把「模板色值/圆角是否偏离令牌」做成确定性关。
 
-设计：调色板直接 import format_layout.py 的 Design Tokens 常量（自动跟随令牌变更，不另立真值）。
+设计：调色板基线 = **规范默认值**（profile.example/brand.yaml 的 colors）。templates 存的是
+中性默认字面值、换皮发生在渲染末端 process_theme，所以 lint 必须对照规范默认而非「当前
+profile 生效值」——否则维护者在私有主题机上会对完全正确的模板报满屏伪 WARN。
   ERROR = 平台硬违规（position/grid/var/@media/style/script/div/class/id）→ exit 1。
          （flex / float 已实测可用，不在禁列，见 wechat-compat §1.5）
   WARN  = 疑似色值漂移（非令牌调色板）/ 圆角脱 4 档 —— 信息性，供人工核，不阻断。
@@ -30,17 +32,19 @@ def _norm(c):
     return c.strip().lower().replace(" ", "")
 
 
-# 令牌色（来自 format_layout.py 常量，改令牌自动跟随）
-TOKEN_COLORS = {_norm(c) for c in [
-    F.BRAND_PRIMARY, F.BRAND_SECONDARY, F.TINT_CARD, F.TINT_SOFT, F.TINT_INSET,
-    F.TINT_ROW, F.BORDER_CARD, F.BORDER_HAIR, F.LINE_TIMELINE,
-    F.TEXT_BODY, F.TEXT_TITLE, F.TEXT_MUTED, F.TEXT_FAINT,
-]}
+# 令牌色基线 = 规范默认调色板（profile.example/brand.yaml 的 colors 全量 13 键）。
+# 🔴 刻意不用 F.BRAND_PRIMARY 等「生效值」：那是 active profile 的值，templates 里存的
+# 是规范默认字面值——拿生效值当基线，私有主题机上会对正确模板报伪 WARN（SEP-07）。
+import pathlib as _pathlib
+import yaml as _yaml
+_EXAMPLE_BRAND = _pathlib.Path(__file__).resolve().parent.parent / "profile.example" / "brand.yaml"
+_CANON = (_yaml.safe_load(_EXAMPLE_BRAND.read_text(encoding="utf-8")) or {}).get("colors") or {}
+TOKEN_COLORS = ({_norm(str(v)) for v in _CANON.values()}
+                # 设计上不随主题的中性常量（这两个生效值恒等于规范值，可直接取）
+                | {_norm(F.TEXT_FAINT), _norm(F.LINE_TIMELINE)})
 NEUTRAL_COLORS = {_norm(c) for c in ["#ffffff", "#fefefe", "#fff", "#000000", "#000"]}
 # 既有的、经确认的令牌外用色（新增令牌外色值前必须先在此登记并注明用途，否则 lint WARN）
 DOCUMENTED_EXTRAS = {
-    "#245a75": "quote-card 金句渐变的深绿档（同色相更深，仅用于渐变）",
-    "#4a6b7a": "deep-read / link-card 的 URL 文字绿灰",
     "#f0652f": "generate_article_bgm.py 音频卡橙色 accent",
 }
 ALLOWED_EXACT = TOKEN_COLORS | NEUTRAL_COLORS | {_norm(c) for c in DOCUMENTED_EXTRAS}
@@ -59,9 +63,9 @@ def _hex_to_rgb(h: str) -> str:
 
 
 # 允许的 rgba 族：主题色 / 纯黑 / 纯白 任意 alpha（半透明是通用手段，不算漂移）
-# 主题色的 rgb 三元组由 BRAND_PRIMARY 推导 —— 换主题时自动跟随，不写死。
+# 主题色的 rgb 三元组由**规范默认 primary** 推导（同上：模板存的是规范默认字面值）。
 _RGBA_FAMILY = [re.compile(r"rgba\(0,0,0,[0-9.]+\)"), re.compile(r"rgba\(255,255,255,[0-9.]+\)")]
-_primary_rgb = _hex_to_rgb(F.BRAND_PRIMARY)
+_primary_rgb = _hex_to_rgb(str(_CANON.get("primary", F.BRAND_PRIMARY)))
 if _primary_rgb:
     _RGBA_FAMILY.insert(0, re.compile(rf"rgba\({re.escape(_primary_rgb)},[0-9.]+\)"))
 
@@ -69,18 +73,25 @@ COLOR_RE = re.compile(r"#[0-9a-fA-F]{3,6}\b|rgba?\([0-9,.\s]+\)")
 RADIUS_RE = re.compile(r"border-radius:\s*([0-9]+)px", re.I)
 RADIUS_OK = {0, 2, 6, 8, 10, 12, 999}  # 2 = 装饰短条（3-4px 高绿条）的半高微圆角；其余为 4 档尺度 + 全圆胶囊
 
-# ERROR 级平台硬违规（flex/float 不在此列——已实测可用）
-FORBIDDEN = [
-    (re.compile(r"position\s*:\s*(fixed|absolute|sticky)", re.I), "position fixed/absolute/sticky 不支持"),
-    (re.compile(r"display\s*:\s*grid", re.I), "display:grid 不支持（改 flex）"),
-    (re.compile(r"var\s*\(\s*--", re.I), "CSS 变量 var(--x) 不支持，写死令牌值"),
-    (re.compile(r"@(media|keyframes|import)", re.I), "@media/@keyframes/@import 不支持"),
-    (re.compile(r"<style[\s>]", re.I), "<style> 标签会被过滤"),
-    (re.compile(r"<script[\s>]", re.I), "<script> 标签会被过滤"),
-    (re.compile(r"</?div[\s>]", re.I), "<div> 应改 <section>"),
-    (re.compile(r"\sclass\s*=", re.I), "class 属性会被剥离（关注卡除外）"),
-    (re.compile(r"\sid\s*=", re.I), "id 属性会被剥离"),
-]
+# ERROR 级平台硬违规（flex/float 不在此列——已实测可用）。
+# 2026-07-10 独立重写：检查表从「微信编辑器会剥掉 / 不支持什么」的需求清单推导，
+# 按 标签 / CSS 能力 / 标记纪律 三类组织生成，不与任何外部实现共享文本。
+_TAG_RULES = {"style": "<style> 标签会被过滤", "script": "<script> 标签会被过滤"}
+_CSS_RULES = {
+    r"position\s*:\s*(?:absolute|fixed|sticky)": "position fixed/absolute/sticky 不支持",
+    r"display\s*:\s*(?:inline-)?grid": "display:grid 不支持（改 flex）",
+    r"\bvar\s*\(\s*--": "CSS 变量 var(--x) 不支持，写死令牌值",
+    r"@(?:media|keyframes|import)\b": "@media/@keyframes/@import 不支持",
+    r"<\s*/?\s*div\b": "<div> 应改 <section>",
+}
+_STRIPPED_ATTRS = ("class", "id")
+FORBIDDEN = (
+    [(re.compile(rf"<\s*{tag}\b", re.I), msg) for tag, msg in _TAG_RULES.items()]
+    + [(re.compile(rx, re.I), msg) for rx, msg in _CSS_RULES.items()]
+    + [(re.compile(rf"\s{attr}\s*=", re.I),
+        f"{attr} 属性会被剥离" + ("（关注卡除外）" if attr == "class" else ""))
+       for attr in _STRIPPED_ATTRS]
+)
 # 关注卡白名单标记：含这些标记的行豁免 class/id 检查
 _PROFILE = re.compile(r"mp_profile|mpprofile|mp-common-profile|custom_select_card", re.I)
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)

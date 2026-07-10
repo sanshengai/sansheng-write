@@ -18,10 +18,31 @@ const fs = require('fs');
 const path = require('path');
 
 const JIMP_PATH = 'jimp';
-// logo 目录来自你的 profile：优先 $SANSHENG_WRITE_PROFILE_DIR/brand，未配置时回退仓内
-// profile.example/brand（把 logo.png / logo-black.png 放进去即可）。也可用 --logo 显式覆盖。
-const DEFAULT_LOGO_DIR = process.env.SANSHENG_WRITE_PROFILE_DIR
-  ? path.join(process.env.SANSHENG_WRITE_PROFILE_DIR, 'brand')
+
+// 读仓根 .env 里的一个键（Node 进程看不见 .env——Python 侧的 profile_config 才解析它。
+// 复核 SEP-01：此前只读 process.env，.env 配置法在 logo 阶段全断）。shell env 优先。
+function envOrDotenv(name) {
+  if (process.env[name] && process.env[name].trim()) return process.env[name].trim();
+  try {
+    const envFile = path.resolve(__dirname, '../.env');
+    for (const line of fs.readFileSync(envFile, 'utf-8').split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith('#') || !t.includes('=')) continue;
+      const i = t.indexOf('=');
+      if (t.slice(0, i).trim() === name) {
+        return t.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
+      }
+    }
+  } catch (e) { /* 无 .env = 正常路径，走回退 */ }
+  return '';
+}
+
+// logo 目录来自你的 profile：优先 SANSHENG_WRITE_PROFILE_DIR（shell env → 仓根 .env）/brand，
+// 未配置时回退仓内 profile.example/brand（把 logo.png / logo-black.png 放进去即可）。
+// 也可用 --logo 显式覆盖。缺 logo 时本脚本打印说明后跳过（exit 0），不阻塞发布链。
+const _profileDir = envOrDotenv('SANSHENG_WRITE_PROFILE_DIR');
+const DEFAULT_LOGO_DIR = _profileDir
+  ? path.join(_profileDir, 'brand')
   : path.resolve(__dirname, '../profile.example/brand');
 
 // 固化排除清单：① hero 等小图尺寸太小，打水印影响观感；② logo-white/logo-black 本身就是品牌 logo，
@@ -163,6 +184,16 @@ async function main() {
   if (!files.length) {
     console.error('⚠️ 未匹配到任何文件，请检查 glob 模式');
     process.exit(1);
+  }
+
+  // 水印是可选环节：logo 目录/文件缺失 = 打印说明后整步跳过（exit 0），不阻塞发布链（G-4）
+  const hasLogo = fs.existsSync(path.join(logoDir, 'logo.png'))
+    || fs.existsSync(path.join(logoDir, 'logo-black.png'));
+  if (!hasLogo) {
+    console.log(`⏭  未找到品牌 logo（${logoDir} 下无 logo.png / logo-black.png）—— 水印为可选环节，本步跳过。`);
+    console.log('    想要水印：把 logo.png（白字，深底用）+ logo-black.png（深字，浅底用）放进你 profile 的 brand/ 目录，');
+    console.log('    或用 --logo <目录> 显式指定。');
+    process.exit(0);
   }
 
   console.log(`🎬 开始添加水印 (共 ${files.length} 张图片，Logo 目录: ${logoDir}):`);

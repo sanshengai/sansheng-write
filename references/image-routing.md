@@ -37,7 +37,16 @@ python "$SKILL/scripts/gen_img.py" "素材/prompts/xxx.md" "素材/xxx.png" <mod
 
 密钥与项目号都从环境变量读（`.env` 里配 `GOOGLE_API_KEY` / 可选 `GOOGLE_VERTEX_PROJECT`），脚本不硬编码任何凭证。
 
-**可选：OpenAI 兼容端点兜底。** Google 后端不可用时，`gen_img.py` 支持切到任意 OpenAI 兼容的图像端点--配 `OPENAI_API_KEY` + `OPENAI_BASE_URL`（指向你选用的兼容服务），调用时传 `--provider openai -m <模型名>` 即可。质量一般够用，作为 Google 不可用时的备选。
+**可选：OpenAI 兼容端点兜底。** Google 后端不可用时，`gen_img.py` 支持切到任意 OpenAI 兼容的图像端点：
+
+```bash
+# .env 配 OPENAI_API_KEY（+ 第三方兼容服务需配 OPENAI_BASE_URL；可选 OPENAI_IMAGE_MODEL 作默认模型）
+python "$SKILL/scripts/gen_img.py" --provider openai -m <模型名> "素材/prompts/xxx.md" "素材/xxx.png" <W> <H>
+# 尺寸自动映射到 1024x1024 / 1536x1024 / 1024x1536 三档再 PIL 缩回精确值
+```
+
+质量一般够用，作为 Google 不可用时的备选。任一 provider 都可加 `--dry-run` 只打印将发的请求摘要
+（URL/模型/尺寸，绝不含 key），用于生图前验证参数构造。
 
 出图后照常 `add_logo`（水印）→ `compress`（压缩）→ `pipeline.py log`（登记），再进 verify。生图前可先 `curl` ping 一次对应端点探活。
 

@@ -1,0 +1,16 @@
+# 主题：amber · 琥珀赭（温暖、醇厚，适合随笔与生活观察类）
+# 主题文件必须给**完整**调色板 -- 只写一半会导致换皮换一半。
+colors:
+  primary: "#A2661C"
+  secondary: "#C99A4E"
+  primary_deep: "#7f4e12"
+  primary_soft: "rgba(162, 102, 28,0.05)"
+  row_tint: "rgba(162, 102, 28,0.03)"
+  surface_soft: "#faf6ef"
+  surface_inset: "#f4ecdd"
+  surface: "#f2efe9"
+  border_card: "#e8dcc6"
+  text_strong: "#333333"
+  text_title: "#332a1c"
+  text_mute: "#9a9181"
+  text_link: "#7a5c33"

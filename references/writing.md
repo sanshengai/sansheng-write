@@ -758,8 +758,8 @@ H2 固定为 **PART 编号格式**（`01 PART | 标题`），H3 固定为**时�
 #### 📍 执行写作并生成初稿
 
 **执行动作**：
-1. **加载个性化规则**：读取 `$SKILL/playbook.md` 的三个字段——① `rules`（`confidence >= 5.0` 硬执行 / <5.0 软参考）② `reference_preferences`（style-routes 检索的第二信号）③ `noise_filter_rules`（加载 author compact 前过滤训练语料，防"小师妹版作者"沉默漂移）。**若 `rules: []` 为空（learn_edits 飞轮尚未沉淀偏好），`rules` 这项跳过、直接用 writing.md 通用规则写作不停等；`reference_preferences` / `noise_filter_rules` 有值就用。**
-2. **生成初稿**：严格按照大纲结构和增强策略的要求，结合 `$SKILL/playbook.md` 中的个性化规则进行正文输出。
+1. **加载个性化规则**：读 `_prep-context.md` 的「一·规、个性化写作规则」节（prep_writing 已按 profile 解析 playbook 路径并注入，无需自己找文件）——① `rules`（`confidence >= 5.0` 硬执行 / <5.0 软参考）② `reference_preferences`（style-routes 检索的第二信号）③ `noise_filter_rules`（加载 author compact 前过滤训练语料，防"小师妹版作者"沉默漂移）。**若该节标注「尚无沉淀规则」（learn_edits 飞轮还没攒），`rules` 这项跳过、直接用 writing.md 通用规则写作不停等；`reference_preferences` / `noise_filter_rules` 有值就用。**
+2. **生成初稿**：严格按照大纲结构和增强策略的要求，结合上述个性化规则进行正文输出。
 3. **关键操作**：
    - 全文采用 Markdown 格式。
    - 所有 H2 标题必须与大纲完全一致。

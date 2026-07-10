@@ -128,20 +128,52 @@ def main() -> int:
                 print(f"  {OK} 端点：AI Studio（AIza 前缀）")
         except Exception:
             pass
-    print(f"  {OK if o_key else WARN}OPENAI_API_KEY   " + ("已配置（生图兜底可用）" if o_key else "未配置（可选兜底）"))
+    # openai 兜底不能只看 key 是否存在：曾出现「文档承诺、代码零实现」的假绿灯（key 配了
+    # 也没用）。这里探测 gen_img.gen_openai 真实可调才发 ✅，否则如实降级为 ⚠️。
+    openai_impl = False
+    openai_probe_err = ""
+    try:
+        import gen_img
+        openai_impl = callable(getattr(gen_img, "gen_openai", None))
+    except Exception as e:
+        openai_probe_err = str(e)[:80]
+    if o_key and openai_impl:
+        print(f"  {OK}OPENAI_API_KEY   已配置（生图兜底可用：gen_img.py --provider openai -m <模型名>）")
+        if not _env_present("OPENAI_BASE_URL"):
+            print(f"       OPENAI_BASE_URL 未配置 -- 默认打 {gen_img.DEFAULT_OPENAI_BASE_URL}；"
+                  f"用第三方兼容端点需在 .env 显式配置")
+    elif o_key:
+        print(f"  {WARN}OPENAI_API_KEY   已配置，但 gen_img.py 的 openai 兜底不可用"
+              + (f"（gen_img 导入失败：{openai_probe_err}）" if openai_probe_err
+                 else "（未找到 gen_openai 实现）"))
+    else:
+        print(f"  {WARN}OPENAI_API_KEY   未配置（可选兜底）")
 
     mm = _env_present("MINIMAX_API_KEY")
     print(f"  {OK if mm else WARN}MINIMAX_API_KEY  " + ("已配置" if mm else "未配置 -- 文章主题曲 BGM 会自动跳过（可选彩蛋）"))
 
-    wx = _env_present("WECHAT_APPID") and _env_present("WECHAT_SECRET")
-    print(f"  {OK if wx else WARN}微信公众号凭证    " + ("已配置" if wx else "未配置 -- 排版产物落盘为 HTML，你手动粘贴"))
+    # 微信凭证配在 baoyu 侧 ~/.baoyu-skills/.env（键名 WECHAT_APP_ID/WECHAT_APP_SECRET），
+    # 不在本仓 .env——此前查错键名+错位置，永远发不了 ✅（复核 D5-1）
+    wx = False
+    _baoyu_env = Path.home() / ".baoyu-skills" / ".env"
+    if _baoyu_env.is_file():
+        try:
+            _keys = {ln.split("=", 1)[0].strip() for ln in _baoyu_env.read_text(encoding="utf-8").splitlines()
+                     if "=" in ln and not ln.strip().startswith("#")}
+            wx = {"WECHAT_APP_ID", "WECHAT_APP_SECRET"} <= _keys
+        except Exception:
+            pass
+    print(f"  {OK if wx else WARN}微信公众号凭证    "
+          + ("已配置（~/.baoyu-skills/.env）" if wx
+             else "未配置 -- 排版产物落盘为 HTML，你手动粘贴（配置位置：baoyu 侧 ~/.baoyu-skills/.env 的 WECHAT_APP_ID/WECHAT_APP_SECRET，非本仓 .env）"))
 
     pil = _py_mod("PIL")
     print(f"  {OK if pil else WARN}Pillow           " + ("" if pil else "缺 -- pip install pillow（生图缩放 / 配图压缩）"))
 
     # ---------- 结论 ----------
     print("\n" + "=" * 62)
-    if all(tier2) and g_key:
+    img_ready = g_key or (o_key and openai_impl)  # 生图可用 = Google 主路，或 openai 兜底真实可调
+    if all(tier2) and img_ready:
         print("  结论：③ 全自动路径就绪 🎉")
     elif all(tier2):
         print("  结论：② 排版路径就绪。配一个生图 key 就能解锁 ③。")

@@ -147,10 +147,10 @@ cp .env.example .env              # 填你自己的 key
 | Pillow | ③ | 生图缩放、配图压缩不可用 | `pip install pillow` |
 | bun | ② | markdown→HTML 转换跑不了 | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
-| markdown→HTML 转换器 | ② | 排版链断在第一步 | 见「致谢与依赖」 |
+| **baoyu-skills 插件** | ② 起硬依赖 | md→HTML / 发布 / 信息图 / 转图文 四处断 | Claude Code 里 `/plugin marketplace add JimLiu/baoyu-skills` 后安装；其生图/发布 key 配在**它自己的** `~/.baoyu-skills/.env`（微信键名 `WECHAT_APP_ID`/`WECHAT_APP_SECRET`） |
 | `GOOGLE_API_KEY` | ③ | 生图不可用（可用 OpenAI 兼容端点兜底） | AI Studio 或 Vertex Express，脚本按 key 前缀自动分流 |
 | `MINIMAX_API_KEY` | ③ 可选 | 文章主题曲 BGM 自动跳过 | 纯彩蛋，不配也行 |
-| 微信公众号 appid/secret | ③ | 排版产物落盘为 HTML，你手动粘贴 | 公众号后台 → 开发 → 基本配置 |
+| 微信公众号 appid/secret | ③ | 排版产物落盘为 HTML，你手动粘贴 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
 | playwright / matplotlib | ③ 可选 | SVG 转 PNG、数据图画不了 | `pip install playwright matplotlib` |
 
 **组件失效只降级该环节**：生图挂了就出纯文字排版，发布凭证没配就落盘 HTML，
@@ -170,17 +170,24 @@ git clone https://github.com/sandypoli-boop/sansheng-write.git
 ln -s "$(pwd)/sansheng-write" ~/.claude/skills/sansheng-write
 ```
 
-## 快速上手
+## 快速上手（从 clone 到第一篇）
 
 ```bash
-python scripts/setup_check.py                       # 1. 体检
+python scripts/setup_check.py                       # 1. 体检：告诉你能跑到第几档、还缺什么
 cp -r profile.example ~/my-writing-profile          # 2. 复制一份 profile
 export SANSHENG_WRITE_PROFILE_DIR=~/my-writing-profile
 export SANSHENG_WRITE_DATA_DIR=~/my-articles        # 3. 文章存哪
-$EDITOR ~/my-writing-profile/context.md             # 4. 告诉它你是谁
+$EDITOR ~/my-writing-profile/context.md             # 4. 告诉它你是谁（写给谁、怎么说话）
+$EDITOR ~/my-writing-profile/brand.yaml             # 5. 署名 + 主题 + 身份卡（发公众号才需要）
+
+# 要出微信 HTML（②档）再补：装 bun + Node 18 + baoyu-skills 插件，然后
+cd scripts && npm install                           # jimp 水印
+# 要全自动配图/发布（③档）再补：
+cp .env.example .env                                # 填生图 key；微信凭证配在 baoyu 侧（见依赖矩阵）
 ```
 
 然后在 Claude Code 里说一句「帮我写一篇关于 X 的文章」。
+每一步缺了什么，`setup_check.py` 都会指出来；缺件只降级对应环节，不断整链。
 
 ## 配置
 
@@ -198,7 +205,7 @@ $EDITOR ~/my-writing-profile/context.md             # 4. 告诉它你是谁
 **换主题一行搞定**（`profile/brand.yaml`）：
 
 ```yaml
-theme: "sage"      # slate 钢青（默认） | ink 近墨黑 | sage 草木绿
+theme: "sage"      # slate 钢青（默认） | ink 近墨黑 | sage 草木绿 | jade 青玉绿 | amber 琥珀赭 | plum 梅子紫
 ```
 
 模板里一个 hex 都不用改 -- 排版最后一步由 `process_theme()` 统一替换。
@@ -252,6 +259,20 @@ GitHub 宝藏精选、AI 羊毛铺……
 - **[baoyu-skills](https://github.com/JimLiu/baoyu-skills)** by [宝玉](https://github.com/JimLiu)（MIT）--
   排版链上游的 markdown→HTML 转换、信息图与发布工具链。本 skill 的排版后处理接在它的产出之后，
   skill 的组织方式也从中借鉴颇多。**不捆绑分发，请自行安装。**
+
+- **[gzh-design-skill](https://github.com/isjiamu/gzh-design-skill)** by 甲木 × 摸鱼小李（AGPL-3.0）--
+  排版层的重要方法论参照：「文章类型 → 组件配方表」、视觉层级与全文用色配额、封面文案策略
+  （两层标题分离 / 五视角）、「模板源头 lint + 产物 HTML 校验」双关卡、待补素材居中占位约定，
+  这些设计思想均借鉴自该项目。仅借鉴思路：本仓的组件 HTML 与校验脚本均为独立实现，
+  不含其代码或模板。**不捆绑分发，两项目互不依赖。**
+
+- **[WeWrite](https://github.com/oaker-io/wewrite)** by [oaker-io](https://github.com/oaker-io)（MIT）--
+  「学习我的修改」闭环飞轮的整体设计（lessons → playbook 聚合、pattern 类型划分）、内容增强
+  四策略框架（角度发现 / 密度强化 / 细节锚定 / 真实体感）与微信兼容微调思路源自该项目；
+  脚本代码为独立实现。**不捆绑分发。**
+
+- **[humanizer](https://github.com/blader/humanizer)** by [blader](https://github.com/blader)（MIT）--
+  反 AI 味过滤器中「四种高频 AI 句式」的识别框架来自该项目。
 
 ### 运行依赖（不捆绑，请自行安装）
 

@@ -34,7 +34,8 @@
     python generate_article_bgm.py "<数据目录>/54-睡眠..."
 
 前置:
-    ~/.baoyu-skills/.env 需含 MINIMAX_API_KEY（国内站 api.minimaxi.com，账户需余额>0）。
+    仓根 .env（cp .env.example .env）需含 MINIMAX_API_KEY（国内站 api.minimaxi.com，账户需余额>0）；
+    shell 环境变量优先于 .env。未配置时本脚本打印说明后跳过（exit 0），不阻塞发布链。
     封面（可选，失败不阻塞）另需 GOOGLE_API_KEY（Vertex Express，给 gen_img.py）。
 
 历史:
@@ -147,17 +148,17 @@ def load_env():
 
 
 def minimax_key(cli_value: str = "") -> str:
-    """BGM 是可选彩蛋：没配 key 就明确指路，不静默降级也不崩在半路。"""
+    """BGM 是可选彩蛋：读取顺序 CLI > shell env > 仓根 .env（经 load_secret）。
+
+    读不到返回空串——由调用方按「跳过并明说」处理（README 的 G-4 承诺），
+    不在这里 sys.exit：可选环节缺配置不是错误。
+    """
     if cli_value:
         return cli_value
     import sys as _sys
     _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import profile_config as _pc
-    return _pc.load_secret(
-        "MINIMAX_API_KEY",
-        hint="MiniMax 国内站（api.minimaxi.com）的 key，账户需有余额。"
-             "不做 BGM 就不必配，这一步会自动跳过。",
-    )
+    return _pc.load_secret("MINIMAX_API_KEY", required=False)
 
 
 def find_article_file(article_dir: Path) -> Path:
@@ -440,8 +441,8 @@ def main():
         description="🎵 公众号文章配乐生成器（MiniMax 版 V2）— Claude 提炼诗意意象 + MiniMax 写词生成"
     )
     parser.add_argument("article_dir", help="文章目录路径")
-    parser.add_argument("--minimax-key", default=os.getenv("MINIMAX_API_KEY"),
-                        help="MiniMax 国内站 API Key（默认读 .env 的 MINIMAX_API_KEY）")
+    parser.add_argument("--minimax-key", default=None,
+                        help="MiniMax 国内站 API Key（默认经 minimax_key() 读 shell env → 仓根 .env）")
     parser.add_argument("--theme-brief", default=None,
                         help="🔴 Claude 提炼的诗意主旨叙事（虚无缥缈意象一句，方法A 据此自动写词）。"
                              "不传则用 frontmatter 规则兜底（音色不如诗意提炼空灵）")
@@ -457,9 +458,14 @@ def main():
     parser.add_argument("--output", default=None, help="输出 MP3 文件路径")
     args = parser.parse_args()
 
+    # key 解析统一走 minimax_key()（CLI > shell env > 仓根 .env）。修复（复核 F1）：
+    # 原先 argparse default 只读 os.getenv，.env 里的配置被绕过、minimax_key() 成死代码。
+    args.minimax_key = minimax_key(args.minimax_key or "")
     if not args.minimax_key:
-        print("❌ 错误：未设置 MINIMAX_API_KEY（.env 或 --minimax-key）")
-        sys.exit(1)
+        print("⏭️  未配置 MINIMAX_API_KEY —— BGM 是可选彩蛋，本步跳过、发布链继续。")
+        print("    想要主题曲：cp .env.example .env 后填 MINIMAX_API_KEY（MiniMax 国内站，账户需余额），")
+        print("    或 export MINIMAX_API_KEY=... / 用 --minimax-key 传入。")
+        sys.exit(0)
 
     article_dir = Path(args.article_dir).resolve()
     if not article_dir.is_dir():

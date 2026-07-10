@@ -107,7 +107,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 > ⚠️ 仅当 `profile/context.md` 与回退 `profile.example/context.md` 均不存在时以本节为准。
 
-- **品牌名 / 账号名：** 由 profile 提供（示例见 `profile.example/context.md`）｜ **主题色（primary）：** `#2F6F8F`（中性 slate，改样式见 design-tokens.md；三套预置主题 slate/ink/sage 见 `profile/brand.yaml`）
+- **品牌名 / 账号名：** 由 profile 提供（示例见 `profile.example/context.md`）｜ **主题色（primary）：** `#2F6F8F`（中性 slate，改样式见 design-tokens.md；六套预置主题 slate/ink/sage/jade/amber/plum 见 `profile/brand.yaml`）
 - **风格路由：** 主路由为 profile 自备的作者风格手册（`profile/corpus/authors/*.compact.md`）**单选其一**；可叠加 modifier 手册 0-1 个组合（**不当主路由用**）；文体三选一（深度文/教程文/方法论清单文，细则 outline Step 3）。**完整清单与叠加机制见 style-routes.md**（modifier 由 `prep_writing.py` 自动叠进 _prep-context）。无自备手册时回退 `profile/corpus/voice-samples.md`。
 - **品牌规范 / 创作者人设：** `profile/context.md`（中性示例见 `profile.example/`）。
 

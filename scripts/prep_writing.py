@@ -592,6 +592,31 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     parts.append("---")
     parts.append("")
 
+    # 1-规. 个性化写作规则（learn_edits 飞轮产物 playbook —— 路径经 profile_config
+    # 解析：profile 配置时在 <profile>/flywheel/，未配置回退仓根空壳。复核 B-4：
+    # 之前 writing.md 让模型读固定路径 $SKILL/playbook.md，飞轮迁 profile 后固定路径
+    # 只剩空壳——改为在这里解析并注入，模型不再需要自己找文件）
+    from profile_config import playbook_file
+    pb = playbook_file()
+    pb_text = pb.read_text(encoding="utf-8").strip() if pb.exists() else ""
+    parts.append("## 一·规、个性化写作规则（learn_edits 飞轮产物）")
+    parts.append("")
+    # 判别「编译产物」vs「仓根空壳说明文」：空壳刻意演示了完整规则形态（含示例
+    # confidence），内容形状分不开——用路径判别：飞轮解析到 profile（≠仓根）才是
+    # 用户真产物。边缘：example-profile 用户直接在仓根攒规则会被标成「尚无沉淀」，
+    # 但 README 本就引导先建 profile，接受这一边缘。
+    if pb_text and pb.parent.resolve() != SKILL_DIR.resolve():
+        parts.append("> 🟢 用法：`rules` 中 confidence >= 5.0 的**硬执行**、< 5.0 软参考；")
+        parts.append("> `reference_preferences` 作 style-routes 检索的第二信号；")
+        parts.append("> `noise_filter_rules` 在加载 author compact 前过滤训练语料污染。")
+        parts.append("")
+        parts.append(pb_text)
+    else:
+        parts.append("（playbook 尚无沉淀规则——直接用上文通用规则写作，不停等。攒法见 learn-edits.md）")
+    parts.append("")
+    parts.append("---")
+    parts.append("")
+
     # 1-据. 事实数据清单（🔴 2026-07-02 C9：research fan-out 产物注入，正文数据以此为准）
     fact_lines, fact_missing = render_fact_sheet(cwd)
     parts.extend(fact_lines)

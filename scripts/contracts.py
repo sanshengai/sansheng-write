@@ -2048,17 +2048,21 @@ def verify_final_html(html_path: str) -> dict:
     raw = p.read_text(encoding='utf-8', errors='replace')
     body = re.sub(r'<!--.*?-->', '', raw, flags=re.DOTALL)  # 剥 HTML 注释
 
-    # 只查「零合法出现 + 真破渲染」8 类（flex/float/div/class/id 均合法出现，不查）
-    forbidden = [
-        (re.compile(r"<style[\s>]", re.I), "<style> 标签（样式必须内联）"),
-        (re.compile(r"<script[\s>]", re.I), "<script> 标签"),
-        (re.compile(r"position\s*:\s*(fixed|absolute|sticky)", re.I), "position fixed/absolute/sticky"),
-        (re.compile(r"display\s*:\s*grid", re.I), "display:grid"),
-        (re.compile(r"var\s*\(\s*--", re.I), "CSS 变量 var(--x)"),
-        (re.compile(r"@media", re.I), "@media"),
-        (re.compile(r"@keyframes", re.I), "@keyframes"),
-        (re.compile(r"@import", re.I), "@import"),
-    ]
+    # 只查「零合法出现 + 真破渲染」8 类（flex/float/div/class/id 均合法出现，不查）。
+    # 2026-07-10 独立重写：检查表直接从「微信编辑器会剥掉 / 不支持什么」的需求清单推导，
+    # 按 标签 / CSS 能力 / at-rule 三类组织生成，不与任何外部实现共享文本。
+    _stripped_tags = {"style": "<style> 标签（样式必须内联）", "script": "<script> 标签"}
+    _css_capabilities = {
+        r"position\s*:\s*(?:absolute|fixed|sticky)": "position fixed/absolute/sticky",
+        r"display\s*:\s*(?:inline-)?grid": "display:grid",
+        r"\bvar\s*\(\s*--": "CSS 变量 var(--x)",
+    }
+    _at_rules = ("media", "keyframes", "import")
+    forbidden = (
+        [(re.compile(rf"<\s*{tag}\b", re.I), msg) for tag, msg in _stripped_tags.items()]
+        + [(re.compile(rx, re.I), msg) for rx, msg in _css_capabilities.items()]
+        + [(re.compile(rf"@{word}\b", re.I), f"@{word}") for word in _at_rules]
+    )
     errors = []
     for rx, msg in forbidden:
         n = len(rx.findall(body))
@@ -2067,7 +2071,7 @@ def verify_final_html(html_path: str) -> dict:
 
     # P2-2：四周虚线框 border:…dashed（方向性 border-bottom-dashed 不算），非居中块 → WARN
     warnings = []
-    foursided = re.compile(r"border\s*:\s*[^;{}\"']*dashed", re.I)
+    foursided = re.compile(r"border\s*:(?:(?![;{}\"']).)*?dashed", re.I | re.S)
     for m in foursided.finditer(body):
         window = body[max(0, m.start() - 160):m.end() + 40]
         if 'center' not in window.lower():  # 居中占位块（text-align:center）豁免
@@ -2267,18 +2271,26 @@ def log_observation(stage: str, event: str, verdict: str,
         return
 
     try:
-        log_path = Path(__file__).resolve().parent.parent / '_skill-observations.jsonl'
-        if not article:
-            article = Path.cwd().name
+        # 观察日志归飞轮目录（profile 配置时在 <profile>/flywheel/，未配置回退仓根）
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from profile_config import observations_file
+        log_path = observations_file()
+        raw_article = article or Path.cwd().name
+        article = raw_article
         if os.environ.get('SANSHENG_WRITE_LOG_TITLES', '').strip() not in {'1', 'true', 'yes'}:
             article = 'a-' + hashlib.sha256(article.encode('utf-8')).hexdigest()[:10]
+        detail_text = (detail or '')
+        if article != raw_article and raw_article and raw_article in detail_text:
+            # 匿名态下 detail 里若被调用方带进了明文文章名，同样替换成哈希（复核 F6）
+            detail_text = detail_text.replace(raw_article, article)
         rec = {
             'ts': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M'),
             'article': article,
             'stage': stage,
             'event': event,
             'verdict': verdict,
-            'detail': (detail or '')[:200],
+            'detail': detail_text[:200],
         }
         with log_path.open('a', encoding='utf-8') as f:
             f.write(json.dumps(rec, ensure_ascii=False) + '\n')

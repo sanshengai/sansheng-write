@@ -195,8 +195,8 @@
 ### 模式一 · `bright-pill` 亮绿渐变胶囊（仪表盘感）
 
 - **形状**：rounded-rectangle pill（capsule，圆角 ≈ 50% 容器高度，做成药丸两端半圆）
-- **填充**：主题色微渐变 -- 顶部 `#2F6F8F` → 底部 `#0A6B50`（subtle vertical gradient，不要太强反差），或纯色 `#2F6F8F`（次选）
-- **描边**：1px 亮主题色 `#14B084` outline，80% opacity（让胶囊从深炭背景跳出来）
+- **填充**：主题色微渐变 -- 顶部 `colors.primary` → 底部 `colors.primary_deep`（subtle vertical gradient，不要太强反差），或纯色 `colors.primary`（次选）——具体 hex 以 profile 生效值为准（默认 slate：`#2F6F8F` → `#245a75`）
+- **描边**：1px 次级主题色 `colors.secondary` outline，80% opacity（让胶囊从深炭背景跳出来；默认 slate 为 `#7FB0C4`）
 - **内部文字**：emoji + 白色 `#FFFFFF` 中文，` / ` ASCII 分隔符，所有文字纯白
 - **气质**：像仪表盘 / 数据徽章 / 强参数标签 -- 胶囊本身是视觉重量
 - **适合**：篇幅短的工具速递 / 横评 / 强参数仪表盘感选题；副标签需要"夺一眼"

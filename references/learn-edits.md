@@ -53,8 +53,8 @@ python "$SKILL/scripts/learn_edits.py" diff --draft <旧文件> --final <新文�
    - 是把抽象概念具象化了？
    - 是改变了情绪的浓度？
 3. 对于每个有价值的意图，提炼为一个 Pattern。
-4. 使用 `view_file` 查看 `$SKILL/lessons.yaml` 现有的 Pattern，如果本次的意图和已有的某个 key 是一回事，**必须复用现有的 key**。
-5. 使用 `write_to_file` 或 `replace_file_content` 将新的 Pattern 追加到 `$SKILL/lessons.yaml` 的 `lessons` 列表中。
+4. 先定位飞轮文件：跑 `python $SKILL/scripts/profile_config.py` 看输出的 `flywheel` 行（配置了 profile 时在 `<profile>/flywheel/`，未配置即仓根）。查看该目录下 `lessons.yaml` 现有的 Pattern，如果本次的意图和已有的某个 key 是一回事，**必须复用现有的 key**。
+5. 将新的 Pattern 追加到上一步定位的 `lessons.yaml` 的 `lessons` 列表中。
 
 **Pattern 数据结构要求**：
 - `key`: 简短的英文标识（如 `shorter_paragraphs`, `avoid_jiangzhen`）
