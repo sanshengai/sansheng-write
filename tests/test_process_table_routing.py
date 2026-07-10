@@ -26,7 +26,7 @@ def test_three_cols_shrink_to_11px_and_fit_100pct():
     """3 列（短内容）→ 11px + width:100% + overflow:hidden（放得下不横滑）。"""
     html = _table(
         "<tr><td>2025</td><td>Claude Code</td><td>终端 Agent</td></tr>"
-        "<tr><td>2026</td><td>Cowork</td><td>团队协作</td></tr>",
+        "<tr><td>2026</td><td>协作平台</td><td>团队协作</td></tr>",
         "<th>时间</th><th>产品</th><th>形态</th>")
     out = F.process_table(html)
     assert "font-size: 11px" in out
