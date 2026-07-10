@@ -35,6 +35,27 @@ import profile_config as pc
 ARTICLES_DB_PATH = pc.data_dir() / "articles.md"
 
 
+def resolve_cover(cv: str) -> str:
+    """把 works.yaml / articles.md 里的 cover 值还原为绝对路径。
+
+    兼容三种历史形态：`<数据目录>/` 占位符（archive 现行写法）、
+    相对数据目录、相对数据目录父目录（旧库存量条目的基准）。
+    """
+    if not cv or cv.startswith(("http://", "https://")):
+        return cv
+    if cv.startswith("<数据目录>/"):
+        return str(pc.data_dir() / cv[len("<数据目录>/"):])
+    if Path(cv).is_absolute():
+        return cv
+    primary = pc.data_dir() / cv
+    if primary.exists():
+        return str(primary)
+    legacy = pc.data_dir().parent / cv
+    if legacy.exists():
+        return str(legacy)
+    return str(primary)
+
+
 def parse_articles_from_markdown():
     """从 articles.md 提取文章信息"""
     if not ARTICLES_DB_PATH.exists():
@@ -76,10 +97,8 @@ def parse_articles_from_markdown():
                 if link_match:
                     article["link"] = link_match.group(1).strip()
                     
-        # 封面相对路径 → 绝对（按数据目录），与 parse_articles_from_works 保持一致
-        cv = article["cover"]
-        if cv and not cv.startswith("http") and not re.match(r"^[A-Za-z]:", cv):
-            article["cover"] = str(pc.data_dir() / cv)
+        # 封面路径统一走 resolve_cover（占位符 / 相对 / 旧基准三兼容）
+        article["cover"] = resolve_cover(article["cover"])
 
         if article["title"] and article["link"]:
             articles.append(article)
@@ -98,12 +117,7 @@ def parse_articles_from_works():
     pub.sort(key=lambda w: w.get("date", ""), reverse=True)
     articles = []
     for w in pub:
-        cover = w.get("cover") or ""
-        # 相对路径按数据目录还原成绝对路径；已是 URL 或绝对路径则原样保留
-        if cover and not cover.startswith(("http://", "https://")) and not Path(cover).is_absolute():
-            cover_abs = str(pc.data_dir() / cover)
-        else:
-            cover_abs = cover
+        cover_abs = resolve_cover(w.get("cover") or "")
         articles.append({
             "title": w.get("title", ""),
             "date": w.get("date", ""),

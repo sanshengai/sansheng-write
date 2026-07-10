@@ -1206,6 +1206,23 @@ def process_lead(html, cwd, args):
         log(f"❌ 导读栏模板不存在: {tmpl_path}")
         return html
 
+    # 模板底栏硬引用 素材/logo-white.png；缺失时从 profile 品牌 logo 自动补齐，
+    # 否则发布后导读栏 logo 裂图（verify layout 会拦，但历史上每篇都靠手工拷贝）
+    logo_dst = cwd / "素材" / "logo-white.png"
+    if not logo_dst.exists():
+        try:
+            import profile_config as _pc
+            logo_src = _pc.profile_dir() / "brand" / "logo.png"
+            if logo_src.exists():
+                import shutil
+                logo_dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(logo_src, logo_dst)
+                log("🧩 已从 profile/brand/logo.png 补齐 素材/logo-white.png（导读栏底栏用）")
+            else:
+                log("⚠️ 素材/logo-white.png 缺失且 profile 无 brand/logo.png——导读栏底栏 logo 将裂图")
+        except Exception as e:
+            log(f"⚠️ 自动补齐 logo-white.png 失败：{e}")
+
     lead = tmpl_path.read_text(encoding="utf-8")
 
     # 从命令行参数或默认值填充变量

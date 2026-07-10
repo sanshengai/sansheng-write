@@ -152,7 +152,7 @@ python $SKILL/scripts/format_layout.py 定稿.html --all \
 - `--colors`: 进行纯粹的全局引用主题色映射 + HR 压缩 + 封面图删除
 - `--prompts`: 清除 Markdown 中遗留的 AI 生图提示词代码块（`> **AI生图提示词**：` + 代码块）
 - `--takeaway`: 将 `> **划重点**` 引用块转换为品牌卡片组件（支持匹配带 inline style 的 `<strong>`）
-- `--highlights`: 将 `<mark>重点文字</mark>` 转为**一级主题色** `#2F6F8F` 加粗，`<mark class="2">次级文字</mark>` 转为**二级主题色** `#7FB0C4` 加粗（同色相偏浅、分主次，见 [design-tokens.md §主色深浅阶](design-tokens.md)）；`***粗斜体***` 旧版兼容（走一级）。**推荐 `<mark>` 标签**（HTML passthrough，不被 markdown 转换器破坏）
+- `--highlights`: 将 `<mark>重点文字</mark>` 转为**一级主题色** `#2F6F8F` 加粗，`<mark class="2">次级文字</mark>` 转为**二级主题色** `#7FB0C4` 加粗（同色相偏浅、分主次，见 [design-tokens.md §主色深浅阶](design-tokens.md)）；`***粗斜体***` 旧版兼容仅对存量 HTML 生效——🔴 **新文章禁用 `***粗斜体***`**：baoyu 转换器会把 CJK 粗斜体吃成空 `<em>`、标记文字整个消失（2026-07-11 实证），**必须用 `<mark>` 标签**（HTML passthrough，不过转换器）
 
 > **H3 时间线视觉规范**（自动应用于所有 `###` 三级标题；圆→方）：
 > - 编号：24px **圆角方块**（`border-radius:6px`）主题色底白色序号，标题 16-17px 主题色粗体
