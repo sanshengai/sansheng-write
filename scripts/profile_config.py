@@ -154,6 +154,21 @@ def identity() -> dict:
     return brand().get("identity", {})
 
 
+def workflow_checkpoints() -> list:
+    """profile 启用的人工检查点闸门（brand.yaml `workflow.checkpoints`）。
+
+    合法值：
+      - "blueprint"：大纲 + 5 标题候选 + 开头候选一包交付后硬停，等作者拍板
+      - "draft"：定稿（磨稿 + 外审修复后）硬停，等作者审读
+    未配置 = 全自动（唯一停顿 = 开头盲选，原默认行为不变）。
+    """
+    wf = brand().get("workflow") or {}
+    cps = wf.get("checkpoints") or []
+    if isinstance(cps, str):
+        cps = [c.strip() for c in cps.split(",")]
+    return [c for c in cps if c in ("blueprint", "draft")]
+
+
 # ===== 【第 2.5 节】学习飞轮状态（playbook / lessons / observations） =====
 #
 # 飞轮文件是「越用越像你」攒出来的**个人数据**，不该写进公开仓的 git 跟踪文件里

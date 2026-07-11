@@ -14,7 +14,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `xxx.md` 一律指 `references/xxx.md`**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
-> 🔴 **默认 = 全自动一路到草稿箱、不中途问**：只要让本 skill 写文章（含普通"写一篇 / 帮我写…"，**无需**"全流程"口令），默认按 autopilot.md 跑完 **大纲→内容增强→正文→标题→排版→配图→BGM→发布草稿**，**禁止止步排版、禁止大纲后/排版后弹"1/2/3"菜单**，失败按建议自纠、**不得 skip 绕过**。仅三种停：① 硬阻塞（封面反复失败 / 凭证 invalid / 自检 Error 修不掉）；② 开头候选盲选（唯一法定创作停顿点，用户不在场取默认续跑）；③ 用户明说"每步等我确认 / 逐步来"。
+> 🔴 **默认 = 全自动一路到草稿箱、不中途问**：只要让本 skill 写文章（含普通"写一篇 / 帮我写…"，**无需**"全流程"口令），默认按 autopilot.md 跑完 **大纲→内容增强→正文→标题→排版→配图→BGM→发布草稿**，**禁止止步排版、禁止大纲后/排版后弹"1/2/3"菜单**，失败按建议自纠、**不得 skip 绕过**。仅四种停：① 硬阻塞（封面反复失败 / 凭证 invalid / 自检 Error 修不掉）；② 开头候选盲选（未配检查点时的唯一法定创作停顿点，用户不在场取默认续跑）；③ 用户明说"每步等我确认 / 逐步来"；④ **检查点闸门（profile 可配）**：`profile/brand.yaml` 配 `workflow.checkpoints: [blueprint, draft]` 后新增两道硬闸 -- **blueprint 蓝图闸** = 大纲 + 5 标题候选排序 + 开头候选**一包交付**等作者拍板（开头盲选并入此闸，不再单独停）；**draft 定稿闸** = 磨稿 + 双外审修复后的定稿交作者审读。闸上**不在场 = 等、不自动续跑**（防前期出错全链返工正是闸的目的）；作者明说「免检 / 一路到底」单次跳闸。锚点 `_blueprint-approval.md` / `_draft-approval.md`，`pipeline.py verify outline/writing` 机器硬查（细则见 autopilot.md §检查点闸门）。
 
 ## 🟢 启动前必读（元指令，先于任何阶段）
 

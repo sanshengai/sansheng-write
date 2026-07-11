@@ -259,6 +259,35 @@ def cmd_init(cwd: Path):
 
 
 # ── Verify 逻辑 ───────────────────────────────────────────────
+def _checkpoint_errors(stage: str, cwd: Path) -> list:
+    """profile 启用的人工闸门断言（brand.yaml workflow.checkpoints，
+    见 profile_config.workflow_checkpoints）。未启用返回空 = 原全自动行为。
+
+    锚点文件 = 作者拍板的可恢复证据（选定项 / 改动意见 / 时间；作者明说
+    「免检 / 一路到底」时写入免检授权同样放行），杜绝跨会话恢复静默跳闸。
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from profile_config import workflow_checkpoints
+        cps = workflow_checkpoints()
+    except Exception:
+        return []
+    gates = {
+        "outline": ("blueprint", "_blueprint-approval.md",
+                    "蓝图闸：把「大纲 + 5 标题候选排序 + 开头候选」一包交作者拍板"),
+        "writing": ("draft", "_draft-approval.md",
+                    "定稿闸：磨稿 + 外审修复后的 定稿.md 交作者审读"),
+    }
+    gate = gates.get(stage)
+    if not gate:
+        return []
+    name, anchor, desc = gate
+    if name in cps and not (cwd / anchor).exists():
+        return [f"checkpoint:{name} 未过 -- {desc}，作者回复后把结论落 {anchor} 再继续"
+                f"（作者明说免检时写入『作者免检授权』放行）"]
+    return []
+
+
 def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tuple:
     """返回 (passed: bool, errors: list[str])。
     legacy=True 时跳过 2026-04 之后新增的严格断言（供旧文章迁移使用）。
@@ -271,6 +300,8 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
             errors.append("大纲.md 不存在")
         elif len(f.read_text(encoding="utf-8")) < 200:
             errors.append("大纲.md 内容过短（< 200 字）")
+        if not legacy:
+            errors.extend(_checkpoint_errors("outline", cwd))
 
     elif stage == "writing":
         f = cwd / "定稿.md"
@@ -283,6 +314,8 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
             errors.append(
                 "title_final 未写入 state，请：pipeline.py done writing title_final='文章标题'"
             )
+        if not legacy:
+            errors.extend(_checkpoint_errors("writing", cwd))
 
         # ⚠️ 非阻断 WARNING（2026-06-20 审查 B-2）：开头盲选锚点 _opening-choice.md 是
         # autopilot 唯一法定停顿点，但它不在 STAGE_ORDER 记账、无 verify 硬门。跨会话恢复时

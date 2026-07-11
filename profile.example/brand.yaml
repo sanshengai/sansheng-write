@@ -76,3 +76,11 @@ writing:
   # 写你自己的官网 + 一句价值 CTA，把读者引去自有阵地；留空则朋友圈文案不带固定尾巴。
   # 官网地址在上面 identity.site；这里写「把读者引过去」的那句话。
   moments_cta: ""
+
+# 人工检查点闸门（可选）：想在关键节点停下来人工确认、防前期出错导致全链返工，就打开这里。
+#   blueprint = 大纲 + 5 标题候选排序 + 开头候选一包交付后硬停等拍板（开头盲选并入此闸）
+#   draft     = 定稿（磨稿 + 双外审修复后）硬停等审读；之后配图→BGM→排版→草稿箱仍全自动
+# 未配置 = 全自动（唯一停顿 = 开头盲选）。启用后 pipeline.py verify outline/writing 会硬查
+# _blueprint-approval.md / _draft-approval.md 锚点（作者拍板记录，防跨会话静默跳闸）。
+# workflow:
+#   checkpoints: [blueprint, draft]
