@@ -149,6 +149,15 @@ git clone https://github.com/sandypoli-boop/sansheng-write.git
 ln -s "$(pwd)/sansheng-write" ~/.claude/skills/sansheng-write
 ```
 
+## Updating
+
+How you update depends on how you installed:
+
+- **Via the plugin marketplace**: `claude plugin marketplace update`, then `claude plugin update sansheng-write`
+- **Via clone + symlink**: `git pull` in the repo -- the symlink picks it up immediately, no reinstall
+
+To hear about new versions: watch the repo's [Releases](../../releases), or click **Watch -> Custom -> Releases** and GitHub will notify you. See the [CHANGELOG](CHANGELOG.md) for what changed in each version.
+
 ## Quick start
 
 ```bash
