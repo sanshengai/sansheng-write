@@ -10,6 +10,10 @@
   |--------------------|------------------------------------|--------------------|
   | {{TAKEAWAY_TITLE}} | 标题文字（如"划重点"、"核心结论"等）   | ≤6 汉字            |
   | {{TAKEAWAY_ITEMS}} | 要点列表（每条用 <section> 包裹）     | 2-4 条，每条 ≤30 字 |
+
+  🔴 要点里不要放完整 URL（`https://` 或 `域名/路径`）：URL 属于 link-card / deep-read 模板，
+     裸放在要点里微信会两端对齐、把中文撑成大字间距（分散对齐）。内容单元格已带
+     text-align:left + word-break:break-all 兜底，但正确做法仍是把链接挪进 link-card。
 -->
 
 <!-- 要点提炼卡片 -->
@@ -23,6 +27,6 @@
 
   <section style="display:table; width:100%; font-size: 15px; color: #333333; line-height: 1.75; margin-bottom: 8px;">
     <span style="display:table-cell; width:1em; vertical-align:top; color: #2F6F8F; font-weight: bold;">·</span>
-    <span style="display:table-cell; vertical-align:top;">要点内容</span>
+    <span style="display:table-cell; vertical-align:top; text-align:left; word-break:break-all;">要点内容</span>
   </section>
 -->

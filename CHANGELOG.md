@@ -4,8 +4,30 @@
 
 ## [未发布]
 
+## [0.3.0] -- 2026-07-11
+
+### 新增
+
+- **裸 URL 发布硬门（`verify_no_bare_url`）**：正文里的完整 URL（≥18 字符、带 `/路径`）
+  必须装进 `link-card.html`（单条）/ `deep-read-section.html`（文末·多条）的
+  `word-break:break-all` 浅框；裸放在正文段落 / 划重点 / **文末手敲网址段** → `pipeline.py
+  verify layout` 阶段 **硬 fail**。根因：微信对含长 URL 的行做两端对齐，把中文撑成大字间距
+  （分散对齐），且被拉散的 URL 读者长按选不中、无法复制。规则原只在 `layout-reference.md`
+  被绕过（手敲文末引流段），故升格为硬门（`scripts/contracts.py` + `tests/test_no_bare_url.py` 12 例）。
+- **「阅读原文」默认值走 profile（`publish.source_url_*`）**：`profile/brand.yaml` 新增
+  `publish.source_url_default`（默认官网）/ `source_url_treasure`（自研 skill / 工具类文的宝藏页）；
+  发布时按「article-meta `source_url` → 文章类型 → 默认」解析出 URL，显式带 `baoyu-post-to-wechat
+  --source-url`（映射微信 `content_source_url`）。`publish.md` 记明流程；`profile.example` 带中性占位。
+  ⚠️ 微信 `draft/add` API 无任何赞赏字段，「赞赏」只能后台手动开，无法在此固化（`publish.md` 已注明）。
+
 ### 修复
 
+- **划重点要点行分散对齐**：`process_takeaway()` 生成的要点内容单元格补
+  `text-align:left; word-break:break-all;`，防要点里混入 URL / 长英文时被微信两端对齐撑成
+  大字间距（截图实证）；`key-takeaway.html` 模板同步 + 注明「完整 URL 应走 link-card」。
+- **文末 / 正文 URL 排版规范固化**：`layout-reference.md` 补硬规则--正文任何完整 URL 一律走
+  模板、入口名作品牌绿小标题、URL 左对齐浅框长按复制（「单击复制」在微信正文做不到，已注明
+  平台约束 + 可用「阅读原文」承载可点击主入口）；`layout.md` 步骤4 自动检查项 + 巡航清单各加一项。
 - **导读栏 logo 自动补齐路径崩溃**：`format_layout.py process_lead` 里 `cwd`/`profile_dir()`
   为 `str` 时 `cwd / "素材"` 抛 `TypeError`，导致 `--all` 排版在导读栏阶段整体失败；
   改为 `Path(cwd)` / `Path(profile_dir())` 兜底（实战复现并修复）

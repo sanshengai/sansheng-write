@@ -740,6 +740,7 @@ python $SKILL/scripts/format_layout.py 定稿.html --check
 - **图片 data-local-path** 属性检查
 - **导读栏文案**：检测是否仍使用默认占位文字
 - **封面图标签**：是否残留在正文中
+- **裸 URL 门**（`pipeline.py verify layout` 阶段 `verify_no_bare_url`）：正文里完整 URL（≥18 字符、带 `/路径`）必须装进 link-card / deep-read 模板的 `word-break` 浅框；裸放在正文段落 / 划重点 / 文末手敲段 → **硬 fail**（根因：微信对含长 URL 的行两端对齐 → 分散对齐 + 难复制。修法：挪进 `link-card.html`（单条）或 `deep-read-section.html`（文末/多条））
 
 > 建议在 `--all` 后直接追加 `--check`：`python format_layout.py 定稿.html --all --check`
 
@@ -752,6 +753,7 @@ python $SKILL/scripts/format_layout.py 定稿.html --check
 - [x] 所有 AI 生图已确定执行过 `add_logo.js` 盖章？
 - [x] 导读栏的 Hero 图是否按照 1:1 单独生成并正确嵌入？不准偷懒套用宽版封面。
 - [x] 所有图片有 `border-radius:6-8px` 和 `display:block`（这应由清洗脚本保证，你负责最后过眼）。
+- [x] 文末引流地址 + 正文里任何完整 URL 全部走 `link-card` / `deep-read-section` 模板（**无裸 URL 段落 / 无手敲文末网址**）？入口名（GitHub / 国内直达 / 在线解析）是品牌绿小标题、不是跟正文一样字号手动加粗？（裸 URL 会被 `verify_no_bare_url` 硬门拦下，别等报错才改）
 
 ### 4e. 结尾组件：推荐阅读 + 关注卡片
 

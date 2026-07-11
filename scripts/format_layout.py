@@ -1654,11 +1654,14 @@ def process_takeaway(html):
 
         # 悬挂缩进：与 process_lists() 同一套 display:table 两列约定（marker 列独占、
         # 内容列 vertical-align:top），第 2/3 行不再顶格。
+        # text-align:left + word-break:break-all：防微信对含长 token（URL / 长英文）的要点行
+        # 做两端对齐、把中文撑成大字间距（截图实证的「分散对齐」）。完整 URL 本应走 link-card，
+        # 但这里兜底保证即便混进 URL 也不炸版。
         items_html = '\n'.join(
             f'  <section style="display:table; width:100%; font-size: 15px; color: {TEXT_BODY}; '
             f'line-height: 1.75; margin-bottom: 8px;">'
             f'<span style="display:table-cell; width:1em; vertical-align:top; color: {BRAND_PRIMARY}; font-weight: bold;">·</span>'
-            f'<span style="display:table-cell; vertical-align:top;">{_clean_item(item)}</span></section>'
+            f'<span style="display:table-cell; vertical-align:top; text-align:left; word-break:break-all;">{_clean_item(item)}</span></section>'
             for item in items
         )
 

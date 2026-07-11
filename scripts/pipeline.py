@@ -653,6 +653,24 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                 except Exception as e:
                     errors.append(f"verify_final_html 异常：{e}")
 
+                # 🔴 2026-07-11 裸 URL 门：正文里完整 URL 必须走 link-card / deep-read 模板
+                # （word-break 浅框），裸放在正文段落 / 划重点 / 文末手敲段 → 微信分散对齐、
+                # 读者无法复制。规则原只在 layout-reference.md，被绕过后升格为发布硬门。
+                try:
+                    from contracts import verify_no_bare_url
+                    vb = verify_no_bare_url(str(html_file))
+                    for e in vb.get("errors", []):
+                        errors.append(f"verify_no_bare_url: {e} → 挪进 link-card.html（单条）或 deep-read-section.html（文末/多条）")
+                    try:
+                        from contracts import log_observation as _logobs3
+                        _logobs3('verify_layout', 'verify_no_bare_url',
+                                 str(vb.get('verdict', '')),
+                                 f"hits={vb.get('hits', 0)}", cwd.name)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    errors.append(f"verify_no_bare_url 异常：{e}")
+
     elif stage == "logo":
         # add_logo.js 原地覆盖图片，无法通过文件元数据判断；
         # 只验证 AI 生图文件存在（确保 add_logo.js 有东西可处理）

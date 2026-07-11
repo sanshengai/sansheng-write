@@ -77,6 +77,17 @@ writing:
   # 官网地址在上面 identity.site；这里写「把读者引过去」的那句话。
   moments_cta: ""
 
+# ============================================================================
+#  发布默认（可选）
+#  「阅读原文」= 微信 draft/add 的 content_source_url（点「阅读原文」后跳转的 URL）。
+#  发布时 references/publish.md 据此解析 baoyu-post-to-wechat 的 --source-url。
+#  单篇要覆盖：在该文 article-meta.yaml 写 source_url: <url|treasure|default>。
+#  两个都留空则不设「阅读原文」（保持微信默认）。
+# ============================================================================
+publish:
+  source_url_default: "https://example.com"     # 「阅读原文」默认指向（一般填你官网首页）
+  source_url_treasure: ""                        # 工具 / 仓库 / 资源类文章的专属去向（可留空）
+
 # 人工检查点闸门（可选）：想在关键节点停下来人工确认、防前期出错导致全链返工，就打开这里。
 #   blueprint = 大纲 + 5 标题候选排序 + 开头候选一包交付后硬停等拍板（开头盲选并入此闸）
 #   draft     = 定稿（磨稿 + 双外审修复后）硬停等审读；之后配图→BGM→排版→草稿箱仍全自动

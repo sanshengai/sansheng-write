@@ -2086,6 +2086,77 @@ def verify_final_html(html_path: str) -> dict:
     }
 
 
+# ===== 【第 14.5 节】裸 URL 门 =====
+# ============================================================================
+# verify_no_bare_url（2026-07-11 · sandy 报排版翻车后固化）
+# 根因：微信对「含一个放不下的长 token（URL）」的行做两端对齐，把该行前面的中文
+#   撑成大字间距（截图实证的「分散对齐」）；被拉散的 URL 读者还长按选不中、无法复制。
+#   模板（link-card.html / deep-read-section.html）用 word-break:break-all + 左对齐浅框
+#   同时压住这两件事。规则「文末引流禁手敲、URL 走模板」此前只写在 layout-reference.md，
+#   被写作 agent 绕过（手敲文末网址段）→ 升格为发布硬门，从「自觉」变「不做走不下去」。
+# 判定：正文可见文本里出现完整 URL，且其所在块附近（前 ~200 字符）无 word-break → 裸 URL。
+#   模板产出的 URL 一定带 word-break（跳过）；HTML 标签属性里的 URL（src/href/...）不算。
+# ============================================================================
+
+def verify_no_bare_url(html_path: str) -> dict:
+    """裸 URL 门：断言正文没有「未装进 link-card/deep-read 模板」的完整 URL。
+
+    :param html_path: 定稿.html 路径
+    :return: {'verdict':'ok'|'fail'|'no_article', 'errors':[...], 'warnings':[...], 'hits':int}
+    """
+    import re
+    from pathlib import Path
+
+    p = Path(html_path)
+    if not p.exists():
+        return {'verdict': 'no_article', 'errors': [f'{html_path} 不存在'],
+                'warnings': [], 'hits': 0}
+
+    body = re.sub(r'<!--.*?-->', '',
+                  p.read_text(encoding='utf-8', errors='replace'), flags=re.DOTALL)
+
+    # 完整 URL：http(s):// 全写，或「域名.tld/路径」形态。
+    # 要求带 `/路径` → 排除纯域名提及（如「官网 example.com」，短、不分散）、
+    # 版本号（v0.1.0）、文件名（cover.png）、小数。停止符含半/全角括号与中文标点，
+    # 避免把 URL 后面的括注（如「(2026-06-30)」「（宝藏页）」）吞进来。
+    _stop = r'[^\s<>"\'()（）【】，。、；]'
+    url_re = re.compile(
+        rf'https?://{_stop}{{6,}}'
+        rf'|(?<![\w./@-])[\w-]+(?:\.[\w-]+)*'
+        rf'\.(?:com|cn|net|org|top|io|dev|app|ai|co|xyz|me)/{_stop}+',
+        re.IGNORECASE,
+    )
+    # 长度阈值：分散对齐 / 难复制都随 URL 长度放大；<18 字符的短行内引用（如
+    # 「claude.com/blog」）风险低，放行以免误伤正文引用。引流 URL（如 example.com/tools/xxx
+    # 一般 ≥25 字符）全在拦截范围。
+    _MIN_LEN = 18
+    errors, seen = [], set()
+    for m in url_re.finditer(body):
+        if len(m.group(0)) < _MIN_LEN:
+            continue
+        # 在 HTML 标签内（属性值，如 src= / href= / data-local-path=）→ 不算正文可见文本
+        if body.rfind('<', 0, m.start()) > body.rfind('>', 0, m.start()):
+            continue
+        # 可见文本里的 URL：所在块附近有 word-break 即模板产出（安全）；无则裸放（翻车）
+        if 'word-break' in body[max(0, m.start() - 200):m.start()]:
+            continue
+        snippet = m.group(0)[:56]
+        if snippet in seen:
+            continue
+        seen.add(snippet)
+        errors.append(
+            f"裸 URL「{snippet}」未走 link-card/deep-read 模板"
+            f"（无 word-break，微信会分散对齐、读者难复制）"
+        )
+
+    return {
+        'verdict': 'fail' if errors else 'ok',
+        'errors': errors[:8],
+        'warnings': [],
+        'hits': len(errors),
+    }
+
+
 # ===== 【第 15 节】H2 副标题对齐门 =====
 # ============================================================================
 # verify_h2_subtitle_align（2026-05-22 旁观者复核新增）
