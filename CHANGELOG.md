@@ -8,7 +8,8 @@
 
 - **人工检查点闸门（`workflow.checkpoints`）**：profile 的 `brand.yaml` 可配
   `workflow: { checkpoints: [blueprint, draft] }` --
-  **blueprint 蓝图闸**（大纲 + 5 标题候选排序 + 开头候选一包交付，硬停等作者拍板，开头盲选并入此闸）；
+  **blueprint 蓝图闸**（大纲 + **5 套「外标题 + 封面文案」配套视觉方案**（每套 = 标题候选 + 配套封面 L1/L2 文案，
+  成套呈现成套选定、不拆分交付）+ 开头候选一包交付，硬停等作者拍板，开头盲选并入此闸）；
   **draft 定稿闸**（磨稿 + 双外审修复后硬停等审读，过闸后配图→BGM→排版→草稿箱照旧零停顿）。
   `pipeline.py verify outline/writing` 硬查 `_blueprint-approval.md` / `_draft-approval.md` 锚点，
   闸上不在场 = 等（不自动续跑）；作者明说「免检」单次跳闸。**未配置 = 原全自动行为不变**。
