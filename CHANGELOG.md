@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.2.0] -- 2026-07-11
+
 ### 新增
 
 - **人工检查点闸门（`workflow.checkpoints`）**：profile 的 `brand.yaml` 可配
