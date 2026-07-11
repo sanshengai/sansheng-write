@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+### 修复
+
+- **导读栏 logo 自动补齐路径崩溃**：`format_layout.py process_lead` 里 `cwd`/`profile_dir()`
+  为 `str` 时 `cwd / "素材"` 抛 `TypeError`，导致 `--all` 排版在导读栏阶段整体失败；
+  改为 `Path(cwd)` / `Path(profile_dir())` 兜底（实战复现并修复）
+
 ## [0.2.0] -- 2026-07-11
 
 ### 新增

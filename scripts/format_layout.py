@@ -1208,11 +1208,11 @@ def process_lead(html, cwd, args):
 
     # 模板底栏硬引用 素材/logo-white.png；缺失时从 profile 品牌 logo 自动补齐，
     # 否则发布后导读栏 logo 裂图（verify layout 会拦，但历史上每篇都靠手工拷贝）
-    logo_dst = cwd / "素材" / "logo-white.png"
+    logo_dst = Path(cwd) / "素材" / "logo-white.png"
     if not logo_dst.exists():
         try:
             import profile_config as _pc
-            logo_src = _pc.profile_dir() / "brand" / "logo.png"
+            logo_src = Path(_pc.profile_dir()) / "brand" / "logo.png"
             if logo_src.exists():
                 import shutil
                 logo_dst.parent.mkdir(parents=True, exist_ok=True)
