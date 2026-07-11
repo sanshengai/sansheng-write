@@ -2,6 +2,26 @@
 
 本项目的变更记录。版本号遵循 [semver](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- **人工检查点闸门（`workflow.checkpoints`）**：profile 的 `brand.yaml` 可配
+  `workflow: { checkpoints: [blueprint, draft] }` --
+  **blueprint 蓝图闸**（大纲 + 5 标题候选排序 + 开头候选一包交付，硬停等作者拍板，开头盲选并入此闸）；
+  **draft 定稿闸**（磨稿 + 双外审修复后硬停等审读，过闸后配图→BGM→排版→草稿箱照旧零停顿）。
+  `pipeline.py verify outline/writing` 硬查 `_blueprint-approval.md` / `_draft-approval.md` 锚点，
+  闸上不在场 = 等（不自动续跑）；作者明说「免检」单次跳闸。**未配置 = 原全自动行为不变**。
+
+### 修复
+
+- **推荐阅读卡 cover 路径三兼容解析**（`<数据目录>/` 占位符 / 相对数据目录 / 旧库父目录基准）--
+  修复历史作品库条目被判「无封面」导致文末推荐位 + 关注卡整体静默跳过
+- **导读栏 logo 自动补齐**：`素材/logo-white.png` 缺失时排版自动从 `profile/brand/logo.png` 拷贝
+  （lead 模板硬引用该文件，此前每篇导读栏 logo 均裂图）
+- **`***粗斜体***` 降级为禁用**：md 转换器会把 CJK 粗斜体吃成空 `<em>`、标记文字整个消失（实战实证），
+  重点标绿一律用 `<mark>` 标签（writing.md / layout.md 已同步）
+
 ## [0.1.2] -- 2026-07-11
 
 发布后的第一轮全面复核（5 维度审计 + 逐条对抗校验，39 项发现全部修复/处置）。
