@@ -1202,6 +1202,9 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
     print(f"   🌐 下一步·同步个人网站：bash 个人网站/web/scripts/publish-to-website.sh {saved.get('code') or '<CODE>'}")
     print(f"      （archive 只把文章标 published＝网站收录前提；真正「上网站＋推这篇配图」要跑上面这步。"
           f"每日 vps-sync cron 会 import+build 但部署 --exclude=article-assets 不传文章图，故新文章首发必须手动跑，否则网站封面图是破的）")
+    print(f"   💬 最后一拍·朋友圈文案：上网站之后产出一条朋友圈文案给作者复制（只一版、每句句首带 emoji、"
+          f"3-4 行=钩子→价值→profile 引流尾巴；不自动发、朋友圈无 API）。规格见 references/publish.md §发布后·朋友圈文案。"
+          f"⚠ 这是发布链最后一拍、也是最易漏的一拍——机器不产出它、只提醒，产出后一并交付作者。")
     if errors:
         print("⚠️ 作品库校验有问题（请修 works.yaml）：")
         for e in errors:
