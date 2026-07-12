@@ -63,10 +63,9 @@
 
 微信 `draft/add` API 的 `content_source_url` 就是读者点「阅读原文」后跳转的地址（`baoyu-post-to-wechat` 的 `--source-url` 直通此字段）。发布时按下面顺序解析出一个 URL，**显式带 `--source-url`**：
 
-1. 该文 `article-meta.yaml` 若有 `source_url` 字段 → 用它（值可以是完整 URL，或关键字 `treasure` / `default`）；
-2. 否则看文章类型：**write / moa 等自研 skill、工具、GitHub 仓库类**文章 → 取 `profile` 的 `publish.source_url_treasure`（宝藏页）；
-3. 其余所有文章 → 取 `profile` 的 `publish.source_url_default`（官网首页，**默认**）；
-4. profile 对应值为空 → 不带 `--source-url`（保持微信默认，不报错）。
+1. 该文 `article-meta.yaml` 若有 `source_url` 字段 → 用它（值可以是完整 URL，或关键字 `treasure` / `default`）；**工具 / 自研 skill / GitHub 仓库类**文章要把「阅读原文」指向宝藏页，就在这里显式写 `source_url: treasure`；
+2. 否则一律取 `profile` 的 `publish.source_url_default`（官网首页，**默认**）——**文章内没特别说明就用官网首页，不再按文章类型自动走宝藏页**；
+3. profile 对应值为空 → 不带 `--source-url`（保持微信默认，不报错）。
 
 > 🔴 **赞赏（喜欢作者）无法在此固化**：微信 `draft/add` API **没有任何赞赏字段**，赞赏必须在公众号后台走「声明原创 → 选赞赏账户 → 勾选赞赏」的人工动作，API / 发布脚本都碰不到。发布档只负责把草稿推到草稿箱，赞赏由作者到后台手动开（账户微信编辑器会记住上次绑定的，无需每次重填）。
 
@@ -101,7 +100,7 @@
 
 ```bash
 # 发的是已排版的 定稿.html（无 frontmatter）→ 必须显式 --cover，否则封面取不到
-# --source-url 按上节「阅读原文默认值」解析出的 URL 显式带上（默认官网 / 自研 skill 类走宝藏页）
+# --source-url 按上节「阅读原文默认值」解析出的 URL 显式带上（默认官网；要走宝藏页在该文 article-meta.yaml 显式写 source_url: treasure）
 baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上节解析出的 URL：默认走 profile.publish.source_url_default>"
 ```
 
