@@ -1130,8 +1130,9 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
         print("   请先在 article-meta.yaml 填 category，再重跑 pipeline.py archive")
         return False
 
-    # 对外分类（读者可见：公众号标题前缀 + 网站/RSS）。留空时按 category 给默认；
-    # TUT→教程 / ESS·KID→随笔 / ROB→资讯 自动补，AIT/OBS 语义跨多类必须人工填（倒逼「发布前先定类」）。
+    # 对外分类（读者可见：外标题「标签 | 」前缀 + 网站/RSS）。正常在标题阶段（title.md 第一步）
+    # 定好并回填 meta，此处直接复用；仅历史文章 / 漏填时才按 category 兜底：
+    # TUT→教程 / ESS·KID→随笔 / ROB→资讯 自动补，AIT/OBS 语义跨多类必须人工填。
     outward = override.get("outward_category") or meta.get("outward_category", "")
     if not outward:
         sug, need_review = suggest_outward(category)

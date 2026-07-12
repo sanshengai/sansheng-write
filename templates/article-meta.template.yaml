@@ -21,13 +21,14 @@ genre: ""                    # 文体：深度文 / 教程文
 # 作品库归档（archive 阶段写入 works.yaml）
 category: ""                 # 分类码 6 选 1：AIT(实测) / TUT(教程) / OBS(观察) / ROB(硬件) / KID(育儿) / ESS(随笔)
                              # archive 时据此自动分配 code（如 AIT-08，分类内独立计数、发布即冻结）
-outward_category: ""         # 🆕 对外分类（读者可见：进公众号标题前缀 + 网站/RSS）6 选 1：
+outward_category: ""         # 🆕 对外分类（读者可见）6 选 1。🔴 标题阶段（title.md 第一步）就定，
+                             #   直接作外标题的「标签 | 」前缀 + 网站/RSS；此处回填后 archive 复用、不再二次判类：
                              #   tutorial(教程) / news(资讯) / picks(精选) / insight(洞察) / essay(随笔) / industry(行业)
                              # 裁决链（自上而下首个命中即定，保唯一归类）：
                              #   教程(手把手教单个工具/方法) > 精选(多个横向合集/清单/榜单)
                              #   > 行业(主体是地产/工程行业本身) > 资讯(刚发布/新品/大事件)
                              #   > 洞察(对 AI/行业的趋势判断·观点) > 随笔(个人成长/生活·兜底)
-                             # 留空时 archive 按 category 给默认（TUT→教程 / ESS·KID→随笔 / ROB→资讯 自动；AIT/OBS 必须手填）
+                             # 漏填兜底：archive 按 category 给默认（TUT→教程 / ESS·KID→随笔 / ROB→资讯 自动；AIT/OBS 必须手填）
 tags: []                     # 多标签（兜跨界/副维度），取自 works_registry.TAG_VOCAB 受控词表
 digest: ""                   # 一句话摘要（进 作品库 / articles.md / 导读栏卡片）
 series: ""                   # 连载标记（如「小龙虾」），可空

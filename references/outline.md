@@ -394,7 +394,9 @@
 
 所有标题真实、诚恳、不夸大、不标题党。
 
-> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 安·兰德权重排序 + 标注推荐**，且**每个候选配一套封面文案**（[cover-styles.md 封面文案四招](cover-styles.md)：L1 主视觉大字 + L2 副行，所选风格含英文 ghost 层的一并给 3 词），组成 **5 套「外标题 + 封面文案」配套视觉方案** -- 标题与封面按四招分工互不复述，**成套呈现、成套选定，禁止拆成两次确认**。配套方案与大纲、开头候选（[writing.md §开头候选盲选](writing.md) 同构格式）**一包交付**给作者拍板；作者确认后把结论（含选定方案的封面文案，供封面阶段直用）落 `_blueprint-approval.md`（`pipeline.py verify outline` 硬查），再进正文。细则见 [autopilot.md §检查点闸门](autopilot.md)。
+🔴 **每个标题候选带 2 字分类标签前缀**（`标签 | 正文标题`，如「精选 | …」）：出候选前先按裁决链 6 选 1 定 `outward_category` 并回填 `article-meta.yaml`，5 个候选统一带同一前缀盲选 -- 完整方法见 [title.md 第一步：定分类标签前缀](title.md)。
+
+> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选（含 title.md 第一步的分类标签前缀）+ 安·兰德权重排序 + 标注推荐**，且**每个候选配一套封面文案**（[cover-styles.md 封面文案四招](cover-styles.md)：L1 主视觉大字 + L2 副行，所选风格含英文 ghost 层的一并给 3 词），组成 **5 套「外标题 + 封面文案」配套视觉方案** -- 标题与封面按四招分工互不复述，**成套呈现、成套选定，禁止拆成两次确认**。配套方案与大纲、开头候选（[writing.md §开头候选盲选](writing.md) 同构格式）**一包交付**给作者拍板；作者确认后把结论（含选定方案的封面文案，供封面阶段直用）落 `_blueprint-approval.md`（`pipeline.py verify outline` 硬查），再进正文。细则见 [autopilot.md §检查点闸门](autopilot.md)。
 
 #### 信息图结构稿
 
