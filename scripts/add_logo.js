@@ -49,12 +49,14 @@ const DEFAULT_LOGO_DIR = _profileDir
 // 给它再叠一层水印会 logo 套 logo（用 "素材/*.png" 通配批量加水印时会误伤名片 logo）
 const SKIP_FILES = ['hero.png', 'hero.jpg', 'bgm_cover.png', 'bgm_cover.jpg', 'music_cover.png', 'music_cover.jpg', 'logo-white.png', 'logo-black.png'];
 // ③ news-* 前缀 = 人物/事件新闻真实照片（非本号产物），打品牌水印等于冒认版权
-const SKIP_PREFIXES = ['news-'];
+// ④ vendor-* 前缀 = 第三方厂商官方素材（产品界面截图 / 官方配图，如 Claude Code、Codex 的官方运行界面图）
+//    同理：非本号产物，打自家水印等于冒认版权。评测 / 对比类文章引用官方截图时统一用此前缀命名
+const SKIP_PREFIXES = ['news-', 'vendor-'];
 
 async function addLogo(imagePath, logoDir) {
   const fname = path.basename(imagePath).toLowerCase();
   if (SKIP_FILES.includes(fname) || SKIP_PREFIXES.some(p => fname.startsWith(p))) {
-    console.log(`  ⏭  跳过 ${path.basename(imagePath)}（组件小图/新闻照，不打水印）`);
+    console.log(`  ⏭  跳过 ${path.basename(imagePath)}（组件小图 / 新闻照 / 厂商官方素材，不打水印）`);
     return;
   }
   try {

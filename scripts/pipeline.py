@@ -162,12 +162,18 @@ STATUS_ICON = {
 }
 
 # ── 生图路由白名单 ─────────────────────────────────────────────
-# 在本 skill 流水线内，封面图/信息图/数据图三类必须走 baoyu-* skill，
+# 在本 skill 流水线内，封面图/信息图/数据图三类必须走受控入口，
 # 禁用通用 generate_image 工具（它只会输出 1:1 方图，AR 无法控制）。
+#
+# 🔴 2026-07-16 修正：加入 `gen_img`（scripts/gen_img.py）。
+# 根因 = 文档与代码脱节：image-routing.md 路由表与 `pipeline.py status` 的提示早已把
+# 封面/信息图的实际执行入口迁到 `gen_img.py`（"baoyu-cover-image 为概念名，旧 baoyu quick
+# 封面路径早已 404 废弃"），但本白名单仍停在 baoyu-* 时代，导致按文档正确执行反而被
+# 判"不在白名单"。旧 baoyu-* 名保留作历史文章向后兼容。
 IMAGE_TOOL_WHITELIST = {
-    "cover":       {"baoyu-cover-image"},
-    "infographic": {"baoyu-infographic", "baoyu-diagram"},  # 3e 信息图 + 3g 精确图
-    "illustrator": {"baoyu-article-illustrator", "baoyu-image-gen"},  # baoyu-skills v2.0 起 baoyu-imagine 改名回 baoyu-image-gen
+    "cover":       {"gen_img", "baoyu-cover-image"},
+    "infographic": {"gen_img", "baoyu-infographic", "baoyu-diagram"},  # 3e 信息图 + 3g 精确图
+    "illustrator": {"gen_img", "baoyu-article-illustrator", "baoyu-image-gen"},  # baoyu-skills v2.0 起 baoyu-imagine 改名回 baoyu-image-gen
     "chart":       {"matplotlib", "pyecharts", "plot_local"},  # 数据图必须本地脚本渲染
 }
 IMAGE_TOOL_BLACKLIST = {"generate_image", "internal_image_gen", "imagine"}
