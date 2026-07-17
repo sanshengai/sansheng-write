@@ -38,6 +38,7 @@ OUTWARD_CATEGORIES = {
     "tutorial": "教程",
     "news": "资讯",
     "picks": "精选",
+    "share": "分享",
     "insight": "洞察",
     "essay": "随笔",
     "industry": "行业",
