@@ -4,6 +4,22 @@
 
 ## [未发布]
 
+## [0.4.1] -- 2026-07-17
+
+### 修复
+
+- **生图白名单与文档脱节**：`scripts/pipeline.py` 的 `IMAGE_TOOL_WHITELIST` 仍停在 baoyu-* 时代，
+  而 `image-routing.md` 路由表与 `pipeline.py status` 提示早已把封面/信息图的实际执行入口迁到
+  `gen_img.py`；按本 skill 自己的文档正确执行反被判「不在白名单」，现补入 `gen_img`（旧 baoyu-*
+  名保留作历史文章向后兼容）。
+
+### 新增
+
+- **厂商官方产品截图通道**：`image-routing.md` 新增「第零分支之二」完整 SOP——评测/对比类文章展示
+  软件真实界面时，AI 生图画不出真实 UI（一眼假、且等于伪造产品外观），改走抓官方素材（GitHub
+  仓库 raw > 官方页 img/og:image > 无头截图），`vendor-` 前缀落盘协议（`add_logo.js` 同 `news-`
+  一样跳过水印，非本号产物不冒认版权）。
+
 ## [0.4.0] -- 2026-07-13
 
 ### 新增
