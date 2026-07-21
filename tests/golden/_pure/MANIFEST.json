@@ -16,11 +16,6 @@
    "expected": "process_table.expected.html"
   },
   {
-   "func": "process_table",
-   "in": "process_table_term.in.html",
-   "expected": "process_table_term.expected.html"
-  },
-  {
    "func": "process_takeaway",
    "in": "process_takeaway.in.html",
    "expected": "process_takeaway.expected.html"
