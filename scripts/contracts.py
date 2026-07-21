@@ -1458,6 +1458,13 @@ def verify_publish_assets(article_dir: str) -> dict:
     passed += 1
     text = md.read_text(encoding='utf-8')
 
+    # 2.5) 编辑锚点提醒（2026-07-21 实战固化）：✏️ 编辑建议锚点是设计内的待填位，
+    # 但发布前必须填实或删除；两轮冷读都会把它当"残留"报。只提醒、不阻断。
+    # （警告文案刻意不含 emoji：GBK 控制台打印非 GBK 字符会 UnicodeEncodeError）
+    _anchor_n = text.count('✏️ 编辑建议')
+    if _anchor_n:
+        warnings.append(f'定稿.md 含 {_anchor_n} 处编辑建议锚点——发布前请填写或删除')
+
     # 状态感知用的软读 .state.json：找不到/损坏一律退回 {}（不裸崩、不 sys.exit，
     # 与 pipeline.load_state 的硬退出语义刻意分开——本素材门要能在无 state 的散文目录
     # 上跑）。下面 check#4(BGM 硬门) / 信息图前移门 据此决定「软兜底」还是「硬校验」。

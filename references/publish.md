@@ -112,6 +112,8 @@ baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上�
 | API 方式（发 .html）| **必须显式 `--cover 素材/cover.png`**（html 无 frontmatter，本次实战路径） |
 | 浏览器方式 | **不支持**自动设置封面，必须在微信后台手动上传 |
 
+🔴 **改稿重推 = 新增草稿，不覆盖旧草稿（2026-07-21 实战固化）**：wechat-api 每次推送都在草稿箱新建一条，不会替换同标题旧稿。改稿重推后**必须去微信后台删掉旧版草稿**，否则两篇并存容易发错。建议推完新稿后顺手把 media_id 记进 `pipeline.py done publish draft_media_id=...`（会覆盖 state 里的旧值）。
+
 ---
 
 ## 完整发布流程（排版→发布→更新库）

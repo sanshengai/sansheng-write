@@ -15,6 +15,12 @@
 #   2.35:1 封面 -> 1024 436 | 9:16 -> 576 1024 | 16:9 -> 1024 576 | 1:1 -> 1024 1024
 #
 # 缺 GOOGLE_API_KEY / OPENAI_API_KEY 时会明确报错指路，不静默降级。
+#
+# 模型 fallback 链（2026-07-21 实战固化，google 路径）：部分 Vertex 项目对
+# `-preview` 后缀的模型 ID 无访问权（404），去掉 `-preview` 的裸 ID 才通。脚本按序自动尝试：
+#   请求的 ID → 去 `-preview` 裸 ID → gemini-2.5-flash-image（兜底）
+# 并在输出里打印实际使用的模型（fallback 到 2.5 且图含中文时务必核字）。
+# 日志行刻意纯 ASCII：emoji 在 GBK 控制台会 UnicodeEncodeError。
 # 出图后照常: add_logo.js -> compress_images.py -> pipeline.py log
 import sys, os, json, base64, io
 import urllib.request
@@ -60,6 +66,20 @@ def _aspect_ratio(w, h):
     return min(cand.items(), key=lambda kv: abs(kv[1] - r))[0]
 
 
+def _candidate_models(model):
+    """模型 fallback 链：请求的 ID → 去 `-preview` 裸 ID → 2.5-flash 兜底（去重保序）。"""
+    cands = [model]
+    if model.endswith("-preview"):
+        cands.append(model[: -len("-preview")])
+    cands.append("gemini-2.5-flash-image")
+    seen, out = set(), []
+    for m in cands:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
 def _post_json(url: str, headers: dict, body: dict, timeout: int = 300) -> str:
     """POST JSON（标准库直连，Google / OpenAI 两路共用）。
 
@@ -94,12 +114,27 @@ def gen(prompt_file, out_path, model, w, h):
                              "imageConfig": {"imageSize": "1K", "aspectRatio": _aspect_ratio(w, h)}},
     }
     key = _key()
-    text = _post_json(_endpoint(model, key), {"x-goog-api-key": key}, body)
-    if not text.strip():
-        raise SystemExit("empty response from Google endpoint")
-    resp = json.loads(text)
-    if "error" in resp:
-        raise SystemExit(f"API error: {pc.redact(json.dumps(resp['error'])[:400])}")
+    # 404/not-found 才沿 fallback 链降级；非 404 错误（配额、鉴权、参数等）直接报错，不降级
+    resp, used, last_err = None, None, None
+    for cand in _candidate_models(model):
+        text = _post_json(_endpoint(cand, key), {"x-goog-api-key": key}, body)
+        if not text.strip():
+            raise SystemExit("empty response from Google endpoint")
+        resp = json.loads(text)
+        if "error" not in resp:
+            used = cand
+            break
+        last_err = json.dumps(resp["error"])
+        if "404" in last_err or "not found" in last_err.lower():
+            print(f"  [warn] model {cand} unavailable (404), trying next in fallback chain")
+            continue
+        raise SystemExit(f"API error: {pc.redact(last_err[:400])}")
+    if not used:
+        raise SystemExit(
+            f"API error: fallback 链全部失败，最后错误: {pc.redact((last_err or '')[:400])}"
+        )
+    if used != model:
+        print(f"  [info] requested {model} unavailable in this project, auto-fell-back to {used}")
     data = None
     for c in resp.get("candidates", []):
         for part in c.get("content", {}).get("parts", []):
@@ -115,7 +150,7 @@ def gen(prompt_file, out_path, model, w, h):
     img = Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
     img = img.resize((w, h), Image.LANCZOS)  # 缩到精确目标尺寸（aspect 容差 ±2px）
     img.save(out_path)
-    print(f"OK {out_path} {w}x{h}")
+    print(f"OK {out_path} {w}x{h} (model={used})")
 
 
 # ===== OpenAI 兼容端点兜底（Google 不可用时，image-routing.md §「可选：OpenAI 兼容端点兜底」）=====

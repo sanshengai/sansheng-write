@@ -138,6 +138,7 @@ STAGE_HINTS = {
         "  完成后：pipeline.py done logo"
     ),
     "publish": (
+        "🔴 推送前先过素材门：pipeline.py verify publish --pre（cover + hero + ≥4 信息图 + 定稿.html，只判定不标 done）\n"
         "🔴 公众号草稿标题 = 「{对外分类中文名} | {正式标题}」，例：洞察 | Loop：硅谷最会用 AI 的人已经不写提示词了\n"
         "   （对外分类=article-meta.yaml 的 outward_category：tutorial→教程/news→资讯/picks→精选/insight→洞察/essay→随笔/industry→行业；\n"
         "    作品库 title 存干净标题不带前缀，前缀只挂公众号发布标题。post-to-wechat 支持 --title 就传带前缀标题，否则先改 定稿.html 的 <title> 再推）\n"
@@ -332,6 +333,22 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                 "⚠️ 未见开头盲选锚点 _opening-choice.md（autopilot 唯一法定停顿点，"
                 "跨会话恢复时易静默跳过）—— 若本篇确已做盲选，可忽略；否则补回再继续。"
             )
+
+        # ⚠️ 非阻断 WARNING（2026-07-21 实战固化）：大纲 PART 标题 vs 定稿 H2 漂移提醒。
+        # 改稿改了 H2 没同步大纲是常态，这里只提示不 fail（大纲格式不一，PART 行抓不到就跳过）。
+        _ol = cwd / "大纲.md"
+        if not legacy and f.exists() and _ol.exists():
+            _draft_h2 = re.findall(r'(?m)^## (.+?)\s*$', f.read_text(encoding="utf-8"))
+            _ol_parts = re.findall(r'(?m)^#{2,3}\s*PART\s*\d+\s*·\s*(.+?)\s*$',
+                                   _ol.read_text(encoding="utf-8"))
+            # 归一化：剥「」/引号/空白，防「猝死演练」vs 猝死演练 这类假阳性
+            _norm = lambda s: re.sub(r'[「」""\'\'\s]', '', s)
+            if (_ol_parts and _draft_h2
+                    and [_norm(x) for x in _ol_parts] != [_norm(x) for x in _draft_h2]):
+                print(
+                    f"⚠️ 大纲 PART 标题与定稿 H2 不一致——改稿后请同步大纲\n"
+                    f"   大纲={_ol_parts}\n   定稿={_draft_h2}"
+                )
 
         # 🔴 Round 3.5（2026-05-21 Team refs-activation 收敛）：
         # writing 阶段只保留 2 道「诚实硬门」—— verify_pos_ratio / verify_bold_density。
@@ -880,7 +897,45 @@ def cmd_next(cwd: Path):
     print("🎉 全流程完成！")
 
 
-def cmd_verify(stage: str, cwd: Path, legacy: bool = False):
+def _pre_publish_errors(cwd: Path) -> list:
+    """publish --pre 素材齐备门（2026-07-21 实战固化）：推送前专用。
+    iron-rules「发布前硬闸」的落地 -- 只查素材/文件齐备，不查推送证据
+    （draft_media_id / wechat_url 归 `verify publish` 推送后验证）。"""
+    errors = []
+    mat = cwd / "素材"
+    if not (mat / "cover.png").exists():
+        errors.append("缺 素材/cover.png（微信头图）")
+    if not (mat / "hero.png").exists():
+        errors.append("缺 素材/hero.png（导读栏小图）")
+    infos = list(mat.glob("infographic*.png")) if mat.exists() else []
+    if len(infos) < 4:
+        errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
+    if not (cwd / "定稿.html").exists():
+        errors.append("缺 定稿.html（先走 layout 阶段）")
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from contracts import verify_publish_assets
+        res = verify_publish_assets(str(cwd))
+        for e in res.get("errors", []):
+            errors.append(f"verify_publish_assets: {e}")
+    except Exception as e:
+        errors.append(f"verify_publish_assets 异常：{e}")
+    return errors
+
+
+def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
+    if pre:
+        if stage != "publish":
+            print("⚠️ --pre 仅 publish 阶段使用（推送前素材齐备门）")
+            return
+        errors = _pre_publish_errors(cwd)
+        if errors:
+            print("❌ publish --pre 素材门未过：")
+            for e in errors:
+                print(f"   • {e}")
+        else:
+            print("✅ publish --pre 素材齐备门通过（cover + hero + ≥4 信息图 + 定稿.html + 嵌入契约）")
+        return  # --pre 只判定不标 done
     state = load_state(cwd)
     passed, errors = verify_stage(stage, cwd, state, legacy=legacy)
     if passed:
@@ -1297,6 +1352,45 @@ def cmd_orchestrator(mode: str, cwd: Path):
 
 
 # ── 入口 ──────────────────────────────────────────────────────
+def cmd_retitle(new_title: str, cwd: Path):
+    """改标题连锁同步（2026-07-21 实战固化）：一次改齐
+    article-meta.yaml / 定稿.md(frontmatter+H1) / 大纲.md(H1) / .state.json，
+    并打印后续必做动作（重排版、重推草稿、删旧草稿）。"""
+    changed = []
+    meta = cwd / "article-meta.yaml"
+    if meta.exists():
+        txt, n = re.subn(r'(?m)^title: ".*"$', f'title: "{new_title}"',
+                         meta.read_text(encoding="utf-8"), count=1)
+        if n:
+            meta.write_text(txt, encoding="utf-8")
+            changed.append("article-meta.yaml")
+    draft = cwd / "定稿.md"
+    if draft.exists():
+        txt = draft.read_text(encoding="utf-8")
+        txt, n1 = re.subn(r'(?m)^title: ".*"$', f'title: "{new_title}"', txt, count=1)
+        txt, n2 = re.subn(r'(?m)^# .+$', f'# {new_title}', txt, count=1)
+        if n1 or n2:
+            draft.write_text(txt, encoding="utf-8")
+            changed.append("定稿.md(frontmatter+H1)")
+    outline = cwd / "大纲.md"
+    if outline.exists():
+        txt, n = re.subn(r'(?m)^# .+$', f'# {new_title}',
+                         outline.read_text(encoding="utf-8"), count=1)
+        if n:
+            outline.write_text(txt, encoding="utf-8")
+            changed.append("大纲.md(H1)")
+    state = load_state(cwd)
+    state["stages"].setdefault("writing", {})["title_final"] = new_title
+    save_state(cwd, state)
+    changed.append(".state.json(title_final)")
+    print(f"✅ 标题已改为「{new_title}」，已同步：{'、'.join(changed)}")
+    print("⚠️ 后续必做（retitle 不代劳）：")
+    print("   ① 自查 lead 导读栏（line1/line2）与 digest 要不要跟着改")
+    print("   ② 重跑排版链：normalize → baoyu-markdown-to-html → format_layout.py 定稿.html --all --check")
+    print("   ③ 重推草稿箱（会新增草稿而非覆盖，推完去后台删旧草稿）")
+    print("   ④ 若已 archive，作品库标题需手动核对")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="微信公众号写作流水线管理器",
@@ -1312,6 +1406,8 @@ def main():
     p_v.add_argument("stage", choices=STAGE_ORDER)
     p_v.add_argument("--legacy", action="store_true",
                      help="跳过 2026-04 之后新增的严格断言（旧文章迁移用）")
+    p_v.add_argument("--pre", action="store_true",
+                     help="publish 专用：推送前素材齐备门（cover/hero/≥4 信息图/定稿.html），只判定不标 done")
 
     p_d = sub.add_parser("done", help="标记阶段完成，可附加元数据 k=v")
     p_d.add_argument("stage", choices=STAGE_ORDER)
@@ -1353,6 +1449,9 @@ def main():
     p_o = sub.add_parser("orchestrator", help="全局编排开关（on=启用编排器 / off=回滚到手动）")
     p_o.add_argument("mode", choices=["on", "off"])
 
+    p_rt = sub.add_parser("retitle", help="改标题并连锁同步 meta/定稿/大纲/state（附后续动作提醒）")
+    p_rt.add_argument("title", help="新标题")
+
     args = parser.parse_args()
     cwd = Path.cwd()
 
@@ -1363,7 +1462,10 @@ def main():
     elif args.cmd == "next":
         cmd_next(cwd)
     elif args.cmd == "verify":
-        cmd_verify(args.stage, cwd, legacy=getattr(args, "legacy", False))
+        cmd_verify(args.stage, cwd, legacy=getattr(args, "legacy", False),
+                   pre=getattr(args, "pre", False))
+    elif args.cmd == "retitle":
+        cmd_retitle(args.title, cwd)
     elif args.cmd == "done":
         cmd_done(args.stage, cwd, getattr(args, "extras", []),
                  force=getattr(args, "force", False),
