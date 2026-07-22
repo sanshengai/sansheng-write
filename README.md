@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/7b5d8a8c-7caf-41e3-957e-5c2428859c79
 | 表格品牌化 | 主题色表头、列宽自动计算、手机端横滑 |
 | 深读模块 / 链接卡 / 关注卡 | 文末转化 |
 
-质量不靠自觉，靠**契约门**：产出不合规直接 `exit 2`，发不出去。
+质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；baoyu 语义生产者与像素渲染器分别留痕；最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
 
 ```console
 $ python scripts/format_layout.py 定稿.html --all --check

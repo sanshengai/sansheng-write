@@ -45,39 +45,36 @@
 
 ---
 
-## 🟢 生图统一入口：`scripts/gen_img.py`（key 前缀自动分流）
+## 🟢 两层路由：baoyu 是语义生产者，imagegen/gen_img 是像素渲染器
 
-进入本 skill 的任何阶段，**任何产生 png 的生图操作**都走同一个脚本 `scripts/gen_img.py`，它按 `GOOGLE_API_KEY` 的前缀自动分流后端，你只管传 prompt 文件、输出路径、模型、目标尺寸：
+封面与信息图必须先走专业 Skill，不能把“能出一张 PNG”误当成“走完专业视觉流程”：
 
-```bash
-python "$SKILL/scripts/gen_img.py" "素材/prompts/xxx.md" "素材/xxx.png" <model> <W> <H>
-# 封面 gemini-3-pro-image-preview ｜ 信息图/hero gemini-3.1-flash-image-preview ｜ 兜底 gemini-2.5-flash-image
-# 尺寸：2.35:1→1024 436 ｜ 9:16→576 1024 ｜ 16:9→1024 576 ｜ 1:1→1024 1024（脚本已缩精确 1K，不必再 PIL）
+| 层 | 职责 | 封面 | 信息图 |
+|---|---|---|---|
+| **producer** | 分析文章、选构图/版式、套 style/palette、生成最终 prompt | `baoyu-skills:baoyu-cover-image` | `baoyu-skills:baoyu-infographic`（精确拓扑例外 `baoyu-diagram`） |
+| **renderer** | 把已确认 prompt 渲染成像素 | child skill 选定的 `imagegen` / `gen_img` / 兼容后端 | 同左 |
+
+🔴 `gen_img.py`、原生 `imagegen`、`baoyu-image-gen` 都只能记为 **renderer**；直接拿它们写 prompt 或出最终图，不能在日志里冒充 `baoyu-cover-image` / `baoyu-infographic` producer。
+
+### canonical prompt 与一次确认
+
+1. 候选 prompt 可放 `素材/prompts/candidates/`；最终选中的唯一版本必须复制到 `素材/prompts/final/`。
+2. `pipeline.py log` 只接受 `素材/prompts/final/*.md` 作为封面/信息图最终记录，并同时记 producer、renderer、model、prompt/output SHA-256。
+3. 用户已要求“完整流程 / 一路到草稿箱”或已批准 blueprint 时，这份外层确认同时覆盖 child skill 的版式、风格与 quick-mode 选项；主流程把已确认参数显式传给 child skill，**不再为同一组选项二次打断用户**。分析稿、结构稿、prompt 落盘步骤仍不得省略。
+4. 私有偏好放 `~/.baoyu-skills/<skill>/EXTEND.md`；外层 `article-meta.yaml` 与 blueprint 的本篇明确值优先。
+
+标准顺序：
+
+```text
+baoyu producer 分析/选型 → 写 canonical prompt → renderer 出原始 PNG
+→ pipeline.py log（登记原始渲染字节）→ add_logo/compress
+→ Agent 逐张看最终图并写 _visual-qa.md → pipeline.py seal visual
+→ publish 内联门 → 微信草稿 → publish receipt
 ```
 
-**key 前缀分流规则（脚本内部自动判定，无需你干预）：**
+`gen_img.py` 仍是可选 renderer，负责 provider 分流、比例和确定性缩放；但是否使用它由 child skill / 当前 agent 能力决定，不能越过 producer。密钥只从环境变量读取，不写入 prompt、日志或仓库。
 
-| `GOOGLE_API_KEY` 前缀 | 后端 | 额外要求 |
-|---|---|---|
-| `AIza…` | Google AI Studio | 无 |
-| `AQ.…` | Vertex AI Express | 必须同时配 `GOOGLE_VERTEX_PROJECT`（你的 GCP 项目号/ID） |
-
-密钥与项目号都从环境变量读（`.env` 里配 `GOOGLE_API_KEY` / 可选 `GOOGLE_VERTEX_PROJECT`），脚本不硬编码任何凭证。
-
-**可选：OpenAI 兼容端点兜底。** Google 后端不可用时，`gen_img.py` 支持切到任意 OpenAI 兼容的图像端点：
-
-```bash
-# .env 配 OPENAI_API_KEY（+ 第三方兼容服务需配 OPENAI_BASE_URL；可选 OPENAI_IMAGE_MODEL 作默认模型）
-python "$SKILL/scripts/gen_img.py" --provider openai -m <模型名> "素材/prompts/xxx.md" "素材/xxx.png" <W> <H>
-# 尺寸自动映射到 1024x1024 / 1536x1024 / 1024x1536 三档再 PIL 缩回精确值
-```
-
-质量一般够用，作为 Google 不可用时的备选。任一 provider 都可加 `--dry-run` 只打印将发的请求摘要
-（URL/模型/尺寸，绝不含 key），用于生图前验证参数构造。
-
-出图后照常 `add_logo`（水印）→ `compress`（压缩）→ `pipeline.py log`（登记），再进 verify。生图前可先 `curl` ping 一次对应端点探活。
-
-### 🔴 信息图 = 内容总结 + 版式 + 风格，三者你自己搭；`gen_img.py` 只负责渲染、不负责思考
+### 🔴 信息图 = 内容总结 + 版式 + 风格；producer 负责思考，renderer 只负责渲染
 
 **信息图 ≠ 概念插画。** 最容易犯的错是画一堆好看的黏土场景，风格对、信息为零--读者一眼看穿"没有文章总结"。信息图的核心价值是「先分析该段内容 → 从常见版式里选一个（清单 / 左右对比 / 箭头流程 / 分区矩阵…）→ 把文章里的实际要点·数据当图内文字排进去」，风格只是最后一层皮。
 
@@ -94,16 +91,19 @@ python "$SKILL/scripts/gen_img.py" --provider openai -m <模型名> "素材/prom
 
 ## 生图路由表
 
-任何封面/信息图/插图/图表产物必须在生成后立即写入 `.gen-log.jsonl`：
+任何封面/信息图最终产物必须在**原始 PNG 生成后、加 logo 前**立即写入 `.gen-log.jsonl`：
 
 ```bash
-python "$SKILL/scripts/pipeline.py" log <stage> <tool> --output 素材/xxx.png --cmd "原始命令"
+python "$SKILL/scripts/pipeline.py" log <stage> <producer> \
+  --output 素材/xxx.png \
+  --prompt 素材/prompts/final/xxx.md \
+  --renderer <renderer> --model <model> --cmd "原始调用摘要"
 ```
 
-| 场景 | 渲染入口 | 关键约定 | 产物要求 |
+| 场景 | producer → renderer | 关键约定 | 产物要求 |
 |-----|---------|---------|---------|
-| 微信头图 / 封面图 | `gen_img.py` | model `gemini-3-pro-image-preview`；`gen_img.py 素材/prompts/cover.md 素材/cover.png gemini-3-pro-image-preview 1024 436` | 默认风格见 cover-styles.md，长边 ≈ 1024px（1K 横切带 [900,1200]） |
-| 全文贯穿信息图 ≥ 4 张 | `gen_img.py` | model `gemini-3.1-flash-image-preview`；风格 `claymation` 或 `morandi-journal` 二选一（见下文）；开篇/结尾 9:16、中间 16:9 | 开篇/结尾 9:16 各 1 张 + 中间 16:9 ≥ 2 张，长边 ≈ 1024px，中文标签 |
+| 微信头图 / 封面图 | `baoyu-cover-image` → child 选定 renderer | canonical prompt 固定 `素材/prompts/final/cover.md` | 默认风格见 cover-styles.md，2.35:1，标题块 18--22% |
+| 全文贯穿信息图 ≥ 4 张 | `baoyu-infographic` → child 选定 renderer | style 二选一；每张一份 final prompt | 开篇/结尾 9:16 各 1 张 + 中间 16:9 ≥ 2 张，中文标签 |
 | 精确流程/时序/架构/原理图（低频） | `baoyu-diagram` → `svg_to_png.py` → PNG | `--type flowchart\|sequence\|structural\|illustrative` + 必须强制覆写主题色 | 仅 ≥5 节点 + 拓扑/顺序是核心论点时启用，详见 layout.md 3g |
 | 正文导读栏小图（hero） | `gen_img.py` | `1:1`，model `gemini-3.1-flash-image-preview` | 1:1 方图（bgm_cover 由 BGM 阶段 gen_img.py 产出，不走此路由） |
 | 正文叙事插图 | `gen_img.py` | 按场景比例，1K；**画风并入本篇 `infographic_style`**，立意走「隐喻三步法」（见下文「正文叙事插图」节） | 单图单概念 + 每篇不复用旧构图 |
@@ -116,14 +116,14 @@ python "$SKILL/scripts/pipeline.py" log <stage> <tool> --output 素材/xxx.png -
 **落地规则：**
 1. 每次生图前，先在心里对号入座「我现在要生的图属于路由表哪一行」。对不上就停下问用户，绝不让通用生图接管。
 2. 封面图严格使用锁定的品牌调性参数（`--palette dark --rendering minimal --font clean --mood bold`），文字排版铁律见下。
-3. 生成完成后，**同一轮回复内**立即 `pipeline.py log` 记录。缺 log 的阶段 `pipeline.py verify` 会报错，走不到下一步。
-4. `pipeline.py verify cover/infographic` 会读取 `.gen-log.jsonl` 做工具白名单校验 + 读取 png 元信息做比例/分辨率断言，任何旁路都会被拦截。
+3. 生成完成后，**同一轮回复内、加 logo 前**立即用 v2 参数 `pipeline.py log` 记录。缺 producer/renderer/model/hash/canonical prompt 任一项都会阻断。
+4. `pipeline.py verify cover/infographic` 会核对 producer 白名单、renderer、prompt/output 摘要、style、比例和分辨率；`seal visual` 再绑定后处理后的最终字节。
 5. **迁移旧文章**（`.gen-log.jsonl` 缺失）时允许加 `--legacy` 临时放过，新文章严禁使用。
 
 **封面文字排版铁律**（cover.md prompt 必守）：
 - **关键词高亮**：主标题只给核心关键词（数字、对比词、人物）上主题色 `#2F6F8F` + 加粗，其余部分保持白/浅灰。**严禁整句全色或全黑**。
 - **副标题分层**：副标题拆成 3–4 段不同字重/透明度/强调（**双色铁律内**：仅用主题色 `#2F6F8F` / 纯白，靠字号 / 字重 / 透明度 ≥70% 分层；**严禁灰色相**）。**严禁副标题单一字重一行到底**。
-- **留白比例**：左侧视觉区 ≤ 45%，右侧文字区 ≥ 55%，文字有呼吸感。
+- **留白比例**：布局侧别由 `cover-styles.md` 决定；默认 `montage-evidence` 是左侧文字、右侧证据拼贴，标题块总高 18--22%，不得反转套用旧 EXTEND。
 - **背景基调**：深色底（#0E0E10 左右）+ 主题色微光晕，**严禁纯黑或亮背景**。
 - 🔴 **禁止 AI 渲染品牌识别小字**：右下角不写任何品牌名/编号/署名 -- `add_logo.js` 后期会自动叠加品牌 Logo，再渲染就重复。prompt 必须显式 forbidden 这一条。
 
@@ -183,7 +183,10 @@ gen-log 与 `final-set.json` 必须全部一致，否则 `pipeline.py verify inf
 
 四张图生成后逐张打开核验：画风、图中文字、信息层级、乱码/杂字、Logo 冲突与裁切安全区；失败就改
 prompt 重生。结果落工作目录 `_visual-qa.md`，至少勾选封面、图 1、图 4、逐字核对与最终「通过」。
-`publish --pre` 硬查该凭证；「后端零停顿」只是不打断用户，绝不等于生成即发布、跳过 Agent 自检。
+QA 对象必须是 **add_logo + compress 之后的最终字节**；通过后执行 `pipeline.py seal visual`。
+调用微信前必须先跑 `pipeline.py verify publish --pre` 写 `_publish-ready.json`；
+`done publish draft_media_id=...` 会复验 ready、内联重跑全部门并写最终 receipt，`--force` 也不能绕过。
+「后端零停顿」只是不打断用户，绝不等于生成即发布、跳过 Agent 自检。
 
 ---
 
@@ -245,8 +248,8 @@ prompt 重生。结果落工作目录 `_visual-qa.md`，至少勾选封面、图
 | 含具体数值的对比矩阵 | ✅ | -- |
 | 思维导图、架构流程图 | -- | ✅ baoyu-diagram |
 | 知识图卡片（无具体数值） | -- | ✅ 信息图 |
-| 封面图 | -- | ✅ gen_img.py |
-| 叙事插图 | -- | ✅ gen_img.py |
+| 封面图 | -- | ✅ baoyu-cover-image producer → 选定 renderer |
+| 叙事插图 | -- | ✅ baoyu-article-illustrator producer → 选定 renderer |
 
 > **判断口诀：有数值 → matplotlib；纯图示/知识图 → 生图模型。**
 

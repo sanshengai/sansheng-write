@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 from PIL import Image
@@ -13,7 +14,7 @@ def _png(path: Path, w: int, h: int) -> None:
 
 def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="claymation") -> Path:
     (tmp_path / "素材" / "infographic").mkdir(parents=True)
-    (tmp_path / "素材" / "prompts").mkdir(parents=True)
+    (tmp_path / "素材" / "prompts" / "final").mkdir(parents=True)
     (tmp_path / "article-meta.yaml").write_text(
         f'infographic_subject: "{subject}"\ninfographic_style: "{style}"\n',
         encoding="utf-8",
@@ -35,15 +36,24 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
     for name, w, h, prompt_name in specs:
         rel = f"素材/{name}"
         _png(tmp_path / rel, w, h)
-        (tmp_path / "素材" / "prompts" / prompt_name).write_text(
+        prompt_path = tmp_path / "素材" / "prompts" / "final" / prompt_name
+        prompt_path.write_text(
             f"---\nstyle: {style}\n---\n", encoding="utf-8"
         )
         images.append({"path": rel, "aspect": "9:16" if h > w else "16:9", "bytes": (tmp_path / rel).stat().st_size, "style": style})
         logs.append({
+            "schema_version": 2,
+            "record_id": f"rec-{prompt_name}",
             "stage": "infographic",
+            "producer": "baoyu-infographic",
             "tool": "baoyu-infographic",
             "output": rel,
-            "cmd": f"baoyu-infographic --style {style} 素材/prompts/{prompt_name}",
+            "output_sha256": hashlib.sha256((tmp_path / rel).read_bytes()).hexdigest(),
+            "prompt": f"素材/prompts/final/{prompt_name}",
+            "prompt_sha256": hashlib.sha256(prompt_path.read_bytes()).hexdigest(),
+            "renderer": "imagegen",
+            "model": "test-model",
+            "cmd": f"baoyu-infographic --style {style} 素材/prompts/final/{prompt_name}",
         })
     (tmp_path / "素材" / "infographic" / "final-set.json").write_text(
         json.dumps({"images": images}, ensure_ascii=False), encoding="utf-8"
@@ -66,10 +76,18 @@ def test_final_assets_must_match_meta_latest_log_and_prompt(tmp_path):
     log_path = article / ".gen-log.jsonl"
     with log_path.open("a", encoding="utf-8") as fp:
         fp.write(json.dumps({
+            "schema_version": 2,
+            "record_id": "rec-bad",
             "stage": "infographic",
+            "producer": "baoyu-infographic",
             "tool": "baoyu-infographic",
             "output": "素材/infographic-03.png",
-            "cmd": "baoyu-infographic --style morandi-journal 素材/prompts/03.md",
+            "output_sha256": hashlib.sha256((article / "素材/infographic-03.png").read_bytes()).hexdigest(),
+            "prompt": "素材/prompts/final/03.md",
+            "prompt_sha256": hashlib.sha256((article / "素材/prompts/final/03.md").read_bytes()).hexdigest(),
+            "renderer": "imagegen",
+            "model": "test-model",
+            "cmd": "baoyu-infographic --style morandi-journal 素材/prompts/final/03.md",
         }, ensure_ascii=False) + "\n")
     errors = pipeline._visual_route_errors(article)
     assert any("infographic-03.png" in e and "claymation" in e for e in errors), errors

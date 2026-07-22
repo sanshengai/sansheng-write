@@ -33,10 +33,12 @@ pipeline.py — 微信公众号写作流水线管理器
 """
 
 import json
+import copy
 import os
 import re
 import sys
 import argparse
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +60,28 @@ import os as _os
 _SCRIPTS_DIR = _os.path.dirname(_os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
+
+from evidence import (  # noqa: E402
+    CHECKPOINT_RECEIPT_FILE,
+    FINAL_PROMPT_PREFIX,
+    PUBLISH_READY_FILE,
+    PUBLISH_RECEIPT_FILE,
+    VISUAL_RECEIPT_FILE,
+    build_publish_manifest,
+    checkpoint_artifact,
+    files_digest,
+    norm_relpath as _evidence_norm_relpath,
+    seal_visual_receipt,
+    sha256_file,
+    stable_digest,
+    verify_checkpoint_receipt,
+    verify_publish_receipt,
+    verify_publish_ready,
+    verify_visual_receipt,
+    write_checkpoint_receipt,
+    write_publish_receipt,
+    write_publish_ready,
+)
 
 # ── 常量 ──────────────────────────────────────────────────────
 STATE_FILE = ".state.json"
@@ -105,10 +129,10 @@ STAGE_HINTS = {
     "cover": (
         "🔁 进配图前回扣 checklist：确认 开头盲选已停顿（_opening-choice.md）/ "
         "content_enhance 已产出 / 冷读外审 _stutter-list.md 已生成（跨会话恢复时这三步无状态记账，易静默漏）。\n"
-        "🔴 实际执行走 gen_img.py（见 image-routing.md §54/§⑥），baoyu-cover-image 为概念名——\n"
-        "  python $SKILL/scripts/gen_img.py prompts/cover.md 素材/cover.png gemini-3-pro-image-preview 1024 436\n"
-        "  （--provider 默认 google；勿再走历史上的 baoyu quick 封面路径——早已 404 废弃）\n"
-        "  输出 素材/cover.png。完成后：pipeline.py verify cover"
+        "🔴 必须先走 baoyu-skills:baoyu-cover-image producer，canonical prompt 固定写\n"
+        "  素材/prompts/final/cover.md；再用 child skill 选定 renderer 生成 素材/cover.png。\n"
+        "  加 logo 前用 pipeline.py log cover baoyu-cover-image --prompt ... --renderer ... --model ... 登记。\n"
+        "  完成后：pipeline.py verify cover"
     ),
     "infographic": (
         "运行 /baoyu-skills:baoyu-infographic ≥ 4 张（开篇 9:16 + 中间 16:9×N + 结尾 9:16），\n"
@@ -135,14 +159,18 @@ STAGE_HINTS = {
     ),
     "logo": (
         f'node "{_skill_path("scripts/add_logo.js")}" "素材/*.png"\n'
+        f'  python "{_skill_path("scripts/compress_images.py")}" 素材/ --max-mb 2\n'
+        "  逐张查看最终图并写 _visual-qa.md，再执行 pipeline.py seal visual\n"
         "  完成后：pipeline.py done logo"
     ),
     "publish": (
-        "🔴 推送前先过素材门：pipeline.py verify publish --pre（cover + hero + ≥4 信息图 + 定稿.html，只判定不标 done）\n"
+        "🔴 调微信前必须：pipeline.py verify publish --pre（写 _publish-ready.json）。\n"
+        "  done publish 会内联复验 ready 与全部产物，--force 不可绕过。\n"
         "🔴 公众号草稿标题 = 「{对外分类中文名} | {正式标题}」，例：洞察 | Loop：硅谷最会用 AI 的人已经不写提示词了\n"
         "   （对外分类=article-meta.yaml 的 outward_category：tutorial→教程/news→资讯/picks→精选/insight→洞察/essay→随笔/industry→行业；\n"
         "    作品库 title 存干净标题不带前缀，前缀只挂公众号发布标题。post-to-wechat 支持 --title 就传带前缀标题，否则先改 定稿.html 的 <title> 再推）\n"
-        "  /baoyu-skills:baoyu-post-to-wechat 定稿.html\n"
+        "  /baoyu-skills:baoyu-post-to-wechat 定稿.html；返回 media_id 后立即：\n"
+        "  pipeline.py done publish draft_media_id=<media_id>\n"
         "  微信后台手动发布，获得链接后：pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
     ),
     "archive": (
@@ -160,24 +188,28 @@ STATUS_ICON = {
     "done":    "✅",
     "skip":    "⏭ ",
     "failed":  "❌",
+    "dirty":   "🟡",
 }
 
 # ── 生图路由白名单 ─────────────────────────────────────────────
 # 在本 skill 流水线内，封面图/信息图/数据图三类必须走受控入口，
 # 禁用通用 generate_image 工具（它只会输出 1:1 方图，AR 无法控制）。
 #
-# 🔴 2026-07-16 修正：加入 `gen_img`（scripts/gen_img.py）。
-# 根因 = 文档与代码脱节：image-routing.md 路由表与 `pipeline.py status` 的提示早已把
-# 封面/信息图的实际执行入口迁到 `gen_img.py`（"baoyu-cover-image 为概念名，旧 baoyu quick
-# 封面路径早已 404 废弃"），但本白名单仍停在 baoyu-* 时代，导致按文档正确执行反而被
-# 判"不在白名单"。旧 baoyu-* 名保留作历史文章向后兼容。
+# v0.6：producer 与 renderer 分层。封面/信息图白名单只认专业语义 producer；
+# gen_img/imagegen 等像素后端必须写 renderer 字段，不能再冒充完整 baoyu 流程。
 IMAGE_TOOL_WHITELIST = {
-    "cover":       {"gen_img", "baoyu-cover-image"},
-    "infographic": {"gen_img", "baoyu-infographic", "baoyu-diagram"},  # 3e 信息图 + 3g 精确图
+    # producer 是负责分析/版式/style 的上层 skill；renderer 另字段记录。
+    # gen_img/imagegen 只能是 renderer，不能再冒充已走 baoyu 专业流程。
+    "cover":       {"baoyu-cover-image"},
+    "infographic": {"baoyu-infographic", "baoyu-diagram"},  # 3e 信息图 + 3g 精确图
     "illustrator": {"gen_img", "baoyu-article-illustrator", "baoyu-image-gen"},  # baoyu-skills v2.0 起 baoyu-imagine 改名回 baoyu-image-gen
     "chart":       {"matplotlib", "pyecharts", "plot_local"},  # 数据图必须本地脚本渲染
 }
 IMAGE_TOOL_BLACKLIST = {"generate_image", "internal_image_gen", "imagine"}
+IMAGE_RENDERER_WHITELIST = {
+    "gen_img", "imagegen", "codex-imagegen", "baoyu-image-gen",
+    "GenerateImage", "image_generate",
+}
 
 GEN_LOG_FILE = ".gen-log.jsonl"
 
@@ -223,7 +255,7 @@ def _norm_relpath(value: str) -> str:
     return str(value or "").replace("\\", "/").removeprefix("./")
 
 
-def _visual_route_errors(cwd: Path) -> list:
+def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
     """校验信息图视觉路由的整条证据链，而不只检查 style 是否在枚举里。
 
     SSOT 是 article-meta.yaml 的 infographic_subject + infographic_style：
@@ -304,23 +336,46 @@ def _visual_route_errors(cwd: Path) -> list:
         if not rec:
             errors.append(f"{rel} 缺精确 output 的最新 gen-log 记录")
             continue
+        producer = str(rec.get("producer") or rec.get("tool") or "").strip()
+        renderer = str(rec.get("renderer") or "").strip()
+        model = str(rec.get("model") or "").strip()
+        if producer not in IMAGE_TOOL_WHITELIST["infographic"]:
+            errors.append(
+                f"{rel} producer={producer or '(空)'}；必须经 baoyu-infographic/baoyu-diagram"
+            )
+        if renderer not in IMAGE_RENDERER_WHITELIST:
+            errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
+        if not model:
+            errors.append(f"{rel} 缺 model，生成记录不可复现")
         cmd = str(rec.get("cmd") or "")
         m = re.search(r"--style\s+([^\s]+)", cmd)
-        log_style = m.group(1).strip("\"'") if m else ""
+        log_style = str(rec.get("style") or (m.group(1).strip("\"'") if m else ""))
         seen_styles.add(log_style)
         if style and log_style != style:
             errors.append(f"{rel} 最新 gen-log style={log_style or '(空)'}，应为 {style}")
 
-        pm = re.search(r"(?:素材[/\\]prompts[/\\][^\s\"']+\.md)", cmd)
-        if not pm:
+        prompt_rel = _norm_relpath(rec.get("prompt", ""))
+        if not prompt_rel:
+            pm = re.search(r"(?:素材[/\\]prompts[/\\][^\s\"']+\.md)", cmd)
+            prompt_rel = _norm_relpath(pm.group(0)) if pm else ""
+        if not prompt_rel:
             errors.append(f"{rel} 最新 gen-log 未引用 prompt 文件，无法核对 frontmatter style")
             continue
-        prompt_rel = _norm_relpath(pm.group(0))
+        if not prompt_rel.startswith(FINAL_PROMPT_PREFIX):
+            errors.append(
+                f"{rel} 最终 prompt 必须位于 {FINAL_PROMPT_PREFIX}，当前为 {prompt_rel}"
+            )
         prompt_path = cwd / Path(prompt_rel)
         if not prompt_path.exists():
             errors.append(f"{rel} 日志引用的 prompt 不存在：{prompt_rel}")
             continue
         prompt_text = prompt_path.read_text(encoding="utf-8")
+        if rec.get("prompt_sha256") != sha256_file(prompt_path):
+            errors.append(f"{rel} prompt_sha256 与当前 canonical prompt 不一致")
+        output_path = cwd / Path(rel)
+        if (not allow_postprocessed
+                and rec.get("output_sha256") != sha256_file(output_path)):
+            errors.append(f"{rel} output_sha256 与当前渲染器输出不一致")
         sm = re.search(r"(?m)^style:\s*[\"']?([^\"'\s]+)", prompt_text)
         prompt_style = sm.group(1) if sm else ""
         seen_styles.add(prompt_style)
@@ -330,6 +385,61 @@ def _visual_route_errors(cwd: Path) -> list:
     nonempty_styles = {s for s in seen_styles if s}
     if len(nonempty_styles) > 1:
         errors.append(f"最终信息图证据链混入多种 style：{sorted(nonempty_styles)}")
+    return errors
+
+
+def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
+    """校验封面语义生产者、像素后端、canonical prompt 与字节证据链。"""
+    rel = "素材/cover.png"
+    output = cwd / Path(rel)
+    if not output.exists():
+        return [f"缺 {rel}"]
+    latest = {}
+    for rec in _read_gen_log(cwd, "cover"):
+        out = _norm_relpath(rec.get("output", ""))
+        if out:
+            latest[out] = rec
+    rec = latest.get(rel)
+    if not rec:
+        return [f"{rel} 缺精确 output 的最终 gen-log 记录"]
+
+    errors = []
+    producer = str(rec.get("producer") or rec.get("tool") or "").strip()
+    renderer = str(rec.get("renderer") or "").strip()
+    model = str(rec.get("model") or "").strip()
+    if producer != "baoyu-cover-image":
+        errors.append(f"{rel} producer={producer or '(空)'}；必须经 baoyu-cover-image")
+    if renderer not in IMAGE_RENDERER_WHITELIST:
+        errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
+    if not model:
+        errors.append(f"{rel} 缺 model，生成记录不可复现")
+
+    prompt_rel = _norm_relpath(rec.get("prompt", ""))
+    if not prompt_rel:
+        match = re.search(
+            r"(?:素材[/\\]prompts[/\\][^\s\"']+\.md)", str(rec.get("cmd") or "")
+        )
+        prompt_rel = _norm_relpath(match.group(0)) if match else ""
+    if not prompt_rel:
+        errors.append(f"{rel} 最终日志缺 prompt 路径")
+        return errors
+    if not prompt_rel.startswith(FINAL_PROMPT_PREFIX):
+        errors.append(f"{rel} 最终 prompt 必须位于 {FINAL_PROMPT_PREFIX}，当前为 {prompt_rel}")
+    prompt = cwd / Path(prompt_rel)
+    if not prompt.exists():
+        errors.append(f"{rel} prompt 不存在：{prompt_rel}")
+        return errors
+    if rec.get("prompt_sha256") != sha256_file(prompt):
+        errors.append(f"{rel} prompt_sha256 与当前 canonical prompt 不一致")
+    if (not allow_postprocessed
+            and rec.get("output_sha256") != sha256_file(output)):
+        errors.append(f"{rel} output_sha256 与当前渲染器输出不一致")
+    banned = sorted(set(re.findall(
+        r"\b(?:largest|extra-black|ultra-black)\b",
+        prompt.read_text(encoding="utf-8"), flags=re.I,
+    )))
+    if banned:
+        errors.append(f"封面 canonical prompt 含禁词：{banned}")
     return errors
 
 
@@ -363,7 +473,31 @@ def load_state(cwd: Path) -> dict:
             f"❌ 未找到 {STATE_FILE}。\n"
             f"   请先运行：python pipeline.py init"
         )
-    return json.loads(state_path.read_text(encoding="utf-8"))
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    changed = False
+    if int(state.get("schema_version") or 1) < 2:
+        state["schema_version"] = 2
+        # article-meta.yaml 是内容配置 SSOT；state 只保存流水线状态。
+        state.pop("style", None)
+        state.pop("lead_params", None)
+        for info in state.get("stages", {}).values():
+            old = info.get("finished_at")
+            if old and not info.get("first_completed_at"):
+                info["first_completed_at"] = old
+            if old and not info.get("last_verified_at"):
+                info["last_verified_at"] = old
+        changed = True
+    # v2 起 article-meta.yaml 是内容配置唯一真源；即使手工回填也自动清理。
+    for duplicate in ("style", "lead_params"):
+        if duplicate in state:
+            state.pop(duplicate, None)
+            changed = True
+    if not state.get("run_id"):
+        state["run_id"] = str(uuid.uuid4())
+        changed = True
+    if changed:
+        save_state(cwd, state)
+    return state
 
 
 def save_state(cwd: Path, state: dict):
@@ -382,13 +516,13 @@ def cmd_init(cwd: Path):
             return
     topic_id = cwd.name
     state = {
+        "schema_version": 2,
         "topic_id": topic_id,
         "topic_dir": str(cwd),
-        "style": "",
+        "run_id": str(uuid.uuid4()),
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
         "stages": {s: {"status": "pending"} for s in STAGE_ORDER},
-        "lead_params": {"line1": "", "line2": "", "subtitle": "", "tag1": "", "tag2": ""},
         "notes": [],
     }
     # P0.2：编排重构契约字段（只新增，不改既有阶段语义）
@@ -432,27 +566,30 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
                 f"（作者明说免检时写入『作者免检授权』放行）"]
     if name == "blueprint" and name in cps:
         text = (cwd / anchor).read_text(encoding="utf-8")
-        if "作者免检授权" in text:
-            return []
-        missing = []
-        has_five = all(re.search(rf"方案\s*{n}", text) for n in range(1, 6))
-        if not has_five and "作者指定标题" not in text:
-            missing.append("5 套标题+封面文案（或作者指定标题）")
-        if "开头" not in text:
-            missing.append("开头选择")
-        if "大纲" not in text:
-            missing.append("大纲结论")
-        if "封面风格" not in text:
-            missing.append("封面风格")
-        if not re.search(r"信息图主题.*(?:ai-product|phenomenon)", text):
-            missing.append("信息图主题 ai-product/phenomenon")
-        if not re.search(r"信息图风格.*(?:claymation|morandi-journal)", text):
-            missing.append("信息图风格")
-        if missing:
-            return [
-                f"checkpoint:blueprint 锚点结构不完整（视觉路由不可省）：缺 {missing}；"
-                f"补齐 {anchor} 后再继续"
-            ]
+        if "作者免检授权" not in text:
+            missing = []
+            has_five = all(re.search(rf"方案\s*{n}", text) for n in range(1, 6))
+            if not has_five and "作者指定标题" not in text:
+                missing.append("5 套标题+封面文案（或作者指定标题）")
+            if "开头" not in text:
+                missing.append("开头选择")
+            if "大纲" not in text:
+                missing.append("大纲结论")
+            if "封面风格" not in text:
+                missing.append("封面风格")
+            if not re.search(r"信息图主题.*(?:ai-product|phenomenon)", text):
+                missing.append("信息图主题 ai-product/phenomenon")
+            if not re.search(r"信息图风格.*(?:claymation|morandi-journal)", text):
+                missing.append("信息图风格")
+            if missing:
+                return [
+                    f"checkpoint:blueprint 锚点结构不完整（视觉路由不可省）：缺 {missing}；"
+                    f"补齐 {anchor} 后再继续"
+                ]
+    if name in cps:
+        receipt_errors = verify_checkpoint_receipt(cwd, name)
+        if receipt_errors:
+            return [f"checkpoint:{name} receipt 未通过 -- {e}" for e in receipt_errors]
     return []
 
 
@@ -614,7 +751,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                 if not legacy and meta["long_edge"] < 1000:
                     errors.append(
                         f"cover.png 分辨率过低（长边 {meta['long_edge']}px < 1000px）。"
-                        f"baoyu-cover-image 默认 1K，是否漏传 `--quality 1k`？"
+                        f"请检查当前 renderer 的目标尺寸参数与后处理是否正确。"
                     )
             # 3) 生图来源白名单（.gen-log.jsonl 有记录时才检查）
             if not legacy:
@@ -630,6 +767,8 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                         errors.append(
                             f"cover 使用的 `{tool}` 不在白名单（应为 baoyu-cover-image）"
                         )
+        if not legacy:
+            errors.extend(_cover_route_errors(cwd))
 
     elif stage == "infographic":
         mat = cwd / "素材"
@@ -667,7 +806,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                         )
                     if meta["long_edge"] < 1000:
                         errors.append(
-                            f"{p.name} 分辨率过低（长边 {meta['long_edge']}px < 1000px），漏传 `--quality 1k`？"
+                            f"{p.name} 分辨率过低（长边 {meta['long_edge']}px < 1000px），请检查 renderer 的目标尺寸参数。"
                         )
                 # 至少 2 张 9:16（开篇 + 结尾）
                 if portrait_count < 2:
@@ -889,16 +1028,22 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
         pub = state["stages"].get("publish", {})
         url = pub.get("wechat_url", "")
         draft_id = pub.get("draft_media_id", "")
-        if url and url.startswith("https://mp.weixin.qq.com"):
-            pass  # 正式发布完成
-        elif draft_id:
-            pass  # 草稿箱已推送，待人工正式发布后补 wechat_url
-        else:
+        if not legacy and not draft_id:
+            errors.append(
+                "新流程的 publish 必须先有 draft_media_id + publish receipt；"
+                "仅补历史 wechat_url 请显式使用 --legacy"
+            )
+        elif url and not url.startswith("https://mp.weixin.qq.com"):
+            errors.append(f"wechat_url 不是微信公众号链接：{url[:80]}")
+        elif not url and not draft_id:
             errors.append(
                 "publish 既无 draft_media_id 也无 wechat_url。"
                 "草稿箱推送成功后：pipeline.py done publish draft_media_id=<media_id>；"
                 "正式发布后补：pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
             )
+        if draft_id and not legacy:
+            _, receipt_errors = verify_publish_receipt(cwd, draft_id)
+            errors.extend(f"publish_receipt: {e}" for e in receipt_errors)
 
     elif stage == "archive":
         # 二期C：按 seq 查 works.yaml（不再靠 articles.md 标题子串）
@@ -922,8 +1067,7 @@ def _cross_check(cwd: Path, state: dict) -> list:
     """扫四份状态文件，返回不一致项列表（仅警告，不阻断）。
 
     检查项：
-    1. .state.json 的 style vs article-meta.yaml 的 style
-    2. .state.json writing.title_final vs article-meta.yaml 的 title
+    1. .state.json writing.title_final vs article-meta.yaml 的 title
     3. article-meta.yaml part_subtitles 数量 vs 定稿.md H2 数量
        （format_layout.py --all 会在排版前 sys.exit(3) 阻断，这里提前发现）
     4. stages 顺序逻辑（done 但前序未完成）
@@ -932,7 +1076,7 @@ def _cross_check(cwd: Path, state: dict) -> list:
     """
     warnings = []
 
-    # 1 & 2. .state.json vs article-meta.yaml 字段一致性
+    # article-meta.yaml 是内容配置 SSOT；state 只保留流程字段。
     meta_path = cwd / "article-meta.yaml"
     meta = {}
     if meta_path.exists():
@@ -945,13 +1089,6 @@ def _cross_check(cwd: Path, state: dict) -> list:
             warnings.append("PyYAML 未装，无法验证 article-meta.yaml（pip install pyyaml）")
 
     if meta:
-        s_style = state.get("style", "")
-        m_style = meta.get("style", "")
-        if s_style and m_style and s_style != m_style:
-            warnings.append(
-                f"风格不一致：.state.json={s_style!r} vs article-meta.yaml={m_style!r}"
-            )
-
         s_title = state.get("stages", {}).get("writing", {}).get("title_final", "")
         m_title = meta.get("title", "")
         if s_title and m_title and s_title != m_title:
@@ -988,9 +1125,9 @@ def _cross_check(cwd: Path, state: dict) -> list:
     pub = stages.get("publish", {})
     if pub.get("status") == "done":
         url = pub.get("wechat_url", "")
-        if not url:
+        if not url and not pub.get("draft_media_id"):
             warnings.append("publish=done 但 wechat_url 字段为空（archive 时会找不到链接）")
-        elif not url.startswith("https://mp.weixin.qq.com"):
+        elif url and not url.startswith("https://mp.weixin.qq.com"):
             warnings.append(f"publish=done 但 wechat_url 不是微信公众号链接：{url[:50]}")
 
     # 6. archive=done 但 works.yaml 未记录（二期C：单一数据源改查作品库）
@@ -1013,9 +1150,118 @@ def _cross_check(cwd: Path, state: dict) -> list:
     return warnings
 
 
+def _stage_artifact_digest(cwd: Path, stage: str) -> str:
+    """返回阶段关键产物摘要；只含本阶段拥有的稳定输入/输出。"""
+    if stage == "outline":
+        artifact, _ = checkpoint_artifact(cwd, "blueprint")
+        return stable_digest(artifact) if artifact else ""
+    if stage == "writing":
+        artifact, _ = checkpoint_artifact(cwd, "draft")
+        return stable_digest(artifact) if artifact else ""
+    if stage in {"cover", "infographic"}:
+        rows = []
+        prefix = "素材/cover.png" if stage == "cover" else "素材/infographic"
+        for rec in _read_gen_log(cwd, stage):
+            output = _norm_relpath(rec.get("output", ""))
+            if output == prefix or (stage == "infographic" and output.startswith(prefix)):
+                prompt_rel = _norm_relpath(rec.get("prompt", ""))
+                prompt_path = cwd / Path(prompt_rel) if prompt_rel else None
+                rows.append({
+                    "output": output,
+                    "producer": rec.get("producer") or rec.get("tool") or "",
+                    "renderer": rec.get("renderer") or "",
+                    "model": rec.get("model") or "",
+                    "provenance_mode": rec.get("provenance_mode") or "rendered",
+                    "prompt": prompt_rel,
+                    "prompt_sha256": rec.get("prompt_sha256") or "",
+                    "prompt_current_sha256": (
+                        sha256_file(prompt_path)
+                        if prompt_path and prompt_path.exists() else "missing"
+                    ),
+                    "output_sha256": rec.get("output_sha256") or "",
+                    "record_id": rec.get("record_id") or "",
+                })
+        latest = {row["output"]: row for row in rows}
+        return stable_digest([latest[k] for k in sorted(latest)]) if latest else ""
+    if stage == "bgm":
+        rels = [str(p.relative_to(cwd)) for p in cwd.glob("*.mp3")]
+        rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*.mp3")]
+        rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*bgm*.png")]
+        return files_digest(cwd, rels)
+    if stage == "layout":
+        return files_digest(cwd, ["定稿.html"])
+    if stage == "logo":
+        rels = ["素材/cover.png", "素材/hero.png"]
+        rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("infographic*.png")]
+        rels += ["_visual-qa.md", VISUAL_RECEIPT_FILE]
+        return files_digest(cwd, rels)
+    if stage == "publish":
+        return files_digest(cwd, [PUBLISH_RECEIPT_FILE])
+    if stage == "archive":
+        pub = load_state(cwd).get("stages", {}).get("publish", {})
+        return stable_digest({"wechat_url": pub.get("wechat_url", "")})
+    return ""
+
+
+def _invalidate_downstream(state: dict, stage: str, reason: str) -> None:
+    start = STAGE_ORDER.index(stage) + 1
+    for downstream in STAGE_ORDER[start:]:
+        info = state["stages"].setdefault(downstream, {"status": "pending"})
+        if info.get("status") in {"done", "skip", "dirty"}:
+            info["status"] = "dirty"
+            info["dirty"] = True
+            info["dirty_reason"] = reason
+
+
+def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
+    info = state["stages"].setdefault(stage, {})
+    now = _now_iso()
+    digest = _stage_artifact_digest(cwd, stage)
+    old_digest = str(info.get("artifact_digest") or "")
+    if old_digest and digest and old_digest != digest:
+        _invalidate_downstream(state, stage, f"上游 {stage} 产物摘要已变化")
+    info["status"] = "done"
+    info["dirty"] = False
+    info.pop("dirty_reason", None)
+    info.setdefault("first_completed_at", now)
+    # finished_at 保留作 v1 兼容字段，但只写首次，不再被重复 verify 覆盖。
+    info.setdefault("finished_at", info["first_completed_at"])
+    info["last_verified_at"] = now
+    info["attempt_count"] = int(info.get("attempt_count") or 0) + 1
+    info["artifact_digest"] = digest
+    info["fail_count"] = 0
+
+
+def _reconcile_artifact_drift(cwd: Path, state: dict) -> bool:
+    """跨会话恢复时发现已完成阶段产物漂移，自动作废它和所有已完成下游。"""
+    changed = False
+    for stage in STAGE_ORDER:
+        info = state["stages"].get(stage, {})
+        if info.get("status") != "done" or not info.get("artifact_digest"):
+            continue
+        current = _stage_artifact_digest(cwd, stage)
+        if current != info.get("artifact_digest"):
+            info["status"] = "dirty"
+            info["dirty"] = True
+            info["dirty_reason"] = f"{stage} 产物自上次验证后发生变化"
+            _invalidate_downstream(state, stage, info["dirty_reason"])
+            changed = True
+    if changed:
+        save_state(cwd, state)
+    return changed
+
+
 def cmd_status(cwd: Path):
     state = load_state(cwd)
-    style = state.get("style") or "未选"
+    _reconcile_artifact_drift(cwd, state)
+    meta = {}
+    meta_path = cwd / "article-meta.yaml"
+    if meta_path.exists() and _yaml:
+        try:
+            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            pass
+    style = meta.get("style") or "未选"
     print(f"\n📋 {state['topic_id']}  风格：{style}")
     print("─" * 55)
     next_stage = None
@@ -1036,7 +1282,7 @@ def cmd_status(cwd: Path):
         elif fc >= 1:
             extra += f"  失败 {fc} 次"
         print(f"  {icon} {s:<13} {STAGE_LABELS[s]}{extra}")
-        if status in ("pending", "failed") and next_stage is None:
+        if status in ("pending", "failed", "dirty") and next_stage is None:
             next_stage = s
     print("─" * 55)
 
@@ -1057,7 +1303,9 @@ def cmd_status(cwd: Path):
             "   pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
         )
 
-    if next_stage:
+    if next_stage == "archive" and pub.get("draft_media_id") and not pub.get("wechat_url"):
+        print("\n⏸ 下一步等待作者在微信后台正式发布并补 wechat_url；当前不可 archive。\n")
+    elif next_stage:
         print(f"\n▶ 下一步：{next_stage}\n  {STAGE_HINTS[next_stage]}\n")
     else:
         print("\n🎉 全流程完成！\n")
@@ -1065,20 +1313,32 @@ def cmd_status(cwd: Path):
 
 def cmd_next(cwd: Path):
     state = load_state(cwd)
+    _reconcile_artifact_drift(cwd, state)
     for s in STAGE_ORDER:
         status = state["stages"].get(s, {}).get("status", "pending")
-        if status in ("pending", "failed"):
+        if status in ("pending", "failed", "dirty"):
+            pub = state["stages"].get("publish", {})
+            if s == "archive" and pub.get("draft_media_id") and not pub.get("wechat_url"):
+                print("⏸ 当前是微信草稿态；正式发布并补 wechat_url 后才能 archive。")
+                return
             print(f"\n▶ 下一阶段：{s} — {STAGE_LABELS[s]}\n")
             print(f"  {STAGE_HINTS[s]}\n")
             return
     print("🎉 全流程完成！")
 
 
-def _pre_publish_errors(cwd: Path) -> list:
+def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     """publish --pre 素材齐备门（2026-07-21 实战固化）：推送前专用。
     iron-rules「发布前硬闸」的落地 -- 只查素材/文件齐备，不查推送证据
     （draft_media_id / wechat_url 归 `verify publish` 推送后验证）。"""
     errors = []
+    if state is None and (cwd / STATE_FILE).exists():
+        state = load_state(cwd)
+    if state is not None:
+        for upstream in STAGE_ORDER[:STAGE_ORDER.index("publish")]:
+            status = state.get("stages", {}).get(upstream, {}).get("status", "pending")
+            if status != "done":
+                errors.append(f"上游阶段 {upstream}={status}；全部 done 后才可生成 publish-ready")
     mat = cwd / "素材"
     if not (mat / "cover.png").exists():
         errors.append("缺 素材/cover.png（微信头图）")
@@ -1089,10 +1349,14 @@ def _pre_publish_errors(cwd: Path) -> list:
         errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
     if not (cwd / "定稿.html").exists():
         errors.append("缺 定稿.html（先走 layout 阶段）")
-    route_errors = _visual_route_errors(cwd)
+    cover_route_errors = _cover_route_errors(cwd, allow_postprocessed=True)
+    errors.extend(f"cover_route: {e}" for e in cover_route_errors)
+    route_errors = _visual_route_errors(cwd, allow_postprocessed=True)
     errors.extend(f"visual_route: {e}" for e in route_errors)
     qa_errors = _visual_qa_errors(cwd)
     errors.extend(qa_errors)
+    _, receipt_errors = verify_visual_receipt(cwd)
+    errors.extend(f"visual_receipt: {e}" for e in receipt_errors)
     try:
         sys.path.insert(0, str(Path(__file__).parent))
         from contracts import log_observation as _logobs_visual
@@ -1111,6 +1375,8 @@ def _pre_publish_errors(cwd: Path) -> list:
             errors.append(f"verify_publish_assets: {e}")
     except Exception as e:
         errors.append(f"verify_publish_assets 异常：{e}")
+    _, manifest_errors = build_publish_manifest(cwd)
+    errors.extend(f"publish_manifest: {e}" for e in manifest_errors)
     return errors
 
 
@@ -1118,26 +1384,35 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
     if pre:
         if stage != "publish":
             print("⚠️ --pre 仅 publish 阶段使用（推送前素材齐备门）")
-            return
+            raise SystemExit(2)
         errors = _pre_publish_errors(cwd)
         if errors:
             print("❌ publish --pre 素材门未过：")
             for e in errors:
                 print(f"   • {e}")
+            raise SystemExit(2)
         else:
-            print("✅ publish --pre 素材齐备门通过（cover + hero + ≥4 信息图 + 定稿.html + 嵌入契约）")
+            ready, ready_errors = write_publish_ready(cwd)
+            if ready_errors:
+                print("❌ publish-ready 封存失败：")
+                for e in ready_errors:
+                    print(f"   • {e}")
+                raise SystemExit(2)
+            print(
+                "✅ publish --pre 通过并写入事前凭证 "
+                f"{PUBLISH_READY_FILE}（digest={ready['manifest_digest'][:12]}）"
+            )
         return  # --pre 只判定不标 done
     state = load_state(cwd)
     passed, errors = verify_stage(stage, cwd, state, legacy=legacy)
     if passed:
-        state["stages"][stage]["status"] = "done"
-        state["stages"][stage]["finished_at"] = _now_iso()
-        # 通过后清零 fail_count，避免历史失败计数误导
-        state["stages"][stage]["fail_count"] = 0
+        _record_stage_success(cwd, state, stage)
         save_state(cwd, state)
         print(f"✅ {stage} 验证通过，已标记 done" + ("（legacy 模式）" if legacy else ""))
     else:
         state["stages"][stage]["status"] = "failed"
+        state["stages"][stage]["last_failed_at"] = _now_iso()
+        _invalidate_downstream(state, stage, f"上游 {stage} 验证失败")
         # 累计 fail_count（feedback_autopilot_never_skip_on_failure：连错 3 次才告警）
         prev_count = state["stages"][stage].get("fail_count", 0)
         new_count = prev_count + 1
@@ -1155,6 +1430,7 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
             print(f"   • 已尝试过哪些恢复方式（请填写）")
             print(f"   禁止用 `pipeline.py skip {stage}` 绕过。"
                   f"如确认是误判，verify 通过即可清零计数。")
+        raise SystemExit(2)
 
 
 def _maybe_trigger_learn_edits(cwd: Path):
@@ -1245,27 +1521,82 @@ def _auto_normalize_punctuation(cwd: Path):
 
 
 def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: bool = False):
+    # 中文标点归一化必须发生在 draft 审批和摘要校验之前；若它改变正文，旧审批应失效。
+    if stage == "writing":
+        try:
+            _auto_normalize_punctuation(cwd)
+        except Exception as e:
+            print(f"⚠️  自动标点归一化出错：{e}")
     state = load_state(cwd)
-    # 记录是否首次 done（status 从非 done 变 done）
-    was_done_before = state["stages"].get(stage, {}).get("status") == "done"
+    candidate = copy.deepcopy(state)
+    publish_receipt_path = cwd / PUBLISH_RECEIPT_FILE
+    publish_receipt_existed = publish_receipt_path.exists()
+    publish_receipt_before = (
+        publish_receipt_path.read_bytes() if publish_receipt_existed else b""
+    )
+    publish_receipt_written = False
+
+    def restore_publish_receipt():
+        if not publish_receipt_written:
+            return
+        if publish_receipt_existed:
+            publish_receipt_path.write_bytes(publish_receipt_before)
+        else:
+            publish_receipt_path.unlink(missing_ok=True)
     # 写入附加元数据
     for kv in extras:
         if "=" in kv:
             k, v = kv.split("=", 1)
-            state["stages"][stage][k.strip()] = v.strip()
+            candidate["stages"][stage][k.strip()] = v.strip()
+
+    # P0：发布前门必须内联执行，--force 也不能绕过。只有本地证据链通过，才把
+    # 这批确切 HTML/hero/视觉字节绑定到微信返回的 draft_media_id。
+    if stage == "publish" and candidate["stages"][stage].get("draft_media_id"):
+        candidate_url = candidate["stages"][stage].get("wechat_url", "")
+        if candidate_url and not candidate_url.startswith("https://mp.weixin.qq.com"):
+            print(f"❌ wechat_url 不是微信公众号链接：{candidate_url[:80]}")
+            raise SystemExit(2)
+        _, ready_errors = verify_publish_ready(cwd)
+        pre_errors = ready_errors + _pre_publish_errors(cwd, state=candidate)
+        if pre_errors:
+            info = state["stages"][stage]
+            if info.get("status") != "done":
+                info["status"] = "failed"
+            info["last_failed_at"] = _now_iso()
+            info["fail_count"] = int(info.get("fail_count") or 0) + 1
+            save_state(cwd, state)
+            print("❌ publish 内联素材门未过；--force 不可绕过：")
+            for e in pre_errors:
+                print(f"   • {e}")
+            raise SystemExit(2)
+        _, receipt_errors = write_publish_receipt(
+            cwd, candidate["stages"][stage]["draft_media_id"]
+        )
+        if receipt_errors:
+            print("❌ 无法写入 publish receipt：")
+            for e in receipt_errors:
+                print(f"   • {e}")
+            raise SystemExit(2)
+        publish_receipt_written = True
     # 先跑 verify
-    passed, errors = verify_stage(stage, cwd, state, legacy=legacy)
+    passed, errors = verify_stage(stage, cwd, candidate, legacy=legacy)
     if not passed:
+        restore_publish_receipt()
         print(f"⚠️  {stage} 自动检查未全部通过：")
         for e in errors:
             print(f"   • {e}")
+        # publish 是不可 force 的外部提交阶段；其他阶段保留历史迁移逃生口。
+        if stage == "publish":
+            force = False
         if not force:
             import sys
             # 2026-04-23 收紧：isatty() 在 Claude Code Bash / MSYS / CI 里偶尔返回
             # True 但 stdin 已关闭，input() 直接抛 EOFError 脚本崩溃。
             # 这里把 input() 放进 try/except，任何读不到输入都当作"否，不强制"。
             answered_yes = False
-            if sys.stdin.isatty():
+            if stage == "publish":
+                print("  （publish 为不可强制阶段；修复证据链后重试）")
+            elif sys.stdin.isatty():
                 try:
                     ans = input("  仍然强制标记为 done？(y/N) ").strip().lower()
                     answered_yes = (ans == "y")
@@ -1276,20 +1607,26 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
 
             if not answered_yes:
                 # 累计 fail_count（与 cmd_verify 一致，触发"连错 3 次"告警）
-                state["stages"][stage]["status"] = "failed"
-                prev_count = state["stages"][stage].get("fail_count", 0)
+                info = state["stages"][stage]
+                if not (stage == "publish" and info.get("status") == "done"):
+                    info["status"] = "failed"
+                    _invalidate_downstream(state, stage, f"上游 {stage} 完成检查失败")
+                info["last_failed_at"] = _now_iso()
+                prev_count = info.get("fail_count", 0)
                 new_count = prev_count + 1
-                state["stages"][stage]["fail_count"] = new_count
+                info["fail_count"] = new_count
                 save_state(cwd, state)
                 if new_count >= 3:
                     print()
                     print(f"⚠️  此阶段已连续失败 {new_count} 次。"
                           f"按 autopilot 失败 SOP，应停下回报用户。")
-                return
-    state["stages"][stage]["status"] = "done"
-    state["stages"][stage]["finished_at"] = _now_iso()
-    state["stages"][stage]["fail_count"] = 0  # done = 通过，清零
-    save_state(cwd, state)
+                raise SystemExit(2)
+    try:
+        _record_stage_success(cwd, candidate, stage)
+        save_state(cwd, candidate)
+    except Exception:
+        restore_publish_receipt()
+        raise
     print(f"✅ {stage} 已标记 done")
 
     # 2026-04-28 新增：writing 阶段触发 learn_edits 飞轮（首次快照 / 再次 diff）
@@ -1300,23 +1637,72 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
         # 半角标点门（format_layout）从此基本是空跑安全网，不再到排版才 exit 2。
         # 必须在 _maybe_trigger_learn_edits 之前，让飞轮基线快照是已归一化版本。
         try:
-            _auto_normalize_punctuation(cwd)
-        except Exception as e:
-            print(f"⚠️  自动标点归一化出错（不影响 done 标记）：{e}")
-        try:
             _maybe_trigger_learn_edits(cwd)
         except Exception as e:
             print(f"⚠️  learn_edits 飞轮触发出错（不影响 done 标记）：{e}")
 
 
-def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = ""):
-    """追加一条生图记录到 .gen-log.jsonl（供后续 verify 回溯用哪个工具）。"""
+def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
+            prompt: str = "", renderer: str = "", model: str = "",
+            provenance_mode: str = "rendered", style: str = ""):
+    """追加 v2 生图证据：producer、renderer、model、prompt/output 字节摘要。"""
+    output = _norm_relpath(output)
+    prompt = _norm_relpath(prompt)
+    is_final = (
+        (stage == "cover" and output == "素材/cover.png")
+        or (stage == "infographic" and output.startswith("素材/infographic")
+            and output.endswith(".png"))
+    )
+    prompt_style = ""
+    prompt_path = cwd / Path(prompt) if prompt else None
+    if prompt_path and prompt_path.exists():
+        match = re.search(
+            r"(?m)^style:\s*[\"']?([^\"'\s]+)",
+            prompt_path.read_text(encoding="utf-8"),
+        )
+        prompt_style = match.group(1) if match else ""
+    if style and prompt_style and style != prompt_style:
+        print(f"❌ --style={style} 与 prompt frontmatter style={prompt_style} 不一致")
+        raise SystemExit(2)
+    style = style or prompt_style
+    if is_final:
+        problems = []
+        if tool not in IMAGE_TOOL_WHITELIST.get(stage, set()):
+            problems.append(f"producer={tool} 不在 {stage} 白名单")
+        if renderer not in IMAGE_RENDERER_WHITELIST:
+            problems.append(f"renderer={renderer or '(空)'} 不在允许像素后端")
+        if not model:
+            problems.append("缺 --model")
+        if stage == "infographic" and style not in {"claymation", "morandi-journal"}:
+            problems.append("final infographic prompt 缺合法 style frontmatter")
+        if not prompt.startswith(FINAL_PROMPT_PREFIX):
+            problems.append(f"--prompt 必须位于 {FINAL_PROMPT_PREFIX}")
+        if not prompt or not (cwd / Path(prompt)).exists():
+            problems.append(f"prompt 不存在：{prompt or '(空)'}")
+        if not (cwd / Path(output)).exists():
+            problems.append(f"output 不存在：{output}")
+        if problems:
+            print("❌ 最终视觉产物日志不完整：")
+            for problem in problems:
+                print(f"   • {problem}")
+            raise SystemExit(2)
     rec = {
+        "schema_version": 2,
+        "record_id": str(uuid.uuid4()),
         "stage": stage,
+        "producer": tool,
         "tool": tool,
         "output": output,
+        "output_sha256": sha256_file(cwd / Path(output)) if output and (cwd / Path(output)).exists() else "",
+        "prompt": prompt,
+        "prompt_sha256": sha256_file(cwd / Path(prompt)) if prompt and (cwd / Path(prompt)).exists() else "",
+        "renderer": renderer,
+        "model": model,
+        "style": style,
+        "provenance_mode": provenance_mode,
         "cmd": cmd,
-        "timestamp": _now_iso(),
+        "recorded_at": _now_iso(),
+        "timestamp": _now_iso(),  # v1 consumer compatibility
     }
     log_path = cwd / GEN_LOG_FILE
     with log_path.open("a", encoding="utf-8") as fp:
@@ -1326,7 +1712,41 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = ""):
         print(f"⚠️  工具 `{tool}` 在黑名单中，verify {stage} 会 fail")
     elif stage in IMAGE_TOOL_WHITELIST and tool not in IMAGE_TOOL_WHITELIST[stage]:
         print(f"⚠️  工具 `{tool}` 不在 {stage} 白名单 {IMAGE_TOOL_WHITELIST[stage]}")
-    print(f"📝 已记录：{stage} / {tool} → {output or '(no output path)'}")
+    print(
+        f"📝 已记录：{stage} / producer={tool} / renderer={renderer or '(未填)'}"
+        f" → {output or '(no output path)'}"
+    )
+
+
+def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = ""):
+    receipt, errors = write_checkpoint_receipt(cwd, gate, source_mode, note)
+    if errors:
+        print(f"❌ {gate} 审批对象未就绪：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(
+        f"✅ 已封存 {gate} 审批：source_mode={source_mode} "
+        f"digest={receipt['artifact_digest'][:12]}"
+    )
+
+
+def cmd_seal(kind: str, cwd: Path):
+    if kind != "visual":  # argparse choices 已拦，保留函数级防护
+        raise SystemExit(f"未知 seal 类型：{kind}")
+    qa_errors = _visual_qa_errors(cwd)
+    if qa_errors:
+        print("❌ 视觉 QA 记录未通过：")
+        for error in qa_errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    receipt, errors = seal_visual_receipt(cwd)
+    if errors:
+        print("❌ visual receipt 封存失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 已封存最终视觉字节：digest={receipt['manifest_digest'][:12]}")
 
 
 def cmd_history(cwd: Path, extras: list):
@@ -1430,7 +1850,7 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
         "cover": cover_rel,
         "wechat_url": url,
         "status": "published",
-        "style": meta.get("style", state.get("style", "")) or "",
+        "style": meta.get("style", "") or "",
         "logic_bone": meta.get("logic_bone", "") or "",
         "dimensions": meta.get("dimensions", []) or [],
         "closing_type": meta.get("closing_type", "") or "",
@@ -1520,6 +1940,7 @@ def cmd_skip(stage: str, cwd: Path, force: bool = False):
 def cmd_reset(stage: str, cwd: Path):
     state = load_state(cwd)
     state["stages"][stage] = {"status": "pending"}
+    _invalidate_downstream(state, stage, f"上游 {stage} 被 reset")
     save_state(cwd, state)
     print(f"🔄 {stage} 已重置为 pending")
 
@@ -1572,6 +1993,17 @@ def cmd_retitle(new_title: str, cwd: Path):
             changed.append("大纲.md(H1)")
     state = load_state(cwd)
     state["stages"].setdefault("writing", {})["title_final"] = new_title
+    outline_info = state["stages"].setdefault("outline", {"status": "pending"})
+    if outline_info.get("status") == "done":
+        outline_info["status"] = "dirty"
+        outline_info["dirty"] = True
+        outline_info["dirty_reason"] = "标题变更，blueprint 审批对象已变化"
+    writing_info = state["stages"].setdefault("writing", {"status": "pending"})
+    if writing_info.get("status") == "done":
+        writing_info["status"] = "dirty"
+        writing_info["dirty"] = True
+        writing_info["dirty_reason"] = "标题变更，draft 审批对象已变化"
+    _invalidate_downstream(state, "outline", "标题变更，所有下游需重验")
     save_state(cwd, state)
     changed.append(".state.json(title_final)")
     print(f"✅ 标题已改为「{new_title}」，已同步：{'、'.join(changed)}")
@@ -1616,9 +2048,30 @@ def main():
         "cover", "infographic", "illustrator", "chart",
         "hero", "bgm_cover", "component",
     ])
-    p_log.add_argument("tool", help="实际调用的工具名，如 baoyu-cover-image / matplotlib")
+    p_log.add_argument("tool", help="语义 producer 名，如 baoyu-cover-image / baoyu-infographic")
     p_log.add_argument("--output", help="生成的文件相对路径")
+    p_log.add_argument("--prompt", help="最终使用的 canonical prompt 相对路径")
+    p_log.add_argument("--renderer", help="像素渲染后端，如 imagegen / gen_img")
+    p_log.add_argument("--model", help="实际渲染模型/版本")
+    p_log.add_argument("--style", help="可选；默认从 canonical prompt frontmatter 读取")
+    p_log.add_argument(
+        "--provenance-mode", default="rendered",
+        choices=["rendered", "adopted-postprocessed"],
+        help="rendered=加 logo 前登记；adopted-postprocessed=仅迁移既有最终图",
+    )
     p_log.add_argument("--cmd", dest="cmd_line", help="实际执行的命令行（可选）")
+
+    p_ap = sub.add_parser("approve", help="把作者确认绑定到当前 blueprint/draft 字节摘要")
+    p_ap.add_argument("gate", choices=["blueprint", "draft"])
+    p_ap.add_argument(
+        "--source-mode", required=True,
+        choices=["new-draft", "author-provided-final", "checkpoint-waived"],
+        help="本次确认来源，避免把作者提供的定稿误记成新稿审批",
+    )
+    p_ap.add_argument("--note", default="", help="可选备注")
+
+    p_seal = sub.add_parser("seal", help="封存最终产物字节证据")
+    p_seal.add_argument("kind", choices=["visual"])
 
     # history 子命令保留注册（避免破坏可能的调用方），但已废弃，改用 archive
     p_h = sub.add_parser("history", help="[DEPRECATED] 改用 archive（仅打印废弃提示）")
@@ -1664,7 +2117,16 @@ def main():
     elif args.cmd == "log":
         cmd_log(args.stage, args.tool, cwd,
                 output=getattr(args, "output", "") or "",
-                cmd=getattr(args, "cmd_line", "") or "")
+                cmd=getattr(args, "cmd_line", "") or "",
+                prompt=getattr(args, "prompt", "") or "",
+                renderer=getattr(args, "renderer", "") or "",
+                model=getattr(args, "model", "") or "",
+                provenance_mode=getattr(args, "provenance_mode", "rendered"),
+                style=getattr(args, "style", "") or "")
+    elif args.cmd == "approve":
+        cmd_approve(args.gate, cwd, args.source_mode, args.note)
+    elif args.cmd == "seal":
+        cmd_seal(args.kind, cwd)
     elif args.cmd == "history":
         cmd_history(cwd, getattr(args, "extras", []))
     elif args.cmd == "archive":

@@ -113,7 +113,6 @@ music:
   model: "music-2.6-free"    # MiniMax 限免版（付费用 music-2.6）
 
 # 阶段完成记录（各阶段完成后勾选）
-completed_stages: []
 # - outline
 # - writing
 # - title

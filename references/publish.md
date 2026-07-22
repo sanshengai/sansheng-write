@@ -96,8 +96,10 @@
 
 1. **`format_layout.py --all`** -- 一键后处理（H2格式、表格品牌化、导读栏、推荐阅读、品牌色清洗）
 2. **`add_logo.js`** -- 给 AI 配图加水印（**排除** hero.png 和 bgm_cover.png--尺寸太小，打水印影响观感）
-3. **`_visual-qa.md`** -- Agent 逐张看图后打卡封面主标题占比/裁切/杂字，以及四张信息图的统一 style/逐字内容；缺失或不完整时 `pipeline.py verify publish --pre` 阻断
-4. **`baoyu-post-to-wechat`** -- 发布到微信草稿箱
+3. **`compress_images.py`** -- 压缩最终发布图
+4. **最终视觉 QA + `pipeline.py seal visual`** -- Agent 逐张打开后处理后的封面/信息图，打卡主标题占比、裁切、杂字、统一 style 与逐字内容；receipt 绑定确切字节
+5. **`pipeline.py verify publish --pre`** -- 调微信前的必跑步骤；通过后写 `_publish-ready.json`
+6. **`baoyu-post-to-wechat`** -- 发布到微信草稿箱；返回 media_id 后立刻执行 `pipeline.py done publish draft_media_id=<media_id>`，写 publish receipt
 
 ```bash
 # 发的是已排版的 定稿.html（无 frontmatter）→ 必须显式 --cover，否则封面取不到
@@ -115,6 +117,8 @@ baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上�
 
 🔴 **改稿重推 = 新增草稿，不覆盖旧草稿（2026-07-21 实战固化）**：wechat-api 每次推送都在草稿箱新建一条，不会替换同标题旧稿。改稿重推后**必须去微信后台删掉旧版草稿**，否则两篇并存容易发错。建议推完新稿后顺手把 media_id 记进 `pipeline.py done publish draft_media_id=...`（会覆盖 state 里的旧值）。
 
+🔴 **两阶段 receipt 硬门**：先 `verify publish --pre` 生成事前 `_publish-ready.json`，再调用微信；`done publish draft_media_id=...` 复验 ready、canonical prompt、producer/renderer/hash、最终视觉 receipt、HTML 与 hero，并绑定 media_id。`--force` 不可绕过。推送后再改本地产物，旧 receipt 自动失效，必须重推。
+
 ---
 
 ## 完整发布流程（排版→发布→更新库）
@@ -123,9 +127,11 @@ baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上�
 2. **MD→HTML 转换** -- `baoyu-markdown-to-html 定稿.md`
 3. **执行 `format_layout.py --all`** -- 一键后处理（导读栏、H2、表格、推荐阅读、品牌色）
 4. **执行 `add_logo.js`** -- 给配图添加水印
-5. 调用 `/baoyu-post-to-wechat` -- 发布到微信草稿箱
-6. **归档入库** -- 运行 `pipeline.py archive`：写一条记录进 `<数据目录>/works.yaml`（按 category 自动分配 code），并自动刷新 `articles.md` + `作品库看板.html`（旧的「手动覆写 articles.md」「add_published_article.py」均已废弃）
-7. **沉淀内容** -- 更新金句库和风格库
+5. 压缩 → 逐张看最终图 → 写 `_visual-qa.md` → `pipeline.py seal visual`
+6. `pipeline.py verify publish --pre` -- 要求全部上游 stage=done，并写事前 publish-ready
+7. 调用 `/baoyu-post-to-wechat` -- 发布到微信草稿箱；拿到 media_id 后 `pipeline.py done publish draft_media_id=...`
+8. **归档入库** -- 正式发布并补 wechat_url 后运行 `pipeline.py archive`
+9. **沉淀内容** -- 更新金句库和风格库
 
 ---
 
@@ -164,6 +170,7 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 - [x] 所有引用的硬核数据已配有合法来源？
 - [x] 图片生成没有遗漏打上 `add_logo.js` 的水印？
 - [x] `_visual-qa.md` 是否记录封面缩略图主次、裁切安全区、杂字，以及四张信息图的统一画风与逐字核对？
+- [x] 是否已对最终字节执行 `pipeline.py seal visual`，且 `verify publish --pre` 通过？
 
 ### 第三步：配套物料确认
 

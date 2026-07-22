@@ -207,7 +207,7 @@ python $SKILL/scripts/format_layout.py 定稿.html --all \
 
 | 规则 | 要求 |
 |------|------|
-| 分辨率 | **统一 1K**（`--quality normal --imageSize 1K`；`--quality` 只认 normal/2k，1K 走 `--imageSize`，batch.json 中 `"quality":"normal"`），禁止生成 2K 或更高 |
+| 分辨率 | **统一 1K 目标带**；由实际 renderer 使用它支持的合法尺寸参数，禁止把某一后端的 `--quality/--imageSize` 当成跨后端通用参数 |
 | Logo 水印 | **所有 AI 生成图片**右下角加 logo，使用 `add_logo.js`（见下方命令） |
 | Logo 水印例外 | ① 网络搜索的真实人物/事件照片**不加**水印；② `hero.png` 和 `bgm_cover.png`（尺寸太小，打水印反而影响观感）**不加**水印 |
 | 图片存放 | 统一存至 `<数据目录>/{N}-{选题名}/素材/` |
@@ -379,7 +379,7 @@ Markdown 中的标记：
 
 生成命令：
 ```bash
-baoyu-image-gen "A clean flat-design bar chart infographic on white background. Title: '2025年Q1智能家居品牌市场份额' [Text Content - MUST BE IN CHINESE]. Data: 小米 35%, 华为 28%, 美的 15%, 其他 22%. Color scheme: primary #2F6F8F, secondary #A0D2C4, accent #999999. Style: minimal, professional, clear data labels in Chinese." --ar 16:9 --quality normal --imageSize 1K
+数值型柱/折/饼/雷达图不要调用生图模型；按本节数据表用 matplotlib/pyecharts 本地渲染并保留 `.py` 源文件。
 ```
 
 生成后执行 add_logo.js 加水印，插入 HTML 替换原表格。
@@ -391,8 +391,7 @@ baoyu-image-gen "A clean flat-design bar chart infographic on white background. 
 ### 3e. 全文贯穿信息图（baoyu-infographic，每篇必执行）
 
 > 🔴 **必须通过 Skill 工具调用 `baoyu-infographic` skill，严禁直接调用底层 `baoyu-image-gen/main.ts` 或内置生图工具（`generate_image`、`internal_image_gen`、`imagine` 全部黑名单）。**
-> 直接调底层会跳过 baoyu-infographic 的 "21 layout × 21 style" 专业系统，输出降级为氛围图而非信息图。
-> `pipeline.py verify infographic` 已升级为**严格白名单**：工具不是 `baoyu-infographic` 直接报错（2026-05-04 修复）。
+> 直接调底层会跳过 baoyu-infographic 的内容分析、layout/style 选型与结构稿，输出降级为氛围图。renderer 可由 child skill 选择，但 producer 必须是 `baoyu-infographic`。
 
 #### 数量与分布规则（2026-05-04 升级）
 
@@ -414,20 +413,20 @@ baoyu-image-gen "A clean flat-design bar chart infographic on white background. 
 | `--style` | `claymation` 或 `morandi-journal`（按文章类型二选一） | claymation = AI 工具/教程/产品评测；morandi-journal = 趋势/商业/人文/育儿/温和议题。同篇不混风格，缺省默认 claymation。详见 [image-routing.md 信息图 style 选择铁律](image-routing.md)。craft-handmade 等其余 20 种已封存 |
 | `--aspect` | 按位置：开篇/结尾 `9:16`，中间 `16:9` | **必传**，不接受默认 |
 | `--lang` | `zh` | 简体中文标签，违反则 verify 阶段拦截 |
-| `--quality` | `1k` | 长边 ≈ 1024px（1K 横切带 [900,1200]），见 image-routing.md「1K 分辨率横切规范」 |
-| `--layout` | 自动（根据内容选） | 21 选 1，不强制；若手动指定见下表 |
+| renderer 尺寸 | 1K 目标带 | 由 child skill 对实际 renderer 传合法参数；不要把某后端的 `--quality/--imageSize` 生搬到 baoyu 语义调用 |
+| `--layout` | 自动（根据内容选） | 不强制；若手动指定见下表 |
 
 **Layout 选型参考（21 种中常用 7 种）：**
 
 | 内容特征 | 推荐 layout |
 |---------|-------------|
-| 旅程/成长/里程碑 | `journey-path` |
-| 多主题概览/卡片网格 | `grid-cards` |
-| 流程/历史/时间线 | `timeline-horizontal` |
-| 多因素对比 | `comparison-table` |
-| 利弊权衡 | `scale-balance` |
-| 表面 vs 隐藏层面 | `iceberg` |
-| 因果根因分析 | `fishbone` |
+| 旅程/成长/里程碑 | `winding-roadmap` 或 `linear-progression` |
+| 多主题概览/卡片网格 | `bento-grid` |
+| 流程/历史/时间线 | `linear-progression` |
+| 多因素对比 | `comparison-matrix` |
+| 两方对照 | `binary-comparison` |
+| 层级/成熟度 | `hierarchical-layers` |
+| 因果根因分析 | `hub-spoke` 或自动 |
 
 #### 调用模板
 
@@ -439,9 +438,9 @@ Skill(skill="baoyu-skills:baoyu-infographic", args="
 --style claymation   # 或 morandi-journal，按文章类型二选一（同篇统一）
 --aspect 9:16   # 或 16:9，按位置定
 --lang zh
---quality normal --imageSize 1K
---layout grid-cards   # 可选，不传则自动
-输出：素材/infographic_NN_<slug>.png
+--layout bento-grid   # 可选，不传则自动
+最终 prompt：素材/prompts/final/infographic-NN.md
+输出：素材/infographic-NN.png
 ")
 ```
 
@@ -457,10 +456,13 @@ Skill(skill="baoyu-skills:baoyu-infographic", args="
 
 ```bash
 python "$SKILL/scripts/pipeline.py" log infographic baoyu-infographic \
-  --output 素材/infographic1.png --cmd "Skill baoyu-skills:baoyu-infographic --aspect 9:16 --layout grid-cards ..."
+  --output 素材/infographic-01.png \
+  --prompt 素材/prompts/final/infographic-01.md \
+  --renderer imagegen --model '<实际模型>' \
+  --cmd "Skill baoyu-skills:baoyu-infographic --aspect 9:16 --layout bento-grid ..."
 ```
 
-工具名**必须**是 `baoyu-infographic`（白名单唯一允许值）。verify 会做严格匹配。
+producer **必须**是 `baoyu-infographic`（精确拓扑图例外为 `baoyu-diagram`）；renderer 单独记录。verify 会校验两层、prompt/output 摘要与 model。
 
 生成后统一执行 add_logo.js 加水印。**🔴 严禁在 prompt 里加任何水印文字，AI 会把它渲染成图片内容，导致出现双重水印。水印只通过 add_logo.js 后期叠加。**
 
@@ -481,7 +483,7 @@ python "$SKILL/scripts/pipeline.py" log infographic baoyu-infographic \
 
 > 🔴 **必须调用 `/baoyu-cover-image` skill，严禁用内置工具或自写脚本替代。**
 >
-> 完整的构图、文字提炼、色彩、安全区、背景点缀等**设计规范**已写入 `~/.baoyu-skills/baoyu-cover-image/EXTEND.md`，baoyu skill 每次生成时自动加载，**此处不重复**。
+> 通用默认偏好可放 `~/.baoyu-skills/baoyu-cover-image/EXTEND.md`；本篇 `article-meta.yaml`、blueprint 与 `cover-styles.md` 的明确值优先，EXTEND 不得反向覆盖。
 
 封面图**不嵌入正文**，后续在微信后台设置为「封面图片」属性。
 
@@ -491,13 +493,9 @@ python "$SKILL/scripts/pipeline.py" log infographic baoyu-infographic \
 
 1. 通读全文 + 标题 → 提炼出**一个核心论点**
 2. 将论点转化为**具体、广为人知的视觉符号**（强制查证官方标志，禁止 AI 凭空捏造）
-3. **选封面风格**（五选一，避免每篇雷同）：
-   - 读 [cover-styles.md](cover-styles.md) 的 5 种「文字在侧」布局：`briefing` / `noir` / `montage-evidence` / `montage-pipeline` / `montage-starry`（原 `monument` / `horizon` / `focus` / `obsidian` 均已下架--上下堆叠或对角留白版式会挤压标题）
-   - 优先看 `article-meta.yaml` 的 `cover_style` 字段，已填则直接用
-   - 未填则读 `<数据目录>/works.yaml` 近 3 篇已发布的 `cover_style`，避开已用的风格，从剩余池按文章调性选
-   - 共用铁律（深色底 / 主题色 / 2.35:1 / 关键词高亮 / 副标题分层）不变，**只切换构图骨架**
+3. **选封面风格**：默认且锁定 `montage-evidence`；只有 `article-meta.yaml` 明确填其他 `cover_style`，才视为有意 override。禁止从历史 prompt/EXTEND 自动换回 conceptual、focus 或旧五选一逻辑。
 4. **提炼封面文字**：主标题（3-7 字核心冲突词）+ 副标题（6-12 字价值点），**严禁照搬文章标题**
-5. **写 cover.md prompt 时显式覆写布局**：在 prompt 的 LAYOUT 段落**完整拷贝**所选风格的"骨架 + 视觉主体 + 文字排布"描述（见 cover-styles.md 对应风格章节），覆盖 EXTEND.md 的"左图右字"默认值。文字铁律（关键词高亮、副标题分层）沿用 [iron-rules.md 封面图文字样式铁律](iron-rules.md)
+5. 最终 prompt 固定写 `素材/prompts/final/cover.md`：默认 `montage-evidence` 为**左侧文字、右侧证据拼贴**，标题块总高 18--22%；明确禁止 `largest` / `extra-black` / `ultra-black`。
 
 > 详细的辨识度优先级、示例、"缩略图测试"标准和背景点缀规范见 EXTEND.md。
 
@@ -513,16 +511,19 @@ python "$SKILL/scripts/pipeline.py" log infographic baoyu-infographic \
 ```
 
 **生成后**：
-1. 存至 `素材/cover.png`，执行 add_logo.js 加水印
-2. **立即登记到 `.gen-log.jsonl`**（`pipeline.py verify cover` 会做白名单 + 元信息双校验）：
+1. 原始 renderer 输出存至 `素材/cover.png`
+2. **加 logo 前立即登记 v2 证据**：
    ```bash
-   python "$SKILL/scripts/pipeline.py" log cover baoyu-cover-image --output 素材/cover.png --cmd "/baoyu-cover-image 定稿.md --quick"
+   python "$SKILL/scripts/pipeline.py" log cover baoyu-cover-image \
+     --output 素材/cover.png --prompt 素材/prompts/final/cover.md \
+     --renderer imagegen --model '<实际模型>' --cmd "/baoyu-cover-image 定稿.md --quick"
    ```
+3. 再执行 add_logo.js + compress；全部最终图逐张 QA 后执行 `pipeline.py seal visual`
 
 **验收 checklist**：
 - ☐ 深色底 + 局部美感点缀（非均匀撒星点）
-- ☐ 左侧图标反映核心论点，图标组合有叙事性，绝不侵占右侧文字区
-- ☐ 右侧文字：主标题大字居右（使用 `--text title-subtitle`），副标题白/浅灰
+- ☐ 左侧文字块总高 18--22%，主副层级精致，不是海报巨字
+- ☐ 右侧证据拼贴反映核心论点，不侵占左侧文字安全区
 - ☐ 文字高光：主标题内提炼出核心字词，统一使用主题色 `#2F6F8F` 进行点缀与轻微强调，整体风格保持克制不突兀
 - ☐ 右下角干净（Logo 由 add_logo.js 后期叠加）
 - ☐ 缩略图测试：缩至 140×60px 后主体仍可辨识（推荐卡片封面尺寸）

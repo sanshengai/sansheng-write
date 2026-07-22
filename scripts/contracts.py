@@ -2319,7 +2319,11 @@ def audit_quant_signals(article_path: str) -> dict:
 
 # ===== 【第 17 节】skill 自省日志 log_observation =====
 def log_observation(stage: str, event: str, verdict: str,
-                    detail: str = "", article: str = "") -> None:
+                    detail: str = "", article: str = "", *,
+                    issue_codes: list[str] | None = None,
+                    metrics: dict | None = None,
+                    artifact_digest: str = "",
+                    source: str = "runtime") -> None:
     """追加一条运行观察到 `_skill-observations.jsonl`（仅本地文件，**不联网**）。
 
     这份日志给「复核 skill」用：攒够若干篇之后，可以让它读这份日志，
@@ -2342,6 +2346,8 @@ def log_observation(stage: str, event: str, verdict: str,
     import datetime
     import hashlib
     import os
+    import re
+    import uuid
     from pathlib import Path
 
     if (os.environ.get('SANSHENG_WRITE_TELEMETRY', '').strip().lower()
@@ -2350,9 +2356,12 @@ def log_observation(stage: str, event: str, verdict: str,
 
     try:
         # 观察日志归飞轮目录（profile 配置时在 <profile>/flywheel/，未配置回退仓根）
-        import sys as _sys
-        _sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from profile_config import observations_file
+        try:
+            from .profile_config import observations_file
+        except ImportError:  # pipeline.py 以 scripts/ 作为 sys.path 根时的兼容路径
+            import sys as _sys
+            _sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from profile_config import observations_file
         log_path = observations_file()
         raw_article = article or Path.cwd().name
         article = raw_article
@@ -2362,8 +2371,73 @@ def log_observation(stage: str, event: str, verdict: str,
         if article != raw_article and raw_article and raw_article in detail_text:
             # 匿名态下 detail 里若被调用方带进了明文文章名，同样替换成哈希（复核 F6）
             detail_text = detail_text.replace(raw_article, article)
+        prior_attempts = 0
+        if log_path.exists():
+            for line in log_path.read_text(encoding='utf-8').splitlines():
+                try:
+                    old = json.loads(line)
+                except Exception:
+                    continue
+                if ((old.get('article_uid') or old.get('article')) == article
+                        and old.get('stage') == stage and old.get('event') == event):
+                    prior_attempts += 1
+        normalized = (verdict or '').strip().lower()
+        passed = (True if normalized in {'ok', 'pass', 'passed', 'normal'} else
+                  False if normalized in {'fail', 'failed', 'blocked', 'error', 'suspicious'}
+                  else None)
+        severity = (
+            'error' if normalized in {'fail', 'failed', 'blocked', 'error'} else
+            'warning' if normalized in {'warning', 'warn', 'suspicious'} else
+            'info'
+        )
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        run_id = os.environ.get('SANSHENG_WRITE_RUN_ID', '').strip()
+        if not run_id:
+            state_path = Path.cwd() / '.state.json'
+            if state_path.exists():
+                try:
+                    run_id = str(json.loads(state_path.read_text(encoding='utf-8')).get('run_id') or '')
+                except Exception:
+                    pass
+        run_id = run_id or f"run-{os.getpid()}"
+        issue_list = list(issue_codes or [])
+        if not issue_list and passed is False:
+            issue_list = [f"{stage}.{event}.{normalized or 'fail'}"]
+        metric_map = dict(metrics or {})
+        if not metric_map:
+            for key, value in re.findall(r"([A-Za-z_][\w.-]*)=([^,;\s]+)", detail_text):
+                try:
+                    metric_map[key] = float(value) if '.' in value else int(value)
+                except ValueError:
+                    metric_map[key] = value
+        if not artifact_digest:
+            candidates = {
+                'verify_writing': ['定稿.md'],
+                'verify_layout': ['定稿.html'],
+                'format_layout': ['定稿.html'],
+                'verify_infographic': ['_visual-receipt.json', '.gen-log.jsonl'],
+                'verify_publish': ['_publish-receipt.json', '_publish-ready.json'],
+            }.get(stage, [])
+            for name in candidates:
+                path = Path.cwd() / name
+                if path.exists():
+                    artifact_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                    break
         rec = {
-            'ts': datetime.datetime.now().strftime('%Y-%m-%dT%H:%M'),
+            'schema_version': 2,
+            'record_id': str(uuid.uuid4()),
+            'run_id': run_id,
+            'recorded_at': now.isoformat(timespec='seconds'),
+            'article_uid': article,
+            'attempt': prior_attempts + 1,
+            'passed': passed,
+            'severity': severity,
+            'issue_codes': issue_list,
+            'metrics': metric_map,
+            'artifact_digest': artifact_digest,
+            'source': source,
+            # v1 兼容字段：旧聚合脚本仍可读取。
+            'ts': now.strftime('%Y-%m-%dT%H:%M'),
             'article': article,
             'stage': stage,
             'event': event,

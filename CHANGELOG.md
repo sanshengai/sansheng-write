@@ -4,6 +4,30 @@
 
 ## [未发布]
 
+### 新增
+
+- **视觉与发布 receipt**：`pipeline.py seal visual` 将 logo/压缩后的最终封面、信息图、canonical prompt 和 QA 记录绑定为 SHA-256 清单；`done publish draft_media_id=...` 再把 HTML、hero 与视觉清单绑定到微信草稿 media_id。
+- **审批对象摘要**：`pipeline.py approve blueprint|draft --source-mode ...` 将作者确认绑定到具体大纲/meta 或语义定稿/双外审/QC，改稿后旧批准自动失效。
+- **生图证据 v2**：最终视觉日志分开记录 baoyu producer 与像素 renderer，并保存 model、prompt/output 摘要与 record id。
+- **观察日志 v2**：新增 run/record id、attempt、passed、severity、issue_codes、metrics 与 artifact digest；复核同时看原始重试成本和每篇最终结果。
+
+### 改进
+
+- **发布两阶段门**：`verify publish --pre` 在调微信前写 publish-ready，`done publish` 在拿到 media_id 后复验并写最终 receipt；`--force` 也不能绕过。
+- **状态自动失效**：state v2 保留首次完成时间，重复验证只更新最后验证时间和尝试次数；上游摘要变化时自动把已完成下游标为 `dirty`。
+- **内容配置 SSOT**：`.state.json` 不再复制 style/lead 参数，内容配置统一以 `article-meta.yaml` 为准。
+- **baoyu 路由统一**：文档明确 `baoyu-cover-image` / `baoyu-infographic` 负责分析、版式与风格，`imagegen` / `gen_img` 只负责渲染；最终 prompt 统一放 `素材/prompts/final/`。
+
+### 修复
+
+- **门禁失败可被脚本识别**：`verify` / `done` 的正常失败统一返回非零退出码，上游失败会立即污染已完成下游；status 同时检测 canonical prompt、最终视觉 QA 与 receipt 漂移。
+- **发布状态原子化**：仅凭 `wechat_url` 不再绕过新流程 receipt；失败的发布尝试不会覆盖可信 `draft_media_id`、`wechat_url` 或 receipt，合法草稿态也不再误报缺正式链接。
+- **审批结论防伪**：checkpoint receipt 同时绑定审批锚点文件、SHA-256 与 `approved/waived` 结论；锚点写成拒绝或后来被改动都会失效。
+
+### 迁移
+
+- ⚠ 破坏性：新文章的最终封面/信息图日志需补 `--prompt --renderer --model`，并在发布前执行 `pipeline.py seal visual`；启用检查点的 profile 需在作者确认后执行 `pipeline.py approve`。历史文章可继续用 `--legacy` 做只读迁移。
+
 ## [0.5.0] -- 2026-07-22
 
 这一版把视觉路由从“写在文档里的建议”升级为可追溯、可阻断的发布契约，防止混合题材选错画风后一路发布。

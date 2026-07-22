@@ -6,7 +6,7 @@
 
 ## 生图后端总则（key 前缀分流）
 
-生图统一走唯一入口 `scripts/gen_img.py`，它按 `GOOGLE_API_KEY` 的前缀自动分流：`AIza` 前缀走 AI Studio，`AQ.` 前缀走 Vertex Express（后者另需环境变量 `GOOGLE_VERTEX_PROJECT`）。BGM 走 `generate_article_bgm.py`（MiniMax `music-2.6-free`）。生图工具选择、模型分场景、参数、禁用项、数据图防幻觉等所有细则统一在 [image-routing.md](image-routing.md)，进入任何生图环节前必先读取。
+封面/信息图采用两层路由：`baoyu-cover-image` / `baoyu-infographic` 是不可跳过的语义 producer，`imagegen` / `gen_img.py` 等只是 child skill 选定的像素 renderer；renderer 不得冒充 producer。BGM 走 `generate_article_bgm.py`。完整证据链、参数与数据图防幻觉细则统一在 [image-routing.md](image-routing.md)，进入任何生图环节前必先读取。
 
 ---
 
@@ -235,8 +235,8 @@ MD 里 `### 三级标题` **只写主标题本身**，**严禁**手写中文数�
 🔴 **任何 `{数据目录}/{N}/` 文章工作（含 compaction 续接、局部改稿）都必须走 `pipeline.py` 状态机逐项打勾，严禁把 baoyu / format_layout / 发布工具当散件直接调、绕过清单。**
 
 - **开局**：进入任何 `{数据目录}/{N}/` 目录第一件事 `pipeline.py status`，看 STAGE_ORDER 哪些 stage 没过，逐项补齐。别把"改稿"当成可以跳过 pipeline 的散活。
-- **发布前硬闸**：调发布工具之前**必须先** `pipeline.py verify publish` 通过——它硬查 `cover` + `hero` + **≥4 信息图**；对 **BGM/AUDIO-CARD 仅软兜底**（只有 `.state.json` 里 `bgm` 已标 done 才硬拦，`pending`/`skip`/无 state 时放行）。verify 不过 = 不准发。**直调发布工具绕过 verify 是本铁律的头号违规。**
-- **按 skill 既定路由走，别用全局默认**：生图按 [image-routing.md](image-routing.md)（走 `gen_img.py`，key 按前缀分流）；BGM 按「BGM 非可选铁律」。
+- **发布前硬闸**：调发布工具之前**必须先** `pipeline.py verify publish --pre` 通过并写 `_publish-ready.json`。它要求 publish 之前所有阶段均为 done，并硬查 canonical prompt、视觉 receipt、cover/hero/≥4 信息图与 HTML。微信返回 media_id 后再执行 `done publish draft_media_id=...` 写最终 receipt。任一命令非零退出即不准继续。
+- **按 skill 既定两层路由走，别用全局默认**：先走对应 baoyu producer，再由 child skill 选择 renderer；BGM 按「BGM 非可选铁律」。
 - **踩坑教训**：曾没走 pipeline、发布工具直调绕过 `verify_publish_assets`，连漏 BGM + hero，还误用全局默认生图后端。教训＝skill 有计划但没进它的计划，发布闸不强制就会被绕过。
 
 ## 发布完整性铁律
@@ -281,13 +281,13 @@ MD 里 `### 三级标题` **只写主标题本身**，**严禁**手写中文数�
 
 1. **必走 `/baoyu-infographic` skill**，禁止手写 SVG / 直接调 `baoyu-image-gen` / 用 `baoyu-diagram` 替代（baoyu-diagram 只给"精确流程图"用，不给"信息汇总卡"用）
 2. **风格按信息架构主轴二选一**：`infographic_subject: ai-product`（具名 AI 模型/工具/产品/功能作卡片或对比轴）固定 `claymation`；`infographic_subject: phenomenon`（现象/商业/人文关系作主轴）固定 `morandi-journal`。混合题材一律**产品/模型轴优先于趋势结论**。同篇不混风格；两字段都必须在 `article-meta.yaml` 显式指定。craft-handmade 等其余风格只作历史兼容，新文章禁止。
-3. **必须用 `pipeline.py log infographic baoyu-infographic --cmd "..."` 记录** — 没有 `.gen-log.jsonl` 记录的 PNG 视为"来源不明"会被 verify 拦
+3. **必须用 v2 日志记录**：`pipeline.py log infographic baoyu-infographic --output ... --prompt 素材/prompts/final/... --renderer ... --model ... --cmd "..."`。没有 producer + renderer + model + prompt/output hash 的 PNG 视为来源不明
 
 踩坑教训：曾手写 SVG 跳过 baoyu-infographic 流程，pipeline 因为没记录在 .gen-log 里**没拦下来**。`verify infographic` 现已加 3 道关卡：
 - gen-log 必须有 infographic 记录
-- 记录的 tool 必须是 baoyu-infographic
+- 记录的 producer 必须是 baoyu-infographic；renderer 单独记录，不能互相顶替
 - 每张最终图的最新精确 output 记录必须含 `--style claymation` 或 `--style morandi-journal`，并引用实际 prompt 文件；meta / analysis / structured / prompt / gen-log / final-set 六处必须一致
-- 发布前必须有 `_visual-qa.md`：Agent 逐张看图核对封面字号/裁切/杂字与四张信息图画风/逐字内容；缺凭证不准推草稿
+- 发布前必须对 logo/压缩后的最终图逐张 QA，写 `_visual-qa.md` 并执行 `pipeline.py seal visual`；`done publish draft_media_id=...` 内联硬查，`--force` 不准绕过
 
 ## 模型对比内容铁律
 

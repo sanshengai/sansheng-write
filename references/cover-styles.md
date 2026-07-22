@@ -1,4 +1,4 @@
-# 🎨 封面风格池（5 种「文字在侧」布局：briefing / noir + montage 3 亚型）
+# 🎨 封面风格（默认锁定 montage-evidence；其余仅显式 override）
 
 > **默认风格 = `montage-evidence`（可在 profile 配置改默认）。** 本 skill 的封面签名视觉是「中文 L1+L2 标题 + 后方英文 OVERSIZED GHOST 半隐水印」的蒙太奇拼贴式，默认所有新文章走 `montage-evidence`。若想换默认风格，改 `profile/brand.yaml` 或在 `article-meta.yaml` 显式填 `cover_style`。
 >
@@ -15,14 +15,14 @@
 
 > 解决"每篇封面视觉太像"的审美疲劳问题。5 种布局共享**品牌一致性**（深色底 + 主题色 + 2.35:1），但在**构图、背景氛围**上刻意拉开差异。
 >
-> 🔴 **版式收紧**：全部都是「文字在侧」的版式--文字在右侧或右上对角位置始终保持足够字号权重，**绝不做文字上下堆叠**。上下堆叠版式（符号居中+文字居中正下方、文字贴顶/贴底）实测会严重挤压主标题字号，导致标题在缩略图上不醒目，已删除、不可选。
+> 🔴 **版式收紧**：默认 `montage-evidence` 固定左文右拼贴；仅显式启用 briefing/noir 时才使用左图右字。任何风格都不做文字上下堆叠。
 >
 > 🔴 **风格池已收敛为 5 种**：briefing / noir / montage-evidence / montage-pipeline / montage-starry（montage 三亚型同源）。历史下架的「对角构图 + 单物件 + 大量留白」版式（暖光物件特写 / 墨绿星河物件）实测在删副标题后对角版式失衡、与信息驱动型主线调性偏差，已下架，不再可选。
 
 ## 不变的底层铁律（所有风格必守）
 
 - 比例：`2.35:1`（微信头条封面）
-- **文字位置铁律**：文字必须在画面的**右侧**（左图右字）或**右上对角**（对角式），绝不允许放在视觉主体的正上方或正下方
+- **文字位置铁律**：按具体风格骨架执行；默认 montage = 左文右拼贴，briefing/noir = 左图右字。禁止用 EXTEND 的旧默认反转本篇骨架
 - **背景色板**（只在两种深色里选，由所选风格决定）：
   - 深炭 `#0E0E10`（中性底，风格 A briefing / C montage-evidence / D montage-pipeline 用）
   - 纯黑星河 `#030712`（偏冷底 + 银河若隐若现，风格 B noir 用）
@@ -348,11 +348,11 @@
 
 需其他风格时，在 `article-meta.yaml` 显式填 `cover_style:`（如 `briefing` / `noir` / `montage-pipeline` / `montage-starry`）。
 
-### 3. 写 cover.md 时
+### 3. 写 canonical cover prompt 时
 
 按选定 style，从本文件取对应段落的"骨架 + 视觉主体 + 文字排布"描述，拼入 cover prompt 的 LAYOUT 和 VISUAL 部分。共用的底层铁律（品牌色/文字层次/留白）由 [iron-rules.md 封面图文字样式铁律](iron-rules.md) 保证，不重复写。
 
-🔴 **cover.md 固定命名骨架**（顺序不可乱，每段必带命名标题，缺段视为 prompt 不合格）：先写 frontmatter（`type: cover` / `aspect: 2.35:1` / `palette: dark-charcoal` / `model: gemini-3-pro-image-preview`），正文按固定顺序分段--① **CONTENT CONTEXT**（原标题 + 2-3 句摘要 + 3-5 关键词，封面四件套落地，主物件/徽章/ghost 都从这里推导）② **LAYOUT**（左 50% 文字 / 右 44% 拼贴 / 6% 间隙）③ **TEXT ELEMENTS**（英文 ghost + 中文 L1 L2 + quiet-pill 三件套）④ **RIGHT COLLAGE**（主物件 + 黑底徽章 + 虚线箭头）⑤ **COLOR & BACKGROUND**（深炭 #0E0E10 + 主题色 #2F6F8F + 纯白 + 方向性单光源）⑥ **STRICT FORBIDDEN**（见 iron-rules 必带锚句清单，含 hex 不入图）。把"决策字段"（frontmatter）与"描述 prose"分离，换 agent / 换篇出图一致、可机检。
+🔴 最终文件固定为 `素材/prompts/final/cover.md`（候选不得与它并列冒充最终版）。命名骨架顺序不可乱：frontmatter 后依次为 ① **CONTENT CONTEXT** ② **LAYOUT** ③ **TEXT ELEMENTS** ④ **RIGHT COLLAGE** ⑤ **COLOR & BACKGROUND** ⑥ **STRICT FORBIDDEN**。默认 montage 明写左 50% 文字 / 右 44% 拼贴 / 6% 间隙，且禁 `largest` / `extra-black` / `ultra-black`。
 
 ---
 
@@ -364,4 +364,4 @@
 
 ## 🎨 封面阶段生成
 
-封面阶段 = 按选定风格（默认 montage-evidence）模板**生成单张** `素材/cover.png`（`2.35:1` cinematic、1K 长边 ≈1024px、深色底 + 主题色、文字在侧、右下角禁品牌识别文字），走 `scripts/gen_img.py`。仅当 `article-meta.yaml` 显式填非默认的 `cover_style` 时，才生成那一种**指定**风格。
+封面阶段 = `baoyu-cover-image` producer 按选定风格（默认 montage-evidence）生成 canonical prompt，再由其选定 renderer 生成单张 `素材/cover.png`。原始 PNG 先写 v2 gen-log，再加 logo/压缩；最终视觉 QA 后执行 `pipeline.py seal visual`。仅当 `article-meta.yaml` 显式填非默认 `cover_style` 时，才启用那一种指定风格。

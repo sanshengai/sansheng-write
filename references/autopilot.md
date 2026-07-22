@@ -73,8 +73,8 @@
 1. **一镜到底，拒绝中断**：无论是大纲定核心、正文生文字、还是后台生图发布。所有步骤均被折叠进后台思维链。你不准做完"找核"就停下来问用户，你必须**自行向体内的自查器要授权**！
    - 🔴 **唯一例外**：开头候选盲选（步骤 2.5）是 autopilot **唯一允许的法定停顿**——初稿写完后停一次，给用户 2-3 版开头编号挑一个，用户回一个字母即续跑。除此之外一切照旧闭门，选完之后继续一镜到底跑到草稿箱，中途不再有第二次停顿。这一停不违反"跑到草稿箱才算结束"——它在磨稿之前、极简（一个字母）、选完直奔草稿箱。
    - 🔴🔴 **检查点闸门模式（profile 可配，配了就优先于上一条）**：`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint` / `draft` 时，法定停顿改为两道**硬闸**（设计动机：前期出错会导致正文/配图/音乐/排版全链返工，停顿的价值 = 拦截概率 × 下游返工成本）：
-     - **blueprint 蓝图闸（outline 末）**：把「大纲 + **5 套『外标题 + 封面文案』配套方案** + 2-3 版开头候选（盲选格式）+ **视觉路由**」**一包交付**，硬停等作者拍板。视觉路由必须明写 `封面风格`、`信息图主题 ai-product/phenomenon`、`信息图风格 claymation/morandi-journal`；混合题材按“产品/模型轴优先于趋势结论”。**配套方案 = 标题候选 + L1/L2 + ghost 3 词**，成套呈现成套选定。确认后把标题、开头、大纲改动、视觉路由与时间落 `_blueprint-approval.md`；作者已指定标题时写“作者指定标题”可免 5 候选。`pipeline.py verify outline` 硬查锚点内容结构，不再只看文件存在。**开头盲选并入本闸，写作前只停这一次。**
-     - **draft 定稿闸（writing 末）**：磨稿 + 冷读外审 + 事实复核修复**全部完成后**，硬停把 `定稿.md` 交作者审读；作者回「过 / 改 X」，结论落 `_draft-approval.md`，`verify writing` 硬查。通过后 封面 → 信息图 → BGM → 排版 → 草稿箱 照旧**零停顿一路到底**（后端零停顿铁律不变，只是起跑线从"开头选定"改为"定稿过闸"）。
+     - **blueprint 蓝图闸（outline 末）**：把「大纲 + **5 套『外标题 + 封面文案』配套方案** + 2-3 版开头候选（盲选格式）+ **视觉路由**」**一包交付**，硬停等作者拍板。确认后把结论落 `_blueprint-approval.md`，并执行 `pipeline.py approve blueprint --source-mode new-draft`，把确认绑定到当时的 `大纲.md + article-meta.yaml` 摘要；作者提供现成定稿则用 `author-provided-final`，免检用 `checkpoint-waived`。文件变化后旧审批自动失效。**开头盲选并入本闸，写作前只停这一次。**
+     - **draft 定稿闸（writing 末）**：磨稿 + 冷读外审 + 事实复核修复**全部完成后**，硬停把 `定稿.md` 交作者审读；作者回「过 / 改 X」，结论落 `_draft-approval.md`，再执行 `pipeline.py approve draft --source-mode new-draft`。receipt 同时绑定语义定稿和 `_fact-check.md / _stutter-list.md / _draft-qc.md`；其中任一变化都要重新 approve。通过后封面 → 信息图 → BGM → 排版 → 草稿箱零停顿到底。
        - **🔴 交付时附一张四层《质检报告》`_draft-qc.md`**：把这道闸前已产出的**分散产物**按 [writing.md §四磨「四层自检地图」](writing.md) 汇总成**一张表、一屏看清**——L1 机器门（`verify writing` / preflight 黑名单结果）· L2 风格（anti-ai + §七反例对照库召回命中）· L3 内容（`_fact-check.md` 结论摘要 + So What/Prove It 是否补齐）· L4 活人感（`_stutter-list.md` 的签名「评审模型 / verdict」+ 读出声终审是否过），**每层一句话 verdict + 列未决项**，让作者不必翻四个文件就知道「这稿过了哪些关、还剩什么待定」。🔴 **这是已有产物的汇总视图，不是新增检查**——四层产物（`_stutter-list.md` / `_fact-check.md` / audit 报告 / 机器门）本就在闸前生成，本报告只做归并呈现；缺某个产物就在对应层标「缺失/未跑」，不额外造门。
      - **闸上不在场 = 等，不取默认续跑**（这与开头盲选的"不在场取默认"相反——闸的目的就是防返工，自动续跑等于没闸）。恢复协议：新会话进目录跑 `pipeline.py status`，verify 报 checkpoint 未过即知停在哪道闸。
      - **单次免检**：作者明说「免检 / 一路到底不用确认 / 直接跑完」→ 两闸自动通过，锚点写『作者免检授权 + 时间』留痕。
@@ -126,7 +126,7 @@
    - 同步 [iron-rules.md 流水线隔离铁律](iron-rules.md) + [iron-rules.md 封面图文字样式铁律 第 5 条](iron-rules.md)
 6. **信息图 ≥4 张** → `baoyu-skills:baoyu-infographic`（**唯一允许入口**）
    - 🔴 **信息图 = 内容总结，不是装饰插画**：每张图必须先**分析该段内容 → 选一个信息版式（清单/对比/流程/矩阵）→ 把原文的真实要点·数字·标签当图内中文文字排进去**。prompt 三件套 = 真实内容 + 版式骨架 + 官方 style。只画"物件/场景、没一句原文要点"的 = 打回重写（踩坑教训：手写黏土场景风格对但零信息，一眼被看穿）。中文要点多→Gemini 偶尔糊字须逐张核验重生，宁糊字重生也不退回零信息好看场景。详见 [image-routing.md §③](image-routing.md)
-   - 🔴 **视觉路由与 QA**：meta 先写 `infographic_subject`（ai-product / phenomenon）+ `infographic_style`；混合题材按“产品/模型轴优先于趋势结论”。主轴收齐四图后逐张看图，封面+信息图验收落 `_visual-qa.md`，发布前硬查
+   - 🔴 **视觉路由与 QA**：meta 先写 `infographic_subject` + `infographic_style`；每张原始图先写 producer/renderer/hash v2 log。logo + 压缩后逐张看最终图，验收落 `_visual-qa.md`，执行 `pipeline.py seal visual`
    - 🔴 **严禁直接调 `baoyu-skills:baoyu-image-gen` batch 跑信息图**（会跳过 baoyu-infographic 的 style 处理）
    - 🔴 **style 二选一**（详见 [image-routing.md §信息图 style 选择铁律](image-routing.md)）：
      - AI 工具教程 / 产品评测 / 功能解读 → **`--style claymation` 暖米黄轻盈版**（默认）
@@ -143,7 +143,8 @@
    - 🔴 **完成后必须跑 `pipeline.py verify bgm`（硬查 mp3 + 「本文主题曲」卡片），未过不得进入 step 8 layout（MD→HTML）**——`verify_publish_assets` 对 BGM 缺失视为正常放行，这道 verify 是进 layout 前的唯一硬关卡
 8. **MD → HTML** → `baoyu-skills:baoyu-markdown-to-html` + `format_layout.py --all`
 9. **加 logo** → `add_logo.js`（**排除** hero.png 和 bgm_cover.png 等组件小图）
-10. **推送到草稿箱** → `baoyu-skills:baoyu-post-to-wechat`
+9.5. **最终视觉封印** → 压缩后逐张 QA，执行 `pipeline.py seal visual`
+10. **推送到草稿箱** → 先 `pipeline.py verify publish --pre` 写 publish-ready，再调用 `baoyu-skills:baoyu-post-to-wechat`；返回 media_id 后 `done publish draft_media_id=...` 内联重验并写 publish receipt
 
 ---
 
@@ -188,7 +189,8 @@
 - [x] 第六步 🎨 洗绿：执行 `format_layout.py --all` 处理全部微信定制组件（含音乐栏自动前置——把 AUDIO-CARD 上移到导读栏下方渲染）。
 - [x] 第七步 🏷️ 水印：自动批量执行 `add_logo.js 素材/*.png 截图/*.png`（**排除** hero.png 和 bgm_cover.png 等组件小图——这些尺寸太小，打水印反而影响观感）。
 - [x] 第七步 b ⚖️ 压缩：执行 `python "$SKILL/scripts/compress_images.py" 素材/ --max-mb 2` 把所有 PNG 压到 ≤ 2MB（Pillow 实现、中文路径友好，保持 PNG 不转 JPEG，hero 等组件小图自动跳过）。详见 [layout.md 3h](layout.md)。
-- [x] 第八步 🚀 API 发布草稿箱：调用 `baoyu-skills:baoyu-post-to-wechat` 的 wechat-api.ts，把 `定稿.html` 推送到微信公众号草稿箱（**必须显式 `--cover 素材/cover.png`** —— html 无 frontmatter，不传会报 `No cover image` 中断；作者/留言开关从 EXTEND.md 读取），返回 `media_id` 后执行 `pipeline.py done publish draft_media_id=<media_id>`（草稿箱已推送 = autopilot 终态；verify publish 认 draft_media_id 为阶段通过，正式发布后再补 wechat_url）。**禁止止步于排版** —— 排版完成不等于发布完成。
+- [x] 第七步 c 🔏 最终视觉封印：逐张打开 logo/压缩后的最终封面与信息图，写 `_visual-qa.md`，执行 `pipeline.py seal visual`。任何后续改图都会让 receipt 失效。
+- [x] 第八步 🚀 API 发布草稿箱：先执行 `pipeline.py verify publish --pre` 写 `_publish-ready.json`，再调用 `baoyu-skills:baoyu-post-to-wechat`（显式 `--cover 素材/cover.png`）。返回 `media_id` 后执行 `pipeline.py done publish draft_media_id=<media_id>`；该命令会复验事前凭证并将当前 HTML/hero/视觉字节绑定到 media_id，`--force` 不可绕过。
 - [x] 第九步 📚 归档入库：用户手动预览 + 发布、拿到 `wechat_url` 后，执行 `pipeline.py done publish wechat_url=...`，再跑 `pipeline.py archive` 把本文写入 `<数据目录>/works.yaml`（SSOT，自动按 category 分配 code + 刷新 articles.md/看板）。**禁止止步于草稿推送** —— 草稿推送不等于发布完成、更不等于已入库。
 ```
 

@@ -18,7 +18,7 @@
 观察日志路径由 `scripts/profile_config.py::observations_file()` 解析：配置 profile 时位于
 `<profile>/flywheel/_skill-observations.jsonl`，未配置才回退仓根。每篇文章运行时，由
 `contracts.py` / `format_layout.py` / `pipeline.py` 自动追加「门判定记录」。**禁止只看仓根同名旧文件**。
-每行一个 JSON：`{ts, article, stage, event, verdict, detail}`。
+每行一个 v2 JSON，核心字段：`record_id/run_id/recorded_at/article_uid/stage/event/attempt/passed/severity/issue_codes/metrics/artifact_digest/source`；同时保留 v1 的 `ts/article/verdict/detail` 兼容旧工具。
 
 - `stage`：format_layout / verify_writing
 - `event`：门名（verify_bold_density / verify_cjk_punctuation / ...）
@@ -29,18 +29,19 @@
 
 ### 第 1 步 · 读 observation log 全文
 
-读 `_skill-observations.jsonl`（仓根）。
+调用 `observations_file()` 找到实际日志后读全文，禁止默认只看仓根旧文件。
 若不存在或为空 → 告诉用户「还没攒够 observation，先写几篇文章再来」，结束。
 
 ### 第 2 步 · 统计模式
 
-按 `event`（门名）聚合，做成一张表：
+按 `event`（门名）做**两套口径**：A. 原始 attempts（看恢复成本）；B. 每篇文章 `article_uid + event` 只取最新一条（看最终失败率）。重跑不能在最终口径里重复计权。
 
-| 门 | 运行次数 | ok | fail/warning/blocked | 反复栽跟头的文章 |
+| 门 | 原始尝试数 | 最新样本篇数 | 首次失败篇数 | 最终失败篇数 | 平均尝试次数 | 高频 issue_codes |
 |---|---|---|---|---|
 
 重点找四类信号：
-- **反复出问题的门**：某门在多篇 fail → skill 规则有缺陷，或写作总踩同一个坑
+- **反复出问题的门**：某门在多篇最终 fail → skill 规则有缺陷，或写作总踩同一个坑
+- **可恢复但昂贵的门**：首次常 fail、最终多 ok、平均 attempt 高 → 规则有效但前置指导不足
 - **死门**：某门从来没拦下过任何东西 → 可能多余，该删或该改
 - **疑似误判门**：某门几乎每篇 fail → 规则可能太严
 - **字段不足**：observation 现有字段是否够支撑判断 → 要不要让脚本多记点
