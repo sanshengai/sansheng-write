@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.6.0] -- 2026-07-22
+
 ### 新增
 
 - **视觉与发布 receipt**：`pipeline.py seal visual` 将 logo/压缩后的最终封面、信息图、canonical prompt 和 QA 记录绑定为 SHA-256 清单；`done publish draft_media_id=...` 再把 HTML、hero 与视觉清单绑定到微信草稿 media_id。
