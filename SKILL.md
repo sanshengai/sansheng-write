@@ -1,7 +1,6 @@
 ---
 name: sansheng-write
-description: >
-  中文长文写作引擎 — 从一句选题灵感或方向出发，覆盖 选题/大纲 → 正文/改稿 → HTML 排版 → 配图封面 → 发布草稿 → 转图文 的完整链路。Use when the user wants to 写/起草/扩写/改稿/润色 一篇文章，把大纲扩成定稿，对成稿做 排版/转HTML/导读栏/主题色，生成封面图或配图，锻造标题，或把已定稿文章转图文。Triggers on 写文章、写一篇、帮我写、公众号文章、推文、发文、内容创作、主笔、定稿、成稿、草稿箱、磨稿、金句、写封面、排版。标题锻造走本 skill 内部（references/title.md）。Do not use for 英文内容、纯代码任务。
+description: Use when 用户要写、改、润色或排版中文长文和公众号文章，包含选题、标题、封面或图文化需求；触发词：写文章、帮我写、改稿、定稿、公众号文章。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 compatibility: >
   Requires Python 3.10+, Node.js 18+, baoyu-skills CLI. Claude Code on Windows/macOS/Linux.
   凭证：BGM 需 .env 的 MINIMAX_API_KEY；生图/封面需 GOOGLE_API_KEY（AI Studio `AIza` 前缀 或 Vertex Express `AQ.` 前缀，后者另需 GOOGLE_VERTEX_PROJECT）。详见 music.md / image-routing.md。
