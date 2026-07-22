@@ -218,6 +218,144 @@ def _image_metadata(png_path: Path) -> dict:
         return {}
 
 
+def _norm_relpath(value: str) -> str:
+    """把日志/JSON 里的 Windows 或 POSIX 相对路径归一成可比较形式。"""
+    return str(value or "").replace("\\", "/").removeprefix("./")
+
+
+def _visual_route_errors(cwd: Path) -> list:
+    """校验信息图视觉路由的整条证据链，而不只检查 style 是否在枚举里。
+
+    SSOT 是 article-meta.yaml 的 infographic_subject + infographic_style：
+    ai-product -> claymation；phenomenon -> morandi-journal。最终图片、final-set、
+    最新精确 output 日志、日志引用的 prompt frontmatter 必须全部与 SSOT 一致。
+    """
+    errors = []
+    meta_path = cwd / "article-meta.yaml"
+    if not meta_path.exists():
+        return ["缺 article-meta.yaml，无法判定信息图视觉路由"]
+    if _yaml is None:
+        return ["PyYAML 未安装，无法校验信息图视觉路由"]
+    try:
+        meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        return [f"article-meta.yaml 解析失败，无法校验信息图视觉路由：{exc}"]
+
+    subject = str(meta.get("infographic_subject") or "").strip()
+    style = str(meta.get("infographic_style") or "").strip()
+    expected = {"ai-product": "claymation", "phenomenon": "morandi-journal"}
+    if subject not in expected:
+        errors.append(
+            "article-meta.yaml 缺合法 infographic_subject（ai-product / phenomenon）；"
+            "产品/模型是否承担信息架构主轴必须显式落盘"
+        )
+    elif style != expected[subject]:
+        errors.append(
+            f"infographic_subject={subject} 必须使用 {expected[subject]}，当前为 {style or '(空)'}"
+        )
+    if style not in {"claymation", "morandi-journal"}:
+        errors.append(
+            f"infographic_style={style or '(空)'} 非法；新文章只允许 claymation / morandi-journal"
+        )
+
+    for rel in ("素材/infographic/analysis.md", "素材/infographic/structured-content.md"):
+        p = cwd / Path(rel)
+        if not p.exists():
+            errors.append(f"缺 {rel}，视觉路由证据链不完整")
+        elif style and style not in p.read_text(encoding="utf-8"):
+            errors.append(f"{rel} 未声明 meta 指定 style={style}")
+
+    mat = cwd / "素材"
+    final_paths = sorted(mat.glob("infographic*.png")) if mat.exists() else []
+    final_rel = [_norm_relpath(str(p.relative_to(cwd))) for p in final_paths]
+
+    final_set_path = mat / "infographic" / "final-set.json"
+    final_set_by_path = {}
+    if not final_set_path.exists():
+        errors.append("缺 素材/infographic/final-set.json，无法核对最终图组")
+    else:
+        try:
+            payload = json.loads(final_set_path.read_text(encoding="utf-8"))
+            for item in payload.get("images", []):
+                if isinstance(item, dict):
+                    final_set_by_path[_norm_relpath(item.get("path", ""))] = item
+        except Exception as exc:
+            errors.append(f"final-set.json 解析失败：{exc}")
+
+    logs = _read_gen_log(cwd, "infographic")
+    latest_by_output = {}
+    for rec in logs:
+        out = _norm_relpath(rec.get("output", ""))
+        if out:
+            latest_by_output[out] = rec
+
+    seen_styles = set()
+    for rel in final_rel:
+        item = final_set_by_path.get(rel)
+        if not item:
+            errors.append(f"final-set.json 缺最终图 {rel}")
+        else:
+            item_style = str(item.get("style") or "")
+            seen_styles.add(item_style)
+            if style and item_style != style:
+                errors.append(f"{rel} 的 final-set style={item_style or '(空)'}，应为 {style}")
+
+        rec = latest_by_output.get(rel)
+        if not rec:
+            errors.append(f"{rel} 缺精确 output 的最新 gen-log 记录")
+            continue
+        cmd = str(rec.get("cmd") or "")
+        m = re.search(r"--style\s+([^\s]+)", cmd)
+        log_style = m.group(1).strip("\"'") if m else ""
+        seen_styles.add(log_style)
+        if style and log_style != style:
+            errors.append(f"{rel} 最新 gen-log style={log_style or '(空)'}，应为 {style}")
+
+        pm = re.search(r"(?:素材[/\\]prompts[/\\][^\s\"']+\.md)", cmd)
+        if not pm:
+            errors.append(f"{rel} 最新 gen-log 未引用 prompt 文件，无法核对 frontmatter style")
+            continue
+        prompt_rel = _norm_relpath(pm.group(0))
+        prompt_path = cwd / Path(prompt_rel)
+        if not prompt_path.exists():
+            errors.append(f"{rel} 日志引用的 prompt 不存在：{prompt_rel}")
+            continue
+        prompt_text = prompt_path.read_text(encoding="utf-8")
+        sm = re.search(r"(?m)^style:\s*[\"']?([^\"'\s]+)", prompt_text)
+        prompt_style = sm.group(1) if sm else ""
+        seen_styles.add(prompt_style)
+        if style and prompt_style != style:
+            errors.append(f"{prompt_rel} frontmatter style={prompt_style or '(空)'}，应为 {style}")
+
+    nonempty_styles = {s for s in seen_styles if s}
+    if len(nonempty_styles) > 1:
+        errors.append(f"最终信息图证据链混入多种 style：{sorted(nonempty_styles)}")
+    return errors
+
+
+def _visual_qa_errors(cwd: Path) -> list:
+    """发布前视觉 QA 凭证门：机器查结构，审美与逐字核验由 Agent 看图后打卡。"""
+    qa_path = cwd / "_visual-qa.md"
+    if not qa_path.exists():
+        return ["缺 _visual-qa.md：生成后必须逐张看图验收，不能把草稿箱当第一道视觉 QA"]
+    text = qa_path.read_text(encoding="utf-8")
+    errors = []
+    checked = len(re.findall(r"(?m)^\s*- \[x\]", text, flags=re.I))
+    cover_terms = ("封面", "主标题", "杂字", "裁切")
+    info_terms = ("信息图", "图 1", "图 4", "逐字")
+    missing_cover = [term for term in cover_terms if term not in text]
+    missing_info = [term for term in info_terms if term not in text]
+    if missing_cover:
+        errors.append(f"_visual-qa.md 封面检查不完整，缺：{missing_cover}")
+    if missing_info:
+        errors.append(f"_visual-qa.md 信息图检查不完整，缺：{missing_info}")
+    if checked < 8:
+        errors.append(f"_visual-qa.md 已勾选项仅 {checked} 条（需 ≥8，覆盖封面与四张信息图）")
+    if "通过" not in text:
+        errors.append("_visual-qa.md 缺最终结论“通过”")
+    return errors
+
+
 def load_state(cwd: Path) -> dict:
     state_path = cwd / STATE_FILE
     if not state_path.exists():
@@ -281,7 +419,7 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
         return []
     gates = {
         "outline": ("blueprint", "_blueprint-approval.md",
-                    "蓝图闸：把「大纲 + 5 标题候选排序 + 开头候选」一包交作者拍板"),
+                    "蓝图闸：把「大纲 + 5 标题/封面方案 + 开头候选 + 视觉路由」一包交作者拍板"),
         "writing": ("draft", "_draft-approval.md",
                     "定稿闸：磨稿 + 外审修复后的 定稿.md 交作者审读"),
     }
@@ -292,6 +430,29 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
     if name in cps and not (cwd / anchor).exists():
         return [f"checkpoint:{name} 未过 -- {desc}，作者回复后把结论落 {anchor} 再继续"
                 f"（作者明说免检时写入『作者免检授权』放行）"]
+    if name == "blueprint" and name in cps:
+        text = (cwd / anchor).read_text(encoding="utf-8")
+        if "作者免检授权" in text:
+            return []
+        missing = []
+        has_five = all(re.search(rf"方案\s*{n}", text) for n in range(1, 6))
+        if not has_five and "作者指定标题" not in text:
+            missing.append("5 套标题+封面文案（或作者指定标题）")
+        if "开头" not in text:
+            missing.append("开头选择")
+        if "大纲" not in text:
+            missing.append("大纲结论")
+        if "封面风格" not in text:
+            missing.append("封面风格")
+        if not re.search(r"信息图主题.*(?:ai-product|phenomenon)", text):
+            missing.append("信息图主题 ai-product/phenomenon")
+        if not re.search(r"信息图风格.*(?:claymation|morandi-journal)", text):
+            missing.append("信息图风格")
+        if missing:
+            return [
+                f"checkpoint:blueprint 锚点结构不完整（视觉路由不可省）：缺 {missing}；"
+                f"补齐 {anchor} 后再继续"
+            ]
     return []
 
 
@@ -562,6 +723,22 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                         f"必须经由 baoyu-infographic 出图并 `pipeline.py log infographic baoyu-infographic ...` 记录，"
                         f"以保证风格统一可追溯（详见 iron-rules.md 信息图铁律）"
                     )
+
+                # 新文章严格核对：meta 路由 → analysis/structured → prompt →
+                # 最新精确 output 日志 → final-set。仅“style 在允许枚举里”不代表选对。
+                if not legacy:
+                    route_errors = _visual_route_errors(cwd)
+                    errors.extend(route_errors)
+                    try:
+                        sys.path.insert(0, str(Path(__file__).parent))
+                        from contracts import log_observation as _logobs_visual
+                        _logobs_visual(
+                            "verify_infographic", "visual_route",
+                            "fail" if route_errors else "ok",
+                            f"errors={len(route_errors)}", cwd.name,
+                        )
+                    except Exception:
+                        pass
 
     elif stage == "bgm":
         # 脚本默认输出到文章根目录（song_name.mp3），--output 可指定到素材/
@@ -912,6 +1089,20 @@ def _pre_publish_errors(cwd: Path) -> list:
         errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
     if not (cwd / "定稿.html").exists():
         errors.append("缺 定稿.html（先走 layout 阶段）")
+    route_errors = _visual_route_errors(cwd)
+    errors.extend(f"visual_route: {e}" for e in route_errors)
+    qa_errors = _visual_qa_errors(cwd)
+    errors.extend(qa_errors)
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from contracts import log_observation as _logobs_visual
+        _logobs_visual(
+            "verify_publish", "visual_qa",
+            "fail" if qa_errors else "ok",
+            f"errors={len(qa_errors)}", cwd.name,
+        )
+    except Exception:
+        pass
     try:
         sys.path.insert(0, str(Path(__file__).parent))
         from contracts import verify_publish_assets

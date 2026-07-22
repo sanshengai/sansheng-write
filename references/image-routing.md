@@ -147,7 +147,23 @@ python "$SKILL/scripts/pipeline.py" log <stage> <tool> --output 素材/xxx.png -
 - 「解释一个工具怎么用 / 一个产品怎么样」→ **claymation 暖米黄**
 - 「评一个现象 / 一个趋势 / 一个价值观」→ **morandi-journal**
 
-两种气质都沾时，按**主线诉求**判断：读者打开主要是想"学怎么做"还是想"听你怎么看"。
+### 🔴 混合题材优先级：先看信息架构主轴，不看文体标签
+
+两种气质都沾时，**产品/模型轴优先于趋势结论**：只要信息图的卡片、对比列、时间线或结论主要围绕
+具名 AI 模型 / 工具 / 产品 / 功能展开（新品速递、模型发布盘点、N 款横评、版本更新解读都算），
+即使文章外层是「资讯 / 行业趋势 / 商业评论」，仍归 `ai-product` → **claymation**。只有产品名只是
+支撑观点的例子、信息图主轴本身是现象 / 商业关系 / 人文判断时，才归 `phenomenon` →
+**morandi-journal**。不得再用模糊的「读者主要想听你怎么看」覆盖产品型信息架构。
+
+`article-meta.yaml` 必须同时显式写：
+
+```yaml
+infographic_subject: "ai-product"      # 或 phenomenon
+infographic_style: "claymation"        # ai-product 固定 claymation；phenomenon 固定 morandi-journal
+```
+
+这是机器门的 SSOT；`analysis.md`、`structured-content.md`、prompt frontmatter、最新精确 output 的
+gen-log 与 `final-set.json` 必须全部一致，否则 `pipeline.py verify infographic` 阻断。
 
 ### 🔴 同篇不混风格
 
@@ -162,6 +178,12 @@ python "$SKILL/scripts/pipeline.py" log <stage> <tool> --output 素材/xxx.png -
 ### 写 prompt 时
 - frontmatter 必写 `style: claymation` 或 `style: morandi-journal`
 - 正文 reinforce 一段视觉关键词（暖米黄背景、立体黏土 / 莫兰迪色 + 手绘 doodle）
+
+### 🔴 生成后视觉 QA（不向用户停顿，但 Agent 必须看图）
+
+四张图生成后逐张打开核验：画风、图中文字、信息层级、乱码/杂字、Logo 冲突与裁切安全区；失败就改
+prompt 重生。结果落工作目录 `_visual-qa.md`，至少勾选封面、图 1、图 4、逐字核对与最终「通过」。
+`publish --pre` 硬查该凭证；「后端零停顿」只是不打断用户，绝不等于生成即发布、跳过 Agent 自检。
 
 ---
 

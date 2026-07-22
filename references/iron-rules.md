@@ -60,7 +60,7 @@
 | 阶段 | **唯一允许**的入口 | 严禁 |
 |---|---|---|
 | 封面图 cover.png | `baoyu-skills:baoyu-cover-image` skill（必须读 [cover-styles.md](cover-styles.md) **顶部 override** 写入 montage-evidence prompt 后再调用） | 直接调 `baoyu-skills:baoyu-image-gen` / 套用历史文章 `cover.md` 模板（conceptual / focus 老风格全部封存）|
-| 信息图 infographic*.png | `baoyu-skills:baoyu-infographic` skill（**style 二选一**）：① AI 工具/产品/功能解读 → `claymation` **暖米黄轻盈版**②行业趋势/商业评论/人文反思 → `morandi-journal`（莫兰迪杂志风）。**单篇 5 张图风格必须统一不可混用**。其他 20 种 style 全部封存。完整规则见 [image-routing.md §信息图 style 选择铁律](image-routing.md) | 直接调 baoyu-image-gen batch / 选 claymation 深色版（已封存）/ craft-handmade / 其他 19 种封存 style / 同篇混风格 |
+| 信息图 infographic*.png | `baoyu-skills:baoyu-infographic` skill（**style 二选一**）：① 具名 AI 模型/工具/产品/功能承担信息架构主轴（含新品盘点、模型发布、N 款横评，即使外层是行业趋势）→ `claymation` **暖米黄轻盈版**；②现象/商业/人文判断承担主轴、产品仅作例子 → `morandi-journal`。**产品/模型轴优先于趋势结论**，单篇风格统一。其他 20 种 style 全部封存。完整规则见 [image-routing.md §信息图 style 选择铁律](image-routing.md) | 直接调 baoyu-image-gen batch / 选 claymation 深色版（已封存）/ craft-handmade / 其他封存 style / 同篇混风格 |
 | 组件小图 hero | `baoyu-skills:baoyu-image-gen`（仅这类小图允许）`--ar 1:1 --quality normal` | 走 cover-image 或 infographic skill（杀鸡用牛刀）|
 | 数据图（雷达/折线/柱状/饼） | 本地 `matplotlib` / `pyecharts` 脚本 + `.py` 留在文章目录 | 任何 baoyu-* skill / 大模型生图（数据图防幻觉铁律）|
 
@@ -280,13 +280,14 @@ MD 里 `### 三级标题` **只写主标题本身**，**严禁**手写中文数�
 一组 ≥4 张贯穿全文的信息图（`infographic*.png`：2×9:16 开篇/结尾 + ≥2×16:9 中间）**必须**满足：
 
 1. **必走 `/baoyu-infographic` skill**，禁止手写 SVG / 直接调 `baoyu-image-gen` / 用 `baoyu-diagram` 替代（baoyu-diagram 只给"精确流程图"用，不给"信息汇总卡"用）
-2. **风格按文章类型在 `claymation`（AI 工具 / 教程 / 产品评测）与 `morandi-journal`（趋势 / 商业 / 人文 / 育儿 / 温和议题）二选一**（详见 [image-routing.md 信息图 style 选择铁律](image-routing.md)）。同篇不混风格；`article-meta.yaml` 的 `infographic_style` 显式指定，缺省默认 `claymation`。craft-handmade 等其余 20 种已封存，仅历史兼容。
+2. **风格按信息架构主轴二选一**：`infographic_subject: ai-product`（具名 AI 模型/工具/产品/功能作卡片或对比轴）固定 `claymation`；`infographic_subject: phenomenon`（现象/商业/人文关系作主轴）固定 `morandi-journal`。混合题材一律**产品/模型轴优先于趋势结论**。同篇不混风格；两字段都必须在 `article-meta.yaml` 显式指定。craft-handmade 等其余风格只作历史兼容，新文章禁止。
 3. **必须用 `pipeline.py log infographic baoyu-infographic --cmd "..."` 记录** — 没有 `.gen-log.jsonl` 记录的 PNG 视为"来源不明"会被 verify 拦
 
 踩坑教训：曾手写 SVG 跳过 baoyu-infographic 流程，pipeline 因为没记录在 .gen-log 里**没拦下来**。`verify infographic` 现已加 3 道关卡：
 - gen-log 必须有 infographic 记录
 - 记录的 tool 必须是 baoyu-infographic
-- 记录的 cmd 必须含 `--style claymation` 或 `--style morandi-journal`（二选一）
+- 每张最终图的最新精确 output 记录必须含 `--style claymation` 或 `--style morandi-journal`，并引用实际 prompt 文件；meta / analysis / structured / prompt / gen-log / final-set 六处必须一致
+- 发布前必须有 `_visual-qa.md`：Agent 逐张看图核对封面字号/裁切/杂字与四张信息图画风/逐字内容；缺凭证不准推草稿
 
 ## 模型对比内容铁律
 

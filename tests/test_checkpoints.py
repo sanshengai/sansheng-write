@@ -48,8 +48,8 @@ def test_workflow_checkpoints_parse_and_filter(tmp_path, monkeypatch):
         profile_config._reset_cache_for_tests()
 
 
-def test_checkpoint_gate_blocks_then_anchor_passes(tmp_path, monkeypatch):
-    """启用双闸：缺锚点 → 报错拦下；补锚点 → 放行。"""
+def test_checkpoint_gate_blocks_then_structured_anchor_passes(tmp_path, monkeypatch):
+    """启用双闸：只有文件名不算过闸，蓝图必须含标题/开头/大纲/视觉路由。"""
     try:
         _with_profile(monkeypatch, _make_profile(tmp_path, "[blueprint, draft]"))
         art = tmp_path / "art"
@@ -62,6 +62,15 @@ def test_checkpoint_gate_blocks_then_anchor_passes(tmp_path, monkeypatch):
 
         (art / "_blueprint-approval.md").write_text("标题1/开头A/大纲OK", encoding="utf-8")
         (art / "_draft-approval.md").write_text("过", encoding="utf-8")
+        errs = _checkpoint_errors("outline", art)
+        assert errs and "视觉路由" in errs[0]
+
+        (art / "_blueprint-approval.md").write_text(
+            "作者指定标题：标题1\n开头：A\n大纲：通过\n"
+            "封面风格：montage-evidence\n"
+            "信息图主题：ai-product\n信息图风格：claymation\n",
+            encoding="utf-8",
+        )
         assert _checkpoint_errors("outline", art) == []
         assert _checkpoint_errors("writing", art) == []
 

@@ -96,7 +96,8 @@
 
 1. **`format_layout.py --all`** -- 一键后处理（H2格式、表格品牌化、导读栏、推荐阅读、品牌色清洗）
 2. **`add_logo.js`** -- 给 AI 配图加水印（**排除** hero.png 和 bgm_cover.png--尺寸太小，打水印影响观感）
-3. **`baoyu-post-to-wechat`** -- 发布到微信草稿箱
+3. **`_visual-qa.md`** -- Agent 逐张看图后打卡封面主标题占比/裁切/杂字，以及四张信息图的统一 style/逐字内容；缺失或不完整时 `pipeline.py verify publish --pre` 阻断
+4. **`baoyu-post-to-wechat`** -- 发布到微信草稿箱
 
 ```bash
 # 发的是已排版的 定稿.html（无 frontmatter）→ 必须显式 --cover，否则封面取不到
@@ -162,6 +163,7 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 - [x] 正文确实无禁用词和 AI 翻译腔痕迹？
 - [x] 所有引用的硬核数据已配有合法来源？
 - [x] 图片生成没有遗漏打上 `add_logo.js` 的水印？
+- [x] `_visual-qa.md` 是否记录封面缩略图主次、裁切安全区、杂字，以及四张信息图的统一画风与逐字核对？
 
 ### 第三步：配套物料确认
 

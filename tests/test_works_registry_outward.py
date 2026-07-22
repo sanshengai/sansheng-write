@@ -2,16 +2,16 @@
 """works_registry.py 对外分类(outward_category)单元测试。运行：
    PYTHONUTF8=1 python -m pytest tests/test_works_registry_outward.py -v
 
-与 tests/test_works_registry.py 互补：本文件测六类词表 / suggest_outward 裁决 /
+与 tests/test_works_registry.py 互补：本文件测七类词表 / suggest_outward 裁决 /
 outward 校验与回填；那边测 load/save/validate/next_code/upsert/set_video。
 两文件 basename 必须唯一——pytest 默认 prepend 模式用裸 basename 当模块名。
 """
 from scripts import works_registry as wr
 
 
-def test_outward_categories_has_six_stable_keys():
+def test_outward_categories_has_seven_stable_keys():
     assert set(wr.OUTWARD_CATEGORIES) == {
-        "tutorial", "news", "picks", "insight", "essay", "industry"
+        "tutorial", "news", "picks", "share", "insight", "essay", "industry"
     }
 
 

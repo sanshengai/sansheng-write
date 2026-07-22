@@ -268,26 +268,51 @@ def _main(argv=None):
                     help="model 可省略（用 -m 或 OPENAI_IMAGE_MODEL 代替）")
     ns = ap.parse_args(argv)
     pos = ns.args
-    if len(pos) == 5:
-        prompt_file, out_path, model, w, h = pos
-    elif len(pos) == 4:
-        prompt_file, out_path, w, h = pos
-        model = None
+    # `-m` 给全批次统一模型时，每组 4 项；否则 Google 每组 5 项（逐图模型）。
+    # OpenAI 兼容旧的单组 4 项（模型由 env 解析）。多组按输入顺序串行，避免并发
+    # 生图把上游打到 429 / RESOURCE_EXHAUSTED。
+    if ns.model_opt:
+        group_size = 4
+    elif ns.provider == "openai" and len(pos) == 4:
+        group_size = 4
+    elif len(pos) % 5 == 0:
+        group_size = 5
+    elif ns.provider == "openai" and len(pos) % 4 == 0:
+        group_size = 4
     else:
-        ap.error("位置参数应为: <prompt_file.md> <out_png> [model] <W> <H>（model 也可用 -m 传）")
-    model = ns.model_opt or model
-    try:
-        w, h = int(w), int(h)
-    except ValueError:
-        ap.error(f"W/H 必须是整数像素，收到: {w} {h}")
-    if ns.provider == "google" and not model:
-        ap.error("google provider 必须给模型名（位置参数第 3 个，或 -m <模型名>）")
-    if ns.dry_run:
-        dry_run(ns.provider, prompt_file, model, w, h)
-    elif ns.provider == "openai":
-        gen_openai(prompt_file, out_path, model, w, h)
-    else:
-        gen(prompt_file, out_path, model, w, h)
+        ap.error(
+            "位置参数应为一组或多组: <prompt_file.md> <out_png> [model] <W> <H>；"
+            "传 -m 时每组省略 model"
+        )
+    if not pos or len(pos) % group_size != 0:
+        ap.error(
+            f"位置参数数量 {len(pos)} 不能按每组 {group_size} 项解析；"
+            "检查 prompt/out/model/W/H 是否成组"
+        )
+
+    jobs = []
+    for i in range(0, len(pos), group_size):
+        group = pos[i:i + group_size]
+        if group_size == 5:
+            prompt_file, out_path, model, w, h = group
+        else:
+            prompt_file, out_path, w, h = group
+            model = ns.model_opt
+        try:
+            w, h = int(w), int(h)
+        except ValueError:
+            ap.error(f"W/H 必须是整数像素，收到: {w} {h}")
+        if ns.provider == "google" and not model:
+            ap.error("google provider 必须给模型名（位置参数第 3 个，或 -m <模型名>）")
+        jobs.append((prompt_file, out_path, model, w, h))
+
+    for prompt_file, out_path, model, w, h in jobs:
+        if ns.dry_run:
+            dry_run(ns.provider, prompt_file, model, w, h)
+        elif ns.provider == "openai":
+            gen_openai(prompt_file, out_path, model, w, h)
+        else:
+            gen(prompt_file, out_path, model, w, h)
 
 
 if __name__ == "__main__":

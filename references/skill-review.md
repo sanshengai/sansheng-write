@@ -15,8 +15,9 @@
 
 ## 数据源
 
-`_skill-observations.jsonl`（仓根）—— 每篇文章运行时，由
-`contracts.py` / `format_layout.py` / `pipeline.py` 自动追加的「门判定记录」。
+观察日志路径由 `scripts/profile_config.py::observations_file()` 解析：配置 profile 时位于
+`<profile>/flywheel/_skill-observations.jsonl`，未配置才回退仓根。每篇文章运行时，由
+`contracts.py` / `format_layout.py` / `pipeline.py` 自动追加「门判定记录」。**禁止只看仓根同名旧文件**。
 每行一个 JSON：`{ts, article, stage, event, verdict, detail}`。
 
 - `stage`：format_layout / verify_writing

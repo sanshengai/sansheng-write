@@ -90,6 +90,9 @@ cover_style: ""              # 封面风格。留空 = 走默认风格（见 ref
                              # 仅确需其他风格时才显式填写；可选风格清单见 cover-styles.md 顶部 override 段。
 
 # 信息图参数（配图阶段确定）
+infographic_subject: ""      # 必填二选一：ai-product / phenomenon
+                             # ai-product = 具名模型/工具/产品/功能承担卡片、对比列或时间线主轴；即使外层是趋势稿仍选它
+                             # phenomenon = 产品仅是例子，信息架构主轴是现象/商业关系/人文判断
 infographic_style: ""        # 信息图风格二选一（缺省 claymation）：
                              #   claymation       -- AI 工具 / 教程 / 产品评测 / 功能解读 / 技术拆解
                              #   morandi-journal  -- 趋势 / 商业评论 / 人文反思 / 育儿 / 生活方式 / 温和议题
