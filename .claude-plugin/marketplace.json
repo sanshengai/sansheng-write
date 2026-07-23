@@ -9,7 +9,7 @@
     {
       "name": "sansheng-write",
       "description": "A Chinese long-form writing engine for Claude Code: topic to outline to draft to revision to typeset HTML to cover art. Bring your own corpus, it learns your voice.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "source": "./",
       "author": {
         "name": "叁笙 (sansheng)",
