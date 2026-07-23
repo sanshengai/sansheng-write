@@ -435,6 +435,12 @@ def render_fact_sheet(cwd: Path) -> tuple[list[str], str | None]:
         except Exception as e:
             lines.append(f"- ⚠️ 无法解析 {jf.name}：{e}")
             continue
+        if not isinstance(data, dict):
+            lines.append(
+                f"- ⚠️ 跳过 {jf.name}：顶层结构是 {type(data).__name__}，"
+                "不是 research findings 对象"
+            )
+            continue
         findings = data.get("findings") or []
         srcs = data.get("sources") or []
         src_map = "；".join(
