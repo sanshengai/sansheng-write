@@ -160,10 +160,12 @@ python "$SKILL/scripts/pipeline.py" log <stage> <producer> \
 ```yaml
 infographic_subject: "ai-product"      # 或 phenomenon
 infographic_style: "claymation"        # ai-product 固定 claymation；phenomenon 固定 morandi-journal
+visual_profile: "warm-light-clay"      # claymation 必填；morandi-journal 留空
 ```
 
 这是机器门的 SSOT；`analysis.md`、`structured-content.md`、prompt frontmatter、最新精确 output 的
-gen-log 与 `final-set.json` 必须全部一致，否则 `pipeline.py verify infographic` 阻断。
+gen-log 与 `final-set.json` 必须全部一致，否则 `pipeline.py verify infographic` 阻断。`visual_profile`
+是配方名，不是另一套发布版本号；实际参数用内容摘要 `visual_profile_sha256` 防静默漂移。
 
 ### 🔴 同篇不混风格
 
@@ -177,16 +179,68 @@ gen-log 与 `final-set.json` 必须全部一致，否则 `pipeline.py verify inf
 
 ### 写 prompt 时
 - frontmatter 必写 `style: claymation` 或 `style: morandi-journal`
-- 正文 reinforce 一段视觉关键词（暖米黄背景、立体黏土 / 莫兰迪色 + 手绘 doodle）
+- `claymation` 先在文章目录运行：
+
+  ```bash
+  python "$SKILL/scripts/pipeline.py" visual-contract
+  ```
+
+  把输出的 `visual_profile`、`visual_profile_sha256`、`palette_background`、
+  `palette_accent` 原样复制到**每一张信息图与 Hero** 的 canonical prompt frontmatter。
+- Prompt 正文同时明确：暖米黄/暖象牙背景、浅色调、哑光软黏土、柔和漫射光与低对比；
+  不得正向要求 charcoal/dark/black background、navy/steel blue、brick red、mustard yellow、
+  metallic/chrome/neon 或 high contrast。若在 Avoid 句里出现这些词不算违规。
+- `pipeline.py log infographic|hero ...` 会在登记证据前先校 prompt 与最终像素；缺配方、
+  hash 漂移、暗部面积过大、平均亮度过低或过饱和都会立即阻断。日志自动记录
+  `visual_profile(_sha256)`；跨 Agent 排障时可加 `--host-agent` 与 `--extend-sha256`。
+
+### 🔴 Hero 与信息图共用浅色配方
+
+`素材/hero.png` 不是“科技感自由发挥区”。`claymation` 文章的 Hero 必须使用同一个
+`warm-light-clay` 配方、同一主题主色和同一材质/光照约束，canonical prompt 放
+`素材/prompts/final/`，并用 `pipeline.py log hero ...` 登记。最终像素与四张信息图走同一色调门；
+深色金属、黑底霓虹、电影级高反差即使构图好看也打回重生。
+
+### Renderer 策略：固定合同，不固定厂商
+
+不要因为某一篇深色成图就把 `renderer` 永久钉死。2026-07-23 用同一份
+`warm-light-clay` Prompt 对 Gemini 与 GPT Image 做 A/B：两者均通过色调门
+（平均亮度约 215 / 206，暗部占比均低于 2%），差异明显小于“Prompt 配色被改写”造成的漂移。
+因此当前策略是：producer 仍走 baoyu 专业流程，像素后端可按可用性选择；真正不可变的是
+profile 配方、canonical prompt、日志摘要与最终像素门。只有后续**同 Prompt、同构图规格**
+连续复现某后端越线，才讨论固定 renderer，不能用非对照样本归因。
 
 ### 🔴 生成后视觉 QA（不向用户停顿，但 Agent 必须看图）
 
 四张图生成后逐张打开核验：画风、图中文字、信息层级、乱码/杂字、Logo 冲突与裁切安全区；失败就改
-prompt 重生。结果落工作目录 `_visual-qa.md`，至少勾选封面、图 1、图 4、逐字核对与最终「通过」。
+prompt 重生。结果落工作目录 `_visual-qa.md`。`claymation` 除原有检查外，必须显式记录
+**背景、主色、禁用色、材质、写实感、Hero 一致性**，总勾选项不少于 12 条并写最终「通过」。
 QA 对象必须是 **add_logo + compress 之后的最终字节**；通过后执行 `pipeline.py seal visual`。
 调用微信前必须先跑 `pipeline.py verify publish --pre` 写 `_publish-ready.json`；
 `done publish draft_media_id=...` 会复验 ready、内联重跑全部门并写最终 receipt，`--force` 也不能绕过。
 「后端零停顿」只是不打断用户，绝不等于生成即发布、跳过 Agent 自检。
+
+推荐记录骨架：
+
+```markdown
+# 视觉验收记录
+- [x] 封面主标题与缩略图主次
+- [x] 封面无杂字
+- [x] 封面裁切安全
+- [x] 图 1 信息图逐字核对
+- [x] 图 2 信息图逐字核对
+- [x] 图 3 信息图逐字核对
+- [x] 图 4 信息图逐字核对
+- [x] 四张信息图风格一致
+- [x] 背景为暖米黄/暖象牙浅色
+- [x] 主色与 visual-contract 输出一致
+- [x] 禁用色未成为主视觉
+- [x] 材质为哑光软黏土
+- [x] 无金属/照片级写实感
+- [x] Hero 与信息图同配方
+
+结论：通过
+```
 
 ---
 

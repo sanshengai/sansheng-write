@@ -98,7 +98,7 @@ def _renderer(rec: dict) -> str:
 def build_visual_manifest(
     cwd: Path, *, strict: bool = True, allow_postprocessed: bool = False
 ) -> tuple[dict, list[str]]:
-    """Build a manifest for the final cover and infographic bytes.
+    """Build a manifest for the final cover, infographic, and optional Hero bytes.
 
     `strict=True` is the v0.6 contract: the final exact-output log must use a
     canonical prompt under 素材/prompts/final and carry prompt/output hashes,
@@ -124,9 +124,18 @@ def build_visual_manifest(
              {"baoyu-infographic", "baoyu-diagram"})
         )
 
+    hero = cwd / "素材" / "hero.png"
+    if hero.exists():
+        specs.append((
+            "hero",
+            "素材/hero.png",
+            {"gen_img", "baoyu-image-gen", "baoyu-article-illustrator"},
+        ))
+
     logs = {
         "cover": _latest_by_output(cwd, "cover"),
         "infographic": _latest_by_output(cwd, "infographic"),
+        "hero": _latest_by_output(cwd, "hero"),
     }
     banned_cover = re.compile(r"\b(?:largest|extra-black|ultra-black)\b", re.I)
 
@@ -194,6 +203,11 @@ def build_visual_manifest(
             "model": model,
             "provenance_mode": provenance_mode,
             "generation_record_id": str(rec.get("record_id") or ""),
+            "visual_profile": str(rec.get("visual_profile") or ""),
+            "visual_profile_sha256": str(rec.get("visual_profile_sha256") or ""),
+            "host_agent": str(rec.get("host_agent") or ""),
+            "orchestrator_skill": str(rec.get("orchestrator_skill") or ""),
+            "extend_sha256": str(rec.get("extend_sha256") or ""),
         })
 
     meta_subset: dict = {}
@@ -206,6 +220,7 @@ def build_visual_manifest(
                 "cover_style": meta.get("cover_style") or "montage-evidence",
                 "infographic_subject": meta.get("infographic_subject") or "",
                 "infographic_style": meta.get("infographic_style") or "",
+                "visual_profile": meta.get("visual_profile") or "",
             }
         except Exception as exc:  # pragma: no cover - pipeline reports parse detail
             errors.append(f"article-meta.yaml 解析失败：{exc}")
@@ -429,6 +444,7 @@ def checkpoint_artifact(cwd: Path, gate: str) -> tuple[dict, list[str]]:
                     "cover_style": meta.get("cover_style") or "montage-evidence",
                     "infographic_subject": meta.get("infographic_subject") or "",
                     "infographic_style": meta.get("infographic_style") or "",
+                    "visual_profile": meta.get("visual_profile") or "",
                 }
             except Exception as exc:
                 errors.append(f"article-meta.yaml 解析失败：{exc}")

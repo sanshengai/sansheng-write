@@ -98,6 +98,9 @@ infographic_style: ""        # 信息图风格二选一（缺省 claymation）�
                              #   morandi-journal  -- 趋势 / 商业评论 / 人文反思 / 育儿 / 生活方式 / 温和议题
                              # 同篇所有信息图（≥4 张）必须统一风格；其余 20 种已封存。
                              # 详见 references/image-routing.md「信息图 style 选择铁律」
+visual_profile: ""           # claymation 必填 warm-light-clay；morandi-journal 留空。
+                             # 配方会把暖米黄背景、当前主题主色、浅色阈值同时绑定到信息图与 Hero。
+                             # 从文章目录运行 pipeline.py visual-contract，复制输出到每个 canonical prompt。
 
 # 音乐配置（BGM 阶段确定；引擎 MiniMax，风格池收窄为 4 种舒缓系）
 music:

@@ -280,14 +280,16 @@ MD 里 `### 三级标题` **只写主标题本身**，**严禁**手写中文数�
 一组 ≥4 张贯穿全文的信息图（`infographic*.png`：2×9:16 开篇/结尾 + ≥2×16:9 中间）**必须**满足：
 
 1. **必走 `/baoyu-infographic` skill**，禁止手写 SVG / 直接调 `baoyu-image-gen` / 用 `baoyu-diagram` 替代（baoyu-diagram 只给"精确流程图"用，不给"信息汇总卡"用）
-2. **风格按信息架构主轴二选一**：`infographic_subject: ai-product`（具名 AI 模型/工具/产品/功能作卡片或对比轴）固定 `claymation`；`infographic_subject: phenomenon`（现象/商业/人文关系作主轴）固定 `morandi-journal`。混合题材一律**产品/模型轴优先于趋势结论**。同篇不混风格；两字段都必须在 `article-meta.yaml` 显式指定。craft-handmade 等其余风格只作历史兼容，新文章禁止。
+2. **风格按信息架构主轴二选一**：`infographic_subject: ai-product`（具名 AI 模型/工具/产品/功能作卡片或对比轴）固定 `claymation`；`infographic_subject: phenomenon`（现象/商业/人文关系作主轴）固定 `morandi-journal`。混合题材一律**产品/模型轴优先于趋势结论**。同篇不混风格；两字段都必须在 `article-meta.yaml` 显式指定。`claymation` 还必须显式写 `visual_profile: warm-light-clay`，信息图与 Hero 共用 `pipeline.py visual-contract` 输出的配方/hash。craft-handmade 等其余风格只作历史兼容，新文章禁止。
 3. **必须用 v2 日志记录**：`pipeline.py log infographic baoyu-infographic --output ... --prompt 素材/prompts/final/... --renderer ... --model ... --cmd "..."`。没有 producer + renderer + model + prompt/output hash 的 PNG 视为来源不明
 
 踩坑教训：曾手写 SVG 跳过 baoyu-infographic 流程，pipeline 因为没记录在 .gen-log 里**没拦下来**。`verify infographic` 现已加 3 道关卡：
 - gen-log 必须有 infographic 记录
 - 记录的 producer 必须是 baoyu-infographic；renderer 单独记录，不能互相顶替
 - 每张最终图的最新精确 output 记录必须含 `--style claymation` 或 `--style morandi-journal`，并引用实际 prompt 文件；meta / analysis / structured / prompt / gen-log / final-set 六处必须一致
-- 发布前必须对 logo/压缩后的最终图逐张 QA，写 `_visual-qa.md` 并执行 `pipeline.py seal visual`；`done publish draft_media_id=...` 内联硬查，`--force` 不准绕过
+- `claymation` canonical prompt 必须绑定 `warm-light-clay` 的配方名、摘要、暖米黄背景与当前主题主色；日志和最终像素再查暗部/亮度/饱和度，深色或金属高反差成图不得仅凭“人工看着还行”放过
+- Hero 不是例外：必须使用同一配方、canonical prompt 与 hero 日志；缺一即阻断
+- 发布前必须对 logo/压缩后的最终图逐张 QA，写 `_visual-qa.md` 并执行 `pipeline.py seal visual`；浅色配方 QA 须含背景/主色/禁用色/材质/写实感/Hero 且 ≥12 个勾选项；`done publish draft_media_id=...` 内联硬查，`--force` 不准绕过
 
 ## 模型对比内容铁律
 

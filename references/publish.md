@@ -127,7 +127,7 @@ baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上�
 2. **MD→HTML 转换** -- `baoyu-markdown-to-html 定稿.md`
 3. **执行 `format_layout.py --all`** -- 一键后处理（导读栏、H2、表格、推荐阅读、品牌色）
 4. **执行 `add_logo.js`** -- 给配图添加水印
-5. 压缩 → 逐张看最终图 → 写 `_visual-qa.md` → `pipeline.py seal visual`
+5. 压缩 → 逐张看最终图（含 Hero）→ 写 `_visual-qa.md`；`claymation` 须记录背景/主色/禁用色/材质/写实感/Hero 且 ≥12 项 → `pipeline.py seal visual`
 6. `pipeline.py verify publish --pre` -- 要求全部上游 stage=done，并写事前 publish-ready
 7. 调用 `/baoyu-post-to-wechat` -- 发布到微信草稿箱；拿到 media_id 后 `pipeline.py done publish draft_media_id=...`
 8. **正式发布闭环** -- 拿到永久链接后运行 `pipeline.py finalize <wechat_url>`；命令串起登记链接、归档、刷新派生视图、闭环验证
@@ -169,7 +169,7 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 - [x] 正文确实无禁用词和 AI 翻译腔痕迹？
 - [x] 所有引用的硬核数据已配有合法来源？
 - [x] 图片生成没有遗漏打上 `add_logo.js` 的水印？
-- [x] `_visual-qa.md` 是否记录封面缩略图主次、裁切安全区、杂字，以及四张信息图的统一画风与逐字核对？
+- [x] `_visual-qa.md` 是否记录封面缩略图主次、裁切安全区、杂字，以及四张信息图的统一画风与逐字核对？`claymation` 是否另记背景、主色、禁用色、材质、写实感和 Hero 一致性（总勾选 ≥12）？
 - [x] 是否已对最终字节执行 `pipeline.py seal visual`，且 `verify publish --pre` 通过？
 
 ### 第三步：配套物料确认

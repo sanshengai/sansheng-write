@@ -35,6 +35,7 @@ def _visual_bundle(root: Path) -> Path:
         ("infographic", "infographic-03.png", (1024, 576)),
         ("infographic", "infographic-04.png", (576, 1024)),
     ]
+    specs += [("hero", "hero.png", (1024, 1024))]
     logs = []
     for i, (stage, name, size) in enumerate(specs):
         output = root / "素材" / name
@@ -43,7 +44,11 @@ def _visual_bundle(root: Path) -> Path:
         prompt.write_text(
             "---\nstyle: claymation\n---\n精致、克制、清晰。\n", encoding="utf-8"
         )
-        producer = "baoyu-cover-image" if stage == "cover" else "baoyu-infographic"
+        producer = {
+            "cover": "baoyu-cover-image",
+            "infographic": "baoyu-infographic",
+            "hero": "gen_img",
+        }[stage]
         logs.append({
             "schema_version": 2,
             "record_id": f"rec-{i}",
@@ -80,6 +85,66 @@ def test_visual_receipt_binds_final_bytes(tmp_path):
     _png(article / "素材/cover.png", size=(1200, 510), color=(10, 20, 30))
     _, errors = verify_visual_receipt(article)
     assert any("旧 visual receipt 失效" in e for e in errors), errors
+
+
+def test_visual_receipt_binds_visual_profile_trace(tmp_path):
+    article = _visual_bundle(tmp_path)
+    recipe = pipeline._visual_recipe("warm-light-clay")
+    meta = article / "article-meta.yaml"
+    meta.write_text(
+        meta.read_text(encoding="utf-8") + "visual_profile: warm-light-clay\n",
+        encoding="utf-8",
+    )
+    records = [
+        json.loads(line)
+        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    for record in records:
+        record["visual_profile"] = "warm-light-clay"
+        record["visual_profile_sha256"] = recipe["sha256"]
+        record["host_agent"] = "codex"
+        record["orchestrator_skill"] = "sansheng-write"
+        record["extend_sha256"] = "abc123"
+    (article / ".gen-log.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in records) + "\n",
+        encoding="utf-8",
+    )
+
+    receipt, errors = seal_visual_receipt(article)
+
+    assert receipt and errors == []
+    assert receipt["manifest"]["meta"]["visual_profile"] == "warm-light-clay"
+    assert receipt["manifest"]["assets"][1]["visual_profile_sha256"] == recipe["sha256"]
+    assert receipt["manifest"]["assets"][1]["host_agent"] == "codex"
+    assert receipt["manifest"]["assets"][1]["extend_sha256"] == "abc123"
+
+
+def test_visual_receipt_includes_hero_when_present(tmp_path):
+    article = _visual_bundle(tmp_path)
+    hero = article / "素材/hero.png"
+    prompt = article / "素材/prompts/final/hero.md"
+    _png(hero, size=(1024, 1024))
+    prompt.write_text("---\nstyle: claymation\n---\n浅色 Hero\n", encoding="utf-8")
+    with (article / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
+        fp.write(json.dumps({
+            "schema_version": 2,
+            "record_id": "rec-hero",
+            "stage": "hero",
+            "producer": "gen_img",
+            "tool": "gen_img",
+            "renderer": "gen_img",
+            "model": "test-model",
+            "output": "素材/hero.png",
+            "output_sha256": sha256_file(hero),
+            "prompt": "素材/prompts/final/hero.md",
+            "prompt_sha256": sha256_file(prompt),
+            "cmd": "gen_img 素材/prompts/final/hero.md 素材/hero.png",
+        }, ensure_ascii=False) + "\n")
+
+    receipt, errors = seal_visual_receipt(article)
+
+    assert receipt and errors == []
+    assert any(asset["path"] == "素材/hero.png" for asset in receipt["manifest"]["assets"])
 
 
 def test_publish_receipt_binds_html_hero_and_visuals(tmp_path):

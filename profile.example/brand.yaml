@@ -34,6 +34,45 @@ colors:
   text_mute: "#8a929a"          # 副标题 / 说明 / 出处
   text_link: "#4a6b7a"          # URL 文字
 
+# ============================================================================
+#  视觉配方 -- 生图 Prompt 与最终图片的机器合同
+#  accent: brand-primary 会在运行时解析为当前主题 colors.primary。
+#  调整这些值会改变 visual_profile_sha256，旧 prompt 将被明确判为配方漂移。
+# ============================================================================
+visual:
+  default_profile: "warm-light-clay"
+  profiles:
+    warm-light-clay:
+      style: "claymation"
+      background: "#F5F0E6"
+      accent: "brand-primary"
+      neutrals: ["#FBF8F2", "#D8D2C7", "#5A554F"]
+      material: "matte soft clay, no metallic or photorealistic surface"
+      lighting: "bright diffuse studio light, low contrast, soft shadows"
+      required_prompt_groups:
+        - ["warm beige", "warm ivory", "暖米黄"]
+        - ["light palette", "bright palette", "浅色调", "明亮"]
+        - ["matte clay", "soft clay", "哑光黏土", "软黏土"]
+        - ["diffuse light", "soft lighting", "柔和漫射", "低对比"]
+      forbidden_prompt_terms:
+        - "charcoal background"
+        - "dark background"
+        - "black background"
+        - "navy"
+        - "steel blue"
+        - "brick red"
+        - "mustard yellow"
+        - "metallic"
+        - "chrome"
+        - "neon"
+        - "high contrast"
+        - "deep background"
+      thresholds:
+        mean_luma_min: 178
+        dark_pixel_luma: 80
+        dark_pixel_ratio_max: 0.18
+        mean_saturation_max: 0.30
+
 radius:
   sm: "6px"                 # 序号块 / 图标底 / URL 框
   media: "8px"              # 图片 / 缩略图

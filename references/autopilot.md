@@ -126,7 +126,7 @@
    - 同步 [iron-rules.md 流水线隔离铁律](iron-rules.md) + [iron-rules.md 封面图文字样式铁律 第 5 条](iron-rules.md)
 6. **信息图 ≥4 张** → `baoyu-skills:baoyu-infographic`（**唯一允许入口**）
    - 🔴 **信息图 = 内容总结，不是装饰插画**：每张图必须先**分析该段内容 → 选一个信息版式（清单/对比/流程/矩阵）→ 把原文的真实要点·数字·标签当图内中文文字排进去**。prompt 三件套 = 真实内容 + 版式骨架 + 官方 style。只画"物件/场景、没一句原文要点"的 = 打回重写（踩坑教训：手写黏土场景风格对但零信息，一眼被看穿）。中文要点多→Gemini 偶尔糊字须逐张核验重生，宁糊字重生也不退回零信息好看场景。详见 [image-routing.md §③](image-routing.md)
-   - 🔴 **视觉路由与 QA**：meta 先写 `infographic_subject` + `infographic_style`；每张原始图先写 producer/renderer/hash v2 log。logo + 压缩后逐张看最终图，验收落 `_visual-qa.md`，执行 `pipeline.py seal visual`
+   - 🔴 **视觉路由与 QA**：meta 先写 `infographic_subject` + `infographic_style`；`claymation` 另写 `visual_profile: warm-light-clay`，运行 `pipeline.py visual-contract`，把四行合同复制到每张信息图与 Hero canonical prompt。每张原始图先写 producer/renderer/profile/hash v2 log。logo + 压缩后逐张看最终图，验收落 `_visual-qa.md`，执行 `pipeline.py seal visual`
    - 🔴 **严禁直接调 `baoyu-skills:baoyu-image-gen` batch 跑信息图**（会跳过 baoyu-infographic 的 style 处理）
    - 🔴 **style 二选一**（详见 [image-routing.md §信息图 style 选择铁律](image-routing.md)）：
      - AI 工具教程 / 产品评测 / 功能解读 → **`--style claymation` 暖米黄轻盈版**（默认）
@@ -134,7 +134,7 @@
      - 其他 20 种 style **全部封存**，新文章不再选用
    - 🔴 **单篇文章所有信息图（≥4 张）必须风格统一**，禁止 claymation + morandi 混用
    - 一句话判定：「解释工具/产品怎么用」→ claymation；「评现象/趋势/价值观」→ morandi-journal
-   - **踩坑教训**：craft-handmade 单薄、claymation 深色版厚重；claymation 暖米黄定调轻盈耐看
+   - **踩坑教训**：craft-handmade 单薄、claymation 深色版厚重；只写 `style: claymation` 仍会被不同渲染器发散成钢蓝/砖红/金属黑底，必须绑定浅色配方并过最终像素门
    - 构成铁律：开篇 9:16 ×1 + 中间 16:9 ×≥2 + 结尾 9:16 ×1
    - 例外：精确数据图（雷达/折线/柱状/饼/跑分）走本地 `matplotlib`/`pyecharts`，不走 baoyu-infographic
    - 例外：精确架构图 / 时序图 / 数据流图（≥5 节点 + 拓扑核心）走 `baoyu-skills:baoyu-diagram`
@@ -180,7 +180,7 @@
 ```text
 全自动发行流水线：
 - [x] 第一步 🖼️ 核心大图：结合 `baoyu-skills:baoyu-cover-image` 规约生成 `cover.png`，及 `baoyu-skills:baoyu-infographic` × **≥ 4** 生成全文贯穿信息图：开篇 9:16 ×1 + 中间 16:9 ×≥2 + 结尾 9:16 ×1（详见 [layout.md 3e](layout.md)）。**必须通过 Skill 工具调用 `baoyu-skills:baoyu-infographic`，禁直接调底层 `baoyu-skills:baoyu-image-gen`**。
-- [x] 第二步 🧩 组件小图：调用 `baoyu-skills:baoyu-image-gen` 强制 `--ar 1:1 --quality normal` 生成 `hero.png`（科技感导读图）。`bgm_cover.png`（主题曲封面）由 BGM 阶段 `generate_article_bgm.py` 自动生成、不在此步。这些图尺寸很小，`add_logo.js` 已内置跳过清单，不会误打水印。
+- [x] 第二步 🧩 组件小图：调用 `baoyu-skills:baoyu-image-gen` 强制 `--ar 1:1 --quality normal` 生成 `hero.png`。`claymation` 篇 Hero 必须继承同一 `warm-light-clay` 合同，prompt 放 `素材/prompts/final/`，再用 `pipeline.py log hero ...` 登记；不得另起暗黑科技风。`bgm_cover.png`（主题曲封面）由 BGM 阶段 `generate_article_bgm.py` 自动生成、不在此步。这些图尺寸很小，`add_logo.js` 已内置跳过清单，不会误打水印。
 - [x] 第三步 📊 数据图表：文中如果有雷达图、折线图、跑分图等需要**完全数据精确**的对比，**严禁用生图模型画**（防维度幻觉）。必须用 Python 代码（如 `matplotlib`）精确渲染出图存入 `素材/`。
 - [x] 第三步 b 🎵 BGM：🔴 Claude 按 [music.md](music.md) §Claude 提炼标准 提炼诗意 theme_brief/imagery/点题歌名/选风格，传参执行 `generate_article_bgm.py --theme-brief ... --imagery ... --song-name ... --style ...`（MiniMax 自动写词 → 中文人声主题曲 + `bgm_cover.png` + 插 AUDIO-CARD；不依赖图片/Gemini）。🔴 **完成后必须跑 `pipeline.py verify bgm`（硬查 mp3 + 「本文主题曲」卡片已插入 `定稿.md`），未过不得进入第六步洗绿 / layout（MD→HTML）**——`verify_publish_assets` 把 BGM 缺失当正常放行，不会替你拦，所以这一道 verify 是 BGM 进 layout 前的唯一硬关卡。
 - [x] 第四步 🖼️ 插图嵌入：将 `cover.png`（仅 frontmatter `coverImage`）+ ≥4 张 `infographic*.png`（贯穿正文：2×9:16 + ≥2×16:9）写入 `定稿.md`（BGM 卡片占位已由上一步自动插入）。**严禁手动写 `![导读图](素材/hero.png)` 或 `![](素材/bgm_cover.png)`**——hero 由导读栏自动注入、bgm_cover 由音频卡片自动注入，手动嵌会重复展示。详见 `iron-rules.md` 中 hero 唯一位置铁律。
@@ -189,7 +189,7 @@
 - [x] 第六步 🎨 洗绿：执行 `format_layout.py --all` 处理全部微信定制组件（含音乐栏自动前置——把 AUDIO-CARD 上移到导读栏下方渲染）。
 - [x] 第七步 🏷️ 水印：自动批量执行 `add_logo.js 素材/*.png 截图/*.png`（**排除** hero.png 和 bgm_cover.png 等组件小图——这些尺寸太小，打水印反而影响观感）。
 - [x] 第七步 b ⚖️ 压缩：执行 `python "$SKILL/scripts/compress_images.py" 素材/ --max-mb 2` 把所有 PNG 压到 ≤ 2MB（Pillow 实现、中文路径友好，保持 PNG 不转 JPEG，hero 等组件小图自动跳过）。详见 [layout.md 3h](layout.md)。
-- [x] 第七步 c 🔏 最终视觉封印：逐张打开 logo/压缩后的最终封面与信息图，写 `_visual-qa.md`，执行 `pipeline.py seal visual`。任何后续改图都会让 receipt 失效。
+- [x] 第七步 c 🔏 最终视觉封印：逐张打开 logo/压缩后的最终封面、信息图与 Hero，写 `_visual-qa.md`；浅色配方必须打卡背景/主色/禁用色/材质/写实感/Hero 且 ≥12 项。执行 `pipeline.py seal visual`，任何后续改图都会让 receipt 失效。
 - [x] 第八步 🚀 API 发布草稿箱：先执行 `pipeline.py verify publish --pre` 写 `_publish-ready.json`，再调用 `baoyu-skills:baoyu-post-to-wechat`（显式 `--cover 素材/cover.png`）。返回 `media_id` 后执行 `pipeline.py done publish draft_media_id=<media_id>`；该命令会复验事前凭证并将当前 HTML/hero/视觉字节绑定到 media_id，`--force` 不可绕过。
 - [x] 第九步 📚 正式发布闭环：用户手动预览 + 发布、拿到 `wechat_url` 后，先把本篇高光句追加到 `golden_lines_file()` 解析出的金句库并带文章目录标记，再执行 `pipeline.py finalize <wechat_url>`；它会登记永久链接、完成写盘前校验后写入 `works_file()` 解析出的作品库、刷新 `articles.md` / `works-dashboard.html` / 推荐卡并做闭环验证。**禁止止步于草稿推送** -- 草稿推送不等于正式发布、更不等于已归档。
 ```

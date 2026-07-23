@@ -259,10 +259,10 @@ return**（P3.1 复审硬约束，防裸崩）。
 
 ### 输入 bundle
 
-- `sansheng_context`：品牌视觉调性摘要。
+- `sansheng_context`：品牌视觉调性摘要；`claymation` 同时带 `warm-light-clay` 配方名、背景、当前主题主色与配方摘要。
 - `iron_rules`：生图后端铁律子集（**严禁 Agent 原生 generate_image/imagine**；数值型图表必须 `matplotlib`/`pyecharts` 本地脚本渲染，.py 留文章目录供复核 —— 见 [image-routing.md](image-routing.md)）。
 - `article_meta`：文章元信息。
-- `stage_input`：已确认的配图 prompt + 数据表 / 图表规格。
+- `stage_input`：已确认的配图 prompt + 数据表 / 图表规格；`claymation` 每张信息图与 Hero prompt 必须带 `pipeline.py visual-contract` 输出的四字段。
 
 ### 输出 schema
 
@@ -302,6 +302,7 @@ return**（P3.1 复审硬约束，防裸崩）。
 - [ ] 每项 `path` 指向文章目录内真实文件、`bytes` 与磁盘实际大小一致、`aspect` ∈ {9:16,16:9,1:1} 且与图实际比例一致、压缩后 ≤2MB `(语义关/非 schema 强制：P1.2 新产出强制，不追溯历史 baseline)`。
 - [ ] 数值型图表（雷达/折线/柱状/饼）均由本地脚本渲染，对应 `.py` 已留在文章目录 `(语义关/非 schema 强制；铁律，禁大模型生图)`。
 - [ ] 未调用任何 Agent 原生生图（generate_image / internal_image_gen / imagine）`(语义关/非 schema 强制；铁律)`。
+- [ ] `claymation` 已显式绑定 `visual_profile: warm-light-clay`；canonical prompt、gen-log、最终像素和 Hero 通过同一配方门，未混入深色/金属/高反差主视觉 `(语义关：pipeline.py _visual_route_errors 强制)`。
 - [ ] 产物 + 清单落盘 `素材/*.png` 与 `素材/infographic/*.json`，渲染脚本留 `素材/*.py` `(语义关/非 schema 强制)`。
 
 ---

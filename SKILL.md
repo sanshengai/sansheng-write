@@ -85,7 +85,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **发布/后处理脚本**（`pipeline.py finalize/archive` / `format_layout.py` 契约门 / `add_logo.js` / `compress_images.py` / `generate_article_bgm.py` / `generate_recommend_html.py`）**用法进 publish.md**。硬约束：① ⚠️ `--check` ≠ 过发布契约门，验收用 `format_layout.py --all --check`；② 拿到永久链接后优先 `pipeline.py finalize <wechat_url>`，一次完成登记、归档与闭环验证；③ archive 候选元数据/作品库校验失败必须非零退出且不得写盘；④ 🔴 **禁手改 `articles.md` / `works-dashboard.html`**（archive 自动生成），一次性 `migrate_to_works.py` 带防覆盖栏、仅迁移手动跑一次。
+- **发布/后处理脚本**（`pipeline.py visual-contract/finalize/archive` / `format_layout.py` 契约门 / `add_logo.js` / `compress_images.py` / `generate_article_bgm.py` / `generate_recommend_html.py`）**用法进 publish.md**。硬约束：① ⚠️ `--check` ≠ 过发布契约门，验收用 `format_layout.py --all --check`；② `claymation` 先用 `visual-contract` 把同一浅色配方绑定到信息图与 Hero，日志和最终像素双门不得绕过；③ 拿到永久链接后优先 `pipeline.py finalize <wechat_url>`，一次完成登记、归档与闭环验证；④ archive 候选元数据/作品库校验失败必须非零退出且不得写盘；⑤ 🔴 **禁手改 `articles.md` / `works-dashboard.html`**（archive 自动生成），一次性 `migrate_to_works.py` 带防覆盖栏、仅迁移手动跑一次。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

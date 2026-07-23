@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import sys
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,26 @@ def brand() -> dict:
 
 def colors() -> dict:
     return brand().get("colors", {})
+
+
+def visual_profile(name: str = "") -> dict:
+    """返回已解析的视觉配方；``brand-primary`` 会绑定到当前主题主色。
+
+    配方本身放在 profile 的 ``visual.profiles``，而不是散落在 prompt 文案里。
+    调用方可对返回值做稳定摘要，把“用了哪一套浅色黏土参数”写进 canonical
+    prompt 和生成日志。未知配方返回空字典，由流水线给出可操作错误。
+    """
+    visual = brand().get("visual") or {}
+    selected = str(name or visual.get("default_profile") or "").strip()
+    profiles = visual.get("profiles") or {}
+    raw = profiles.get(selected)
+    if not selected or not isinstance(raw, dict):
+        return {}
+    recipe = copy.deepcopy(raw)
+    if recipe.get("accent") == "brand-primary":
+        recipe["accent"] = str(colors().get("primary") or "").upper()
+    recipe["name"] = selected
+    return recipe
 
 
 def identity() -> dict:

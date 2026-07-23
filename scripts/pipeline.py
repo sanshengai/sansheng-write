@@ -255,6 +255,143 @@ def _norm_relpath(value: str) -> str:
     return str(value or "").replace("\\", "/").removeprefix("./")
 
 
+def _visual_recipe(name: str = "") -> dict:
+    """读取当前 profile 的视觉配方，并附上可复验的稳定摘要。"""
+    from profile_config import visual_profile
+
+    recipe = visual_profile(name)
+    if not recipe:
+        return {}
+    recipe = copy.deepcopy(recipe)
+    recipe["sha256"] = stable_digest(recipe)
+    return recipe
+
+
+def _prompt_frontmatter(text: str) -> dict:
+    if _yaml is None:
+        return {}
+    match = re.match(r"\A---\s*\r?\n(.*?)\r?\n---(?:\s*\r?\n|$)", text, flags=re.S)
+    if not match:
+        return {}
+    try:
+        value = _yaml.safe_load(match.group(1)) or {}
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _visual_prompt_errors(prompt_text: str, recipe: dict, label: str) -> list[str]:
+    """校验 canonical prompt 是否真的携带浅色配方，而非只写 style 名。"""
+    if not recipe:
+        return [f"{label} 无法解析视觉配方"]
+    errors: list[str] = []
+    frontmatter = _prompt_frontmatter(prompt_text)
+    expected = {
+        "visual_profile": recipe.get("name"),
+        "visual_profile_sha256": recipe.get("sha256"),
+        "palette_background": recipe.get("background"),
+        "palette_accent": recipe.get("accent"),
+    }
+    missing_or_drifted = [
+        f"{key}={frontmatter.get(key) or '(空)'}"
+        for key, value in expected.items()
+        if str(frontmatter.get(key) or "").strip().lower()
+        != str(value or "").strip().lower()
+    ]
+    if missing_or_drifted:
+        errors.append(
+            f"{label} 视觉配方元数据缺失或漂移：{missing_or_drifted}；"
+            f"应绑定 {recipe.get('name')} / {recipe.get('sha256', '')[:12]}"
+        )
+
+    body_match = re.match(
+        r"\A---\s*\r?\n.*?\r?\n---(?:\s*\r?\n|$)(.*)\Z",
+        prompt_text,
+        flags=re.S,
+    )
+    body = body_match.group(1) if body_match else prompt_text
+    body_lower = body.lower()
+    missing_groups = []
+    for group in recipe.get("required_prompt_groups") or []:
+        choices = [str(item) for item in group if str(item).strip()]
+        if choices and not any(choice.lower() in body_lower for choice in choices):
+            missing_groups.append("/".join(choices))
+    if missing_groups:
+        errors.append(f"{label} 视觉配方正文缺关键词组：{missing_groups}")
+
+    negative_marker = re.compile(
+        r"\b(?:avoid|without|no|not|never|forbid(?:den)?)\b|不要|禁止|避免|严禁",
+        flags=re.I,
+    )
+    forbidden_hits = set()
+    for line in body.splitlines():
+        if negative_marker.search(line):
+            continue
+        low = line.lower()
+        for term in recipe.get("forbidden_prompt_terms") or []:
+            if str(term).lower() in low:
+                forbidden_hits.add(str(term))
+    if forbidden_hits:
+        errors.append(f"{label} 命中浅色视觉配方禁用色/材质：{sorted(forbidden_hits)}")
+    return errors
+
+
+def _image_tone_metrics(path: Path) -> dict:
+    """以最终像素估算亮度、暗部面积和饱和度；透明区按白底合成。"""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as source:
+            rgba = source.convert("RGBA")
+            background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+            image = Image.alpha_composite(background, rgba).convert("RGB")
+            image.thumbnail((256, 256))
+            pixels = list(image.getdata())
+    except Exception:
+        return {}
+    if not pixels:
+        return {}
+
+    lumas = []
+    saturations = []
+    for red, green, blue in pixels:
+        lumas.append(0.2126 * red + 0.7152 * green + 0.0722 * blue)
+        high = max(red, green, blue)
+        low = min(red, green, blue)
+        saturations.append(0.0 if high == 0 else (high - low) / high)
+    return {
+        "mean_luma": sum(lumas) / len(lumas),
+        "mean_saturation": sum(saturations) / len(saturations),
+        "lumas": lumas,
+    }
+
+
+def _visual_tone_errors(path: Path, recipe: dict, label: str) -> list[str]:
+    metrics = _image_tone_metrics(path)
+    if not metrics:
+        return [f"{label} 无法读取最终像素，不能执行视觉配方色调门"]
+    thresholds = recipe.get("thresholds") or {}
+    dark_luma = float(thresholds.get("dark_pixel_luma", 80))
+    dark_ratio = (
+        sum(1 for value in metrics["lumas"] if value < dark_luma)
+        / len(metrics["lumas"])
+    )
+    mean_luma = float(metrics["mean_luma"])
+    mean_saturation = float(metrics["mean_saturation"])
+    failed = (
+        mean_luma < float(thresholds.get("mean_luma_min", 178))
+        or dark_ratio > float(thresholds.get("dark_pixel_ratio_max", 0.18))
+        or mean_saturation > float(thresholds.get("mean_saturation_max", 0.30))
+    )
+    if not failed:
+        return []
+    return [
+        f"{label} 未通过 {recipe.get('name')} 色调门："
+        f"平均亮度={mean_luma:.1f}，暗部占比={dark_ratio:.1%}，"
+        f"平均饱和度={mean_saturation:.1%}"
+    ]
+
+
 def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
     """校验信息图视觉路由的整条证据链，而不只检查 style 是否在枚举里。
 
@@ -275,6 +412,7 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
 
     subject = str(meta.get("infographic_subject") or "").strip()
     style = str(meta.get("infographic_style") or "").strip()
+    profile_name = str(meta.get("visual_profile") or "").strip()
     expected = {"ai-product": "claymation", "phenomenon": "morandi-journal"}
     if subject not in expected:
         errors.append(
@@ -288,6 +426,34 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
     if style not in {"claymation", "morandi-journal"}:
         errors.append(
             f"infographic_style={style or '(空)'} 非法；新文章只允许 claymation / morandi-journal"
+        )
+
+    recipe = {}
+    if style == "claymation":
+        if not profile_name:
+            errors.append(
+                "article-meta.yaml 缺 visual_profile；claymation 新文章必须显式写 "
+                "visual_profile: warm-light-clay"
+            )
+        recipe = _visual_recipe(profile_name)
+        if not recipe:
+            recipe = _visual_recipe()
+        if not recipe:
+            errors.append(
+                f"visual_profile={profile_name or '(空)'} 无法解析；"
+                "claymation 必须绑定 warm-light-clay 视觉配方"
+            )
+        elif recipe.get("style") != style:
+            errors.append(
+                f"visual_profile={recipe.get('name')} 只适用于 {recipe.get('style')}，当前为 {style}"
+            )
+        elif profile_name and profile_name != recipe.get("name"):
+            errors.append(
+                f"visual_profile={profile_name} 与实际解析配方 {recipe.get('name')} 不一致"
+            )
+    elif profile_name:
+        errors.append(
+            f"visual_profile={profile_name} 当前只用于 claymation；morandi-journal 不得误绑浅色黏土配方"
         )
 
     for rel in ("素材/infographic/analysis.md", "素材/infographic/structured-content.md"):
@@ -381,10 +547,60 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
         seen_styles.add(prompt_style)
         if style and prompt_style != style:
             errors.append(f"{prompt_rel} frontmatter style={prompt_style or '(空)'}，应为 {style}")
+        if recipe:
+            errors.extend(_visual_prompt_errors(prompt_text, recipe, prompt_rel))
+            logged_profile = str(rec.get("visual_profile") or "")
+            logged_profile_sha = str(rec.get("visual_profile_sha256") or "")
+            if (
+                logged_profile != str(recipe.get("name") or "")
+                or logged_profile_sha != str(recipe.get("sha256") or "")
+            ):
+                errors.append(
+                    f"{rel} gen-log 视觉配方={logged_profile or '(空)'} / "
+                    f"{logged_profile_sha[:12] or '(空)'}，应为 "
+                    f"{recipe.get('name')} / {recipe.get('sha256', '')[:12]}"
+                )
+            errors.extend(_visual_tone_errors(output_path, recipe, rel))
 
     nonempty_styles = {s for s in seen_styles if s}
     if len(nonempty_styles) > 1:
         errors.append(f"最终信息图证据链混入多种 style：{sorted(nonempty_styles)}")
+
+    if recipe:
+        hero = mat / "hero.png"
+        if hero.exists():
+            hero_rel = "素材/hero.png"
+            errors.extend(_visual_tone_errors(hero, recipe, hero_rel))
+            hero_logs = {
+                _norm_relpath(rec.get("output", "")): rec
+                for rec in _read_gen_log(cwd, "hero")
+                if rec.get("output")
+            }
+            hero_rec = hero_logs.get(hero_rel)
+            if not hero_rec:
+                errors.append(
+                    f"{hero_rel} 缺生成日志，无法证明 Hero 继承 {recipe.get('name')} 视觉配方"
+                )
+            else:
+                hero_prompt_rel = _norm_relpath(hero_rec.get("prompt", ""))
+                hero_prompt = cwd / Path(hero_prompt_rel) if hero_prompt_rel else None
+                if not hero_prompt or not hero_prompt.exists():
+                    errors.append(f"{hero_rel} 缺 canonical prompt，无法核验视觉配方")
+                else:
+                    errors.extend(_visual_prompt_errors(
+                        hero_prompt.read_text(encoding="utf-8"),
+                        recipe,
+                        hero_prompt_rel,
+                    ))
+                    if (
+                        str(hero_rec.get("visual_profile") or "") != str(recipe.get("name") or "")
+                        or str(hero_rec.get("visual_profile_sha256") or "")
+                        != str(recipe.get("sha256") or "")
+                    ):
+                        errors.append(
+                            f"{hero_rel} gen-log 视觉配方未绑定 "
+                            f"{recipe.get('name')} / {recipe.get('sha256', '')[:12]}"
+                        )
     return errors
 
 
@@ -463,6 +679,26 @@ def _visual_qa_errors(cwd: Path) -> list:
         errors.append(f"_visual-qa.md 已勾选项仅 {checked} 条（需 ≥8，覆盖封面与四张信息图）")
     if "通过" not in text:
         errors.append("_visual-qa.md 缺最终结论“通过”")
+    meta_path = cwd / "article-meta.yaml"
+    profile_enabled = False
+    if meta_path.exists() and _yaml is not None:
+        try:
+            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            profile_enabled = bool(meta.get("visual_profile")) or meta.get("infographic_style") == "claymation"
+        except Exception:
+            pass
+    if profile_enabled:
+        palette_terms = ("背景", "主色", "禁用色", "材质", "写实", "Hero")
+        missing_palette = [term for term in palette_terms if term not in text]
+        if missing_palette:
+            errors.append(
+                f"_visual-qa.md 浅色视觉配方检查不完整，缺：{missing_palette}；"
+                "必须记录背景、主色、禁用色、材质、写实感与 Hero 一致性"
+            )
+        if checked < 12:
+            errors.append(
+                f"_visual-qa.md 已勾选项仅 {checked} 条（浅色视觉配方需 ≥12）"
+            )
     return errors
 
 
@@ -1798,7 +2034,8 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
 
 def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
             prompt: str = "", renderer: str = "", model: str = "",
-            provenance_mode: str = "rendered", style: str = ""):
+            provenance_mode: str = "rendered", style: str = "",
+            host_agent: str = "", extend_sha256: str = ""):
     """追加 v2 生图证据：producer、renderer、model、prompt/output 字节摘要。"""
     output = _norm_relpath(output)
     prompt = _norm_relpath(prompt)
@@ -1808,19 +2045,22 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
             and output.endswith(".png"))
     )
     prompt_style = ""
+    prompt_meta = {}
     prompt_path = cwd / Path(prompt) if prompt else None
     if prompt_path and prompt_path.exists():
+        prompt_text = prompt_path.read_text(encoding="utf-8")
         match = re.search(
             r"(?m)^style:\s*[\"']?([^\"'\s]+)",
-            prompt_path.read_text(encoding="utf-8"),
+            prompt_text,
         )
         prompt_style = match.group(1) if match else ""
+        prompt_meta = _prompt_frontmatter(prompt_text)
     if style and prompt_style and style != prompt_style:
         print(f"❌ --style={style} 与 prompt frontmatter style={prompt_style} 不一致")
         raise SystemExit(2)
     style = style or prompt_style
+    problems = []
     if is_final:
-        problems = []
         if tool not in IMAGE_TOOL_WHITELIST.get(stage, set()):
             problems.append(f"producer={tool} 不在 {stage} 白名单")
         if renderer not in IMAGE_RENDERER_WHITELIST:
@@ -1835,11 +2075,43 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
             problems.append(f"prompt 不存在：{prompt or '(空)'}")
         if not (cwd / Path(output)).exists():
             problems.append(f"output 不存在：{output}")
-        if problems:
-            print("❌ 最终视觉产物日志不完整：")
-            for problem in problems:
-                print(f"   • {problem}")
-            raise SystemExit(2)
+
+    if (
+        style == "claymation"
+        and stage in {"infographic", "hero"}
+        and prompt_path
+        and prompt_path.exists()
+    ):
+        meta = {}
+        meta_path = cwd / "article-meta.yaml"
+        if meta_path.exists() and _yaml is not None:
+            try:
+                meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                meta = {}
+        explicit_profile = str(meta.get("visual_profile") or "").strip()
+        recipe = (
+            _visual_recipe(explicit_profile)
+            if explicit_profile
+            else _visual_recipe()
+        )
+        if not recipe:
+            problems.append("无法解析 claymation 视觉配方")
+        else:
+            problems.extend(_visual_prompt_errors(
+                prompt_path.read_text(encoding="utf-8"),
+                recipe,
+                prompt,
+            ))
+            output_path = cwd / Path(output) if output else None
+            if output_path and output_path.exists():
+                problems.extend(_visual_tone_errors(output_path, recipe, output))
+
+    if problems:
+        print("❌ 最终视觉产物日志不完整：")
+        for problem in problems:
+            print(f"   • {problem}")
+        raise SystemExit(2)
     rec = {
         "schema_version": 2,
         "record_id": str(uuid.uuid4()),
@@ -1853,6 +2125,11 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
         "renderer": renderer,
         "model": model,
         "style": style,
+        "visual_profile": str(prompt_meta.get("visual_profile") or ""),
+        "visual_profile_sha256": str(prompt_meta.get("visual_profile_sha256") or ""),
+        "host_agent": host_agent or os.environ.get("SANSHENG_HOST_AGENT", ""),
+        "orchestrator_skill": "sansheng-write",
+        "extend_sha256": extend_sha256,
         "provenance_mode": provenance_mode,
         "cmd": cmd,
         "recorded_at": _now_iso(),
@@ -1870,6 +2147,27 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
         f"📝 已记录：{stage} / producer={tool} / renderer={renderer or '(未填)'}"
         f" → {output or '(no output path)'}"
     )
+
+
+def cmd_visual_contract(cwd: Path) -> None:
+    """打印当前文章应复制进信息图与 Hero canonical prompt 的视觉合同。"""
+    meta_path = cwd / "article-meta.yaml"
+    if not meta_path.exists() or _yaml is None:
+        raise SystemExit("缺 article-meta.yaml 或 PyYAML，无法生成视觉合同")
+    meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    style = str(meta.get("infographic_style") or "").strip()
+    profile_name = str(meta.get("visual_profile") or "").strip()
+    if style != "claymation":
+        raise SystemExit("visual-contract 当前只用于 claymation 浅色视觉配方")
+    recipe = _visual_recipe(profile_name) if profile_name else _visual_recipe()
+    if not recipe:
+        raise SystemExit(f"无法解析 visual_profile={profile_name or '(空)'}")
+    print("# 复制到每个信息图与 Hero canonical prompt 的 frontmatter")
+    print(f"visual_profile: {recipe['name']}")
+    print(f"visual_profile_sha256: {recipe['sha256']}")
+    print(f'palette_background: "{recipe["background"]}"')
+    print(f'palette_accent: "{recipe["accent"]}"')
+    print("\n# Prompt 正文同时保留：暖米黄/浅色调/哑光软黏土/柔和漫射光。")
 
 
 def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = ""):
@@ -2216,11 +2514,26 @@ def main():
     p_log.add_argument("--model", help="实际渲染模型/版本")
     p_log.add_argument("--style", help="可选；默认从 canonical prompt frontmatter 读取")
     p_log.add_argument(
+        "--host-agent",
+        default="",
+        help="可选；记录本次宿主 Agent（也可用 SANSHENG_HOST_AGENT 环境变量）",
+    )
+    p_log.add_argument(
+        "--extend-sha256",
+        default="",
+        help="可选；记录实际生效的 baoyu EXTEND.md 摘要",
+    )
+    p_log.add_argument(
         "--provenance-mode", default="rendered",
         choices=["rendered", "adopted-postprocessed"],
         help="rendered=加 logo 前登记；adopted-postprocessed=仅迁移既有最终图",
     )
     p_log.add_argument("--cmd", dest="cmd_line", help="实际执行的命令行（可选）")
+
+    sub.add_parser(
+        "visual-contract",
+        help="打印当前文章信息图与 Hero 应绑定的视觉配方 frontmatter",
+    )
 
     p_ap = sub.add_parser("approve", help="把作者确认绑定到当前 blueprint/draft 字节摘要")
     p_ap.add_argument("gate", choices=["blueprint", "draft"])
@@ -2288,7 +2601,11 @@ def main():
                 renderer=getattr(args, "renderer", "") or "",
                 model=getattr(args, "model", "") or "",
                 provenance_mode=getattr(args, "provenance_mode", "rendered"),
-                style=getattr(args, "style", "") or "")
+                style=getattr(args, "style", "") or "",
+                host_agent=getattr(args, "host_agent", "") or "",
+                extend_sha256=getattr(args, "extend_sha256", "") or "")
+    elif args.cmd == "visual-contract":
+        cmd_visual_contract(cwd)
     elif args.cmd == "approve":
         cmd_approve(args.gate, cwd, args.source_mode, args.note)
     elif args.cmd == "seal":

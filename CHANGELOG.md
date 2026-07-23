@@ -4,6 +4,21 @@
 
 ## [未发布]
 
+### 修复
+
+- **浅色黏土不再随宿主 Agent / 渲染器漂移**：新增 `warm-light-clay` 视觉配方，将暖米黄背景、当前主题主色、浅色阈值、哑光材质与柔光约束绑定到 canonical prompt、生成日志和最终像素；钢蓝/砖红/金属黑底等深色方案在登记证据前即被阻断。
+- **Hero 不再成为暗色例外**：`claymation` 文章的 Hero 与四张信息图共用配方、prompt、日志和色调门，避免正文浅色而导读图突然切成暗黑科技风。
+- **视觉 QA 不再只看“已勾选”**：浅色配方要求显式核验背景、主色、禁用色、材质、写实感与 Hero 一致性，总勾选项不少于 12 条。
+
+### 新增
+
+- `pipeline.py visual-contract` 打印当前 profile 对应的配方名、内容摘要、背景色与主题主色，供信息图和 Hero prompt 原样复用。
+- 生图日志新增 `visual_profile(_sha256)`、`host_agent`、`orchestrator_skill` 与可选 `extend_sha256`，视觉 receipt 同步封存，便于区分模型、宿主与 EXTEND 配置差异。
+
+### 改进
+
+- **固定视觉合同而非武断固定渲染器**：同 Prompt A/B 中 Gemini 与 GPT Image 都通过浅色门；保留后端可替换性，只有同规格重复越线才考虑 pin renderer。
+
 ## [0.7.0] -- 2026-07-22
 
 ### 改进
