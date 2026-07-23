@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.7.0] -- 2026-07-22
+
 ### 改进
 
 - **公开版本统一**：`SKILL.md metadata.version` 不再维护独立“范式版本”，与插件清单、CHANGELOG、git tag 和 GitHub Release 共用同一 SemVer。
