@@ -6,6 +6,7 @@
 
 ### 改进
 
+- **公开版本统一**：`SKILL.md metadata.version` 不再维护独立“范式版本”，与插件清单、CHANGELOG、git tag 和 GitHub Release 共用同一 SemVer。
 - **正式发布一键闭环**：新增 `pipeline.py finalize <wechat_url>`，串起永久链接登记、作品库归档、`articles.md` / `works-dashboard.html` / 推荐卡刷新与闭环验证；微信公众号完成态与可选的网站/朋友圈外部收尾分开表述。
 - **发布元数据前置校验**：标签、分类、摘要、最终标题前缀与微信永久链接在写盘前统一校验；正式标题以 `article-meta.yaml` 为单一真源，发布、作品库、网站/RSS 不再二次拼接。
 - **归档可观测性**：观察日志新增 `archive/registry_write` 与 `archive/verify_closed_loop` 事件，自省复核可识别元数据、写入和派生视图故障。
