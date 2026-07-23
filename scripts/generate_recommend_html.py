@@ -2,17 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 生成推荐文章 HTML 模块
-默认从 <数据目录>/works.yaml(SSOT) 取已发布、按「一三五篇」规则（第 1、3、5 篇，跳过第 2、4 篇）、仅推有封面、缺封面顺延就近不重复，挑 3 篇生成纯封面推荐卡片 HTML。
+默认从 profile_config.works_file() 解析出的作品库 SSOT 取已发布、按「一三五篇」规则（第 1、3、5 篇，跳过第 2、4 篇）、仅推有封面、缺封面顺延就近不重复，挑 3 篇生成纯封面推荐卡片 HTML。
 （articles.md 解析器 parse_articles_from_markdown 仅留作新旧一致性校验，不再是主数据源。）
 
 使用方式:
-  python generate_recommend_html.py [输出格式: html|copy]
+  python generate_recommend_html.py [html|copy|stdout]
+  python generate_recommend_html.py --help
 
 输出:
   - html: 保存到文件 recommend_articles.html
   - copy: 复制到剪贴板，可直接粘贴到定稿.html
 """
 
+import argparse
 import os
 import sys
 import re
@@ -31,12 +33,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from works_registry import load_works
 import profile_config as pc
 
-# 旧数据源（保留用于新旧产出一致性校验；推荐卡已切换为读 works.yaml）
+# 旧数据源（保留用于新旧产出一致性校验；推荐卡已切换为读 works_file() 解析出的作品库）
 ARTICLES_DB_PATH = pc.data_dir() / "articles.md"
 
 
 def resolve_cover(cv: str) -> str:
-    """把 works.yaml / articles.md 里的 cover 值还原为绝对路径。
+    """把作品库 / articles.md 里的 cover 值还原为绝对路径。
 
     兼容三种历史形态：`<数据目录>/` 占位符（archive 现行写法）、
     相对数据目录、相对数据目录父目录（旧库存量条目的基准）。
@@ -106,13 +108,8 @@ def parse_articles_from_markdown():
     return articles
 
 
-def parse_articles_from_works():
-    """从 works.yaml 提取已发布文章信息，输出与 parse_articles_from_markdown 同构的列表。
-
-    顺序：按发布日期倒序（最新在前），与导读栏「一三五篇」选篇规则一致。
-    cover 还原成绝对路径（与旧 articles.md 里的绝对封面路径等价），便于卡片做存在性校验。
-    """
-    works = load_works()
+def articles_from_works(works):
+    """把作品记录转换为推荐卡输入；纯函数，不读写共享文件。"""
     pub = [w for w in works if w.get("status") == "published" and w.get("wechat_url")]
     pub.sort(key=lambda w: w.get("date", ""), reverse=True)
     articles = []
@@ -126,6 +123,15 @@ def parse_articles_from_works():
             "link": w.get("wechat_url", ""),
         })
     return articles
+
+
+def parse_articles_from_works():
+    """从当前作品库提取已发布文章信息。
+
+    顺序：按发布日期倒序（最新在前），与导读栏「一三五篇」选篇规则一致。
+    cover 还原成绝对路径（与旧 articles.md 里的绝对封面路径等价），便于卡片做存在性校验。
+    """
+    return articles_from_works(load_works())
 
 
 def _has_cover(article):
@@ -192,7 +198,7 @@ def generate_single_card_html(article, index):
 
 
 def generate_recommend_html(articles=None):
-    """生成完整的推荐阅读 HTML。articles 不传则默认读 works.yaml。"""
+    """生成完整的推荐阅读 HTML。articles 不传则默认读 works_file() 解析出的作品库。"""
     if articles is None:
         articles = parse_articles_from_works()
 
@@ -287,9 +293,16 @@ def copy_to_clipboard(text):
             return False
 
 
-def main():
-    """主流程"""
-    output_format = sys.argv[1].lower() if len(sys.argv) > 1 else "copy"
+def main(argv=None):
+    """主流程。argparse 负责 --help，帮助查询绝不生成文件或改剪贴板。"""
+    parser = argparse.ArgumentParser(description="从作品库生成微信公众号推荐阅读 HTML")
+    parser.add_argument(
+        "output_format", nargs="?", choices=["html", "copy", "stdout"], default="copy",
+        help="html=写入数据目录；copy=复制到剪贴板（默认）；stdout=输出 HTML",
+    )
+    parser.add_argument("--output", type=Path, help="自定义 HTML 输出路径（隐含 html 模式）")
+    args = parser.parse_args(argv)
+    output_format = "html" if args.output else args.output_format
 
     print("🔄 正在生成推荐文章 HTML...")
 
@@ -324,9 +337,12 @@ def main():
             print("⚠️  无法复制到剪贴板，改为显示 HTML:")
             print("\n" + html)
 
+    elif output_format == "stdout":
+        print("\n" + html)
     else:
         # 保存到数据目录（SEP-10：产物含你的真实身份卡，属个人数据，不落公开仓工作树）
-        output_path = pc.data_dir() / "recommend_articles.html"
+        output_path = args.output or (pc.data_dir() / "recommend_articles.html")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
         print(f"✅ HTML 已保存到: {output_path}")

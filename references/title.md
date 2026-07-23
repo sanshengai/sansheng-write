@@ -55,7 +55,7 @@
 裁决链顺序：**教程 > 精选 > 分享 > 行业 > 资讯 > 洞察 > 随笔**。「分享」与「资讯」的分界 = 有没有作者亲测 / 自创背书（分享是"我用过 / 我做的"，资讯是"它发布了"）。定完标签后：
 
 1. 下面 5 个候选**每个都带同一个 `标签 | ` 前缀**（同篇标签唯一，5 个候选前缀相同，变化的只是竖杠后的正文标题）；
-2. 把定的 `outward_category` **立即回填 `article-meta.yaml` 的 `outward_category` 字段** -- 发布 / 归档（`pipeline.py archive`）直接复用它，保证标题里的标签与网站 / RSS 完全一致，archive 不再二次判类。
+2. 把定的 `outward_category` **立即回填 `article-meta.yaml` 的 `outward_category` 字段** -- 发布 / 归档（`pipeline.py archive/finalize`）直接复用它，保证标题里的标签与网站 / RSS 完全一致，archive 不再二次判类。
 
 ## 执行：出 5 个候选，覆盖 5 种策略
 

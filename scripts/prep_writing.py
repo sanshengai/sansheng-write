@@ -9,7 +9,7 @@ prep_writing.py -- 写作前把参考料主动聚合渲染成 _prep-context.md
 profile.example/，这是正常路径）：
   - 风格手册  profile/corpus/authors/<name>.compact.md
   - 声纹样本  profile/corpus/voice-samples.md（无自备语料时的基础人味兜底）
-  - 金句库    profile/corpus/golden-lines.md
+  - 金句库    profile_config.py::golden_lines_file()（默认 profile/corpus/golden-lines.md，可由 env 直指）
   - 风格示例  profile/corpus/style-examples.md
   - 整篇范文  profile/corpus/samples/<name>/*.md（可选）
 缺料一律优雅降级：在产出里留一行提示、不刷屏、不崩。
@@ -630,7 +630,8 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     # 3. 金句库
     parts.append("## 二、金句库（声音锚点 + 锻造句式 + 本篇主题金句）")
     parts.append("")
-    jf = corpus_dir() / "golden-lines.md"
+    from profile_config import golden_lines_file
+    jf = golden_lines_file()
     if jf.exists():
         jtext = jf.read_text(encoding="utf-8")
         anchor = extract_section(jtext, "写作声音锚点")
@@ -646,8 +647,8 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
                 parts.append(blk)
                 parts.append("")
     else:
-        missing.append("金句库不存在：profile/corpus/golden-lines.md（可选料，缺省不影响）")
-        parts.append("⚠️ 未找到 profile/corpus/golden-lines.md（可选：自建后此处会注入声音锚点 + 主题金句）")
+        missing.append(f"金句库不存在：{jf}（可选料，缺省不影响）")
+        parts.append(f"⚠️ 未找到金句库：{jf}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）")
     parts.append("---")
     parts.append("")
 

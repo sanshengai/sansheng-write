@@ -85,12 +85,12 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **发布/后处理脚本**（`pipeline.py`+`archive` / `format_layout.py` 契约门 / `add_logo.js` / `compress_images.py` / `generate_article_bgm.py` / `generate_recommend_html.py`）**用法进 publish.md**。硬约束：① ⚠️ `--check` ≠ 过发布契约门，验收用 `format_layout.py --all --check`；② `archive` 须先 `done publish wechat_url=...` 否则缺链接直接退出；③ 🔴 **禁手改 `articles.md`**（archive 自动生成的渲染视图），一次性 `migrate_to_works.py` 带防覆盖栏、仅迁移手动跑一次。
+- **发布/后处理脚本**（`pipeline.py finalize/archive` / `format_layout.py` 契约门 / `add_logo.js` / `compress_images.py` / `generate_article_bgm.py` / `generate_recommend_html.py`）**用法进 publish.md**。硬约束：① ⚠️ `--check` ≠ 过发布契约门，验收用 `format_layout.py --all --check`；② 拿到永久链接后优先 `pipeline.py finalize <wechat_url>`，一次完成登记、归档与闭环验证；③ archive 候选元数据/作品库校验失败必须非零退出且不得写盘；④ 🔴 **禁手改 `articles.md` / `works-dashboard.html`**（archive 自动生成），一次性 `migrate_to_works.py` 带防覆盖栏、仅迁移手动跑一次。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 
-- **统一 SSOT `{数据目录}/works.yaml`：** 文章+视频每篇一条。写作/配图前**先读近 3 篇**做维度/收尾/风格去重；发布后 `archive` 写入。`articles.md` 与 `作品库看板.html` 是其渲染视图（🔴 禁手改）；旧 `history.yaml` 已被取代、不再写入。
-- **`prep_writing.py` 写作前自动聚合进 `_prep-context.md`（不必手翻）：** profile 语料池的 风格示例库 / 金句库（按主题）/ 反例对照库 / voice 语料（gate：>200 字≈2-3 段即注入）+ `profile/corpus/authors/{X}.compact.md`（用户自备的作者风格手册；无自备手册时注入仓内原创的 `profile/corpus/voice-samples.md` 做基础人味兜底）。
+- **统一作品库 SSOT：** 实际路径只认 `scripts/profile_config.py::works_file()`（默认 `{数据目录}/works.yaml`，可由 `SANSHENG_WRITE_WORKS_FILE` 重命名）；文章+视频每篇一条。写作/配图前**先读近 3 篇**做维度/收尾/风格去重；发布后 `archive` 写入。`articles.md` 与 `works-dashboard.html` 是自动渲染视图（🔴 禁手改）；命令输出必须打印解析后的真实绝对路径，旧 `history.yaml` 已冻结。
+- **`prep_writing.py` 写作前自动聚合进 `_prep-context.md`（不必手翻）：** profile 语料池的 风格示例库 / 金句库（按主题）/ 反例对照库 / voice 语料（gate：>200 字≈2-3 段即注入）+ `profile/corpus/authors/{X}.compact.md`（用户自备的作者风格手册；无自备手册时注入仓内原创的 `profile/corpus/voice-samples.md` 做基础人味兜底）。金句库路径只认 `profile_config.py::golden_lines_file()`；已有库在别处时用 `SANSHENG_WRITE_GOLDEN_LINES_FILE` 直指，禁止复制第二份。
 - **按主题人工挑读（非自动）：** 若 profile 自带精选样本库 `profile/corpus/samples/{作者}/`，写作前可按当前风格路由抽读 2-3 篇（无对应作者回退 `profile/corpus/voice-samples.md`）。按需查 profile 里的品牌规范 / 选题储备文件。
 
 ## 成品输出目录

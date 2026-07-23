@@ -20,8 +20,8 @@
 `contracts.py` / `format_layout.py` / `pipeline.py` 自动追加「门判定记录」。**禁止只看仓根同名旧文件**。
 每行一个 v2 JSON，核心字段：`record_id/run_id/recorded_at/article_uid/stage/event/attempt/passed/severity/issue_codes/metrics/artifact_digest/source`；同时保留 v1 的 `ts/article/verdict/detail` 兼容旧工具。
 
-- `stage`：format_layout / verify_writing
-- `event`：门名（verify_bold_density / verify_cjk_punctuation / ...）
+- `stage`：format_layout / verify_writing / archive
+- `event`：门名或归档事件（verify_bold_density / verify_cjk_punctuation / registry_write / verify_closed_loop / ...）
 - `verdict`：该门这次的判定（ok / fail / warning / blocked / suspicious ...）
 - `detail`：简短事实（命中几处、ratio 多少），**不含判断**
 
@@ -45,6 +45,7 @@
 - **死门**：某门从来没拦下过任何东西 → 可能多余，该删或该改
 - **疑似误判门**：某门几乎每篇 fail → 规则可能太严
 - **字段不足**：observation 现有字段是否够支撑判断 → 要不要让脚本多记点
+- **发布闭环异常**：`archive` 的 `registry_write` / `verify_closed_loop` 是否反复失败或重试 → 区分元数据问题、派生视图漂移与作品库写入故障
 
 **🕸 织网两指标（数据源看各篇 `article-meta.yaml` + `profile/brand-net.md`）：**
 - **织网执行率**：近 N 篇里 `weave:` 三问真答了几篇（含"不织:理由"也算答）；空着/没这字段 = 步骤 7.5 被跳，查原因

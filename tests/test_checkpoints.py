@@ -34,6 +34,18 @@ def test_checkpoints_off_by_default(tmp_path):
     assert _checkpoint_errors("writing", tmp_path) == []
 
 
+def test_golden_lines_file_accepts_explicit_source(monkeypatch, tmp_path):
+    """个人金句库可直指既有真源，不必复制到 profile/corpus。"""
+    source = tmp_path / "我的金句库.md"
+    monkeypatch.setenv("SANSHENG_WRITE_GOLDEN_LINES_FILE", str(source))
+    profile_config._reset_cache_for_tests()
+    try:
+        assert profile_config.golden_lines_file() == source
+    finally:
+        monkeypatch.delenv("SANSHENG_WRITE_GOLDEN_LINES_FILE", raising=False)
+        profile_config._reset_cache_for_tests()
+
+
 def test_workflow_checkpoints_parse_and_filter(tmp_path, monkeypatch):
     """list / csv 两种写法都收，非法值被滤掉。"""
     try:

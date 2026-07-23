@@ -130,8 +130,8 @@ baoyu-post-to-wechat 定稿.html --cover 素材/cover.png --source-url "<按上�
 5. 压缩 → 逐张看最终图 → 写 `_visual-qa.md` → `pipeline.py seal visual`
 6. `pipeline.py verify publish --pre` -- 要求全部上游 stage=done，并写事前 publish-ready
 7. 调用 `/baoyu-post-to-wechat` -- 发布到微信草稿箱；拿到 media_id 后 `pipeline.py done publish draft_media_id=...`
-8. **归档入库** -- 正式发布并补 wechat_url 后运行 `pipeline.py archive`
-9. **沉淀内容** -- 更新金句库和风格库
+8. **正式发布闭环** -- 拿到永久链接后运行 `pipeline.py finalize <wechat_url>`；命令串起登记链接、归档、刷新派生视图、闭环验证
+9. **沉淀内容** -- 在解析后的金句库真源里追加本篇高光句；`verify archive` 会按文章目录标记核验
 
 ---
 
@@ -191,30 +191,40 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 
 ## 发布后沉淀
 
-### 1. 归档入库（`pipeline.py archive`）
+### 1. 正式发布闭环（优先 `pipeline.py finalize`）
 
-**时机：** 拿到最终微信永久链接、且 `pipeline.py done publish wechat_url=...` 已写入后。
+**时机：** 拿到最终微信永久链接后。
 
-> 🔴 旧流程（AI 手动覆写 `articles.md`）已废弃。现在 **`<数据目录>/works.yaml` 是唯一数据源**，`articles.md` 是它的自动生成视图，**禁止手改 articles.md**。
+> 🔴 旧流程（AI 手动覆写 `articles.md` / 看板）已废弃。作品库真实路径只认 `profile_config.py::works_file()`（默认 `<数据目录>/works.yaml`，可由 `SANSHENG_WRITE_WORKS_FILE` 重命名）；`articles.md` 与 `works-dashboard.html` 都是自动生成视图，**禁止手改**。
 
 **操作步骤：**
-1. 确认 `article-meta.yaml` 已填 `category`（分类代码，见 profile 的分类体系）/ `tags` / `digest`
-2. 在文章目录运行：`pipeline.py archive`
-   - 自动写一条记录进 `<数据目录>/works.yaml`（按 category 分配 code，如 `AIT-08`，分类内独立计数、发布即冻结）
-   - **自动刷新** `articles.md` + `作品库看板.html`
-3. `pipeline.py verify archive`（按 code 校验已入库）
-4. 同步在 `profile/corpus/金句库.md` 注入本次的高光段落
+1. 确认 `article-meta.yaml` 已填 `title`（含 `标签 | ` 前缀）/ `category` / `outward_category` / `tags` / `digest`。`verify publish --pre` 会提前校验，禁止等发布后才发现标签不合法。
+2. 先向 `profile_config.py::golden_lines_file()` 解析出的金句库追加至少 1 条高光句，并带来源标记 `*(N-文章目录名)*`。已有库不在 profile 时，用 `SANSHENG_WRITE_GOLDEN_LINES_FILE` 直指真源，不复制第二份。
+3. 在文章目录运行：
+
+```bash
+python "$SKILL/scripts/pipeline.py" finalize "https://mp.weixin.qq.com/s/xxx"
+```
+
+该命令依次执行：
+
+- `done publish wechat_url=...`：把永久链接绑定到 publish receipt；
+- `archive`：先在内存构造候选记录并全量校验，**通过后才写盘**；重跑保留既有发布日期、视频状态、合并关系与冻结 code；
+- 自动刷新 `articles.md`、`works-dashboard.html`、`recommend_articles.html`；
+- `verify archive`：核对本篇记录与 meta/state 一致、作品库全量合法、两份派生视图未过期、金句标记已存在。
+
+任何一环失败都返回非零，不得显示“全流程完成”。兼容旧命令时才拆开执行：`done publish wechat_url=...` → `archive` → `verify archive`。
 
 ---
 
 ### 2. 自动生成推荐文章 HTML
 
-**时机：** `articles.md` 覆写完成后，调用 `generate_recommend_html.py` 重生成 `<数据目录>/recommend_articles.html`（个人数据落数据目录，不进仓）。
+**时机：** `archive/finalize` 成功时自动重生成 `<数据目录>/recommend_articles.html`（个人数据落数据目录，不进仓），无需再单独调用。
 
 **自动执行步骤：**
-1. ✅ 从 `<数据目录>/works.yaml` 按「一三五」规则取已发布第 1 / 3 / 5 篇（按发布日倒序，跳过第 2、4 篇，**需 ≥5 篇「有封面」的已发布文章**；缺封面顺延就近、不足则该区块静默跳过）
+1. ✅ 从 `works_file()` 解析出的作品库按「一三五」规则取已发布第 1 / 3 / 5 篇（按发布日倒序，跳过第 2、4 篇，**需 ≥5 篇「有封面」的已发布文章**；缺封面顺延就近、不足则该区块静默跳过）
 
-> ⏱ **时序说明**：footer/推荐卡片在**排版阶段**注入（读 `works.yaml`），而本篇要到**发布后 `pipeline.py archive`** 才入库--所以推荐卡片读到的是「上一批已入库文章」，**本篇自身不会出现在自己的推荐里，这是设计而非 bug**。
+> ⏱ **时序说明**：footer/推荐卡片在**排版阶段**注入（读当前作品库），而本篇要到**发布后 `pipeline.py finalize/archive`** 才入库--所以推荐卡片读到的是「上一批已入库文章」，**本篇自身不会出现在自己的推荐里，这是设计而非 bug**。
 2. ✅ 提取标题、摘要、封面、链接
 3. ✅ 按照微信排版样式生成 HTML
 4. ✅ 输出到 `<数据目录>/recommend_articles.html`，可直接粘贴到 `定稿.html`
@@ -232,22 +242,20 @@ AI 在推往草稿箱前，必须自行建立质检线程打卡：
 </section>
 ```
 
-**使用流程：**
+**手动调试：**
 ```
-pipeline.py archive（写 works.yaml + 自动刷新 articles.md/看板）
-  ↓
-执行 generate_recommend_html.py（读 works.yaml）
-  ↓
-recommend_articles.html 重生成 ✅
-  ↓
-打开 定稿.html → 替换 <!-- 推荐阅读 --> 区块 → 完成 ✨
+python generate_recommend_html.py --help       # 只显示帮助，零副作用
+python generate_recommend_html.py html         # 写入数据目录
+python generate_recommend_html.py copy         # 明确要求时才复制剪贴板
 ```
+
+`--help` 不得生成文件、修改剪贴板；自动化归档直接调用纯函数，不经过剪贴板模式。
 
 ---
 
 ### 3. 沉淀内容素材
 
-1. 将好句子追加到 `profile/corpus/金句库.md`
+1. 将好句子追加到 `profile_config.py::golden_lines_file()` 解析出的唯一金句库，并带 `*(N-文章目录名)*` 标记
 2. 如有新风格发现，更新 `profile/corpus/风格示例库.md`
 3. 系列文章确认下期预告和发布节奏
 
@@ -257,8 +265,8 @@ recommend_articles.html 重生成 ✅
 
 **用户需要的信息：**
 
-1. **正式发布链接** -- 作品库 (`works.yaml`) 中对应作品的微信永久链接
-2. **入库确认** -- 已写入 `<数据目录>/works.yaml`（自动分配 code，如 `AIT-08`），并刷新 `articles.md`/看板
+1. **正式发布链接** -- 作品库 (`works_file()`) 中对应作品的微信永久链接
+2. **入库确认** -- 报告解析后的作品库绝对路径与自动分配 code，并确认 `articles.md` / `works-dashboard.html` 已刷新
 3. **推荐卡片状态** -- 最新三篇文章列表（用于后续推荐卡片更新）
 
 **交付格式：**
@@ -269,7 +277,7 @@ recommend_articles.html 重生成 ✅
 链接：[微信链接]
 发布时间：[时间]
 
-📋 已入库：<数据目录>/works.yaml（已自动刷新 articles.md + 作品库看板.html）
+📋 已入库：<works_file() 解析后的绝对路径>（已自动刷新 articles.md + works-dashboard.html）
 推荐卡片当前 TOP 3：[最新三篇文章列表]
 ```
 
@@ -277,7 +285,7 @@ recommend_articles.html 重生成 ✅
 
 ## 发布后·朋友圈文案
 
-发布链路的最后一拍：拿到正式链接、归档入库、部署完成之后，**自动产出一条朋友圈文案**
+发布链路的交付附加项：拿到正式链接并归档入库后，**自动产出一条朋友圈文案**
 供作者复制（只出文案文本，不自动发朋友圈 -- 朋友圈没有开放发布 API）。跟 `publish` / `archive`
 共用「你发正式链接」这一个触发词，一口气跑完，无需额外指令。
 

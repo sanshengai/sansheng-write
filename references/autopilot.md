@@ -191,7 +191,7 @@
 - [x] 第七步 b ⚖️ 压缩：执行 `python "$SKILL/scripts/compress_images.py" 素材/ --max-mb 2` 把所有 PNG 压到 ≤ 2MB（Pillow 实现、中文路径友好，保持 PNG 不转 JPEG，hero 等组件小图自动跳过）。详见 [layout.md 3h](layout.md)。
 - [x] 第七步 c 🔏 最终视觉封印：逐张打开 logo/压缩后的最终封面与信息图，写 `_visual-qa.md`，执行 `pipeline.py seal visual`。任何后续改图都会让 receipt 失效。
 - [x] 第八步 🚀 API 发布草稿箱：先执行 `pipeline.py verify publish --pre` 写 `_publish-ready.json`，再调用 `baoyu-skills:baoyu-post-to-wechat`（显式 `--cover 素材/cover.png`）。返回 `media_id` 后执行 `pipeline.py done publish draft_media_id=<media_id>`；该命令会复验事前凭证并将当前 HTML/hero/视觉字节绑定到 media_id，`--force` 不可绕过。
-- [x] 第九步 📚 归档入库：用户手动预览 + 发布、拿到 `wechat_url` 后，执行 `pipeline.py done publish wechat_url=...`，再跑 `pipeline.py archive` 把本文写入 `<数据目录>/works.yaml`（SSOT，自动按 category 分配 code + 刷新 articles.md/看板）。**禁止止步于草稿推送** —— 草稿推送不等于发布完成、更不等于已入库。
+- [x] 第九步 📚 正式发布闭环：用户手动预览 + 发布、拿到 `wechat_url` 后，先把本篇高光句追加到 `golden_lines_file()` 解析出的金句库并带文章目录标记，再执行 `pipeline.py finalize <wechat_url>`；它会登记永久链接、完成写盘前校验后写入 `works_file()` 解析出的作品库、刷新 `articles.md` / `works-dashboard.html` / 推荐卡并做闭环验证。**禁止止步于草稿推送** -- 草稿推送不等于正式发布、更不等于已归档。
 ```
 
 ---
@@ -219,6 +219,6 @@ autopilot 后端零停顿，用户拿到草稿箱成品时对"为什么这么判
 草稿箱推送成功只是 autopilot 的终点，**不是文章上线**。必须明确告知用户：
 
 1. **预览 + 发布**：检查排版无误，手动点发布。
-2. **归档入库**：发布完成拿到 `wechat_url` 后，执行 `pipeline.py done publish wechat_url=...`，再跑 `pipeline.py archive` 把本文写入 `<数据目录>/works.yaml`（SSOT，自动按 category 分配 code + 刷新 articles.md/看板）。
+2. **正式发布闭环**：发布完成拿到 `wechat_url` 后，沉淀金句并执行 `pipeline.py finalize <wechat_url>`；任一校验失败不得汇报完成。
 
 autopilot 的最后一次回复**必须**把这 2 步作为"交付清单"明确打印给用户，不能让用户以为草稿推送就完事。

@@ -20,7 +20,8 @@ pipeline.py — 微信公众号写作流水线管理器
   python SKILL/scripts/pipeline.py skip <stage>             跳过某阶段
   python SKILL/scripts/pipeline.py reset <stage>            重置阶段为 pending
   python SKILL/scripts/pipeline.py log <stage> <tool> ...   记录生图来源到 .gen-log.jsonl
-  python SKILL/scripts/pipeline.py archive                  发布归档：写 works.yaml + 刷新 articles.md/看板
+  python SKILL/scripts/pipeline.py archive                  发布归档：写解析后的作品库 + 刷新派生视图
+  python SKILL/scripts/pipeline.py finalize <wechat_url>    正式发布收尾：登记链接 + 归档 + 验证
   python SKILL/scripts/pipeline.py history                  [DEPRECATED] 改用 archive
   python SKILL/scripts/pipeline.py orchestrator on|off      切换编排器并行/串行（默认 on）
 
@@ -29,7 +30,7 @@ pipeline.py — 微信公众号写作流水线管理器
   python "$SKILL/scripts/pipeline.py" init
   python "$SKILL/scripts/pipeline.py" status
   python "$SKILL/scripts/pipeline.py" verify layout
-  python "$SKILL/scripts/pipeline.py" done publish wechat_url=https://mp.weixin.qq.com/s/xxx
+  python "$SKILL/scripts/pipeline.py" finalize https://mp.weixin.qq.com/s/xxx
 """
 
 import json
@@ -111,7 +112,7 @@ STAGE_LABELS = {
     "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
     "publish":     "发布草稿箱（baoyu-skills:baoyu-post-to-wechat）",
-    "archive":     "发布后沉淀（pipeline.py archive 写 works.yaml + 自动刷新 articles.md/看板）",
+    "archive":     "发布后沉淀（pipeline.py archive 写作品库 + 自动刷新 articles.md/看板/推荐）",
 }
 
 def _skill_path(rel: str) -> str:
@@ -166,19 +167,18 @@ STAGE_HINTS = {
     "publish": (
         "🔴 调微信前必须：pipeline.py verify publish --pre（写 _publish-ready.json）。\n"
         "  done publish 会内联复验 ready 与全部产物，--force 不可绕过。\n"
-        "🔴 公众号草稿标题 = 「{对外分类中文名} | {正式标题}」，例：洞察 | Loop：硅谷最会用 AI 的人已经不写提示词了\n"
-        "   （对外分类=article-meta.yaml 的 outward_category：tutorial→教程/news→资讯/picks→精选/insight→洞察/essay→随笔/industry→行业；\n"
-        "    作品库 title 存干净标题不带前缀，前缀只挂公众号发布标题。post-to-wechat 支持 --title 就传带前缀标题，否则先改 定稿.html 的 <title> 再推）\n"
+        "🔴 article-meta.yaml 的 title 已是最终对外标题，必须自带「{对外分类中文名} | 」前缀；发布、作品库、网站/RSS 共用这一份，不得二次拼接。\n"
+        "   （对外分类=article-meta.yaml 的 outward_category：tutorial→教程/news→资讯/picks→精选/share→分享/insight→洞察/essay→随笔/industry→行业；\n"
+        "    post-to-wechat 的 --title 原样传 article-meta.title；例：洞察 | Loop：硅谷最会用 AI 的人已经不写提示词了。）\n"
         "  /baoyu-skills:baoyu-post-to-wechat 定稿.html；返回 media_id 后立即：\n"
         "  pipeline.py done publish draft_media_id=<media_id>\n"
-        "  微信后台手动发布，获得链接后：pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
+        "  微信后台手动发布，获得链接后：pipeline.py finalize https://mp.weixin.qq.com/s/xxx"
     ),
     "archive": (
-        # 二期C：发布即写 works.yaml（单一数据源），自动分配 code + 刷新 articles.md/看板
+        # 二期C：发布即写作品库（单一数据源），自动分配 code + 刷新派生视图
         "先确认 article-meta.yaml 已填 category（AIT/TUT/OBS/ROB/KID/ESS）/ outward_category（对外6类，AIT/OBS 必填）/ tags / digest，然后：\n"
-        f'  python "{_skill_path("scripts/pipeline.py")}" archive\n'
-        "  （写入 <数据目录>/works.yaml + 自动刷新 articles.md 与 works-dashboard.html）\n"
-        "  完成后：pipeline.py verify archive"
+        f'  python "{_skill_path("scripts/pipeline.py")}" finalize https://mp.weixin.qq.com/s/xxx\n'
+        "  （串起登记永久链接 → 写作品库 → 刷新 articles.md / works-dashboard.html / recommend_articles.html → 验证）"
     ),
 }
 
@@ -591,6 +591,108 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
         if receipt_errors:
             return [f"checkpoint:{name} receipt 未通过 -- {e}" for e in receipt_errors]
     return []
+
+
+def _archive_metadata(cwd: Path, state: dict, *, require_url: bool = False,
+                      override: dict | None = None) -> tuple[dict, dict, list[str]]:
+    """读取并校验归档元数据，供发布前门、archive 与 verify archive 共用。"""
+    from works_registry import (CATEGORY_CODES, OUTWARD_CATEGORIES, TAG_VOCAB,
+                                suggest_outward)
+
+    override = override or {}
+    errors: list[str] = []
+    meta_path = cwd / "article-meta.yaml"
+    meta: dict = {}
+    if not meta_path.exists():
+        errors.append("article-meta.yaml 不存在")
+    elif _yaml is None:
+        errors.append("缺少 PyYAML，无法读取 article-meta.yaml")
+    else:
+        try:
+            loaded = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(loaded, dict):
+                errors.append("article-meta.yaml 顶层必须是对象")
+            else:
+                meta = loaded
+        except Exception as exc:
+            errors.append(f"article-meta.yaml 解析失败：{exc}")
+
+    category = override.get("category") or meta.get("category", "")
+    if category not in CATEGORY_CODES:
+        errors.append(f"category 缺失或非法（需 {sorted(CATEGORY_CODES)}）")
+
+    outward = override.get("outward_category") or meta.get("outward_category", "")
+    if not outward and category in CATEGORY_CODES:
+        suggested, needs_review = suggest_outward(category)
+        if suggested and not needs_review:
+            outward = suggested
+        else:
+            errors.append(
+                f"outward_category 未填且 category={category} 需人工判（需 {sorted(OUTWARD_CATEGORIES)}）"
+            )
+    elif outward not in OUTWARD_CATEGORIES:
+        errors.append(f"outward_category={outward!r} 非法（需 {sorted(OUTWARD_CATEGORIES)}）")
+
+    tags = meta.get("tags", []) or []
+    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+        errors.append("tags 必须是字符串列表")
+        tags = []
+    else:
+        bad_tags = [tag for tag in tags if tag not in TAG_VOCAB]
+        if bad_tags:
+            errors.append(
+                f"tags 含受控词表外标签 {bad_tags}；请改 article-meta.yaml，"
+                "或明确扩充 works_registry.TAG_VOCAB"
+            )
+        if len(tags) != len(set(tags)):
+            errors.append("tags 含重复项")
+
+    # article-meta.yaml 是正式对外标题 SSOT；state 只做交叉检查，不参与归档兜底，
+    # 否则“发布用 meta、入库用 state”会把同一篇文章悄悄拆成两个标题。
+    title = meta.get("title", "")
+    if not str(title).strip():
+        errors.append("article-meta.yaml title 缺失（正式标题只认这一处）")
+    elif outward in OUTWARD_CATEGORIES:
+        expected_prefix = f"{OUTWARD_CATEGORIES[outward]} | "
+        if not str(title).startswith(expected_prefix):
+            errors.append(
+                f"title 必须与 outward_category 同源并带前缀 {expected_prefix!r}；"
+                "不要在发布时临时二次拼接"
+            )
+
+    digest = override.get("digest") or meta.get("digest", "") or ""
+    if not str(digest).strip():
+        errors.append("digest 缺失")
+
+    url = state.get("stages", {}).get("publish", {}).get("wechat_url", "")
+    if require_url and not url:
+        errors.append("publish.wechat_url 为空（草稿态不归档）")
+    elif url and not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", str(url)):
+        errors.append(f"wechat_url 不是合法公众号永久链接：{str(url)[:80]}")
+
+    fields = {
+        "category": category,
+        "outward_category": outward,
+        "tags": tags,
+        "title": str(title).strip(),
+        "digest": str(digest).strip(),
+        "wechat_url": str(url).strip(),
+    }
+    return meta, fields, errors
+
+
+def _log_archive_event(cwd: Path, event: str, verdict: str, detail: str,
+                       *, error_count: int = 0) -> None:
+    """把发布后闭环纳入自省日志；遥测失败不得影响主流程。"""
+    try:
+        from contracts import log_observation
+        log_observation(
+            "archive", event, verdict, detail, cwd.name,
+            issue_codes=([f"archive.{event}.fail"] if verdict == "fail" else []),
+            metrics={"errors": error_count},
+        )
+    except Exception:
+        pass
 
 
 def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tuple:
@@ -1039,26 +1141,65 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
             errors.append(
                 "publish 既无 draft_media_id 也无 wechat_url。"
                 "草稿箱推送成功后：pipeline.py done publish draft_media_id=<media_id>；"
-                "正式发布后补：pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
+                "正式发布后收尾：pipeline.py finalize https://mp.weixin.qq.com/s/xxx"
             )
         if draft_id and not legacy:
             _, receipt_errors = verify_publish_receipt(cwd, draft_id)
             errors.extend(f"publish_receipt: {e}" for e in receipt_errors)
 
     elif stage == "archive":
-        # 二期C：按 seq 查 works.yaml（不再靠 articles.md 标题子串）
+        # 按 seq 查作品库，并校验本篇字段与全部派生视图；不能只凭“记录存在”发绿灯。
         try:
-            from works_registry import load_works
+            from works_registry import load_works, validate_works
+            import render_articles_md as RAM
+            import render_works_dashboard as RWD
+            from profile_config import golden_lines_file, works_file
+
             seq_str = cwd.name.split("-")[0]
             seq = int(seq_str) if seq_str.isdigit() else None
-            rec = next((w for w in load_works() if w.get("seq") == seq), None)
+            works = load_works()
+            rec = next((w for w in works if w.get("seq") == seq), None)
             if rec is None:
-                errors.append(f"works.yaml 未找到 seq={seq} 的记录 — 请先跑：pipeline.py archive")
-            elif not rec.get("code"):
-                errors.append(f"seq={seq} 记录缺 code（分类未分配，检查 article-meta.yaml 的 category）")
-        except Exception as e:
-            errors.append(f"works.yaml 校验失败：{e}")
+                errors.append(f"{works_file()} 未找到 seq={seq} 的记录 -- 请先跑：pipeline.py archive")
+            else:
+                _, fields, meta_errors = _archive_metadata(cwd, state, require_url=True)
+                errors.extend(f"archive_meta: {error}" for error in meta_errors)
+                for key in ("category", "outward_category", "tags", "title", "digest", "wechat_url"):
+                    if rec.get(key) != fields.get(key):
+                        errors.append(
+                            f"作品库字段 {key} 与当前 meta/state 不一致："
+                            f"registry={rec.get(key)!r}, current={fields.get(key)!r}"
+                        )
+                errors.extend(f"作品库校验：{error}" for error in validate_works(works))
 
+                expected_articles = RAM.render_md(works)
+                if not RAM.ARTICLES_MD.exists():
+                    errors.append(f"派生视图不存在：{RAM.ARTICLES_MD}")
+                elif RAM.ARTICLES_MD.read_text(encoding="utf-8") != expected_articles:
+                    errors.append(f"派生视图已过期：{RAM.ARTICLES_MD}")
+
+                expected_dashboard = RWD.build_html(works)
+                if not RWD.DASHBOARD_FILE.exists():
+                    errors.append(f"派生看板不存在：{RWD.DASHBOARD_FILE}")
+                elif RWD.DASHBOARD_FILE.read_text(encoding="utf-8") != expected_dashboard:
+                    errors.append(f"派生看板已过期：{RWD.DASHBOARD_FILE}")
+
+                golden = golden_lines_file()
+                marker = f"*({cwd.name})*"
+                if not golden.exists():
+                    errors.append(
+                        f"金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）"
+                    )
+                elif marker not in golden.read_text(encoding="utf-8"):
+                    errors.append(f"金句库尚未沉淀本篇：缺标记 {marker}（文件：{golden}）")
+        except Exception as e:
+            errors.append(f"归档校验失败：{e}")
+
+    if stage == "archive":
+        _log_archive_event(
+            cwd, "verify_closed_loop", "fail" if errors else "ok",
+            f"errors={len(errors)}", error_count=len(errors),
+        )
     return (len(errors) == 0, errors)
 
 
@@ -1072,7 +1213,7 @@ def _cross_check(cwd: Path, state: dict) -> list:
        （format_layout.py --all 会在排版前 sys.exit(3) 阻断，这里提前发现）
     4. stages 顺序逻辑（done 但前序未完成）
     5. publish=done 但 wechat_url 缺失或非微信链接
-    6. archive=done 但 <数据目录>/works.yaml 未找到对应 seq 记录
+    6. archive=done 但 works_file() 解析出的作品库未找到对应 seq 记录
     """
     warnings = []
 
@@ -1198,6 +1339,15 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
     if stage == "publish":
         return files_digest(cwd, [PUBLISH_RECEIPT_FILE])
     if stage == "archive":
+        try:
+            from works_registry import load_works
+            seq_str = cwd.name.split("-")[0]
+            seq = int(seq_str) if seq_str.isdigit() else None
+            rec = next((w for w in load_works() if w.get("seq") == seq), None)
+            if rec is not None:
+                return stable_digest({"record": rec})
+        except Exception:
+            pass
         pub = load_state(cwd).get("stages", {}).get("publish", {})
         return stable_digest({"wechat_url": pub.get("wechat_url", "")})
     return ""
@@ -1299,8 +1449,8 @@ def cmd_status(cwd: Path):
     pub = state["stages"].get("publish", {})
     if pub.get("draft_media_id") and not pub.get("wechat_url"):
         print(
-            "\n📝 当前为草稿态（draft_media_id 已推送），正式发布后补 wechat_url 才能 archive：\n"
-            "   pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx"
+            "\n📝 当前为草稿态（draft_media_id 已推送），正式发布后用永久链接完成闭环：\n"
+            "   pipeline.py finalize https://mp.weixin.qq.com/s/xxx"
         )
 
     if next_stage == "archive" and pub.get("draft_media_id") and not pub.get("wechat_url"):
@@ -1308,7 +1458,8 @@ def cmd_status(cwd: Path):
     elif next_stage:
         print(f"\n▶ 下一步：{next_stage}\n  {STAGE_HINTS[next_stage]}\n")
     else:
-        print("\n🎉 全流程完成！\n")
+        print("\n🎉 微信公众号文章链已完成（正式链接 + 归档均已验证）。")
+        print("   网站部署与朋友圈发布属于可选外部收尾，不纳入本 state。\n")
 
 
 def cmd_next(cwd: Path):
@@ -1324,7 +1475,7 @@ def cmd_next(cwd: Path):
             print(f"\n▶ 下一阶段：{s} — {STAGE_LABELS[s]}\n")
             print(f"  {STAGE_HINTS[s]}\n")
             return
-    print("🎉 全流程完成！")
+    print("🎉 微信公众号文章链已完成；网站部署与朋友圈发布为可选外部收尾。")
 
 
 def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
@@ -1335,6 +1486,9 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     if state is None and (cwd / STATE_FILE).exists():
         state = load_state(cwd)
     if state is not None:
+        # 发布前就拦住归档必填项和受控标签，避免正式发布后才发现元数据不能入库。
+        _, _, meta_errors = _archive_metadata(cwd, state, require_url=False)
+        errors.extend(f"archive_meta: {error}" for error in meta_errors)
         for upstream in STAGE_ORDER[:STAGE_ORDER.index("publish")]:
             status = state.get("stages", {}).get(upstream, {}).get("status", "pending")
             if status != "done":
@@ -1755,34 +1909,28 @@ def cmd_history(cwd: Path, extras: list):
     2026-06-20 审查 F/G：return 之后的旧逻辑是不可达死代码（恒被上面的 return 拦下），已删除。
     history.yaml 已冻结，归档一律走 cmd_archive。
     """
-    print("⚠️ pipeline.py history 已废弃 -- <数据目录>/works.yaml 才是单一数据源（含创作记忆）。")
-    print("   请改用：pipeline.py archive（写 works.yaml + 自动刷新 articles.md/看板）。")
+    print(f"⚠️ pipeline.py history 已废弃 -- {works_file()} 才是单一数据源（含创作记忆）。")
+    print("   请改用：pipeline.py archive（写作品库 + 自动刷新 articles.md/看板/推荐）。")
     print("   未写入 history.yaml（避免污染已冻结的旧文件）。")
     return
 
 
 def cmd_archive(cwd: Path, extras: list) -> bool:
-    """二期C 归档：把本篇写入 works.yaml（自动分类编码）+ 自动刷新 articles.md/看板。
+    """归档：校验候选记录后写作品库，并自动刷新派生视图与推荐卡。
 
     返回 True＝归档成功；返回 False＝abort（缺 seq/category/wechat_url）。
     2026-07-01：main 分发层据此返回值决定退出码（abort → sys.exit(1)），
     让上游 `&&`/退出码判断能检测归档失败。cmd 本身不 sys.exit（保持可被
     tests 直接调用、断言 capsys 而不触发 SystemExit）。
     """
-    from works_registry import (upsert_work, load_works, validate_works,
-                                CATEGORY_CODES, TAG_VOCAB,
-                                OUTWARD_CATEGORIES, suggest_outward)
+    from works_registry import (build_upserted_works, load_works, save_works,
+                                validate_works, WORKS_FILE)
     import render_articles_md as RAM
     import render_works_dashboard as RWD
+    import generate_recommend_html as GRH
+    from profile_config import brand, data_dir, golden_lines_file
 
     state = load_state(cwd)
-    meta = {}
-    meta_path = cwd / "article-meta.yaml"
-    if meta_path.exists() and _yaml:
-        try:
-            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            pass
 
     override = {}
     for kv in extras:
@@ -1796,39 +1944,34 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
         print("❌ 无法从文件夹名解析 seq（应形如 47-选题名）")
         return False
 
-    category = override.get("category") or meta.get("category", "")
-    if category not in CATEGORY_CODES:
-        print(f"❌ article-meta.yaml 缺 category 或非法（需 {sorted(CATEGORY_CODES)}）")
-        print("   请先在 article-meta.yaml 填 category，再重跑 pipeline.py archive")
+    meta, fields, meta_errors = _archive_metadata(
+        cwd, state, require_url=True, override=override
+    )
+    if meta_errors:
+        _log_archive_event(cwd, "registry_write", "fail",
+                           f"metadata_errors={len(meta_errors)}", error_count=len(meta_errors))
+        print("❌ 归档元数据未通过（作品库未写入）：")
+        for error in meta_errors:
+            print(f"   • {error}")
         return False
 
-    # 对外分类（读者可见：外标题「标签 | 」前缀 + 网站/RSS）。正常在标题阶段（title.md 第一步）
-    # 定好并回填 meta，此处直接复用；仅历史文章 / 漏填时才按 category 兜底：
-    # TUT→教程 / ESS·KID→随笔 / ROB→资讯 自动补，AIT/OBS 语义跨多类必须人工填。
-    outward = override.get("outward_category") or meta.get("outward_category", "")
-    if not outward:
-        sug, need_review = suggest_outward(category)
-        if sug and not need_review:
-            outward = sug
-            print(f"ℹ️ outward_category 未填，按 category={category} 自动取默认：{outward}（{OUTWARD_CATEGORIES[outward]}）")
+    # 金句沉淀属于 archive verify 的硬契约，必须在作品库写盘前拦截；
+    # 否则会出现“库与视图已更新，但闭环仍失败”的半成功状态。
+    golden = golden_lines_file()
+    marker = f"*({cwd.name})*"
+    if not golden.exists() or marker not in golden.read_text(encoding="utf-8"):
+        _log_archive_event(cwd, "registry_write", "fail", "golden_marker_missing", error_count=1)
+        print("❌ 金句沉淀未通过（作品库未写入）：")
+        if not golden.exists():
+            print(f"   • 金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）")
         else:
-            print(f"❌ outward_category 未填且 category={category} 需人工判（走裁决链，选 {sorted(OUTWARD_CATEGORIES)}）")
-            print("   请在 article-meta.yaml 填 outward_category，再重跑 pipeline.py archive")
-            return False
-    if outward not in OUTWARD_CATEGORIES:
-        print(f"❌ outward_category={outward!r} 非法（需 {sorted(OUTWARD_CATEGORIES)}）")
+            print(f"   • 缺本篇来源标记 {marker}（文件：{golden}）")
         return False
 
-    title = (state.get("stages", {}).get("writing", {}).get("title_final", "")
-             or override.get("title", "") or meta.get("title", ""))
-    url = state.get("stages", {}).get("publish", {}).get("wechat_url", "")
-    if not url:
-        # 2026-06-20 审查 B：草稿态不归档（archive 硬要 wechat_url 是有意设计）。
-        # 2026-07-01：三个 abort 分支统一 `return False`，由 main 分发层转 sys.exit(1)——
-        # cmd 内不直接 sys.exit（保留可被 tests 直接调用 + 断言 capsys 而不触发 SystemExit）。
-        print("❌ publish.wechat_url 为空（草稿态不归档）。")
-        print("   正式发布后执行：pipeline.py done publish wechat_url=https://mp.weixin.qq.com/s/xxx，再重跑 archive")
-        return False
+    category = fields["category"]
+    outward = fields["outward_category"]
+    title = fields["title"]
+    url = fields["wechat_url"]
 
     cover_rel = ""
     if (cwd / "素材" / "cover.png").exists():
@@ -1836,72 +1979,90 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
 
     draft = cwd / "定稿.md"
     wc = len(draft.read_text(encoding="utf-8")) if draft.exists() else 0
+    current_works = load_works()
+    existing = next((work for work in current_works if work.get("seq") == seq), None) or {}
+    default_video = {"status": "none", "url": "", "platform": "",
+                     "script_path": "", "hook_type": "", "duration_sec": 0, "shots": 0}
 
     record = {
         "seq": seq,
         "category": category,
         "outward_category": outward,
-        "tags": meta.get("tags", []) or [],
-        "series": meta.get("series", "") or "",
-        "merged_into": "",
-        "date": override.get("date") or datetime.now().strftime("%Y-%m-%d"),
+        "tags": fields["tags"],
+        "series": meta.get("series", "") or existing.get("series", "") or "",
+        "merged_into": existing.get("merged_into", "") or "",
+        "date": override.get("date") or existing.get("date") or datetime.now().strftime("%Y-%m-%d"),
         "title": title,
-        "digest": override.get("digest") or meta.get("digest", "") or "",
-        "cover": cover_rel,
+        "digest": fields["digest"],
+        "cover": cover_rel or existing.get("cover", "") or "",
         "wechat_url": url,
         "status": "published",
-        "style": meta.get("style", "") or "",
-        "logic_bone": meta.get("logic_bone", "") or "",
-        "dimensions": meta.get("dimensions", []) or [],
-        "closing_type": meta.get("closing_type", "") or "",
-        "cover_keywords": meta.get("cover_keywords", "") or "",
-        "cover_style": meta.get("cover_style", "") or "",
-        "word_count": wc,
-        "video": {"status": "none", "url": "", "platform": "",
-                  "script_path": "", "hook_type": "", "duration_sec": 0, "shots": 0},
+        "style": meta.get("style", "") or existing.get("style", "") or "",
+        "logic_bone": meta.get("logic_bone", "") or existing.get("logic_bone", "") or "",
+        "dimensions": meta.get("dimensions", []) or existing.get("dimensions", []) or [],
+        "closing_type": meta.get("closing_type", "") or existing.get("closing_type", "") or "",
+        "cover_keywords": meta.get("cover_keywords", "") or existing.get("cover_keywords", "") or "",
+        "cover_style": meta.get("cover_style", "") or existing.get("cover_style", "") or "",
+        "word_count": wc or existing.get("word_count", 0) or 0,
+        "video": existing.get("video") or default_video,
     }
-    bad_tags = [t for t in record["tags"] if t not in TAG_VOCAB]
-    if bad_tags:
-        print(f"⚠️ 标签不在受控词表：{bad_tags} -- 请改 article-meta.yaml 的 tags，或在 works_registry.TAG_VOCAB 扩词（仍会写入，但 verify 会报错）")
-    saved = upsert_work(record)
-    works = load_works()
+    works, saved = build_upserted_works(current_works, record)
     errors = validate_works(works)
-    # 自动刷新视图（articles.md + 看板）
-    RAM.ARTICLES_MD.write_text(RAM.render_md(works), encoding="utf-8")
-    RWD.DASHBOARD_FILE.write_text(RWD.build_html(works), encoding="utf-8")
-    print(f"✅ 已写入作品库：{saved.get('code')} · {title}")
-    print(f"   已自动刷新 articles.md + works-dashboard.html")
-    print(f"   🌐 下一步·同步个人网站：bash 个人网站/web/scripts/publish-to-website.sh {saved.get('code') or '<CODE>'}")
-    print(f"      （archive 只把文章标 published＝网站收录前提；真正「上网站＋推这篇配图」要跑上面这步。"
-          f"每日 vps-sync cron 会 import+build 但部署 --exclude=article-assets 不传文章图，故新文章首发必须手动跑，否则网站封面图是破的）")
-    print(f"   💬 最后一拍·朋友圈文案：上网站之后产出一条朋友圈文案给作者复制（只一版、每句句首带 emoji、"
-          f"3-4 行=钩子→价值→profile 引流尾巴；不自动发、朋友圈无 API）。规格见 references/publish.md §发布后·朋友圈文案。"
-          f"⚠ 这是发布链最后一拍、也是最易漏的一拍——机器不产出它、只提醒，产出后一并交付作者。")
     if errors:
-        print("⚠️ 作品库校验有问题（请修 works.yaml）：")
-        for e in errors:
-            print("   " + e)
+        _log_archive_event(cwd, "registry_write", "fail",
+                           f"registry_errors={len(errors)}", error_count=len(errors))
+        print(f"❌ 候选作品库校验失败，未写入 {WORKS_FILE}：")
+        for error in errors:
+            print(f"   • {error}")
+        return False
 
-    # 金句沉淀留痕（非阻断 warning）。归档时比对金句库的 mtime 是否晚于本篇发布日，
-    # 否则提醒尚未沉淀——让 autopilot 日志显式留痕，不再静默跳过沉淀环。
-    # 金句库走 profile 覆盖层（profile/corpus/golden-lines.md）。参考 publish.md §发布后沉淀第4步。
-    try:
-        from profile_config import corpus_dir
-        jf = corpus_dir() / "golden-lines.md"
-        pub_date = record.get("date") or datetime.now().strftime("%Y-%m-%d")
-        if jf.exists():
-            jf_date = datetime.fromtimestamp(jf.stat().st_mtime).strftime("%Y-%m-%d")
-            if jf_date < pub_date:
-                print(
-                    f"⚠️ 本篇尚未沉淀金句到 profile/corpus/golden-lines.md（库 mtime={jf_date} < 发布日={pub_date}，"
-                    "参考 publish.md §发布后沉淀第4步）"
-                )
-        else:
-            print("⚠️ 未找到 profile/corpus/golden-lines.md，无法核对金句沉淀（参考 publish.md §发布后沉淀第4步）")
-    except Exception:
-        pass
+    # 全部派生产物先在内存生成；候选数据无误后才落盘，避免半成功。
+    articles_html = RAM.render_md(works)
+    dashboard_html = RWD.build_html(works)
+    recommend_result = GRH.generate_recommend_html(GRH.articles_from_works(works))
 
+    save_works(works)
+    RAM.ARTICLES_MD.write_text(articles_html, encoding="utf-8")
+    RWD.DASHBOARD_FILE.write_text(dashboard_html, encoding="utf-8")
+    recommend_path = data_dir() / "recommend_articles.html"
+    if recommend_result is not None:
+        recommend_html, recommended = recommend_result
+        recommend_path.write_text(recommend_html, encoding="utf-8")
+    else:
+        recommended = []
+
+    print(f"✅ 已写入作品库：{saved.get('code')} · {title}")
+    print(f"   作品库：{WORKS_FILE}")
+    print(f"   派生视图：{RAM.ARTICLES_MD}；{RWD.DASHBOARD_FILE}")
+    if recommended:
+        print(f"   推荐卡：{recommend_path}（{' / '.join(item['title'] for item in recommended)}）")
+    else:
+        print("   推荐卡：有效封面文章不足 5 篇，本轮未生成（不阻断归档）")
+
+    website_template = (brand().get("publish") or {}).get("website_command", "") or ""
+    if website_template:
+        try:
+            website_command = website_template.format(code=saved.get("code") or "<CODE>")
+        except Exception:
+            website_command = website_template
+        print(f"   🌐 可选·同步个人网站：{website_command}")
+
+    print(f"   💬 交付时附一版朋友圈文案：每句句首带 emoji，3-4 行=钩子→价值→profile 引流尾巴；不自动发布。")
+
+    _log_archive_event(cwd, "registry_write", "ok", f"code={saved.get('code')}")
     return True
+
+
+def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
+    """正式发布后一键收尾：登记永久链接、归档、验证闭环。"""
+    if not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", wechat_url or ""):
+        print(f"❌ 不是合法公众号永久链接：{wechat_url!r}")
+        raise SystemExit(2)
+    cmd_done("publish", cwd, [f"wechat_url={wechat_url}"], legacy=legacy)
+    if not cmd_archive(cwd, []):
+        raise SystemExit(2)
+    cmd_verify("archive", cwd, legacy=legacy)
+    print("✅ 微信公众号文章链已闭环：永久链接已登记、作品库及派生视图已验证。")
 
 
 # 🔴 铁律 stage：不允许 skip（iron-rules.md 强约束）
@@ -2078,9 +2239,14 @@ def main():
     p_h.add_argument("extras", nargs="*", metavar="k=v",
                      help="覆盖字段，如 title='文章标题' closing_type='硬切'")
 
-    p_a = sub.add_parser("archive", help="发布归档：写 works.yaml + 刷新 articles.md/看板")
+    p_a = sub.add_parser("archive", help="发布归档：写解析后的作品库 + 刷新派生视图")
     p_a.add_argument("extras", nargs="*", metavar="k=v",
                      help="覆盖字段，如 category=AIT digest='一句话摘要' date=2026-05-30")
+
+    p_f = sub.add_parser("finalize", help="正式发布收尾：登记永久链接 + 归档 + 验证")
+    p_f.add_argument("wechat_url", help="微信永久链接，如 https://mp.weixin.qq.com/s/xxx")
+    p_f.add_argument("--legacy", action="store_true",
+                     help="仅供没有新流程 draft_media_id/receipt 的历史文章迁移")
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
     p_s.add_argument("stage", choices=STAGE_ORDER)
@@ -2134,6 +2300,8 @@ def main():
         # 让上游 `&&`/退出码判断能检测归档失败（cmd_archive 返回 False 即 abort）。
         if not cmd_archive(cwd, getattr(args, "extras", [])):
             sys.exit(1)
+    elif args.cmd == "finalize":
+        cmd_finalize(args.wechat_url, cwd, legacy=getattr(args, "legacy", False))
     elif args.cmd == "skip":
         cmd_skip(args.stage, cwd, force=getattr(args, "force", False))
     elif args.cmd == "reset":

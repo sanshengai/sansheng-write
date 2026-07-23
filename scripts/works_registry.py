@@ -7,6 +7,7 @@
 
 数据目录 = 环境变量 SANSHENG_WRITE_DATA_DIR，未配置则 <仓根>/data/（见 profile_config.py）。
 """
+import copy
 import os
 import re
 import sys
@@ -103,13 +104,14 @@ def next_code(category, works):
     return f"{category}-{n:02d}"
 
 
-def upsert_work(record, path=None):
-    """按 seq 新增或更新一条作品记录。
-    - 已存在(同 seq)：合并字段；已冻结的 code 保留不变（发布即冻结铁律）。
-    - 新记录：给了 category 且未给 code 时，自动分配分类内下一个 code。
-    返回写入后的完整记录。
+def build_upserted_works(works, record):
+    """纯内存生成 upsert 后的作品列表与完整记录，不写盘。
+
+    归档流程先用它校验候选数据，确认无新增错误后再落盘，避免“先污染作品库、
+    再打印 warning”的半成功状态。
     """
-    works = load_works(path)
+    works = copy.deepcopy(list(works or []))
+    record = copy.deepcopy(record)
     seq = record.get("seq")
     existing = next((w for w in works if w.get("seq") == seq), None)
     if existing is not None:
@@ -124,6 +126,16 @@ def upsert_work(record, path=None):
         works.append(record)
         result = record
     works.sort(key=lambda w: (w.get("seq") is None, w.get("seq") or 0))
+    return works, result
+
+
+def upsert_work(record, path=None):
+    """按 seq 新增或更新一条作品记录并写盘。
+    - 已存在(同 seq)：合并字段；已冻结的 code 保留不变（发布即冻结铁律）。
+    - 新记录：给了 category 且未给 code 时，自动分配分类内下一个 code。
+    返回写入后的完整记录。
+    """
+    works, result = build_upserted_works(load_works(path), record)
     save_works(works, path)
     return result
 

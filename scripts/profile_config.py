@@ -41,6 +41,7 @@ ENV_PROFILE = "SANSHENG_WRITE_PROFILE_DIR"
 ENV_DATA = "SANSHENG_WRITE_DATA_DIR"
 ENV_WORKS = "SANSHENG_WRITE_WORKS_FILE"
 ENV_FLYWHEEL = "SANSHENG_WRITE_FLYWHEEL_DIR"
+ENV_GOLDEN_LINES = "SANSHENG_WRITE_GOLDEN_LINES_FILE"
 
 _cache: dict[str, Any] = {}
 
@@ -211,6 +212,18 @@ def corpus_dir() -> Path:
     return profile_dir() / "corpus"
 
 
+def golden_lines_file() -> Path:
+    """金句库文件。
+
+    默认使用 ``<profile>/corpus/golden-lines.md``；已有个人金句库位于别处时，
+    用 SANSHENG_WRITE_GOLDEN_LINES_FILE 直指真源，避免复制出第二份库。
+    """
+    p = _env_or_dotenv(ENV_GOLDEN_LINES)
+    if p:
+        return Path(p).expanduser()
+    return corpus_dir() / "golden-lines.md"
+
+
 def authors_dir() -> Path:
     """作者风格手册目录。公开仓只带一套虚构示例，请自建你要模仿的作者手册。"""
     return corpus_dir() / "authors"
@@ -279,6 +292,7 @@ if __name__ == "__main__":
     print(f"profile   : {profile_dir()}{'  (示例，未配置 ' + ENV_PROFILE + ')' if using_example_profile() else ''}")
     print(f"data      : {data_dir()}")
     print(f"works     : {works_file()}")
+    print(f"golden    : {golden_lines_file()}")
     print(f"flywheel  : {flywheel_dir()}  (playbook / lessons / observations)")
     b = brand()
     print(f"brand     : {b.get('name')}  theme={b.get('theme') or '(default)'}")

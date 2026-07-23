@@ -5,7 +5,7 @@
 > **生效规则**：
 > 1. `article-meta.yaml` 的 `cover_style` 未填时**默认走 `montage-evidence`**
 > 2. 手动指定优先级最高：`article-meta.yaml` 显式填其他 `cover_style` 值（`briefing` / `noir` / `montage-pipeline` / `montage-starry`）即激活该风格
-> 3. 历史 `works.yaml` 里其他风格的记录保留，不影响新规则
+> 3. 历史作品库（以 `profile_config.py::works_file()` 解析结果为准）里其他风格的记录保留，不影响新规则
 >
 > **montage-evidence 封面文字基线**（每篇必带）：
 > - 英文 OVERSIZED GHOST-WATERMARK：3 个关键词用 ` × ` 连接，极深灰 #1F1F25，~155% L1 字号，下部羽化，半隐在中文标题后面。**3 词必须从本文关键词/核心结论抽取**（本文专属的人/物/动作/反差），禁套 `TOOL × DATA × FUTURE` 泛词（自检：换到另一篇还成立就太泛）；**字体走工业 condensed / slab-serif 的"项目代号"气质**，与中文 clean 层做中英异质搭配
@@ -358,7 +358,7 @@
 
 ## 历史沉淀
 
-每次 `pipeline.py archive` 会把 `cover_style` 字段写入 `works.yaml` 作记录（默认值即 `montage-evidence`）。该字段用于归档/审计。
+每次 `pipeline.py archive/finalize` 会把 `cover_style` 字段写入 `works_file()` 解析出的作品库作记录（默认值即 `montage-evidence`）。该字段用于归档/审计。
 
 ---
 

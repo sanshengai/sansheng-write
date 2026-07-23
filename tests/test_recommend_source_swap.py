@@ -90,3 +90,10 @@ def test_only_cover_articles_selected():
     titles = [a["title"] for a in res[1]]
     assert "无封面" not in titles          # 无封面被跳过
     assert len(titles) == 3 and len(set(titles)) == 3   # 3 篇不重复
+
+
+def test_help_has_no_generation_side_effect(monkeypatch):
+    monkeypatch.setattr(G, "generate_recommend_html", lambda *a, **k: pytest.fail("--help 不应生成内容"))
+    with pytest.raises(SystemExit) as exc:
+        G.main(["--help"])
+    assert exc.value.code == 0

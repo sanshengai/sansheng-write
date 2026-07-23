@@ -8,6 +8,15 @@ import scripts.pipeline as pipeline   # 触发 pipeline 顶部 bootstrap，把 s
 import works_registry as wr
 import render_articles_md as ram
 import render_works_dashboard as rwd
+import generate_recommend_html as grh
+import profile_config as pc
+
+
+def _allow_golden(monkeypatch, tmp_path, article_name):
+    golden = tmp_path / f"golden-{article_name}.md"
+    golden.write_text(f"- 一句。 *({article_name})*\n", encoding="utf-8")
+    monkeypatch.setattr(pc, "golden_lines_file", lambda: golden)
+    return golden
 
 
 def test_cmd_archive_writes_works_and_refreshes(tmp_path, monkeypatch):
@@ -20,6 +29,8 @@ def test_cmd_archive_writes_works_and_refreshes(tmp_path, monkeypatch):
     monkeypatch.setattr(wr, "WORKS_FILE", works_file)
     monkeypatch.setattr(ram, "ARTICLES_MD", tmp_path / "articles.md")
     monkeypatch.setattr(rwd, "DASHBOARD_FILE", tmp_path / "看板.html")
+    monkeypatch.setattr(grh, "generate_recommend_html", lambda articles=None: None)
+    _allow_golden(monkeypatch, tmp_path, "47-测试选题")
 
     folder = tmp_path / "47-测试选题"
     folder.mkdir()
@@ -27,12 +38,12 @@ def test_cmd_archive_writes_works_and_refreshes(tmp_path, monkeypatch):
     (folder / "素材").mkdir()
     (folder / "素材" / "cover.png").write_bytes(b"x")
     (folder / "article-meta.yaml").write_text(
-        "category: AIT\ntags: [横评]\ndigest: 测试摘要\nstyle: example-author\nlogic_bone: CSA\n"
+        "title: 精选 | 测试标题\ncategory: AIT\ntags: [横评]\ndigest: 测试摘要\nstyle: example-author\nlogic_bone: CSA\n"
         "outward_category: picks\n",
         encoding="utf-8")
     (folder / ".state.json").write_text(json.dumps({
         "style": "example-author",
-        "stages": {"writing": {"title_final": "测试标题"},
+        "stages": {"writing": {"title_final": "精选 | 测试标题"},
                    "publish": {"wechat_url": "https://mp.weixin.qq.com/s/test"}},
     }, ensure_ascii=False), encoding="utf-8")
 
@@ -42,7 +53,7 @@ def test_cmd_archive_writes_works_and_refreshes(tmp_path, monkeypatch):
     rec = next(w for w in works if w["seq"] == 47)
     assert rec["code"] == "AIT-02"          # 分类内自动编号(AIT-01 之后)
     assert rec["status"] == "published"
-    assert rec["title"] == "测试标题"
+    assert rec["title"] == "精选 | 测试标题"
     assert rec["category"] == "AIT"
     assert rec["digest"] == "测试摘要"
     assert rec["tags"] == ["横评"]
@@ -69,14 +80,14 @@ def test_cmd_archive_guards_missing_category(tmp_path, monkeypatch, capsys):
     assert wr.load_works(works_file) == []   # 未写入任何记录
 
 
-def _mk_folder(tmp_path, name, meta="category: AIT\ntags: []\noutward_category: picks\n",
+def _mk_folder(tmp_path, name, meta="title: 精选 | 测试\ncategory: AIT\ntags: []\noutward_category: picks\ndigest: 测试摘要\n",
                url="https://mp.weixin.qq.com/s/x"):
     folder = tmp_path / name
     folder.mkdir()
     (folder / "定稿.md").write_text("正文", encoding="utf-8")
     (folder / "article-meta.yaml").write_text(meta, encoding="utf-8")
     (folder / ".state.json").write_text(json.dumps({
-        "stages": {"writing": {"title_final": "测试"}, "publish": {"wechat_url": url}}}), encoding="utf-8")
+        "stages": {"writing": {"title_final": "精选 | 测试"}, "publish": {"wechat_url": url}}}), encoding="utf-8")
     return folder
 
 
@@ -110,6 +121,8 @@ def test_cmd_archive_second_run_keeps_frozen_code(tmp_path, monkeypatch):
     monkeypatch.setattr(wr, "WORKS_FILE", works_file)
     monkeypatch.setattr(ram, "ARTICLES_MD", tmp_path / "a.md")
     monkeypatch.setattr(rwd, "DASHBOARD_FILE", tmp_path / "d.html")
+    monkeypatch.setattr(grh, "generate_recommend_html", lambda articles=None: None)
+    _allow_golden(monkeypatch, tmp_path, "47-X")
     folder = _mk_folder(tmp_path, "47-X")
     pipeline.cmd_archive(folder, [])
     code1 = next(w for w in wr.load_works(works_file) if w["seq"] == 47)["code"]
@@ -117,3 +130,116 @@ def test_cmd_archive_second_run_keeps_frozen_code(tmp_path, monkeypatch):
     pipeline.cmd_archive(folder, [])     # 二次归档
     code2 = next(w for w in wr.load_works(works_file) if w["seq"] == 47)["code"]
     assert code2 == "AIT-02"             # 冻结 code 保留不变
+
+
+def test_cmd_archive_rejects_bad_tags_before_writing(tmp_path, monkeypatch, capsys):
+    works_file = tmp_path / "works.yaml"
+    original = [{"seq": 8, "code": "AIT-01", "category": "AIT", "title": "甲",
+                 "date": "2026-01-01", "status": "published",
+                 "wechat_url": "https://mp.weixin.qq.com/s/a", "tags": []}]
+    wr.save_works(original, works_file)
+    monkeypatch.setattr(wr, "WORKS_FILE", works_file)
+    folder = _mk_folder(
+        tmp_path, "47-坏标签",
+        meta="category: AIT\noutward_category: picks\ntags: [NotInVocab]\ndigest: 摘要\n",
+    )
+
+    assert pipeline.cmd_archive(folder, []) is False
+    assert wr.load_works(works_file) == original
+    assert "作品库未写入" in capsys.readouterr().out
+
+
+def test_cmd_archive_requires_article_meta_title(tmp_path, monkeypatch, capsys):
+    """state 里即使有 title_final，也不能代替正式标题 SSOT。"""
+    works_file = tmp_path / "works.yaml"
+    wr.save_works([], works_file)
+    monkeypatch.setattr(wr, "WORKS_FILE", works_file)
+    folder = _mk_folder(
+        tmp_path, "47-缺正式标题",
+        meta="category: AIT\noutward_category: picks\ntags: [横评]\ndigest: 摘要\n",
+    )
+
+    assert pipeline.cmd_archive(folder, []) is False
+    assert wr.load_works(works_file) == []
+    assert "article-meta.yaml title 缺失" in capsys.readouterr().out
+
+
+def test_cmd_archive_rerun_preserves_operational_fields(tmp_path, monkeypatch):
+    works_file = tmp_path / "works.yaml"
+    existing = {
+        "seq": 47, "code": "AIT-02", "category": "AIT", "outward_category": "picks",
+        "title": "旧标题", "digest": "旧摘要", "date": "2026-01-02", "status": "published",
+        "wechat_url": "https://mp.weixin.qq.com/s/old", "tags": ["横评"],
+        "merged_into": "AIT-01",
+        "video": {"status": "published", "url": "https://example.com/video", "platform": "x"},
+    }
+    wr.save_works([{"seq": 8, "code": "AIT-01", "category": "AIT", "title": "甲",
+                    "date": "2026-01-01", "status": "published",
+                    "wechat_url": "https://mp.weixin.qq.com/s/a", "tags": []}, existing], works_file)
+    monkeypatch.setattr(wr, "WORKS_FILE", works_file)
+    monkeypatch.setattr(ram, "ARTICLES_MD", tmp_path / "a.md")
+    monkeypatch.setattr(rwd, "DASHBOARD_FILE", tmp_path / "d.html")
+    monkeypatch.setattr(grh, "generate_recommend_html", lambda articles=None: None)
+    _allow_golden(monkeypatch, tmp_path, "47-X")
+    folder = _mk_folder(tmp_path, "47-X", url="https://mp.weixin.qq.com/s/new")
+
+    assert pipeline.cmd_archive(folder, []) is True
+    rec = next(w for w in wr.load_works(works_file) if w["seq"] == 47)
+    assert rec["date"] == "2026-01-02"
+    assert rec["merged_into"] == "AIT-01"
+    assert rec["video"]["status"] == "published"
+    assert rec["video"]["url"] == "https://example.com/video"
+
+
+def test_verify_archive_rejects_invalid_registry_even_when_record_exists(tmp_path, monkeypatch):
+    works_file = tmp_path / "works.yaml"
+    monkeypatch.setattr(wr, "WORKS_FILE", works_file)
+    monkeypatch.setattr(ram, "ARTICLES_MD", tmp_path / "articles.md")
+    monkeypatch.setattr(rwd, "DASHBOARD_FILE", tmp_path / "dashboard.html")
+    golden = tmp_path / "golden-lines.md"
+    golden.write_text("- 一句。 *(47-X)*\n", encoding="utf-8")
+    monkeypatch.setattr(pc, "golden_lines_file", lambda: golden)
+
+    folder = _mk_folder(
+        tmp_path, "47-X",
+        meta="category: AIT\noutward_category: picks\ntags: [NotInVocab]\ndigest: 测试摘要\n",
+    )
+    state = json.loads((folder / ".state.json").read_text(encoding="utf-8"))
+    works = [{
+        "seq": 47, "code": "AIT-02", "category": "AIT", "outward_category": "picks",
+        "title": "精选 | 测试", "digest": "测试摘要", "date": "2026-01-02", "status": "published",
+        "wechat_url": "https://mp.weixin.qq.com/s/x", "tags": ["NotInVocab"],
+    }]
+    wr.save_works(works, works_file)
+    ram.ARTICLES_MD.write_text(ram.render_md(works), encoding="utf-8")
+    rwd.DASHBOARD_FILE.write_text(rwd.build_html(works), encoding="utf-8")
+
+    passed, errors = pipeline.verify_stage("archive", folder, state)
+    assert passed is False
+    assert any("受控词表" in error for error in errors)
+
+
+def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
+    monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
+    monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+
+    pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
+    assert calls == ["publish", "archive", "verify"]
+
+
+def test_cmd_archive_rejects_missing_golden_marker_before_writing(tmp_path, monkeypatch):
+    works_file = tmp_path / "works.yaml"
+    original = [{"seq": 8, "code": "AIT-01", "category": "AIT", "title": "甲",
+                 "date": "2026-01-01", "status": "published",
+                 "wechat_url": "https://mp.weixin.qq.com/s/a", "tags": []}]
+    wr.save_works(original, works_file)
+    monkeypatch.setattr(wr, "WORKS_FILE", works_file)
+    golden = tmp_path / "golden.md"
+    golden.write_text("- 只有别篇。 *(46-Y)*\n", encoding="utf-8")
+    monkeypatch.setattr(pc, "golden_lines_file", lambda: golden)
+    folder = _mk_folder(tmp_path, "47-X")
+
+    assert pipeline.cmd_archive(folder, []) is False
+    assert wr.load_works(works_file) == original

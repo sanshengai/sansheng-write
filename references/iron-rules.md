@@ -171,7 +171,7 @@ MD 里 `### 三级标题` **只写主标题本身**，**严禁**手写中文数�
 
 ## 作品库 cover 字段铁律
 
-封面字段由 `pipeline.py archive` 从 `素材/cover.png` **自动写入** `{数据目录}/works.yaml` 的 `cover` 字段；`articles.md` 是从作品库自动生成的视图（禁止手改）。AI **不得**手填或手改 `articles.md` 的封面行。`cover` 字段缺失要在 article-meta / cover 阶段解决（确保 `素材/cover.png` 就位），不要在归档/视图层补。否则 `generate_recommend_html.py` 会回退到默认 logo，导致推荐阅读卡片显示的是 logo 而非封面。
+封面字段由 `pipeline.py archive/finalize` 从 `素材/cover.png` **自动写入** `profile_config.py::works_file()` 解析出的作品库 `cover` 字段；`articles.md` 与 `works-dashboard.html` 是自动生成视图（禁止手改）。AI **不得**手填或手改派生视图里的封面行。`cover` 字段缺失要在 article-meta / cover 阶段解决（确保 `素材/cover.png` 就位），不要在归档/视图层补。否则 `generate_recommend_html.py` 会回退到默认 logo，导致推荐阅读卡片显示的是 logo 而非封面。
 
 ## pipeline 状态校验铁律
 
