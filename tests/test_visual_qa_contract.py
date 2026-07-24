@@ -47,6 +47,15 @@ def _article(root: Path) -> Path:
                 "aspect_ratio": "9:16" if index in (1, 4) else "16:9",
                 "title": f"步骤 {index}",
                 "layout": "flow",
+                "template_id": (
+                    "curve-convergence"
+                    if index == 1
+                    else "experience-loop"
+                    if index == 4
+                    else "service-map"
+                    if index == 2
+                    else "tiered-network"
+                ),
                 "expected_text": [f"步骤 {index}", f"证据 {index}"],
                 "facts": [f"事实 {index}"],
             }
@@ -194,6 +203,26 @@ def test_qa_rejects_reviewer_that_does_not_confirm_target_style(tmp_path):
 
     assert qa is None
     assert any("style_contract_match" in error for error in errors)
+
+
+def test_qa_rejects_deterministic_compositor_without_bound_design_manifest(tmp_path):
+    from scripts.visual_qa import build_qa_request
+
+    article = _article(tmp_path)
+    logs = [
+        json.loads(line)
+        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    logs[2]["renderer"] = "deterministic-compositor"
+    (article / ".gen-log.jsonl").write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in logs) + "\n",
+        encoding="utf-8",
+    )
+
+    request, errors = build_qa_request(article)
+
+    assert request is None
+    assert any("design manifest" in error for error in errors)
 
 
 def test_qa_rejects_checked_box_markdown_without_structured_result(tmp_path):

@@ -43,7 +43,12 @@ REQUIRED_CAPABILITIES = {
 
 NATIVE_GOOGLE_PROVIDER = "sansheng-google"
 NATIVE_GOOGLE_TEXT_SAFE_PROVIDER = "sansheng-google-text-safe"
-NATIVE_PROVIDERS = {NATIVE_GOOGLE_PROVIDER, NATIVE_GOOGLE_TEXT_SAFE_PROVIDER}
+NATIVE_TEMPLATE_SAFE_PROVIDER = "sansheng-template-safe"
+NATIVE_PROVIDERS = {
+    NATIVE_GOOGLE_PROVIDER,
+    NATIVE_GOOGLE_TEXT_SAFE_PROVIDER,
+    NATIVE_TEMPLATE_SAFE_PROVIDER,
+}
 TARGET_DIMENSIONS = {
     "2.35:1": (1024, 436),
     "1:1": (1024, 1024),
@@ -272,11 +277,16 @@ def _run_native_google_task(
     aspect = str(task.get("ar") or "")
     dimensions = TARGET_DIMENSIONS.get(aspect)
     task_id = str(task.get("id") or "")
-    if (
-        renderer.get("provider") == NATIVE_GOOGLE_TEXT_SAFE_PROVIDER
-        and task_id != "cover"
-    ):
-        asset_id = "hero" if task_id == "hero" else task_id.removeprefix("infographic-")
+    provider = renderer.get("provider")
+    use_local_template = provider == NATIVE_TEMPLATE_SAFE_PROVIDER or (
+        provider == NATIVE_GOOGLE_TEXT_SAFE_PROVIDER and task_id != "cover"
+    )
+    if use_local_template:
+        asset_id = (
+            task_id
+            if task_id in {"cover", "hero"}
+            else task_id.removeprefix("infographic-")
+        )
         completed = subprocess.run(
             [
                 sys.executable,
@@ -297,8 +307,8 @@ def _run_native_google_task(
         return {
             "id": task_id,
             "provider": "local",
-            "model": "Pillow-text-safe",
-            "renderer": "deterministic-compositor",
+            "model": "Pillow-reviewed-template",
+            "renderer": "deterministic-template-compositor",
             "outputPath": str(output),
             "success": success,
             "attempts": 1,
@@ -420,9 +430,17 @@ def render_visuals(
         if not probe["ok"]:
             return None, [probe["error"]]
     if not revision:
-        native_script = Path(__file__).with_name("gen_img.py")
+        native_script = (
+            Path(__file__).with_name("render_text_safe_visual.py")
+            if not uses_baoyu
+            and all(
+                renderer.get("provider") == NATIVE_TEMPLATE_SAFE_PROVIDER
+                for renderer in policy
+            )
+            else Path(__file__).with_name("gen_img.py")
+        )
         revision = (
-            f"gen_img.py-sha256:{_sha256(native_script)}"
+            f"{native_script.name}-sha256:{_sha256(native_script)}"
             if not uses_baoyu
             else "configured-command"
         )
@@ -575,7 +593,11 @@ def render_visuals(
             "cmd": (
                 "gen_img.py <canonical-prompt> <output> <model> <width> <height>"
                 if actual_renderer == "gen_img"
-                else "baoyu-image-gen --batchfile <sealed-attempt> --json"
+                else (
+                    "render_text_safe_visual.py <canonical-prompt> <output>"
+                    if actual_renderer == "deterministic-template-compositor"
+                    else "baoyu-image-gen --batchfile <sealed-attempt> --json"
+                )
             ),
         }
         records.append(record)

@@ -24,6 +24,10 @@
 8. 信息图引用只由 `assemble-release` 写入带 marker 的机器块；正文变化仍会令 release job 失效。
 9. `style_consistent` 不能代替目标风格验收；QA 必须通过 `style_contract_match`、
    `brand_palette_match`，封面另过 `composition_contract_match`。
+10. 弱模型只能选择已审核 `template_id`；确定性模板图必须带与图片摘要绑定的
+    `.design.json`，缺失、越界或模板不兼容立即阻断。
+11. 看图模型不是视觉发布的唯一授权者；没有实际对象、数量、位置和版式观察的
+    布尔式 QA 不得放行。
 
 ## 排版
 

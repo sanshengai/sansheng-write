@@ -96,8 +96,6 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
             lead.get("line1") or cover.get("title"),
             lead.get("line2") or cover.get("subtitle"),
             lead.get("subtitle"),
-            lead.get("tag1"),
-            lead.get("tag2"),
             ghost,
             brand_name,
         )
@@ -121,6 +119,72 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
         if brand_name:
             expected[f"素材/infographic-{image_id}.png"].append(brand_name)
     return expected, []
+
+
+def _template_id_by_path(cwd: Path) -> tuple[dict[str, str], list[str]]:
+    try:
+        plan = json.loads((cwd / "visual-plan.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}, ["缺 visual-plan.json，无法建立模板合同"]
+    except json.JSONDecodeError as exc:
+        return {}, [f"visual-plan.json 解析失败：{exc}"]
+    templates = {
+        "素材/cover.png": "montage-evidence-v2",
+        "素材/hero.png": "hero-convergence",
+    }
+    for item in plan.get("infographics") or []:
+        image_id = str(item.get("id") or "").strip()
+        template_id = str(item.get("template_id") or "").strip()
+        if image_id and template_id:
+            templates[f"素材/infographic-{image_id}.png"] = template_id
+    return templates, []
+
+
+def _validate_design_manifest(
+    cwd: Path,
+    asset: dict[str, Any],
+    *,
+    expected_template_id: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    rel = str(asset["path"])
+    manifest_path = (cwd / Path(rel)).with_suffix(".design.json")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, [f"{rel} 缺 bound design manifest：{manifest_path.name}"]
+    except json.JSONDecodeError as exc:
+        return None, [f"{rel} design manifest 解析失败：{exc}"]
+    errors: list[str] = []
+    if manifest.get("schema_version") != 1:
+        errors.append(f"{rel} design manifest schema_version 必须为 1")
+    if manifest.get("template_id") != expected_template_id:
+        errors.append(
+            f"{rel} design manifest template_id={manifest.get('template_id') or '(空)'}；"
+            f"应为 {expected_template_id}"
+        )
+    render_sha = str(asset.get("render_sha256") or "")
+    if not render_sha or manifest.get("image_sha256") != render_sha:
+        errors.append(f"{rel} design manifest 未绑定渲染时图片字节")
+    safe = manifest.get("safe_bounds")
+    text_boxes = manifest.get("text_boxes")
+    elements = manifest.get("visual_elements")
+    if not isinstance(safe, list) or len(safe) != 4:
+        errors.append(f"{rel} design manifest 缺 safe_bounds")
+    if not isinstance(text_boxes, list) or not text_boxes:
+        errors.append(f"{rel} design manifest 缺 text_boxes")
+    elif isinstance(safe, list) and len(safe) == 4:
+        sx1, sy1, sx2, sy2 = safe
+        for box in text_boxes:
+            coords = box.get("box") if isinstance(box, dict) else None
+            if not isinstance(coords, list) or len(coords) != 4:
+                errors.append(f"{rel} design manifest 存在非法 text box")
+                continue
+            x1, y1, x2, y2 = coords
+            if not (sx1 <= x1 < x2 <= sx2 and sy1 <= y1 < y2 <= sy2):
+                errors.append(f"{rel} design manifest 文字框越出安全区：{coords}")
+    if not isinstance(elements, list) or len(elements) < 4:
+        errors.append(f"{rel} design manifest 视觉结构不足（visual_elements < 4）")
+    return (manifest if not errors else None), errors
 
 
 def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -189,6 +253,8 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     errors.extend(expected_errors)
     contracts, contract_errors = _style_contracts(cwd)
     errors.extend(contract_errors)
+    template_ids, template_errors = _template_id_by_path(cwd)
+    errors.extend(template_errors)
     assets = []
     for asset in manifest.get("assets", []):
         rel = str(asset["path"])
@@ -202,14 +268,30 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             errors.append(f"{rel} 无法读取像素：{exc}")
             continue
         contract = copy.deepcopy(contracts.get(str(asset["stage"])) or {})
-        if asset.get("renderer") == "deterministic-compositor":
+        design_manifest = None
+        if asset.get("renderer") in {
+            "deterministic-compositor",
+            "deterministic-template-compositor",
+        }:
+            expected_template_id = template_ids.get(rel, "")
+            if not expected_template_id:
+                errors.append(f"{rel} 缺 template_id 合同")
+                continue
+            design_manifest, design_errors = _validate_design_manifest(
+                cwd,
+                asset,
+                expected_template_id=expected_template_id,
+            )
+            errors.extend(design_errors)
+            if design_errors:
+                continue
             style_contract = contract.get("style_contract") or {}
-            style_contract["variant"] = "text-safe-morandi-journal"
+            style_contract["variant"] = "reviewed-template-text-safe"
+            style_contract["layout"] = expected_template_id
             style_contract["required_visual_traits"] = [
-                "warm cream background with muted sage, terracotta and pale-yellow accents",
-                "text-first bullet-journal cards with sketchy double borders",
-                "restrained washi tape, connecting arrows and rounded note cards",
-                "exact highly legible Chinese hierarchy with no generative glyphs",
+                *(style_contract.get("required_visual_traits") or []),
+                *[str(value) for value in design_manifest.get("visual_elements") or []],
+                "exact local Chinese typography inside crop-safe registered boxes",
             ]
             contract["style_contract"] = style_contract
         assets.append(
@@ -224,6 +306,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
                     "renderer": asset.get("renderer") or "",
                     "model": asset.get("model") or "",
                 },
+                **({"design_manifest": design_manifest} if design_manifest else {}),
                 **contract,
             }
         )

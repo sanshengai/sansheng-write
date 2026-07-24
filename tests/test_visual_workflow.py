@@ -29,6 +29,7 @@ def _plan() -> dict:
                 "aspect_ratio": "9:16",
                 "title": "先锁定输入",
                 "layout": "structured-card",
+                "template_id": "curve-convergence",
                 "expected_text": ["作者定稿", "任务单"],
                 "facts": ["定稿哈希绑定任务单"],
             },
@@ -38,6 +39,7 @@ def _plan() -> dict:
                 "aspect_ratio": "16:9",
                 "title": "再编译规则",
                 "layout": "comparison",
+                "template_id": "service-map",
                 "expected_text": ["业务规则", "像素渲染"],
                 "facts": ["业务规则归 write", "渲染器可替换"],
             },
@@ -47,6 +49,7 @@ def _plan() -> dict:
                 "aspect_ratio": "16:9",
                 "title": "发布硬门",
                 "layout": "flow",
+                "template_id": "tiered-network",
                 "expected_text": ["预检", "发布", "读回"],
                 "facts": ["三步必须由一个命令完成"],
             },
@@ -56,6 +59,7 @@ def _plan() -> dict:
                 "aspect_ratio": "9:16",
                 "title": "草稿箱交付",
                 "layout": "checklist",
+                "template_id": "experience-loop",
                 "expected_text": ["草稿已读回", "正式发布人工完成"],
                 "facts": ["自动链终点是微信草稿箱"],
             },
@@ -135,6 +139,45 @@ def test_visual_plan_requires_four_images_and_unique_ids():
     assert any("id 必须唯一" in error for error in errors)
 
 
+def test_visual_plan_requires_reviewed_template_ids_for_each_slot():
+    from scripts.visual_workflow import validate_visual_plan
+
+    plan = _plan()
+    plan["infographics"][0].pop("template_id")
+    plan["infographics"][1]["template_id"] = "experience-loop"
+
+    errors = validate_visual_plan(plan)
+
+    assert any("template_id" in error for error in errors)
+    assert any("middle" in error and "experience-loop" in error for error in errors)
+
+
+def test_visual_plan_rejects_suspicious_double_character_typo_clusters():
+    from scripts.visual_workflow import validate_visual_plan
+
+    plan = _plan()
+    plan["infographics"][2]["expected_text"][0] = (
+        "重履约网络轻轻装装修，先找重复订单"
+    )
+
+    errors = validate_visual_plan(plan)
+
+    assert any("疑似重复字" in error for error in errors)
+
+
+def test_shipped_visual_plan_template_satisfies_current_contract():
+    from scripts.visual_workflow import validate_visual_plan
+
+    root = Path(__file__).resolve().parents[1]
+    plan = json.loads(
+        (root / "templates" / "visual-plan.template.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert validate_visual_plan(plan) == []
+
+
 def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     from scripts.visual_workflow import compile_visual_plan
 
@@ -158,6 +201,9 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "Never render layout guides, measurements or percentages" in cover
     assert "Chinese L1: 规则不能丢" in cover
     assert "Chinese L2: 弱模型也能稳" in cover
+    assert "L1 is the primary headline at 100% scale" in cover
+    assert "L2 is a supporting subtitle at 55%-65% of L1" in cover
+    assert "Descriptor line: 确定性视觉合同" in cover
     assert "一份任务单" not in cover
     assert "一条发布入口" not in cover
     assert "bright editorial evidence montage" not in cover
@@ -167,6 +213,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
+    assert 'template_id: "curve-convergence"' in info
     assert "定稿哈希绑定任务单" not in info
     batch = json.loads(
         (article / "素材/render-batch.json").read_text(encoding="utf-8")

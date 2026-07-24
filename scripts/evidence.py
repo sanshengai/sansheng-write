@@ -222,6 +222,7 @@ def build_visual_manifest(
             "path": rel,
             "sha256": output_sha,
             "bytes": output_path.stat().st_size,
+            "render_sha256": logged_output_sha,
             "prompt": prompt_rel,
             "prompt_sha256": prompt_sha,
             "producer": producer,

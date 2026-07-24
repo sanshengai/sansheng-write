@@ -30,6 +30,14 @@ PROFILE_BY_STYLE = {
     "claymation": "warm-light-clay",
     "morandi-journal": "morandi-journal",
 }
+TEMPLATE_IDS_BY_POSITION = {
+    "opening": {"curve-convergence"},
+    "middle": {"service-map", "tiered-network"},
+    "closing": {"experience-loop"},
+}
+_SUSPICIOUS_DOUBLE_CHARACTER_CLUSTER = re.compile(
+    r"([\u4e00-\u9fff])\1([\u4e00-\u9fff])\2"
+)
 
 
 def _nonempty_list(value: object) -> bool:
@@ -84,15 +92,35 @@ def validate_visual_plan(plan: dict) -> list[str]:
         if not isinstance(item, dict):
             errors.append(f"{label} 必须是对象")
             continue
-        for field in ("id", "position", "aspect_ratio", "title", "layout"):
+        for field in (
+            "id",
+            "position",
+            "aspect_ratio",
+            "title",
+            "layout",
+            "template_id",
+        ):
             if not str(item.get(field) or "").strip():
                 errors.append(f"{label}.{field} 不能为空")
         if not _nonempty_list(item.get("expected_text")):
             errors.append(f"{label}.expected_text 必须是非空字符串列表")
+        else:
+            for text_index, value in enumerate(item["expected_text"]):
+                if _SUSPICIOUS_DOUBLE_CHARACTER_CLUSTER.search(value):
+                    errors.append(
+                        f"{label}.expected_text[{text_index}] 疑似重复字：{value}"
+                    )
         if not _nonempty_list(item.get("facts")):
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")
         aspect = str(item.get("aspect_ratio") or "")
+        template_id = str(item.get("template_id") or "")
+        allowed_templates = TEMPLATE_IDS_BY_POSITION.get(position, set())
+        if template_id and template_id not in allowed_templates:
+            errors.append(
+                f"{label}.template_id={template_id} 不适用于 position={position}；"
+                f"只允许 {sorted(allowed_templates)}"
+            )
         if index == 0 and (position != "opening" or aspect != "9:16"):
             errors.append("首张信息图必须 position=opening 且 aspect_ratio=9:16")
         elif index == len(images) - 1 and (
@@ -185,11 +213,7 @@ def _cover_text(meta: dict, item: dict) -> dict:
     line2 = str(lead.get("line2") or item.get("subtitle") or "").strip()
     tags = [
         str(value).strip()
-        for value in (
-            lead.get("subtitle"),
-            lead.get("tag1"),
-            lead.get("tag2"),
-        )
+        for value in (lead.get("subtitle"),)
         if str(value or "").strip()
     ]
     uppercase = re.findall(
@@ -238,8 +262,12 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         f"- Chinese L2: {subtitle or '(none)'}\n"
         f"- Quiet pill tags: {tags}\n"
         f"- OVERSIZED GHOST-WATERMARK behind the Chinese title: {ghost}\n"
-        "- L1 is refined bold white; L2 is semibold, with only its sharpest phrase in the "
-        f"accent color {accent}. Keep L2 on one line.\n"
+        "- L1 is the primary headline at 100% scale: refined bold white and the first "
+        "reading focus.\n"
+        "- L2 is a supporting subtitle at 55%-65% of L1: semibold, clearly subordinate, "
+        f"with only its sharpest phrase in the accent color {accent}. Keep L2 on one line.\n"
+        f"- Descriptor line: {text['tags'][0] if text['tags'] else '(none)'}. Render it "
+        "smaller than L2 inside the quiet pill; tags never compete with the headline.\n"
         "- The ghost is industrial condensed uppercase, very dark, 145%-155% of L1 size, "
         "partly overlapped by Chinese text and feathered toward 10% opacity.\n"
         "- Put all tags in one auto-fit quiet pill with near-background fill, no border, "
@@ -336,6 +364,7 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         "position": str(item.get("position") or ""),
         "style": style,
         "layout": str(item.get("layout") or ""),
+        "template_id": str(item.get("template_id") or ""),
         "aspect_ratio": str(item.get("aspect_ratio") or ""),
         "expected_text_sha256": _expected_text_digest(expected),
     }
@@ -370,7 +399,7 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         _frontmatter(fields)
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
-        f"{item.get('layout')} layout. {palette}\n"
+        f"reviewed template {item.get('template_id')} ({item.get('layout')}). {palette}\n"
         "The graphic must communicate the silent facts below, not merely decorate them. "
         "Render every allowlisted line exactly once in readable Simplified Chinese. "
         "Do not invent numbers, labels, logos, watermarks, product UI or additional text. "

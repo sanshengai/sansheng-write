@@ -264,3 +264,59 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
     assert {asset["model"] for asset in receipt["assets"]} == {
         "gemini-2.5-flash-image"
     }
+
+
+def test_template_safe_policy_records_its_actual_script_and_command(tmp_path):
+    from scripts.render_visuals import render_visuals
+
+    article = _article(tmp_path)
+    (article / "renderer-policy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "renderers": [
+                    {
+                        "id": "reviewed-template",
+                        "provider": "sansheng-template-safe",
+                        "model": "Pillow-reviewed-template",
+                        "quality": "1k",
+                        "imageSize": "1K",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_native(cwd, tasks, renderer, jobs):
+        results = []
+        for task in tasks:
+            output = cwd / "素材" / task["image"]
+            output.write_bytes(b"\x89PNG\r\n\x1a\n" + task["id"].encode("utf-8"))
+            results.append(
+                {
+                    "id": task["id"],
+                    "provider": "local",
+                    "model": "Pillow-reviewed-template",
+                    "renderer": "deterministic-template-compositor",
+                    "outputPath": str(output),
+                    "success": True,
+                    "attempts": 1,
+                    "error": None,
+                }
+            )
+        return {"returncode": 0, "results": results}
+
+    receipt, errors = render_visuals(article, native_google_renderer=fake_native)
+
+    assert errors == []
+    assert receipt["renderer_revision"].startswith(
+        "render_text_safe_visual.py-sha256:"
+    )
+    records = [
+        json.loads(line)
+        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert {
+        record["cmd"] for record in records
+    } == {"render_text_safe_visual.py <canonical-prompt> <output>"}

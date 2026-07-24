@@ -30,7 +30,11 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。
 - 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。
-- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout`、`expected_text`、`facts`。
+- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout`、`template_id`、`expected_text`、`facts`。
+- `template_id` 只能选已审核模板：开篇 `curve-convergence`；中段
+  `service-map` / `tiered-network`；收尾 `experience-loop`。模型不得自创版式。
+- 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，
+  不等于任务单文案本身正确。
 - AI 产品/模型主轴用 `claymation + warm-light-clay`；现象/商业/人文主轴用 `morandi-journal`。
 
 ```bash
@@ -45,21 +49,24 @@ python "$SKILL/scripts/pipeline.py" compile-visuals
 python "$SKILL/scripts/pipeline.py" render-visuals
 ```
 
-当前适配器调用 `baoyu-image-gen` CLI。它只负责像素，不决定版式、风格、文字或比例。运行前会探测 batch 能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。未配置 policy 时使用已安装渲染器的默认 provider。
+当前适配器可调用 `baoyu-image-gen` CLI，也可使用本 Skill 的已审核模板渲染器。
+外部渲染器只负责像素，不决定版式、风格、文字或比例。运行前会探测 batch
+能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。
+未配置 policy 时使用已安装渲染器的默认 provider。
 
 当本机使用 Vertex Express key、而外部渲染器不支持该端点时，可在
 `renderer-policy.json` 选择 `provider: sansheng-google`。该路径由本 Skill
 自带的 `gen_img.py` 并发渲染，并记录实际 fallback 后的模型 ID。文字密集的
-`morandi-journal` 图若视觉 QA 发现漏字、改字或额外文字，应切换
-`render_text_safe_visual.py`：模型不再拥有中文字形，标题与标签由本地字体确定性合成。
-需要从第一次运行就锁定该策略时，使用
-`provider: sansheng-google-text-safe`：封面仍由 Google/Vertex 渲染，
-Hero 与信息图直接走确定性文字合成，不产生“先失败再重抽”的额外轮次。
+中文文字和版式必须稳定时，使用 `provider: sansheng-template-safe`。该路径用
+`render_text_safe_visual.py` 按 `template_id` 渲染封面、Hero 与信息图；
+模型不拥有中文字形、坐标或版式自由度。每张图同时生成同名 `.design.json`，
+绑定模板、文字框、安全区、视觉元素与渲染前图片摘要。缺清单、越界或模板不兼容
+都会在视觉 QA 前硬失败。`sansheng-google-text-safe` 仅保留为兼容旧策略的路径。
 
 每张图必须记录：
 
 - `producer=sansheng-write.visual-planner`
-- `renderer=baoyu-image-gen`
+- 实际 renderer（如 `baoyu-image-gen` 或 `deterministic-template-compositor`）
 - 实际 provider、model、renderer revision、attempt
 - prompt/output SHA-256
 
@@ -101,9 +108,11 @@ python "$SKILL/scripts/pipeline.py" visual-qa
 python "$SKILL/scripts/pipeline.py" seal visual
 ```
 
-授权源是 `_visual-qa.json`，不是 Markdown 勾选框。QA request 会逐图携带目标 style、配方摘要、
+授权源是结构门、设计清单与 `_visual-qa.json` 的共同结果，不是 Markdown 勾选框。
+QA request 会逐图携带目标 style、配方摘要、
 必备视觉特征、禁用视觉特征与所需 checks；审阅必须检查预期文字、意外杂字、裁切安全、主次层级、
-目标风格、品牌色板和同篇一致性，封面另验固定构图。`_visual-qa.md` 只是派生的人读摘要。
+目标风格、品牌色板和同篇一致性，封面另验固定构图。模型审阅必须给出实际对象、数量、
+位置和版式观察；只返回布尔勾选不得放行。`_visual-qa.md` 只是派生的人读摘要。
 
 ## 5. 唯一草稿箱事务
 

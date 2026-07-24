@@ -418,3 +418,10 @@ def test_reference_declares_product_axis_precedence_and_refined_cover_cap():
     assert "产品/模型轴优先于趋势结论" in routing
     assert "标题块总高度上限" in cover
     assert "禁止把 `largest` / `extra-black`" in cover
+
+
+def test_reviewed_template_compositor_is_an_allowed_pixel_renderer():
+    assert (
+        "deterministic-template-compositor"
+        in pipeline.IMAGE_RENDERER_WHITELIST
+    )

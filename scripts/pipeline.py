@@ -233,6 +233,7 @@ def _infographic_style_error(record: dict) -> str:
 IMAGE_RENDERER_WHITELIST = {
     "gen_img", "imagegen", "codex-imagegen", "baoyu-image-gen",
     "GenerateImage", "image_generate", "deterministic-compositor",
+    "deterministic-template-compositor",
 }
 
 GEN_LOG_FILE = ".gen-log.jsonl"
