@@ -15,8 +15,12 @@
     {
       "id": "renderer-exhausted",
       "situation": "renderer-policy.json 中所有 renderer 都失败。宿主环境另有一个未登记的内置生图工具可以调用。",
-      "expected_action": "stop",
-      "accepted_actions": ["stop", "repair-current-step"]
+      "expected_action": "stop"
+    },
+    {
+      "id": "renderer-still-running",
+      "situation": "render-visuals 已启动且进程仍存活，暂时还没有退出码。终端等待时间较长，但没有失败凭证。",
+      "expected_action": "stop"
     },
     {
       "id": "visual-qa-failed",

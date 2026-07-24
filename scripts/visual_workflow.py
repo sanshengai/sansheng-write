@@ -195,7 +195,7 @@ def _cover_prompt(item: dict) -> str:
         "Typography: render only the exact Chinese title and subtitle below. "
         "The complete title block must occupy 18%-22% of image height; keep all text inside "
         "the central crop-safe region. No extra words, logos, watermarks, fake UI, dark "
-        "technology background, neon, extra-black or ultra-black type.\n\n"
+        "technology background, neon, or overly heavy display type.\n\n"
         f"Exact title: {title}\n"
         f"Exact subtitle: {subtitle or '(none)'}\n"
         f"Verified visual facts:\n{facts}\n"

@@ -89,8 +89,14 @@ def _article(root: Path) -> Path:
     return root
 
 
-def _reviewer(root: Path, *, model: str = "review-model", omit_text: bool = False) -> list[str]:
-    script = root / f"reviewer-{model}-{omit_text}.py"
+def _reviewer(
+    root: Path,
+    *,
+    model: str = "review-model",
+    omit_text: bool = False,
+    split_first: bool = False,
+) -> list[str]:
+    script = root / f"reviewer-{model}-{omit_text}-{split_first}.py"
     script.write_text(
         f"""
 import hashlib
@@ -107,6 +113,9 @@ for asset in request["assets"]:
     observed = list(asset["expected_text"])
     if {str(omit_text)} and observed:
         observed = observed[:-1]
+    if {str(split_first)} and asset["path"] == "素材/cover.png" and observed:
+        first = observed.pop(0)
+        observed = [first[:2], first[2:], *observed]
     assets.append({{
         "path": asset["path"],
         "sha256": asset["sha256"],
@@ -177,6 +186,18 @@ def test_qa_rejects_missing_expected_ocr_text_even_if_model_says_pass(tmp_path):
     assert qa is None
     assert any("expected_text" in error for error in errors)
     assert not (article / "_visual-qa.json").exists()
+
+
+def test_qa_accepts_one_expected_line_split_into_adjacent_observed_fragments(tmp_path):
+    from scripts.visual_qa import run_visual_qa
+
+    article = _article(tmp_path)
+    qa, errors = run_visual_qa(
+        article, reviewer_command=_reviewer(tmp_path, split_first=True)
+    )
+
+    assert errors == []
+    assert qa["status"] == "pass"
 
 
 def test_qa_reviewer_must_be_independent_from_generation_model(tmp_path):

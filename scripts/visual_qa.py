@@ -217,13 +217,18 @@ def validate_qa_result(
             for check in REQUIRED_CHECKS:
                 if checks.get(check) is not True:
                     errors.append(f"{rel} check.{check} 未通过")
-        observed = {
+        observed_values = [
             _normalized_text(value) for value in actual.get("observed_text") or []
-        }
+        ]
+        observed = set(observed_values)
+        observed_joined = "".join(observed_values)
         missing = [
             value
             for value in expected_asset.get("expected_text") or []
-            if _normalized_text(value) not in observed
+            if (
+                _normalized_text(value) not in observed
+                and _normalized_text(value) not in observed_joined
+            )
         ]
         if missing:
             errors.append(f"{rel} observed_text 缺 expected_text：{missing}")

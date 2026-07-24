@@ -104,6 +104,18 @@ def test_visual_plan_rejects_wrong_cover_edges_and_middle_ratios():
     assert any("中间信息图" in error for error in errors)
 
 
+def test_cover_prompt_ban_allows_only_the_exact_legacy_negative_clause():
+    from scripts.evidence import cover_prompt_banned_terms
+
+    legacy = (
+        "No extra words, logos, watermarks, fake UI, dark technology background, "
+        "neon, extra-black or ultra-black type."
+    )
+
+    assert cover_prompt_banned_terms(legacy) == []
+    assert cover_prompt_banned_terms("Use extra-black type.") == ["extra-black"]
+
+
 def test_visual_plan_requires_four_images_and_unique_ids():
     from scripts.visual_workflow import validate_visual_plan
 
@@ -132,6 +144,8 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert f'producer: "{PRODUCER}"' in cover
     assert 'aspect_ratio: "2.35:1"' in cover
     assert 'title_block_height: "20%"' in cover
+    assert "extra-black" not in cover.casefold()
+    assert "ultra-black" not in cover.casefold()
     assert 'visual_profile: "warm-light-clay"' in info
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
@@ -183,3 +197,58 @@ def test_pipeline_compile_visuals_command(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "6" in result.stdout
     assert (article / "素材/render-batch.json").exists()
+
+
+def test_release_markdown_assembly_is_idempotent_and_references_every_infographic(
+    tmp_path,
+):
+    from scripts.assemble_release import assemble_release_markdown
+
+    article = _article(tmp_path)
+    draft = article / "定稿.md"
+    draft.write_text(
+        draft.read_text(encoding="utf-8")
+        + "\n## 第一部分\n\n第一部分正文。\n"
+        + "\n## 第二部分\n\n第二部分正文。\n"
+        + "\n## 第三部分\n\n第三部分正文。\n",
+        encoding="utf-8",
+    )
+
+    first, errors = assemble_release_markdown(article)
+    second, second_errors = assemble_release_markdown(article)
+
+    assert errors == []
+    assert second_errors == []
+    assert first["changed"] is True
+    assert second["changed"] is False
+    text = draft.read_text(encoding="utf-8")
+    for item in _plan()["infographics"]:
+        image = f"素材/infographic-{item['id']}.png"
+        assert text.count(image) == 1
+        assert text.count(f"SANSHENG-VISUAL-START:{item['id']}") == 1
+        assert text.count(f"SANSHENG-VISUAL-END:{item['id']}") == 1
+    assert text.index("infographic-01.png") < text.index("## 第一部分")
+    assert text.index("infographic-04.png") > text.index("## 第三部分")
+
+
+def test_release_markdown_assembly_removes_legacy_unsealed_infographic_refs(
+    tmp_path,
+):
+    from scripts.assemble_release import assemble_release_markdown
+
+    article = _article(tmp_path)
+    draft = article / "定稿.md"
+    draft.write_text(
+        draft.read_text(encoding="utf-8")
+        + "\n![旧图一](素材/infographic1.png)\n"
+        + "\n![旧图二](素材/infographic-2.png)\n",
+        encoding="utf-8",
+    )
+
+    _, errors = assemble_release_markdown(article)
+
+    assert errors == []
+    text = draft.read_text(encoding="utf-8")
+    assert "素材/infographic1.png" not in text
+    assert "素材/infographic-2.png" not in text
+    assert text.count("素材/infographic-01.png") == 1

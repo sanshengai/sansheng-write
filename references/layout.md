@@ -67,7 +67,7 @@ python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 ## 4. 图片后处理
 
 ```bash
-node "$SKILL/scripts/add_logo.js" 素材
+node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 ```
 

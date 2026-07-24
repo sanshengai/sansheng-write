@@ -124,6 +124,26 @@ def test_visual_route_compliant_bundle_passes(tmp_path):
     assert pipeline._visual_route_errors(article) == []
 
 
+def test_structured_renderer_style_does_not_require_legacy_cli_flag():
+    record = {
+        "tool": pipeline.VISUAL_PRODUCER,
+        "style": "morandi-journal",
+        "cmd": "baoyu-image-gen --batchfile <sealed-attempt> --json",
+    }
+
+    assert pipeline._infographic_style_error(record) == ""
+
+
+def test_renderer_style_still_blocks_unapproved_value():
+    record = {
+        "tool": pipeline.VISUAL_PRODUCER,
+        "style": "cyberpunk",
+        "cmd": "baoyu-image-gen --batchfile <sealed-attempt> --json",
+    }
+
+    assert "cyberpunk" in pipeline._infographic_style_error(record)
+
+
 def test_publish_preflight_requires_visual_qa_record(tmp_path):
     article = _minimal_visual_article(tmp_path)
     _png(article / "素材" / "cover.png", 1024, 436)

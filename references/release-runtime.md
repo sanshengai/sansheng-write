@@ -6,6 +6,7 @@
 
 - 自动化终点是微信草稿箱：`scope=wechat-draft`、`formal_publish=false`。
 - 正式发布、原创声明、赞赏设置由作者在微信后台完成。
+- 模型只产出 `visual-plan.json` 候选与独立视觉 QA；控制器单写者串行执行 pipeline、renderer、BGM、排版和微信事务。模型不得拥有长命令或发布命令。
 - 微信草稿只允许通过 `pipeline.py release-to-draft` 创建。不得拆开预检、推送、登记 ID。
 - 任一命令非零退出就停在当前步骤修复；禁止手工补状态、伪造凭证或调用低层发布脚本绕过。
 - BGM 是发布硬门；新文章不可 `skip bgm`。
@@ -20,7 +21,7 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
-`adopt-final` 只绑定作者确认的文件字节和元数据，不伪造事实复核或审稿记录。之后定稿、meta 或 state 变化都会令 `_release-job.json` 失效。
+`adopt-final` 同时绑定原始文件字节与作者正文摘要，不伪造事实复核或审稿记录。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；作者正文、meta 或 state 漂移仍会令 `_release-job.json` 失效。
 
 ## 1. 生成受限视觉任务单
 
@@ -57,14 +58,20 @@ python "$SKILL/scripts/pipeline.py" render-visuals
 
 ## 3. 后处理、BGM 与排版
 
-1. 将信息图按任务单位置嵌入 `定稿.md`。
+1. 由确定性装配器按任务单位置嵌入信息图：
+
+```bash
+python "$SKILL/scripts/pipeline.py" assemble-release
+python "$SKILL/scripts/pipeline.py" verify-release-job
+```
+
 2. 运行 `generate_article_bgm.py`，生成 MP3 并插入 AUDIO-CARD。
 3. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
 4. 运行：
 
 ```bash
 python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
-node "$SKILL/scripts/add_logo.js" 素材
+node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 ```
 
@@ -118,6 +125,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 ## 失败处理
 
 - 非零退出：修复明确报错后重跑同一命令。
+- 长命令尚未退出：等待当前单写者返回；禁止另开终端、直调 renderer 或重复启动同一命令。
 - 图片或 prompt 改动：重新 `visual-qa`、`seal visual`、`release-to-draft`。
 - 草稿已创建但读回失败：不得删除 attempt，不得手工登记 media ID。
 - 需要换 provider：只改 `renderer-policy.json`，不得改 canonical prompt 或图片比例。

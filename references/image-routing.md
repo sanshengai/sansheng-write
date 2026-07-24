@@ -47,7 +47,7 @@ renderer 不得修改 `expected_text`、比例、style 或 visual profile，不�
 ```bash
 python "$SKILL/scripts/pipeline.py" compile-visuals
 python "$SKILL/scripts/pipeline.py" render-visuals
-node "$SKILL/scripts/add_logo.js" 素材
+node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 python "$SKILL/scripts/pipeline.py" visual-qa
 python "$SKILL/scripts/pipeline.py" seal visual

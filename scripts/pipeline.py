@@ -72,6 +72,7 @@ from evidence import (  # noqa: E402
     VISUAL_RECEIPT_FILE,
     build_publish_manifest,
     checkpoint_artifact,
+    cover_prompt_banned_terms,
     files_digest,
     norm_relpath as _evidence_norm_relpath,
     seal_visual_receipt,
@@ -206,6 +207,29 @@ IMAGE_TOOL_WHITELIST = {
     "chart":       {"matplotlib", "pyecharts", "plot_local"},  # 数据图必须本地脚本渲染
 }
 IMAGE_TOOL_BLACKLIST = {"generate_image", "internal_image_gen", "imagine"}
+_ALLOWED_INFO_STYLES = ("claymation", "morandi-journal", "craft-handmade")
+
+
+def _infographic_style_error(record: dict) -> str:
+    """Validate the structured renderer contract, with legacy CLI-log fallback."""
+    style = str(record.get("style") or "").strip()
+    cmd_str = str(record.get("cmd") or "")
+    if not style:
+        match = re.search(r"--style\s+[\"']?([^\s\"']+)", cmd_str)
+        style = match.group(1) if match else ""
+    if not style:
+        return (
+            "infographic 生成记录缺 style。信息图统一用 "
+            "claymation / morandi-journal 二选一（image-routing.md），不可漂移"
+        )
+    if style not in _ALLOWED_INFO_STYLES:
+        return (
+            f"infographic 使用了 style={style}，不在允许集 "
+            "{claymation / morandi-journal / craft-handmade}。"
+            "image-routing.md 已固化 claymation/morandi-journal 二选一"
+            "（craft-handmade 仅历史兼容）"
+        )
+    return ""
 IMAGE_RENDERER_WHITELIST = {
     "gen_img", "imagegen", "codex-imagegen", "baoyu-image-gen",
     "GenerateImage", "image_generate",
@@ -651,10 +675,7 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
     if (not allow_postprocessed
             and rec.get("output_sha256") != sha256_file(output)):
         errors.append(f"{rel} output_sha256 与当前渲染器输出不一致")
-    banned = sorted(set(re.findall(
-        r"\b(?:largest|extra-black|ultra-black)\b",
-        prompt.read_text(encoding="utf-8"), flags=re.I,
-    )))
+    banned = cover_prompt_banned_terms(prompt.read_text(encoding="utf-8"))
     if banned:
         errors.append(f"封面 canonical prompt 含禁词：{banned}")
     return errors
@@ -1146,24 +1167,11 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                                 f"infographic producer={tool} 不在白名单；必须为 {VISUAL_PRODUCER}（精确拓扑图例外）"
                             )
                             break
-                        # 🔴 曾踩坑：信息图风格漂移
-                        # 对齐 image-routing.md：合法 style = claymation / morandi-journal
-                        # 二选一（craft-handmade 仅历史兼容），维持整体调性，不可漂移到其他 style
-                        _ALLOWED_INFO_STYLES = ("claymation", "morandi-journal", "craft-handmade")
-                        if tool == VISUAL_PRODUCER and cmd_str:
-                            if "--style" not in cmd_str:
-                                errors.append(
-                                    f"infographic 命令缺少 `--style` 参数（cmd: `{cmd_str[:80]}...`）。"
-                                    f"信息图统一用 claymation / morandi-journal 二选一（image-routing.md），不可漂移"
-                                )
-                                break
-                            elif not any(s in cmd_str for s in _ALLOWED_INFO_STYLES):
-                                style_m = re.search(r"--style\s+(\S+)", cmd_str)
-                                got = style_m.group(1) if style_m else "(未知)"
-                                errors.append(
-                                    f"infographic 用了 `--style {got}`，不在允许集 {{claymation / morandi-journal / craft-handmade}}。"
-                                    f"image-routing.md 2026-05-26 已固化 claymation/morandi-journal 二选一（craft-handmade 仅历史兼容）"
-                                )
+                        # 新合同把 style 写进结构化日志；旧日志才从命令行回读。
+                        if tool == VISUAL_PRODUCER:
+                            style_error = _infographic_style_error(rec)
+                            if style_error:
+                                errors.append(style_error)
                                 break
                 else:
                     # 没有 gen-log 记录但素材里有 PNG：来源不可追溯，必须拦下。
@@ -2516,6 +2524,19 @@ def cmd_compile_visuals(cwd: Path) -> None:
     )
 
 
+def cmd_assemble_release(cwd: Path) -> None:
+    from assemble_release import assemble_release_markdown
+
+    result, errors = assemble_release_markdown(cwd)
+    if errors:
+        print("❌ 发布 Markdown 装配失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    action = "已更新" if result["changed"] else "无需更新"
+    print(f"✅ {action}定稿.md：嵌入 {result['image_count']} 张信息图")
+
+
 def cmd_render_visuals(cwd: Path) -> None:
     from render_visuals import render_visuals
 
@@ -2806,6 +2827,10 @@ def main():
         help="把受限 visual-plan.json 编译为 canonical prompts 与 render batch",
     )
     sub.add_parser(
+        "assemble-release",
+        help="按 visual-plan 位置幂等装配信息图引用，不改变作者正文",
+    )
+    sub.add_parser(
         "render-visuals",
         help="探测并调用外部 baoyu-image-gen renderer，失败时只按配置降级",
     )
@@ -2882,6 +2907,8 @@ def main():
         cmd_verify_release_job(cwd)
     elif args.cmd == "compile-visuals":
         cmd_compile_visuals(cwd)
+    elif args.cmd == "assemble-release":
+        cmd_assemble_release(cwd)
     elif args.cmd == "render-visuals":
         cmd_render_visuals(cwd)
     elif args.cmd == "visual-qa":

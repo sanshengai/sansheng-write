@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from assemble_release import author_content_sha256
 from evidence import sha256_file, stable_digest, write_checkpoint_receipt
 from works_registry import CATEGORY_CODES, OUTWARD_CATEGORIES, TAG_VOCAB
 
@@ -197,13 +198,16 @@ def adopt_final(
     final_rel = final.relative_to(cwd).as_posix()
     meta_rel = meta_file.relative_to(cwd).as_posix()
     job = {
-        "schema_version": 1,
+        "schema_version": 2,
         "job_id": str(uuid.uuid4()),
         "created_at": _now_iso(),
         "scope": RELEASE_SCOPE,
         "article_dir": str(cwd),
         "final_path": final_rel,
         "final_sha256": sha256_file(final),
+        "author_content_sha256": author_content_sha256(
+            final.read_text(encoding="utf-8")
+        ),
         "meta_path": meta_rel,
         "meta_sha256": sha256_file(meta_file),
         "checkpoint_digest": checkpoint["artifact_digest"],
@@ -251,7 +255,19 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
         if not rel or not target.exists():
             errors.append(f"{label}文件缺失：{rel or '(空)'}")
         elif sha256_file(target) != job.get(hash_key):
-            errors.append(f"{label}已变化，旧 release job 失效；需重新 adopt-final")
+            if label != "定稿":
+                errors.append(
+                    f"{label}已变化，旧 release job 失效；需重新 adopt-final"
+                )
+                continue
+            expected_author_hash = str(job.get("author_content_sha256") or "")
+            actual_author_hash = author_content_sha256(
+                target.read_text(encoding="utf-8")
+            )
+            if not expected_author_hash or actual_author_hash != expected_author_hash:
+                errors.append(
+                    "定稿作者正文已变化，旧 release job 失效；需重新 adopt-final"
+                )
     try:
         import pipeline
 

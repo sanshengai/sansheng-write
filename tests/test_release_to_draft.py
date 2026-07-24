@@ -101,6 +101,52 @@ def test_release_to_draft_is_one_transaction_with_remote_readback(tmp_path):
     assert checks["cover_media_id"] is True
 
 
+def test_readback_accepts_publisher_digest_truncation_and_wechat_html_cleanup(
+    tmp_path,
+):
+    from scripts.release_to_draft import (
+        _compare_readback,
+        _published_digest,
+    )
+
+    article = _article(tmp_path)
+    from scripts.release_to_draft import build_expected_draft
+
+    expected, errors = build_expected_draft(article)
+    assert errors == []
+    expected["digest"] = (
+        "第一层信息足够完整。" + "第二层信息需要继续保留，" * 12 + "最后一句。"
+    )
+    expected["content"] = (
+        "<!-- 本地排版注释 --><section><p>正文</p>"
+        '<img src="素材/hero.png"><img src="素材/infographic-01.png">'
+        "</section>"
+    )
+    actual = {
+        "title": expected["title"],
+        "author": expected["author"],
+        "digest": _published_digest(expected["digest"]),
+        "content": (
+            "<section><p>正文</p>"
+            '<img src="https://wechat-image.invalid/one">'
+            '<img src="https://wechat-image.invalid/two">'
+            "</section>"
+        ),
+        "content_source_url": expected["source_url"],
+        "thumb_media_id": "cover-media-001",
+        "need_open_comment": expected["need_open_comment"],
+        "only_fans_can_comment": expected["only_fans_can_comment"],
+    }
+
+    checks, compare_errors = _compare_readback(
+        expected, actual, "cover-media-001"
+    )
+
+    assert compare_errors == []
+    assert checks["digest"] is True
+    assert checks["body_digest"] is True
+
+
 def test_remote_mismatch_blocks_publish_receipt_but_preserves_attempt(tmp_path):
     from scripts.release_to_draft import release_to_draft
 

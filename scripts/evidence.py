@@ -23,6 +23,13 @@ PUBLISH_READY_FILE = "_publish-ready.json"
 CHECKPOINT_RECEIPT_FILE = "_checkpoint-receipts.json"
 FINAL_PROMPT_PREFIX = "素材/prompts/final/"
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
+_BANNED_COVER_PROMPT = re.compile(
+    r"\b(?:largest|extra-black|ultra-black)\b", re.I
+)
+_LEGACY_COVER_NEGATIVE_CLAUSE = (
+    "No extra words, logos, watermarks, fake UI, dark technology background, "
+    "neon, extra-black or ultra-black type."
+)
 
 
 def now_iso() -> str:
@@ -44,6 +51,26 @@ def sha256_file(path: Path) -> str:
 def stable_digest(payload: object) -> str:
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def cover_prompt_banned_terms(prompt_text: str) -> list[str]:
+    """Return positive forbidden cover terms while accepting one sealed legacy negation.
+
+    The compiler briefly emitted the exact terms inside a negative instruction. Existing
+    render receipts bind those bytes, so silently rewriting the prompt would invalidate
+    provenance. Only that exact historical sentence is normalized; positive requests
+    containing the same terms remain blocked.
+    """
+    normalized = prompt_text.replace(
+        _LEGACY_COVER_NEGATIVE_CLAUSE,
+        (
+            "No extra words, logos, watermarks, fake UI, dark technology background, "
+            "neon, or overly heavy display type."
+        ),
+    )
+    return sorted(
+        {match.group(0).lower() for match in _BANNED_COVER_PROMPT.finditer(normalized)}
+    )
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -138,8 +165,6 @@ def build_visual_manifest(
         "infographic": _latest_by_output(cwd, "infographic"),
         "hero": _latest_by_output(cwd, "hero"),
     }
-    banned_cover = re.compile(r"\b(?:largest|extra-black|ultra-black)\b", re.I)
-
     for stage, rel, allowed_producers in specs:
         output_path = cwd / Path(rel)
         rec = logs[stage].get(rel)
@@ -188,7 +213,7 @@ def build_visual_manifest(
 
         prompt_text = prompt_path.read_text(encoding="utf-8")
         if stage == "cover":
-            hits = sorted({m.group(0).lower() for m in banned_cover.finditer(prompt_text)})
+            hits = cover_prompt_banned_terms(prompt_text)
             if hits:
                 errors.append(f"封面 canonical prompt 含禁词：{hits}")
 

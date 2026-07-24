@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import json
 import os
 import re
@@ -62,6 +63,37 @@ def normalize_wechat_html(html: str) -> str:
 
 def _body_digest(html: str) -> str:
     return hashlib.sha256(normalize_wechat_html(html).encode("utf-8")).hexdigest()
+
+
+def _semantic_body_digest(html: str) -> str:
+    """Bind visible text while allowing WeChat's documented HTML sanitization."""
+    text = re.sub(r"<!--.*?-->", "", str(html or ""), flags=re.S)
+    text = re.sub(
+        r"<(?:br|/p|/section|/div|/h[1-6]|/li|/tr|/td|/th)\b[^>]*>",
+        "\n",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html_lib.unescape(text).replace("\u00a0", " ")
+    normalized = "".join(text.split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _published_digest(digest: str) -> str:
+    """Mirror baoyu-post-to-wechat's stable summary-length rule."""
+    value = str(digest or "")
+    if len(value) <= 120:
+        return value
+    truncated = value[:117]
+    last_punct = max(
+        truncated.rfind(mark) for mark in ("。", "，", "；", "、")
+    )
+    return (
+        truncated[: last_punct + 1]
+        if last_punct > 80
+        else truncated + "..."
+    )
 
 
 def _image_count(html: str) -> int:
@@ -364,7 +396,7 @@ def _compare_readback(
 ) -> tuple[dict[str, bool], list[str]]:
     pairs = {
         "title": (expected["title"], actual.get("title")),
-        "digest": (expected["digest"], actual.get("digest")),
+        "digest": (_published_digest(expected["digest"]), actual.get("digest")),
         "author": (expected["author"], actual.get("author") or ""),
         "source_url": (
             expected["source_url"],
@@ -384,7 +416,9 @@ def _compare_readback(
         for name, (wanted, got) in pairs.items()
     }
     content = str(actual.get("content") or "")
-    checks["body_digest"] = expected["body_digest"] == _body_digest(content)
+    checks["body_digest"] = _semantic_body_digest(
+        expected["content"]
+    ) == _semantic_body_digest(content)
     checks["image_count"] = expected["image_count"] == _image_count(content)
     checks["cover_media_id"] = (
         bool(cover_media_id)
@@ -477,7 +511,7 @@ def release_to_draft(
         "title": str(actual.get("title") or ""),
         "digest": str(actual.get("digest") or ""),
         "source_url": str(actual.get("content_source_url") or ""),
-        "body_digest": _body_digest(str(actual.get("content") or "")),
+        "body_digest": _semantic_body_digest(str(actual.get("content") or "")),
         "image_count": _image_count(str(actual.get("content") or "")),
         "thumb_media_id": str(actual.get("thumb_media_id") or ""),
         "remote_digest": stable_digest(actual),

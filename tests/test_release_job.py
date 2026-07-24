@@ -102,6 +102,46 @@ def test_release_job_invalidates_when_final_changes(tmp_path):
     assert "定稿" in result.stdout and "变化" in result.stdout
 
 
+def test_release_job_allows_only_registered_machine_assembly_blocks(tmp_path):
+    article = _article(tmp_path)
+    assert _run(article, "adopt-final").returncode == 0
+    draft = article / "定稿.md"
+    original = draft.read_text(encoding="utf-8")
+    draft.write_text(
+        original
+        + "\n<!-- SANSHENG-VISUAL-START:01 -->\n"
+        + "![先锁定输入](素材/infographic-01.png)\n"
+        + "<!-- SANSHENG-VISUAL-END:01 -->\n"
+        + "\n<!-- AUDIO-CARD-START -->\n"
+        + "<section>🎵 本文主题曲</section>\n"
+        + "<!-- AUDIO-CARD-END -->\n",
+        encoding="utf-8",
+    )
+
+    result = _run(article, "verify-release-job")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_release_job_rejects_body_drift_even_when_machine_blocks_exist(tmp_path):
+    article = _article(tmp_path)
+    assert _run(article, "adopt-final").returncode == 0
+    draft = article / "定稿.md"
+    original = draft.read_text(encoding="utf-8")
+    draft.write_text(
+        original.replace("这是作者已经审定的正文内容", "这是被偷偷改写的正文内容", 1)
+        + "\n<!-- SANSHENG-VISUAL-START:01 -->\n"
+        + "![先锁定输入](素材/infographic-01.png)\n"
+        + "<!-- SANSHENG-VISUAL-END:01 -->\n",
+        encoding="utf-8",
+    )
+
+    result = _run(article, "verify-release-job")
+
+    assert result.returncode == 2
+    assert "作者正文" in result.stdout or "变化" in result.stdout
+
+
 def test_author_provided_final_checkpoint_does_not_forge_writing_review_files(tmp_path):
     article = _article(tmp_path)
 

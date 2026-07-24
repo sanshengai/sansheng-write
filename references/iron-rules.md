@@ -10,6 +10,7 @@
 4. writing、cover、infographic、bgm、layout、publish 不可 skip；历史迁移只有显式 `--force`/`--legacy` 例外。
 5. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
 6. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
+7. 控制器是机械链唯一命令写者；模型只交付任务单候选与视觉 QA，不运行、重试或并发启动长命令。
 
 ## 视觉
 
@@ -20,6 +21,7 @@
 5. 精确数字图走本地确定性代码；精确拓扑可走 `baoyu-diagram`。
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
 7. 最终图后处理后必须独立 `visual-qa` 并 `seal visual`；Markdown 勾选不算证据。
+8. 信息图引用只由 `assemble-release` 写入带 marker 的机器块；正文变化仍会令 release job 失效。
 
 ## 排版
 
