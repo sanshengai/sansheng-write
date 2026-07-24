@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 from PIL import Image
@@ -44,11 +45,7 @@ def _visual_bundle(root: Path) -> Path:
         prompt.write_text(
             "---\nstyle: claymation\n---\n精致、克制、清晰。\n", encoding="utf-8"
         )
-        producer = {
-            "cover": "baoyu-cover-image",
-            "infographic": "baoyu-infographic",
-            "hero": "gen_img",
-        }[stage]
+        producer = "sansheng-write.visual-planner"
         logs.append({
             "schema_version": 2,
             "record_id": f"rec-{i}",
@@ -67,13 +64,68 @@ def _visual_bundle(root: Path) -> Path:
         "\n".join(json.dumps(row, ensure_ascii=False) for row in logs) + "\n",
         encoding="utf-8",
     )
-    (root / "_visual-qa.md").write_text(
-        "# 视觉验收\n"
-        "- [x] 封面主标题精致\n- [x] 封面无杂字\n- [x] 封面裁切安全\n"
-        "- [x] 图 1 信息图逐字核对\n- [x] 图 2 信息图逐字核对\n"
-        "- [x] 图 3 信息图逐字核对\n- [x] 图 4 信息图逐字核对\n"
-        "- [x] 四张信息图风格一致\n\n结论：通过\n",
+    (root / "visual-plan.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "cover": {
+                    "title": "测试封面",
+                    "subtitle": "测试副标题",
+                    "visual_facts": ["事实"],
+                },
+                "hero": {"title": "测试 Hero", "visual_facts": ["事实"]},
+                "infographics": [
+                    {
+                        "id": f"{index:02d}",
+                        "expected_text": [f"图 {index}"],
+                    }
+                    for index in range(1, 5)
+                ],
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
+    )
+    from scripts.visual_qa import build_qa_request
+
+    request, errors = build_qa_request(root)
+    assert errors == []
+    request_path = root / "_visual-qa-request.json"
+    request_path.write_text(
+        json.dumps(request, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    qa = {
+        "schema_version": 1,
+        "status": "pass",
+        "request_sha256": hashlib.sha256(request_path.read_bytes()).hexdigest(),
+        "reviewer": {
+            "role": "independent-visual-reviewer",
+            "model": "review-model",
+            "run_id": "fixture-run",
+            "independent": True,
+        },
+        "assets": [
+            {
+                "path": asset["path"],
+                "sha256": asset["sha256"],
+                "observed_text": asset["expected_text"],
+                "checks": {
+                    "text_match": True,
+                    "crop_safe": True,
+                    "semantic_hierarchy": True,
+                    "style_consistent": True,
+                    "no_unexpected_text": True,
+                },
+                "notes": "",
+            }
+            for asset in request["assets"]
+        ],
+    }
+    (root / "_visual-qa.json").write_text(
+        json.dumps(qa, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (root / "_visual-qa.md").write_text(
+        "# 视觉验收\n\n> 此文件由 _visual-qa.json 派生\n", encoding="utf-8"
     )
     return root
 
@@ -130,8 +182,8 @@ def test_visual_receipt_includes_hero_when_present(tmp_path):
             "schema_version": 2,
             "record_id": "rec-hero",
             "stage": "hero",
-            "producer": "gen_img",
-            "tool": "gen_img",
+            "producer": "sansheng-write.visual-planner",
+            "tool": "sansheng-write.visual-planner",
             "renderer": "gen_img",
             "model": "test-model",
             "output": "素材/hero.png",
@@ -183,12 +235,12 @@ def test_publish_done_force_cannot_bypass_inline_gate(tmp_path):
         )
     assert exc.value.code == 2
     saved = pipeline.load_state(tmp_path)
-    assert saved["stages"]["publish"]["status"] == "failed"
+    assert saved["stages"]["publish"]["status"] == "pending"
     assert "draft_media_id" not in saved["stages"]["publish"]
     assert not (tmp_path / "_publish-receipt.json").exists()
 
 
-def test_failed_publish_restores_existing_receipt_and_state(tmp_path, monkeypatch):
+def test_manual_draft_id_cannot_replace_existing_receipt_or_state(tmp_path, monkeypatch):
     article = _visual_bundle(tmp_path)
     assert seal_visual_receipt(article)[1] == []
     _png(article / "素材/hero.png", size=(1024, 1024))
@@ -214,7 +266,7 @@ def test_failed_publish_restores_existing_receipt_and_state(tmp_path, monkeypatc
         pipeline.cmd_done("publish", article, ["draft_media_id=new-id"], force=True)
     assert exc.value.code == 2
     assert receipt_path.read_bytes() == before_receipt
-    assert (article / pipeline.STATE_FILE).read_bytes() != before_state
+    assert (article / pipeline.STATE_FILE).read_bytes() == before_state
     saved = pipeline.load_state(article)
     assert saved["stages"]["publish"]["draft_media_id"] == "trusted-id"
 
@@ -249,8 +301,10 @@ def test_status_detects_prompt_and_qa_drift(tmp_path):
             "artifact_digest": pipeline._stage_artifact_digest(article, stage),
         }
     pipeline.save_state(article, state)
-    qa = article / "_visual-qa.md"
-    qa.write_text(qa.read_text(encoding="utf-8") + "复验变化\n", encoding="utf-8")
+    qa = article / "_visual-qa.json"
+    payload = json.loads(qa.read_text(encoding="utf-8"))
+    payload["reviewer"]["run_id"] = "changed-run"
+    qa.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     pipeline.cmd_status(article)
     saved = pipeline.load_state(article)
     assert saved["stages"]["logo"]["status"] == "dirty"

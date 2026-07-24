@@ -86,14 +86,13 @@ closing_type: ""             # 收尾类型 9 选 1：自然断流 / 未答之�
 
 # 封面图参数（配图阶段确定）
 cover_keywords: ""           # 封面图核心视觉符号关键词
-cover_style: ""              # 封面风格。留空 = 走默认风格（见 references/cover-styles.md）。
-                             # 仅确需其他风格时才显式填写；可选风格清单见 cover-styles.md 顶部 override 段。
+cover_style: "montage-evidence"  # 新文章固定；历史复刻才允许显式使用旧风格。
 
 # 信息图参数（配图阶段确定）
 infographic_subject: ""      # 必填二选一：ai-product / phenomenon
                              # ai-product = 具名模型/工具/产品/功能承担卡片、对比列或时间线主轴；即使外层是趋势稿仍选它
                              # phenomenon = 产品仅是例子，信息架构主轴是现象/商业关系/人文判断
-infographic_style: ""        # 信息图风格二选一（缺省 claymation）：
+infographic_style: ""        # 必填二选一：
                              #   claymation       -- AI 工具 / 教程 / 产品评测 / 功能解读 / 技术拆解
                              #   morandi-journal  -- 趋势 / 商业评论 / 人文反思 / 育儿 / 生活方式 / 温和议题
                              # 同篇所有信息图（≥4 张）必须统一风格；其余 20 种已封存。
@@ -109,7 +108,7 @@ music:
   #   ambient_vocal   环境浮声 — 科技探索/未来想象/AI工具对比/前沿趋势（62 BPM）
   #   ambient_piano   氛围钢琴 — 哲思文章/行业反思/年度盘点/收尾感悟（66 BPM）
   #   cinematic_vocal 影视人声 — 长文特稿/行业深度分析/重磅专题/年终总结（72 BPM）
-  # 留空 = 由 Claude 根据文章内容从 4 种舒缓风格池里选（并回避最近几篇用过的）
+  # 留空 = 由当前执行模型根据文章内容从 4 种舒缓风格池里选（并回避最近几篇用过的）
   style: ""
   gender: ""                 # 人声性别：留空=按文章序号自动交替（奇数女/偶数男），或手动 female / male
   song_name: ""              # 歌曲名（AI 起名或自定义）

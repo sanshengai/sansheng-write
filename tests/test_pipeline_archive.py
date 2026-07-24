@@ -4,6 +4,7 @@
 注意：cmd_archive 用裸名 import 兄弟模块，故测试也用裸名导入同一实例。
 """
 import json
+import pytest
 import scripts.pipeline as pipeline   # 触发 pipeline 顶部 bootstrap，把 scripts/ 加进 sys.path
 import works_registry as wr
 import render_articles_md as ram
@@ -224,8 +225,60 @@ def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
     monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
     monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+    monkeypatch.setattr(
+        pipeline, "_run_website_sync", lambda *a, **k: calls.append("website") or True
+    )
+    monkeypatch.setattr(
+        pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
+    )
 
     pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
+    assert calls == ["publish", "archive", "verify", "website", "moments"]
+
+
+def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatch):
+    (tmp_path / "article-meta.yaml").write_text(
+        'title: "教程 | 自动收尾"\n'
+        'digest: "正式发布后自动归档、同步官网并生成朋友圈文案。"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "brand",
+        lambda: {
+            "writing": {"moments_cta": "去官网看完整方法"},
+            "identity": {"site": "https://example.com"},
+        },
+    )
+
+    first = pipeline._write_moments_copy(
+        tmp_path, "https://mp.weixin.qq.com/s/abc"
+    )
+    second = pipeline._write_moments_copy(
+        tmp_path, "https://mp.weixin.qq.com/s/abc"
+    )
+
+    assert first == second
+    assert "🔥 教程 | 自动收尾" in first
+    assert "👉 去官网看完整方法" in first
+    assert "🔗 https://example.com" in first
+    assert "https://mp.weixin.qq.com/s/abc" in first
+
+
+def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
+    monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
+    monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+    monkeypatch.setattr(pipeline, "_run_website_sync", lambda *a, **k: False)
+    monkeypatch.setattr(
+        pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
+
+    assert exc.value.code == 2
     assert calls == ["publish", "archive", "verify"]
 
 

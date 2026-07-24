@@ -20,6 +20,7 @@ pipeline.py — 微信公众号写作流水线管理器
   python SKILL/scripts/pipeline.py skip <stage>             跳过某阶段
   python SKILL/scripts/pipeline.py reset <stage>            重置阶段为 pending
   python SKILL/scripts/pipeline.py log <stage> <tool> ...   记录生图来源到 .gen-log.jsonl
+  python SKILL/scripts/pipeline.py release-to-draft         唯一草稿发布事务
   python SKILL/scripts/pipeline.py archive                  发布归档：写解析后的作品库 + 刷新派生视图
   python SKILL/scripts/pipeline.py finalize <wechat_url>    正式发布收尾：登记链接 + 归档 + 验证
   python SKILL/scripts/pipeline.py history                  [DEPRECATED] 改用 archive
@@ -37,6 +38,7 @@ import json
 import copy
 import os
 import re
+import subprocess
 import sys
 import argparse
 import uuid
@@ -83,6 +85,7 @@ from evidence import (  # noqa: E402
     write_publish_receipt,
     write_publish_ready,
 )
+from profile_config import brand  # noqa: E402
 
 # ── 常量 ──────────────────────────────────────────────────────
 STATE_FILE = ".state.json"
@@ -106,12 +109,12 @@ STAGE_ORDER = [
 STAGE_LABELS = {
     "outline":     "选题 + 大纲",
     "writing":     "正文写作 + 标题锻造",
-    "cover":       "封面图（baoyu-skills:baoyu-cover-image）",
-    "infographic": "信息图 ≥ 4 张（baoyu-skills:baoyu-infographic / baoyu-diagram）",
+    "cover":       "视觉任务单 + 封面（sansheng-write.visual-planner）",
+    "infographic": "Hero + 信息图 ≥ 4 张（visual planner；精确拓扑可用 baoyu-diagram）",
     "bgm":         "主题音乐（generate_article_bgm.py · MiniMax 方法A）",
     "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
-    "publish":     "发布草稿箱（baoyu-skills:baoyu-post-to-wechat）",
+    "publish":     "草稿事务（预检 + draft/add + 官方 draft/get 读回）",
     "archive":     "发布后沉淀（pipeline.py archive 写作品库 + 自动刷新 articles.md/看板/推荐）",
 }
 
@@ -130,20 +133,18 @@ STAGE_HINTS = {
     "cover": (
         "🔁 进配图前回扣 checklist：确认 开头盲选已停顿（_opening-choice.md）/ "
         "content_enhance 已产出 / 冷读外审 _stutter-list.md 已生成（跨会话恢复时这三步无状态记账，易静默漏）。\n"
-        "🔴 必须先走 baoyu-skills:baoyu-cover-image producer，canonical prompt 固定写\n"
-        "  素材/prompts/final/cover.md；再用 child skill 选定 renderer 生成 素材/cover.png。\n"
-        "  加 logo 前用 pipeline.py log cover baoyu-cover-image --prompt ... --renderer ... --model ... 登记。\n"
+        "写 visual-plan.json，然后执行 pipeline.py compile-visuals 与 render-visuals。\n"
+        "  业务 producer 固定为 sansheng-write.visual-planner；外部 renderer 只负责像素。\n"
         "  完成后：pipeline.py verify cover"
     ),
     "infographic": (
-        "运行 /baoyu-skills:baoyu-infographic ≥ 4 张（开篇 9:16 + 中间 16:9×N + 结尾 9:16），\n"
-        "  输出 素材/infographic-01-主题.png .. infographic-04-主题.png（命名铁律 infographic-NN-主题.png，"
-        "见 image-routing.md §194；精确流程图走 baoyu-diagram）。\n"
+        "核验 visual-plan 编译出的信息图 ≥ 4 张（开篇 9:16 + 中间 16:9×N + 结尾 9:16）；\n"
+        "  精确数据图走本地代码，精确拓扑图可走 baoyu-diagram，其余均由 visual planner 编译。\n"
         "  完成后：pipeline.py verify infographic"
     ),
     "bgm": (
         f'python "{_skill_path("scripts/generate_article_bgm.py")}" .\n'
-        "  （MiniMax music-2.6-free 方法A：Claude 提炼诗意意象 → 自动写词 → 生成中文人声主题曲；V2 去 Gemini\n"
+        "  （MiniMax music-2.6-free 方法A：从定稿提炼诗意意象 → 自动写词 → 生成中文人声主题曲\n"
         "   舒缓空灵 4 风格 / 男女声奇偶交替 / 自动插 AUDIO-CARD 引导卡片。不需图片输入）\n"
         "  🔴 必须在 layout（MD→HTML）之前跑：先插卡进 定稿.md，排版才会渲染出音频卡片。\n"
         "  完成后：pipeline.py verify bgm"
@@ -161,17 +162,14 @@ STAGE_HINTS = {
     "logo": (
         f'node "{_skill_path("scripts/add_logo.js")}" "素材/*.png"\n'
         f'  python "{_skill_path("scripts/compress_images.py")}" 素材/ --max-mb 2\n'
-        "  逐张查看最终图并写 _visual-qa.md，再执行 pipeline.py seal visual\n"
+        "  执行 pipeline.py visual-qa（独立看图进程产 _visual-qa.json），再 seal visual\n"
         "  完成后：pipeline.py done logo"
     ),
     "publish": (
-        "🔴 调微信前必须：pipeline.py verify publish --pre（写 _publish-ready.json）。\n"
-        "  done publish 会内联复验 ready 与全部产物，--force 不可绕过。\n"
+        "🔴 唯一入口：pipeline.py release-to-draft。\n"
+        "  命令内部完成 release job、publish preflight、草稿创建与官方 draft/get 读回；不可拆开。\n"
         "🔴 article-meta.yaml 的 title 已是最终对外标题，必须自带「{对外分类中文名} | 」前缀；发布、作品库、网站/RSS 共用这一份，不得二次拼接。\n"
-        "   （对外分类=article-meta.yaml 的 outward_category：tutorial→教程/news→资讯/picks→精选/share→分享/insight→洞察/essay→随笔/industry→行业；\n"
-        "    post-to-wechat 的 --title 原样传 article-meta.title；例：洞察 | Loop：硅谷最会用 AI 的人已经不写提示词了。）\n"
-        "  /baoyu-skills:baoyu-post-to-wechat 定稿.html；返回 media_id 后立即：\n"
-        "  pipeline.py done publish draft_media_id=<media_id>\n"
+        "   对外分类由 outward_category 决定；发布直接使用 article-meta.title。\n"
         "  微信后台手动发布，获得链接后：pipeline.py finalize https://mp.weixin.qq.com/s/xxx"
     ),
     "archive": (
@@ -189,6 +187,7 @@ STATUS_ICON = {
     "skip":    "⏭ ",
     "failed":  "❌",
     "dirty":   "🟡",
+    "adopted": "📥",
 }
 
 # ── 生图路由白名单 ─────────────────────────────────────────────
@@ -197,12 +196,13 @@ STATUS_ICON = {
 #
 # v0.6：producer 与 renderer 分层。封面/信息图白名单只认专业语义 producer；
 # gen_img/imagegen 等像素后端必须写 renderer 字段，不能再冒充完整 baoyu 流程。
+VISUAL_PRODUCER = "sansheng-write.visual-planner"
 IMAGE_TOOL_WHITELIST = {
-    # producer 是负责分析/版式/style 的上层 skill；renderer 另字段记录。
-    # gen_img/imagegen 只能是 renderer，不能再冒充已走 baoyu 专业流程。
-    "cover":       {"baoyu-cover-image"},
-    "infographic": {"baoyu-infographic", "baoyu-diagram"},  # 3e 信息图 + 3g 精确图
-    "illustrator": {"gen_img", "baoyu-article-illustrator", "baoyu-image-gen"},  # baoyu-skills v2.0 起 baoyu-imagine 改名回 baoyu-image-gen
+    # 公众号文章的 cover / hero / infographic 语义合同由本仓 visual planner 编译。
+    # baoyu-image-gen 只作为 renderer，不再要求宿主模型跨 Skill 调语义 producer。
+    "cover":       {VISUAL_PRODUCER},
+    "infographic": {VISUAL_PRODUCER, "baoyu-diagram"},  # 精确拓扑图保留 diagram 例外
+    "illustrator": {VISUAL_PRODUCER},
     "chart":       {"matplotlib", "pyecharts", "plot_local"},  # 数据图必须本地脚本渲染
 }
 IMAGE_TOOL_BLACKLIST = {"generate_image", "internal_image_gen", "imagine"}
@@ -507,7 +507,8 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
         model = str(rec.get("model") or "").strip()
         if producer not in IMAGE_TOOL_WHITELIST["infographic"]:
             errors.append(
-                f"{rel} producer={producer or '(空)'}；必须经 baoyu-infographic/baoyu-diagram"
+                f"{rel} producer={producer or '(空)'}；必须经 "
+                f"{VISUAL_PRODUCER}（精确拓扑图例外 baoyu-diagram）"
             )
         if renderer not in IMAGE_RENDERER_WHITELIST:
             errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
@@ -623,8 +624,8 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
     producer = str(rec.get("producer") or rec.get("tool") or "").strip()
     renderer = str(rec.get("renderer") or "").strip()
     model = str(rec.get("model") or "").strip()
-    if producer != "baoyu-cover-image":
-        errors.append(f"{rel} producer={producer or '(空)'}；必须经 baoyu-cover-image")
+    if producer != VISUAL_PRODUCER:
+        errors.append(f"{rel} producer={producer or '(空)'}；必须经 {VISUAL_PRODUCER}")
     if renderer not in IMAGE_RENDERER_WHITELIST:
         errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
     if not model:
@@ -660,46 +661,19 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
 
 
 def _visual_qa_errors(cwd: Path) -> list:
-    """发布前视觉 QA 凭证门：机器查结构，审美与逐字核验由 Agent 看图后打卡。"""
-    qa_path = cwd / "_visual-qa.md"
+    """发布前视觉 QA 凭证门：只认独立审阅进程产出的结构化合同。"""
+    qa_path = cwd / "_visual-qa.json"
     if not qa_path.exists():
-        return ["缺 _visual-qa.md：生成后必须逐张看图验收，不能把草稿箱当第一道视觉 QA"]
-    text = qa_path.read_text(encoding="utf-8")
-    errors = []
-    checked = len(re.findall(r"(?m)^\s*- \[x\]", text, flags=re.I))
-    cover_terms = ("封面", "主标题", "杂字", "裁切")
-    info_terms = ("信息图", "图 1", "图 4", "逐字")
-    missing_cover = [term for term in cover_terms if term not in text]
-    missing_info = [term for term in info_terms if term not in text]
-    if missing_cover:
-        errors.append(f"_visual-qa.md 封面检查不完整，缺：{missing_cover}")
-    if missing_info:
-        errors.append(f"_visual-qa.md 信息图检查不完整，缺：{missing_info}")
-    if checked < 8:
-        errors.append(f"_visual-qa.md 已勾选项仅 {checked} 条（需 ≥8，覆盖封面与四张信息图）")
-    if "通过" not in text:
-        errors.append("_visual-qa.md 缺最终结论“通过”")
-    meta_path = cwd / "article-meta.yaml"
-    profile_enabled = False
-    if meta_path.exists() and _yaml is not None:
-        try:
-            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
-            profile_enabled = bool(meta.get("visual_profile")) or meta.get("infographic_style") == "claymation"
-        except Exception:
-            pass
-    if profile_enabled:
-        palette_terms = ("背景", "主色", "禁用色", "材质", "写实", "Hero")
-        missing_palette = [term for term in palette_terms if term not in text]
-        if missing_palette:
-            errors.append(
-                f"_visual-qa.md 浅色视觉配方检查不完整，缺：{missing_palette}；"
-                "必须记录背景、主色、禁用色、材质、写实感与 Hero 一致性"
-            )
-        if checked < 12:
-            errors.append(
-                f"_visual-qa.md 已勾选项仅 {checked} 条（浅色视觉配方需 ≥12）"
-            )
-    return errors
+        return ["缺 _visual-qa.json：生成后必须由独立看图进程验收"]
+    try:
+        payload = json.loads(qa_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"_visual-qa.json 解析失败：{exc}"]
+    try:
+        from visual_qa import validate_qa_result
+    except ImportError:  # pragma: no cover
+        from scripts.visual_qa import validate_qa_result
+    return validate_qa_result(cwd, payload)
 
 
 def load_state(cwd: Path) -> dict:
@@ -1083,7 +1057,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                 if not legacy and not (2.1 <= meta["ratio_wh"] <= 2.6):
                     errors.append(
                         f"cover.png 宽高比 {meta['ratio_wh']:.2f} 不符合 2.35:1（允许 2.1~2.6）。"
-                        f"最常见原因：误用了 `generate_image`（只出 1:1），应走 /baoyu-cover-image"
+                        f"请检查 visual-plan 封面比例或 renderer 输出参数"
                     )
                 # 2) 分辨率 ≥1K（长边 1000px 判定）
                 if not legacy and meta["long_edge"] < 1000:
@@ -1099,11 +1073,11 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     tool = last.get("tool", "")
                     if tool in IMAGE_TOOL_BLACKLIST:
                         errors.append(
-                            f"cover 使用了禁用工具 `{tool}`。封面图必须走 `/baoyu-cover-image`"
+                            f"cover 使用了未登记的宿主工具 `{tool}`；必须由 {VISUAL_PRODUCER} 编译并经 renderer adapter 渲染"
                         )
                     elif tool and tool not in IMAGE_TOOL_WHITELIST["cover"]:
                         errors.append(
-                            f"cover 使用的 `{tool}` 不在白名单（应为 baoyu-cover-image）"
+                            f"cover producer={tool}；必须为 {VISUAL_PRODUCER}"
                         )
         if not legacy:
             errors.extend(_cover_route_errors(cwd))
@@ -1164,19 +1138,19 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                         cmd_str = rec.get("cmd", "")
                         if tool in IMAGE_TOOL_BLACKLIST:
                             errors.append(
-                                f"infographic 使用了禁用工具 `{tool}`。信息图必须走 `/baoyu-infographic`"
+                                f"infographic 使用了未登记的宿主工具 `{tool}`；必须走 visual planner"
                             )
                             break
                         elif tool and tool not in IMAGE_TOOL_WHITELIST["infographic"]:
                             errors.append(
-                                f"infographic 使用的 `{tool}` 不在白名单（必须用 baoyu-infographic skill，禁直接调 baoyu-image-gen 等底层工具）"
+                                f"infographic producer={tool} 不在白名单；必须为 {VISUAL_PRODUCER}（精确拓扑图例外）"
                             )
                             break
                         # 🔴 曾踩坑：信息图风格漂移
                         # 对齐 image-routing.md：合法 style = claymation / morandi-journal
                         # 二选一（craft-handmade 仅历史兼容），维持整体调性，不可漂移到其他 style
                         _ALLOWED_INFO_STYLES = ("claymation", "morandi-journal", "craft-handmade")
-                        if tool == "baoyu-infographic" and cmd_str:
+                        if tool == VISUAL_PRODUCER and cmd_str:
                             if "--style" not in cmd_str:
                                 errors.append(
                                     f"infographic 命令缺少 `--style` 参数（cmd: `{cmd_str[:80]}...`）。"
@@ -1192,12 +1166,10 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                                 )
                                 break
                 else:
-                    # 没有 gen-log 记录但素材里有 PNG → 说明跳过了 baoyu-infographic skill（如手写 SVG / 直接放图）
-                    # 这种情况风格/工具完全不可追溯，必须拦下
+                    # 没有 gen-log 记录但素材里有 PNG：来源不可追溯，必须拦下。
                     errors.append(
                         f"infographic 没有 .gen-log.jsonl 记录，但 素材/ 里有 {len(infos)} 张 infographic*.png。"
-                        f"说明跳过了 baoyu-infographic skill 流程（如手写 SVG 或直接放图）。"
-                        f"必须经由 baoyu-infographic 出图并 `pipeline.py log infographic baoyu-infographic ...` 记录，"
+                        f"必须经 {VISUAL_PRODUCER} 编译、renderer adapter 渲染并记录，"
                         f"以保证风格统一可追溯（详见 iron-rules.md 信息图铁律）"
                     )
 
@@ -1376,12 +1348,16 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
         elif not url and not draft_id:
             errors.append(
                 "publish 既无 draft_media_id 也无 wechat_url。"
-                "草稿箱推送成功后：pipeline.py done publish draft_media_id=<media_id>；"
+                "草稿箱必须通过 pipeline.py release-to-draft 创建并读回；"
                 "正式发布后收尾：pipeline.py finalize https://mp.weixin.qq.com/s/xxx"
             )
         if draft_id and not legacy:
-            _, receipt_errors = verify_publish_receipt(cwd, draft_id)
+            receipt, receipt_errors = verify_publish_receipt(cwd, draft_id)
             errors.extend(f"publish_receipt: {e}" for e in receipt_errors)
+            if receipt and int(receipt.get("schema_version") or 1) < 2:
+                errors.append(
+                    "publish_receipt: 新流程只认 release-to-draft 生成的 v2 官方读回凭证"
+                )
 
     elif stage == "archive":
         # 按 seq 查作品库，并校验本篇字段与全部派生视图；不能只凭“记录存在”发绿灯。
@@ -1570,7 +1546,7 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
     if stage == "logo":
         rels = ["素材/cover.png", "素材/hero.png"]
         rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("infographic*.png")]
-        rels += ["_visual-qa.md", VISUAL_RECEIPT_FILE]
+        rels += ["_visual-qa.json", "_visual-qa-request.json", VISUAL_RECEIPT_FILE]
         return files_digest(cwd, rels)
     if stage == "publish":
         return files_digest(cwd, [PUBLISH_RECEIPT_FILE])
@@ -1727,7 +1703,7 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
         errors.extend(f"archive_meta: {error}" for error in meta_errors)
         for upstream in STAGE_ORDER[:STAGE_ORDER.index("publish")]:
             status = state.get("stages", {}).get(upstream, {}).get("status", "pending")
-            if status != "done":
+            if status not in {"done", "adopted"}:
                 errors.append(f"上游阶段 {upstream}={status}；全部 done 后才可生成 publish-ready")
     mat = cwd / "素材"
     if not (mat / "cover.png").exists():
@@ -1925,6 +1901,17 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
         publish_receipt_path.read_bytes() if publish_receipt_existed else b""
     )
     publish_receipt_written = False
+    explicit_draft_id = any(
+        value.split("=", 1)[0].strip() == "draft_media_id"
+        for value in extras
+        if "=" in value
+    )
+    if stage == "publish" and explicit_draft_id and not legacy:
+        print(
+            "❌ 禁止手工登记 draft_media_id；新流程必须使用 "
+            "pipeline.py release-to-draft 完成预检、推送和官方读回"
+        )
+        raise SystemExit(2)
 
     def restore_publish_receipt():
         if not publish_receipt_written:
@@ -1941,7 +1928,11 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
 
     # P0：发布前门必须内联执行，--force 也不能绕过。只有本地证据链通过，才把
     # 这批确切 HTML/hero/视觉字节绑定到微信返回的 draft_media_id。
-    if stage == "publish" and candidate["stages"][stage].get("draft_media_id"):
+    if (
+        stage == "publish"
+        and explicit_draft_id
+        and candidate["stages"][stage].get("draft_media_id")
+    ):
         candidate_url = candidate["stages"][stage].get("wechat_url", "")
         if candidate_url and not candidate_url.startswith("https://mp.weixin.qq.com"):
             print(f"❌ wechat_url 不是微信公众号链接：{candidate_url[:80]}")
@@ -2337,22 +2328,136 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
     else:
         print("   推荐卡：有效封面文章不足 5 篇，本轮未生成（不阻断归档）")
 
-    website_template = (brand().get("publish") or {}).get("website_command", "") or ""
-    if website_template:
-        try:
-            website_command = website_template.format(code=saved.get("code") or "<CODE>")
-        except Exception:
-            website_command = website_template
-        print(f"   🌐 可选·同步个人网站：{website_command}")
-
-    print(f"   💬 交付时附一版朋友圈文案：每句句首带 emoji，3-4 行=钩子→价值→profile 引流尾巴；不自动发布。")
-
     _log_archive_event(cwd, "registry_write", "ok", f"code={saved.get('code')}")
     return True
 
 
+def _archived_code(cwd: Path) -> str:
+    try:
+        from works_registry import load_works
+
+        seq_text = cwd.name.split("-", 1)[0]
+        seq = int(seq_text) if seq_text.isdigit() else None
+        record = next(
+            (item for item in load_works() if item.get("seq") == seq),
+            None,
+        )
+        return str((record or {}).get("code") or "")
+    except Exception:
+        return ""
+
+
+def _run_website_sync(
+    cwd: Path,
+    wechat_url: str,
+    *,
+    runner=subprocess.run,
+) -> bool:
+    """Run the profile-owned website command only after archive verification."""
+    publish = brand().get("publish") or {}
+    template = str(publish.get("website_command") or "").strip()
+    configured_cwd = (
+        os.getenv("SANSHENG_WRITE_WEBSITE_CWD", "").strip()
+        or str(publish.get("website_cwd") or "").strip()
+    )
+    receipt_path = cwd / "_website-sync-receipt.json"
+    if not template:
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "status": "skipped",
+                    "reason": "profile.publish.website_command 未配置",
+                    "created_at": _now_iso(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print("⏭ 官网同步未配置，已记录 skipped（不影响公开 Skill 使用）")
+        return True
+
+    website_cwd = Path(configured_cwd).expanduser() if configured_cwd else cwd
+    if not website_cwd.is_dir():
+        print(f"❌ 官网同步工作目录不存在：{website_cwd}")
+        return False
+    values = {
+        "code": _archived_code(cwd),
+        "article_dir": str(cwd),
+        "wechat_url": wechat_url,
+    }
+    try:
+        command = template.format(**values)
+    except (KeyError, ValueError) as exc:
+        print(f"❌ website_command 模板字段错误：{exc}")
+        return False
+    completed = runner(
+        command,
+        cwd=str(website_cwd),
+        shell=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=900,
+        check=False,
+    )
+    receipt = {
+        "schema_version": 1,
+        "status": "done" if completed.returncode == 0 else "failed",
+        "created_at": _now_iso(),
+        "code": values["code"],
+        "wechat_url": wechat_url,
+        "command_sha256": stable_digest({"command": command}),
+        "cwd": str(website_cwd),
+        "returncode": completed.returncode,
+        "stdout_sha256": stable_digest({"stdout": completed.stdout or ""}),
+        "stderr_sha256": stable_digest({"stderr": completed.stderr or ""}),
+    }
+    receipt_path.write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        print(
+            f"❌ 官网同步失败（exit={completed.returncode}）："
+            f"{(completed.stderr or completed.stdout or '').strip()[:500]}"
+        )
+        return False
+    print(f"✅ 官网同步完成：code={values['code'] or '(无编号)'}")
+    return True
+
+
+def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
+    """Generate deterministic copy; actual Moments posting remains manual."""
+    meta = {}
+    meta_path = cwd / "article-meta.yaml"
+    if meta_path.is_file() and _yaml is not None:
+        meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    profile = brand()
+    title = str(meta.get("title") or "").strip()
+    digest = str(meta.get("digest") or meta.get("description") or "").strip()
+    cta = str((profile.get("writing") or {}).get("moments_cta") or "").strip()
+    site = str((profile.get("identity") or {}).get("site") or "").strip()
+    lines = [
+        f"🔥 {title}",
+        f"🧭 {digest}",
+        f"📖 {wechat_url}",
+    ]
+    if cta:
+        lines.append(f"👉 {cta}")
+    if site and site not in cta:
+        lines.append(f"🔗 {site}")
+    text = "# 朋友圈文案\n\n" + "\n".join(lines) + "\n"
+    (cwd / "_moments-copy.md").write_text(text, encoding="utf-8")
+    print("✅ 已生成朋友圈文案：_moments-copy.md（仅生成，不自动发朋友圈）")
+    return text
+
+
 def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
-    """正式发布后一键收尾：登记永久链接、归档、验证闭环。"""
+    """正式发布后一键收尾：登记链接 → 归档 → 验证 → 官网 → 朋友圈文案。"""
     if not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", wechat_url or ""):
         print(f"❌ 不是合法公众号永久链接：{wechat_url!r}")
         raise SystemExit(2)
@@ -2360,7 +2465,135 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
     if not cmd_archive(cwd, []):
         raise SystemExit(2)
     cmd_verify("archive", cwd, legacy=legacy)
-    print("✅ 微信公众号文章链已闭环：永久链接已登记、作品库及派生视图已验证。")
+    if not _run_website_sync(cwd, wechat_url):
+        raise SystemExit(2)
+    _write_moments_copy(cwd, wechat_url)
+    print("✅ 发布后闭环完成：归档已验、官网已处理、朋友圈文案已生成。")
+
+
+def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
+    """把作者确认的现成定稿接入 release-only 状态机。"""
+    from release_job import adopt_final
+
+    job, errors = adopt_final(cwd, Path(final_path), Path(meta_path))
+    if errors:
+        print("❌ 作者定稿接管失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(
+        "✅ 已接管作者定稿并生成 _release-job.json："
+        f"job_id={job['job_id']}，scope={job['scope']}"
+    )
+
+
+def cmd_verify_release_job(cwd: Path) -> None:
+    from release_job import validate_release_job
+
+    job, errors = validate_release_job(cwd)
+    if errors:
+        print("❌ release job 未通过：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(
+        "✅ release job 有效："
+        f"job_id={job['job_id']}，final={job['final_sha256'][:12]}"
+    )
+
+
+def cmd_compile_visuals(cwd: Path) -> None:
+    from visual_workflow import compile_visual_plan
+
+    result, errors = compile_visual_plan(cwd)
+    if errors:
+        print("❌ visual plan 编译失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(
+        f"✅ 已由 {result['producer']} 编译 {result['prompt_count']} 份 canonical prompt"
+    )
+
+
+def cmd_render_visuals(cwd: Path) -> None:
+    from render_visuals import render_visuals
+
+    receipt, errors = render_visuals(cwd)
+    if errors:
+        print("❌ 图片渲染失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(
+        f"✅ 已渲染 {len(receipt['assets'])} 张图；"
+        f"renderer={receipt['renderer']} revision={receipt['renderer_revision'][:12]}"
+    )
+
+
+def cmd_visual_qa(cwd: Path) -> None:
+    from visual_qa import run_visual_qa
+
+    qa, errors = run_visual_qa(cwd)
+    if errors:
+        print("❌ 视觉 QA 未通过：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 独立视觉 QA 通过：{len(qa['assets'])} 张最终图片")
+
+
+def cmd_release_to_draft(cwd: Path) -> None:
+    """唯一草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
+    from release_job import validate_release_job
+    from release_to_draft import release_to_draft
+
+    def preflight(root: Path):
+        _, job_errors = validate_release_job(root)
+        errors = list(job_errors)
+        errors.extend(_pre_publish_errors(root))
+        if errors:
+            return None, errors
+        return write_publish_ready(root)
+
+    receipt, errors = release_to_draft(cwd, preflight=preflight)
+    if errors or receipt is None:
+        state = load_state(cwd)
+        info = state["stages"].setdefault("publish", {})
+        if info.get("status") != "done":
+            info["status"] = "failed"
+        info["last_failed_at"] = _now_iso()
+        info["fail_count"] = int(info.get("fail_count") or 0) + 1
+        save_state(cwd, state)
+        print("❌ release-to-draft 被合同门阻断：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+
+    state = load_state(cwd)
+    candidate = copy.deepcopy(state)
+    publish = candidate["stages"].setdefault("publish", {})
+    publish.update(
+        {
+            "draft_media_id": receipt["draft_media_id"],
+            "remote_verified": True,
+            "formal_publish": False,
+            "release_scope": "wechat-draft",
+        }
+    )
+    passed, verify_errors = verify_stage("publish", cwd, candidate)
+    if not passed:
+        print("❌ 草稿读回凭证未能通过最终状态校验：")
+        for error in verify_errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    _record_stage_success(cwd, candidate, "publish")
+    save_state(cwd, candidate)
+    resumed = "（复用既有远端草稿，未重复创建）" if receipt.get("resumed_attempt") else ""
+    print(
+        f"✅ 微信草稿箱已推送并由 draft/get 读回确认："
+        f"{receipt['draft_media_id']}{resumed}"
+    )
 
 
 # 🔴 铁律 stage：不允许 skip（iron-rules.md 强约束）
@@ -2369,6 +2602,7 @@ NEVER_SKIP_STAGES = {
     "writing",       # 没正文还发什么
     "cover",         # 没封面无法推草稿
     "infographic",   # iron-rules.md 强制：≥4 张贯穿全文信息图（开篇/结尾 9:16 各 1 + 中间 16:9 ≥2）
+    "bgm",           # 新文章发布硬门；缺密钥/生成失败必须修复，不能 skip
     "layout",        # 没排版的 md 不可发布
     "publish",       # 没推草稿就没发布
 }
@@ -2387,12 +2621,7 @@ def cmd_skip(stage: str, cwd: Path, force: bool = False):
     save_state(cwd, state)
     suffix = " (--force 强制跳过铁律)" if force and stage in NEVER_SKIP_STAGES else ""
     print(f"⏭  {stage} 已跳过{suffix}")
-    # 2026-06-20 审查 B-3/B-4：bgm（及其它非黑名单可选阶段）不进 NEVER_SKIP_STAGES——
-    # iron-rules 明确兼容无 BGM 的特殊文章，硬拦会误伤合法文章。改为显式区分「有意省略」与
-    # 「失败绕过」：不静默放行，打印一条提示，提醒别拿 skip 绕过生成失败。
-    if stage == "bgm":
-        print("   本文将无主题曲卡片；若因生成失败而 skip，请按 autopilot.md 失败恢复 SOP 先重试/换风格，勿用 skip 绕过失败。")
-    elif stage not in NEVER_SKIP_STAGES:
+    if stage not in NEVER_SKIP_STAGES:
         print(f"   {stage} 为可选阶段；若因生成失败而 skip，请按 autopilot.md 失败恢复 SOP 先重试，勿用 skip 绕过失败。")
 
 
@@ -2409,17 +2638,16 @@ def cmd_orchestrator(mode: str, cwd: Path):
     不触碰任何既有阶段语义或既有字段。
 
     P1 已落地（2026-05-22）：本命令只切 state 字段。orchestrator=on 后，真正的
-    fan-out 并行由主 Claude 按 orchestration.md §编排器 fan-out 实操手册执行
-    （一条消息发 N 个 Agent 工具调用）。pipeline.py 自身始终只做状态记账 + verify，
-    不 spawn subagent —— Agent 是 Claude 的工具，不是 Python 函数。"""
+    fan-out 并行由当前宿主控制器按 orchestration.md 执行。pipeline.py 自身
+    始终只做状态记账 + verify，不启动任何模型任务。"""
     state = load_state(cwd)
     state["orchestrator"] = mode
     state["state_writer"] = "orchestrator"
     save_state(cwd, state)
     print(f"🎛  orchestrator 已设为 {mode}")
     if mode == "on":
-        print("🛠 主 Claude 将按 orchestration.md §编排器 fan-out 实操手册，")
-        print("   在 fan-out 阶段（信息图/封面/调研等）一条消息发 N 个 Agent 真并行")
+        print("🛠 当前宿主控制器可按 orchestration.md 并行独立工作单元；")
+        print("   定稿后的发布机械链仍必须单写者串行执行")
 
 
 # ── 入口 ──────────────────────────────────────────────────────
@@ -2507,7 +2735,7 @@ def main():
         "cover", "infographic", "illustrator", "chart",
         "hero", "bgm_cover", "component",
     ])
-    p_log.add_argument("tool", help="语义 producer 名，如 baoyu-cover-image / baoyu-infographic")
+    p_log.add_argument("tool", help=f"语义 producer 名；新视觉产物固定为 {VISUAL_PRODUCER}")
     p_log.add_argument("--output", help="生成的文件相对路径")
     p_log.add_argument("--prompt", help="最终使用的 canonical prompt 相对路径")
     p_log.add_argument("--renderer", help="像素渲染后端，如 imagegen / gen_img")
@@ -2560,6 +2788,35 @@ def main():
     p_f.add_argument("wechat_url", help="微信永久链接，如 https://mp.weixin.qq.com/s/xxx")
     p_f.add_argument("--legacy", action="store_true",
                      help="仅供没有新流程 draft_media_id/receipt 的历史文章迁移")
+
+    p_adopt = sub.add_parser(
+        "adopt-final",
+        help="把作者确认的现成定稿绑定为 release job，不重跑写作前半程",
+    )
+    p_adopt.add_argument("--final", default="定稿.md", help="文章目录内的定稿文件")
+    p_adopt.add_argument(
+        "--meta", default="article-meta.yaml", help="文章目录内的元数据文件"
+    )
+    sub.add_parser(
+        "verify-release-job",
+        help="校验 _release-job.json 与当前定稿/meta/state 是否仍一致",
+    )
+    sub.add_parser(
+        "compile-visuals",
+        help="把受限 visual-plan.json 编译为 canonical prompts 与 render batch",
+    )
+    sub.add_parser(
+        "render-visuals",
+        help="探测并调用外部 baoyu-image-gen renderer，失败时只按配置降级",
+    )
+    sub.add_parser(
+        "visual-qa",
+        help="调用独立看图进程，生成结构化 _visual-qa.json",
+    )
+    sub.add_parser(
+        "release-to-draft",
+        help="唯一草稿发布入口：预检 → draft/add → draft/get → 远端凭证",
+    )
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
     p_s.add_argument("stage", choices=STAGE_ORDER)
@@ -2619,6 +2876,18 @@ def main():
             sys.exit(1)
     elif args.cmd == "finalize":
         cmd_finalize(args.wechat_url, cwd, legacy=getattr(args, "legacy", False))
+    elif args.cmd == "adopt-final":
+        cmd_adopt_final(cwd, args.final, args.meta)
+    elif args.cmd == "verify-release-job":
+        cmd_verify_release_job(cwd)
+    elif args.cmd == "compile-visuals":
+        cmd_compile_visuals(cwd)
+    elif args.cmd == "render-visuals":
+        cmd_render_visuals(cwd)
+    elif args.cmd == "visual-qa":
+        cmd_visual_qa(cwd)
+    elif args.cmd == "release-to-draft":
+        cmd_release_to_draft(cwd)
     elif args.cmd == "skip":
         cmd_skip(args.stage, cwd, force=getattr(args, "force", False))
     elif args.cmd == "reset":

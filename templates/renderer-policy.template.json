@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "renderers": [
+    {
+      "id": "primary",
+      "provider": "google",
+      "model": "YOUR_IMAGE_MODEL",
+      "quality": "2k",
+      "imageSize": "1K"
+    }
+  ]
+}

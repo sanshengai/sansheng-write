@@ -54,7 +54,7 @@
 | 排版阶段字符数"虚警" | 直接对排版 HTML 做字符数检查，含 `data-local-path` 绝对路径导致 57000 字符 | 发布脚本会替换为 CDN 短 URL 并删除 `data-local-path`，上传后约 16000 字符。日常**跳过检查**，仅超长文（>5万字纯文本）才做拆分 |
 | `--takeaway` 正则吃掉多个 blockquote | `[\s\S]*?` 懒惰匹配跨越 blockquote/H2 边界 | 改用 `(?:(?!<blockquote\|<h[12])[\s\S])*?` 否定前瞻锚定边界；`<strong>` 改 `<strong[^>]*>` 兼容带 style |
 | H2 纯数字起手标题（如"4 月涨价"）被剥离数字 | 排版脚本正则 `^\d+\s+` 过于贪婪误伤单数字 | 将正则收紧为 `^\d{2,}\s+`，只剥离明确的 `01 ` 等多位裸编号 |
-| 封面图需要精确定制字体和高亮文字 | 尝试让 `baoyu-cover-image` 处理复杂的构图与字号颜色分配 | 直接使用 `baoyu-image-gen` 配合结构化 Prompt (如"Left side: ..., Right side: clean typography, Highlight 'Text' in #2F6F8F") 生成 |
+| 封面图需要精确定制字体和高亮文字 | 让 renderer 自行决定字号与构图 | 在 `visual-plan.json` 明确文字、事实与禁用项，再由 `compile-visuals` 编译受限 prompt |
 
 > **提示**：如果 Markdown 流程转换后发现自己需要插入 `导读栏`(lead-section) 和 `推荐阅读`(footer-recommended)，一定要把它们插入到 `<div id="output">` 这个主包裹体内。千万别直接扔在 `</body>` 的下面，否则会被微信直接丢弃！
 

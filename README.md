@@ -151,14 +151,13 @@ cp .env.example .env              # 填你自己的 key
 | Pillow | ③ | 生图缩放、配图压缩不可用 | `pip install pillow` |
 | bun | ② | markdown→HTML 转换跑不了 | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
-| **baoyu-skills 插件** | ② 起硬依赖 | md→HTML / 发布 / 信息图 / 转图文 四处断 | Claude Code 里 `/plugin marketplace add JimLiu/baoyu-skills` 后安装；其生图/发布 key 配在**它自己的** `~/.baoyu-skills/.env`（微信键名 `WECHAT_APP_ID`/`WECHAT_APP_SECRET`） |
-| `GOOGLE_API_KEY` | ③ | 生图不可用（可用 OpenAI 兼容端点兜底） | AI Studio 或 Vertex Express，脚本按 key 前缀自动分流 |
-| `MINIMAX_API_KEY` | ③ 可选 | 文章主题曲 BGM 自动跳过 | 纯彩蛋，不配也行 |
-| 微信公众号 appid/secret | ③ | 排版产物落盘为 HTML，你手动粘贴 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
+| **baoyu-skills 插件** | ② 起硬依赖 | md→HTML、像素渲染与微信 API 适配不可用 | 安装 `JimLiu/baoyu-skills`；provider 与微信 key 配在它自己的 `~/.baoyu-skills/` |
+| 已配置的 image provider | ③ | `render-visuals` 非零退出 | 按 `baoyu-image-gen` 配置 provider/model；业务视觉规则仍由本 Skill 编译 |
+| `MINIMAX_API_KEY` | ③ | BGM 硬门失败，不能推草稿 | MiniMax 国内站密钥 |
+| 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
 | playwright / matplotlib | ③ 可选 | SVG 转 PNG、数据图画不了 | `pip install playwright matplotlib` |
 
-**组件失效只降级该环节**：生图挂了就出纯文字排版，发布凭证没配就落盘 HTML，
-BGM 没 key 就跳过并明说。绝不静默 skip，也绝不因为一个可选环节炸掉整条链。
+低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出，禁止静默降级。
 
 ---
 

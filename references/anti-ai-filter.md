@@ -344,7 +344,7 @@ AI 不会自然产生自嘲——它倾向把自己定位为权威解释者。�
 <!-- 补加粗分档 + 配图通道一致性 -->
 **视觉层（Round 3 补，链接源在 writing.md / layout.md）：**
 - [ ] **加粗密度按字数分档**（详见 [writing.md §加粗与重点标识](writing.md) 「全篇加粗总量按字数分档」表）：`**粗体**` 总数 ≤ 字数分档上限（<3000→25 / 3000-5000→35 / 5000-8000→45 / >8000→55）？`***粗斜体***` ≤ 字数分档（5/7/9/12）？无整段加粗（单个 `**…**` 块 ≥15 中文字符即触发 `integral_bold_violation`／排版 exit 2）？
-- [ ] **配图通道一致**（详见 [layout.md §3a-1 决策树](layout.md) + §3e/§3g）：是否走 baoyu-infographic（信息密度型拼贴）/ baoyu-diagram（顺序拓扑型）/ baoyu-image-gen（氛围图）正确通道？信息图 ≥ 4 张？标签全中文（英文会被 `verify infographic` 拦）？
+- [ ] **配图通道一致**（详见 [image-routing.md](image-routing.md)）：业务视觉是否由 `sansheng-write.visual-planner` 编译、像素才交给 renderer？信息图是否 ≥4 张并满足首尾 9:16 / 中间 16:9？精确数字是否走本地确定性图表？
 
 **通用：**
 - [ ] 任意助手都能写的句子 → 改或删

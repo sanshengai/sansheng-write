@@ -70,6 +70,14 @@ def test_publish_preflight_rejects_non_done_upstream(tmp_path):
     assert "上游阶段 outline=pending" in result.stdout
 
 
+def test_bgm_is_a_non_skippable_release_stage(tmp_path):
+    pipeline.save_state(tmp_path, _state(status="pending"))
+    result = _run(tmp_path, "skip", "bgm")
+    assert result.returncode == 2, result.stdout + result.stderr
+    saved = pipeline.load_state(tmp_path)
+    assert saved["stages"]["bgm"]["status"] == "pending"
+
+
 def test_init_persists_cross_process_run_id(tmp_path):
     result = _run(tmp_path, "init")
     assert result.returncode == 0

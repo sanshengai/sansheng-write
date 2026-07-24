@@ -126,8 +126,10 @@ writing:
 publish:
   source_url_default: "https://example.com"     # 「阅读原文」默认指向（一般填你官网首页）
   source_url_treasure: ""                        # 工具 / 仓库 / 资源类文章的专属去向（可留空）
-  # 可选：归档成功后只打印网站同步命令，不自动执行。{code} 会替换为作品编号。
+  # 可选：finalize 在归档验证通过后自动执行。支持 {code}/{article_dir}/{wechat_url}。
   website_command: ""
+  # 相对路径命令的工作目录；也可用 SANSHENG_WRITE_WEBSITE_CWD 覆盖。
+  website_cwd: ""
 
 # 人工检查点闸门（可选）：想在关键节点停下来人工确认、防前期出错导致全链返工，就打开这里。
 #   blueprint = 大纲 + 5 标题候选排序 + 开头候选一包交付后硬停等拍板（开头盲选并入此闸）

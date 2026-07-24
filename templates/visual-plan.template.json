@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "cover": {
+    "title": "逐字填写封面标题",
+    "subtitle": "可选副标题",
+    "visual_facts": ["视觉事实一", "视觉事实二"]
+  },
+  "hero": {
+    "title": "Hero 标题",
+    "visual_facts": ["核心概念"]
+  },
+  "infographics": [
+    {
+      "id": "01",
+      "position": "opening",
+      "aspect_ratio": "9:16",
+      "title": "开篇知识图",
+      "layout": "structured-card",
+      "expected_text": ["图内文字一", "图内文字二"],
+      "facts": ["已核实事实"]
+    },
+    {
+      "id": "02",
+      "position": "middle",
+      "aspect_ratio": "16:9",
+      "title": "中段知识图一",
+      "layout": "comparison",
+      "expected_text": ["图内文字"],
+      "facts": ["已核实事实"]
+    },
+    {
+      "id": "03",
+      "position": "middle",
+      "aspect_ratio": "16:9",
+      "title": "中段知识图二",
+      "layout": "flow",
+      "expected_text": ["图内文字"],
+      "facts": ["已核实事实"]
+    },
+    {
+      "id": "04",
+      "position": "closing",
+      "aspect_ratio": "9:16",
+      "title": "结尾知识图",
+      "layout": "checklist",
+      "expected_text": ["图内文字"],
+      "facts": ["已核实事实"]
+    }
+  ]
+}

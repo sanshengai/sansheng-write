@@ -59,8 +59,8 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
             "schema_version": 2,
             "record_id": f"rec-{prompt_name}",
             "stage": "infographic",
-            "producer": "baoyu-infographic",
-            "tool": "baoyu-infographic",
+            "producer": "sansheng-write.visual-planner",
+            "tool": "sansheng-write.visual-planner",
             "output": rel,
             "output_sha256": hashlib.sha256((tmp_path / rel).read_bytes()).hexdigest(),
             "prompt": f"素材/prompts/final/{prompt_name}",
@@ -69,7 +69,7 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
             "model": "test-model",
             "visual_profile": recipe.get("name", ""),
             "visual_profile_sha256": recipe.get("sha256", ""),
-            "cmd": f"baoyu-infographic --style {style} 素材/prompts/final/{prompt_name}",
+            "cmd": f"sansheng-write.visual-planner --style {style} 素材/prompts/final/{prompt_name}",
         })
     (tmp_path / "素材" / "infographic" / "final-set.json").write_text(
         json.dumps({"images": images}, ensure_ascii=False), encoding="utf-8"
@@ -105,15 +105,15 @@ def test_final_assets_must_match_meta_latest_log_and_prompt(tmp_path):
             "schema_version": 2,
             "record_id": "rec-bad",
             "stage": "infographic",
-            "producer": "baoyu-infographic",
-            "tool": "baoyu-infographic",
+            "producer": "sansheng-write.visual-planner",
+            "tool": "sansheng-write.visual-planner",
             "output": "素材/infographic-03.png",
             "output_sha256": hashlib.sha256((article / "素材/infographic-03.png").read_bytes()).hexdigest(),
             "prompt": "素材/prompts/final/03.md",
             "prompt_sha256": hashlib.sha256((article / "素材/prompts/final/03.md").read_bytes()).hexdigest(),
             "renderer": "imagegen",
             "model": "test-model",
-            "cmd": "baoyu-infographic --style morandi-journal 素材/prompts/final/03.md",
+            "cmd": "sansheng-write.visual-planner --style morandi-journal 素材/prompts/final/03.md",
         }, ensure_ascii=False) + "\n")
     errors = pipeline._visual_route_errors(article)
     assert any("infographic-03.png" in e and "claymation" in e for e in errors), errors
@@ -131,15 +131,14 @@ def test_publish_preflight_requires_visual_qa_record(tmp_path):
     (article / "定稿.md").write_text("正文", encoding="utf-8")
     (article / "定稿.html").write_text("<html><body>正文</body></html>", encoding="utf-8")
     errors = pipeline._pre_publish_errors(article)
-    assert any("_visual-qa.md" in e for e in errors), errors
+    assert any("_visual-qa.json" in e for e in errors), errors
 
 
-def test_visual_qa_record_must_cover_cover_and_infographic_checks(tmp_path):
+def test_visual_qa_markdown_cannot_authorize_release(tmp_path):
     article = _minimal_visual_article(tmp_path)
     (article / "_visual-qa.md").write_text("# 视觉验收记录\n通过\n", encoding="utf-8")
     errors = pipeline._visual_qa_errors(article)
-    assert any("封面" in e for e in errors), errors
-    assert any("信息图" in e for e in errors), errors
+    assert any("_visual-qa.json" in e for e in errors), errors
 
 
 def test_warm_light_profile_rejects_article_79_style_dark_prompt(tmp_path):
@@ -198,7 +197,7 @@ def test_cmd_log_blocks_dark_prompt_before_it_enters_evidence_chain(tmp_path):
     with pytest.raises(SystemExit) as exc:
         pipeline.cmd_log(
             "infographic",
-            "baoyu-infographic",
+            "sansheng-write.visual-planner",
             article,
             output="素材/infographic-01.png",
             prompt="素材/prompts/final/01.md",
@@ -256,7 +255,7 @@ def test_warm_light_profile_applies_same_tone_gate_to_hero(tmp_path):
     assert any("hero.png" in error and "暗部" in error for error in errors), errors
 
 
-def test_warm_light_profile_requires_structured_palette_qa(tmp_path):
+def test_visual_qa_markdown_checkboxes_are_not_structured_evidence(tmp_path):
     article = _minimal_visual_article(tmp_path)
     _enable_warm_light_profile(article)
     (article / "_visual-qa.md").write_text(
@@ -276,7 +275,7 @@ def test_warm_light_profile_requires_structured_palette_qa(tmp_path):
 
     errors = pipeline._visual_qa_errors(article)
 
-    assert any("背景" in error and "主色" in error and "材质" in error for error in errors), errors
+    assert any("_visual-qa.json" in error for error in errors), errors
 
 
 def test_visual_contract_command_prints_canonical_prompt_block(tmp_path, capsys):

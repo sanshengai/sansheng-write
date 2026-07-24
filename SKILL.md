@@ -12,7 +12,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `xxx.md` 一律指 `references/xxx.md`**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
-> 🔴 **默认 = 全自动一路到草稿箱、不中途问**：只要让本 skill 写文章，默认按 autopilot.md 跑完全流程，失败自纠且不得 skip。仅四种停：硬阻塞、未配置检查点时的开头盲选、用户明确逐步确认、profile 配置的 blueprint/draft 硬闸。检查点除人读锚点 `_blueprint-approval.md` / `_draft-approval.md` 外，还必须执行 `pipeline.py approve blueprint|draft --source-mode ...`，把批准绑定到当时的大纲/meta 或语义定稿/双外审/QC 摘要；对象变化后旧批准自动失效。完整字段见 autopilot.md。
+> 🔴 **默认 = 全自动一路到草稿箱**：新文章按 autopilot.md；作者已给确认定稿时直接按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
 
 ## 🟢 启动前必读（元指令，先于任何阶段）
 
@@ -48,9 +48,10 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 | 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
 | 生成音乐 / BGM / 主题曲（MiniMax `music-2.6-free`） | music.md |
-| 发布 / 发草稿 / 定稿后 | publish.md |
+| 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
+| 发布状态、凭证与人工边界说明 | publish.md |
 | 转图文 / 拆图文 | xhs-storyboard.md |
-| 全流程自动驾驶（orchestrator 默认 on=fan-out 并行 / off 回串行，`pipeline.py orchestrator on/off` 切换） | autopilot.md + orchestration.md + agent-contracts.md |
+| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md + agent-contracts.md |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |
 | 我改了 / 学习我的修改（draft vs final diff 提 pattern 写 playbook.md） | learn-edits.md |
@@ -85,7 +86,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **发布/后处理脚本**（`pipeline.py visual-contract/finalize/archive` / `format_layout.py` 契约门 / `add_logo.js` / `compress_images.py` / `generate_article_bgm.py` / `generate_recommend_html.py`）**用法进 publish.md**。硬约束：① ⚠️ `--check` ≠ 过发布契约门，验收用 `format_layout.py --all --check`；② `claymation` 先用 `visual-contract` 把同一浅色配方绑定到信息图与 Hero，日志和最终像素双门不得绕过；③ 拿到永久链接后优先 `pipeline.py finalize <wechat_url>`，一次完成登记、归档与闭环验证；④ archive 候选元数据/作品库校验失败必须非零退出且不得写盘；⑤ 🔴 **禁手改 `articles.md` / `works-dashboard.html`**（archive 自动生成），一次性 `migrate_to_works.py` 带防覆盖栏、仅迁移手动跑一次。
+- **定稿后运行时**统一见 release-runtime.md。关键入口为 `adopt-final`、`compile-visuals`、`render-visuals`、`visual-qa`、`seal visual`、`release-to-draft`、`finalize`。`release-to-draft` 是唯一草稿创建入口；拿到永久链接后 `finalize` 按“归档→验证→官网→朋友圈文案”收尾。archive 校验失败不得写盘；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 
@@ -124,6 +125,6 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 ## references 三级分层（按加载时机分层）
 
-- **L1 · 启动必读（跨阶段不变量，2 个）：** iron-rules（进发布/排版/生图前必展开）、autopilot（"写篇文章"主路径驾驶舱）。-- 真正"每次开局无条件读"的是 `profile/context.md` + 可选 `profile/brand-net.md`（不属 references，见上方启动元指令）。
+- **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。真正每次开局无条件读的是 `profile/context.md` + 可选 `profile/brand-net.md`。
 - **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
 - **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / orchestration / agent-contracts / learn-edits / skill-review / `_archive/候补技法池.md`（技法池候补备料，craft-techniques 主池不够时才翻）。

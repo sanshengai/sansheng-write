@@ -8,14 +8,14 @@
 
 🔴 V2 架构变化：
     **文章提炼不再调 Gemini**（那是 Lyria 时代走 Google AI Studio 的历史包袱，MiniMax 不碰 Google）。
-    改由【Claude 在 autopilot 里提炼】诗意意象，作为参数传入：
+    改由【宿主 Agent 在 autopilot 里提炼】诗意意象，作为参数传入：
       --theme-brief  "虚无缥缈的诗意主旨叙事（一句，方法A 据此自动写词）"
       --imagery      "柔美画面词,逗号分隔,如 晨光,薄雾,潮汐"
       --song-name    "诗意短歌名"
       --style        ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal
       --gender       female|male（默认按序号奇偶交替）
     脚本退化为纯执行器：拼 V2 空灵 prompt → MiniMax 写词+生成 → 下载 → 封面 → 插卡。
-    未传 --theme-brief 时用 frontmatter 规则兜底（音色不如 Claude 诗意提炼空灵，会警告）。
+    未传 --theme-brief 时用 frontmatter 规则兜底（音色通常不如 Agent 提炼空灵，会警告）。
 
 🔴 V2 空灵升级（基于 Suno/MiniMax 实测研究）：
     ① 最大杠杆=主旨叙事写成诗意意象（方法A 下歌词决定音色空灵度）
@@ -26,7 +26,7 @@
     ⑥ BPM 降到 55-64（空灵冥想区）
 
 使用方法:
-    # autopilot 主路径（Claude 提炼后传参）：
+    # autopilot 主路径（宿主 Agent 提炼后传参）：
     python generate_article_bgm.py "<数据目录>/54-睡眠..." \\
         --theme-brief "夜深时大脑替你值一趟温柔的夜班" \\
         --imagery "薄雾,潮汐,微光" --song-name "潮汐入梦" --style ambient_piano
@@ -61,30 +61,6 @@ try:
     sys.stderr.reconfigure(encoding="utf-8")
 except (AttributeError, ValueError):
     pass
-
-
-# ============================================================
-# 🔍 baoyu-skills 脚本路径定位（避免硬编码 commit hash）
-# ============================================================
-def _find_baoyu_script(skill_name: str, script_name: str) -> "Path | None":
-    """在 Claude Code / Gemini Antigravity 多路径下查找指定 baoyu-skills 子脚本。"""
-    home = Path.home()
-    cache_glob = sorted(
-        (home / ".claude" / "plugins" / "cache" / "baoyu-skills" / "baoyu-skills").glob(
-            f"*/skills/{skill_name}/scripts/{script_name}"
-        ),
-        key=lambda p: p.stat().st_mtime if p.exists() else 0,
-        reverse=True,
-    )
-    if cache_glob:
-        return cache_glob[0]
-    local = home / ".claude" / "skills" / skill_name / "scripts" / script_name
-    if local.exists():
-        return local
-    antigravity = home / ".gemini" / "antigravity" / "skills" / skill_name / "scripts" / script_name
-    if antigravity.exists():
-        return antigravity
-    return None
 
 
 # ============================================================
@@ -148,10 +124,9 @@ def load_env():
 
 
 def minimax_key(cli_value: str = "") -> str:
-    """BGM 是可选彩蛋：读取顺序 CLI > shell env > 仓根 .env（经 load_secret）。
+    """读取顺序 CLI > shell env > 仓根 .env（经 load_secret）。
 
-    读不到返回空串——由调用方按「跳过并明说」处理（README 的 G-4 承诺），
-    不在这里 sys.exit：可选环节缺配置不是错误。
+    读不到返回空串，由 main 以非零退出阻断新文章发布链。
     """
     if cli_value:
         return cli_value
@@ -462,10 +437,10 @@ def main():
     # 原先 argparse default 只读 os.getenv，.env 里的配置被绕过、minimax_key() 成死代码。
     args.minimax_key = minimax_key(args.minimax_key or "")
     if not args.minimax_key:
-        print("⏭️  未配置 MINIMAX_API_KEY —— BGM 是可选彩蛋，本步跳过、发布链继续。")
-        print("    想要主题曲：cp .env.example .env 后填 MINIMAX_API_KEY（MiniMax 国内站，账户需余额），")
+        print("❌ 未配置 MINIMAX_API_KEY —— 新文章的 BGM 是发布硬门，禁止静默跳过。")
+        print("    请 cp .env.example .env 后填 MINIMAX_API_KEY（MiniMax 国内站，账户需余额），")
         print("    或 export MINIMAX_API_KEY=... / 用 --minimax-key 传入。")
-        sys.exit(0)
+        sys.exit(2)
 
     article_dir = Path(args.article_dir).resolve()
     if not article_dir.is_dir():

@@ -22,6 +22,7 @@ PUBLISH_RECEIPT_FILE = "_publish-receipt.json"
 PUBLISH_READY_FILE = "_publish-ready.json"
 CHECKPOINT_RECEIPT_FILE = "_checkpoint-receipts.json"
 FINAL_PROMPT_PREFIX = "素材/prompts/final/"
+VISUAL_PRODUCER = "sansheng-write.visual-planner"
 
 
 def now_iso() -> str:
@@ -111,7 +112,7 @@ def build_visual_manifest(
     specs: list[tuple[str, str, set[str]]] = []
     cover = cwd / "素材" / "cover.png"
     if cover.exists():
-        specs.append(("cover", "素材/cover.png", {"baoyu-cover-image"}))
+        specs.append(("cover", "素材/cover.png", {VISUAL_PRODUCER}))
     else:
         errors.append("缺 素材/cover.png")
 
@@ -121,7 +122,7 @@ def build_visual_manifest(
     for path in infos:
         specs.append(
             ("infographic", norm_relpath(str(path.relative_to(cwd))),
-             {"baoyu-infographic", "baoyu-diagram"})
+             {VISUAL_PRODUCER, "baoyu-diagram"})
         )
 
     hero = cwd / "素材" / "hero.png"
@@ -129,7 +130,7 @@ def build_visual_manifest(
         specs.append((
             "hero",
             "素材/hero.png",
-            {"gen_img", "baoyu-image-gen", "baoyu-article-illustrator"},
+            {VISUAL_PRODUCER},
         ))
 
     logs = {
@@ -200,6 +201,8 @@ def build_visual_manifest(
             "prompt_sha256": prompt_sha,
             "producer": producer,
             "renderer": renderer,
+            "renderer_revision": str(rec.get("renderer_revision") or ""),
+            "provider": str(rec.get("provider") or ""),
             "model": model,
             "provenance_mode": provenance_mode,
             "generation_record_id": str(rec.get("record_id") or ""),
@@ -231,9 +234,20 @@ def build_visual_manifest(
 
 def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    qa = cwd / "_visual-qa.md"
+    qa = cwd / "_visual-qa.json"
     if not qa.exists():
-        return None, ["缺 _visual-qa.md，先逐张查看最终加 logo/压缩后的图片"]
+        return None, ["缺 _visual-qa.json，先运行独立结构化视觉 QA"]
+    try:
+        qa_payload = json.loads(qa.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return None, [f"_visual-qa.json 解析失败：{exc}"]
+    try:
+        from .visual_qa import validate_qa_result
+    except ImportError:  # pragma: no cover - direct script execution
+        from visual_qa import validate_qa_result
+    qa_errors = validate_qa_result(cwd, qa_payload)
+    if qa_errors:
+        return None, qa_errors
     # add_logo/compression 会合法改变渲染器输出；从 seal 开始由 receipt 接管最终字节。
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
@@ -245,7 +259,7 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         "sealed_at": now_iso(),
         "manifest": manifest,
         "manifest_digest": stable_digest(manifest),
-        "qa_path": "_visual-qa.md",
+        "qa_path": "_visual-qa.json",
         "qa_sha256": sha256_file(qa),
     }
     (cwd / VISUAL_RECEIPT_FILE).write_text(
@@ -269,9 +283,19 @@ def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     current_digest = stable_digest(manifest)
     if receipt.get("manifest_digest") != current_digest:
         errors.append("视觉资产字节/prompt/生成记录已变化，旧 visual receipt 失效")
-    qa = cwd / str(receipt.get("qa_path") or "_visual-qa.md")
+    qa = cwd / str(receipt.get("qa_path") or "_visual-qa.json")
     if not qa.exists() or receipt.get("qa_sha256") != sha256_file(qa):
-        errors.append("_visual-qa.md 已变化或缺失，需重新看图并 seal visual")
+        errors.append("_visual-qa.json 已变化或缺失，需重新运行视觉 QA 并 seal visual")
+    elif qa.exists():
+        try:
+            qa_payload = json.loads(qa.read_text(encoding="utf-8"))
+            try:
+                from .visual_qa import validate_qa_result
+            except ImportError:  # pragma: no cover - direct script execution
+                from visual_qa import validate_qa_result
+            errors.extend(validate_qa_result(cwd, qa_payload))
+        except Exception as exc:
+            errors.append(f"_visual-qa.json 解析失败：{exc}")
     return receipt, errors
 
 
@@ -364,6 +388,14 @@ def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None,
         errors.append("publish receipt 的 draft_media_id 与 state 不一致")
     if receipt.get("manifest_digest") != stable_digest(manifest):
         errors.append("HTML/hero/视觉资产已在推草稿后变化，publish receipt 失效，必须重推")
+    if int(receipt.get("schema_version") or 1) >= 2:
+        if receipt.get("scope") != "wechat-draft" or receipt.get("formal_publish") is not False:
+            errors.append("publish receipt 越权：只允许 wechat-draft / formal_publish=false")
+        if receipt.get("remote_verified") is not True:
+            errors.append("publish receipt 缺官方 draft/get 读回确认")
+        checks = (receipt.get("remote_readback") or {}).get("checks") or {}
+        if not checks or not all(value is True for value in checks.values()):
+            errors.append("publish receipt 的远端字段检查未全部通过")
     return receipt, errors
 
 
@@ -404,7 +436,9 @@ def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
     }, []
 
 
-def checkpoint_artifact(cwd: Path, gate: str) -> tuple[dict, list[str]]:
+def checkpoint_artifact(
+    cwd: Path, gate: str, source_mode: str = ""
+) -> tuple[dict, list[str]]:
     cwd = Path(cwd)
     errors: list[str] = []
     if gate == "draft":
@@ -415,9 +449,9 @@ def checkpoint_artifact(cwd: Path, gate: str) -> tuple[dict, list[str]]:
         supporting = []
         for rel in ("_fact-check.md", "_stutter-list.md", "_draft-qc.md"):
             path = cwd / rel
-            if not path.exists():
+            if not path.exists() and source_mode != "author-provided-final":
                 errors.append(f"draft 审批前缺 {rel}")
-            else:
+            elif path.exists():
                 supporting.append({"path": rel, "sha256": sha256_file(path)})
         anchor, anchor_errors = _approval_anchor(cwd, gate)
         errors.extend(anchor_errors)
@@ -462,7 +496,7 @@ def checkpoint_artifact(cwd: Path, gate: str) -> tuple[dict, list[str]]:
 def write_checkpoint_receipt(cwd: Path, gate: str, source_mode: str,
                              note: str = "") -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    artifact, errors = checkpoint_artifact(cwd, gate)
+    artifact, errors = checkpoint_artifact(cwd, gate, source_mode=source_mode)
     if errors:
         return None, errors
     decision = artifact.get("approval_anchor", {}).get("decision")
@@ -506,7 +540,9 @@ def verify_checkpoint_receipt(cwd: Path, gate: str) -> list[str]:
         return [f"{CHECKPOINT_RECEIPT_FILE} 解析失败：{exc}"]
     if not isinstance(rec, dict):
         return [f"{CHECKPOINT_RECEIPT_FILE} 缺 {gate} 记录"]
-    artifact, errors = checkpoint_artifact(cwd, gate)
+    artifact, errors = checkpoint_artifact(
+        cwd, gate, source_mode=str(rec.get("source_mode") or "")
+    )
     if rec.get("artifact_digest") != stable_digest(artifact):
         errors.append(f"{gate} 审批对象已变化，旧审批失效，需重新 approve")
     if rec.get("source_mode") not in {

@@ -1,0 +1,113 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts import pipeline
+from scripts.evidence import sha256_file
+
+
+PIPELINE = Path(pipeline.__file__).resolve()
+
+
+def _article(tmp_path: Path) -> Path:
+    article = tmp_path / "88-release-fixture"
+    article.mkdir()
+    (article / "定稿.md").write_text(
+        "---\n"
+        'title: "教程 | 一篇已经确认的文章"\n'
+        'description: "这是给发布链使用的摘要。"\n'
+        "---\n\n"
+        "# 教程 | 一篇已经确认的文章\n\n"
+        + "这是作者已经审定的正文内容。它只需要进入发布后端，不应重新经历大纲和写作流程。\n" * 80,
+        encoding="utf-8",
+    )
+    (article / "article-meta.yaml").write_text(
+        'title: "教程 | 一篇已经确认的文章"\n'
+        'category: "TUT"\n'
+        'outward_category: "tutorial"\n'
+        'tags: ["AI工具"]\n'
+        'digest: "这是给发布链使用的摘要。"\n'
+        'cover_style: "montage-evidence"\n'
+        'infographic_subject: "ai-product"\n'
+        'infographic_style: "claymation"\n'
+        'visual_profile: "warm-light-clay"\n',
+        encoding="utf-8",
+    )
+    return article
+
+
+def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(PIPELINE), *args],
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_adopt_final_creates_bound_release_job_and_state(tmp_path):
+    article = _article(tmp_path)
+
+    result = _run(article, "adopt-final")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    job = json.loads((article / "_release-job.json").read_text(encoding="utf-8"))
+    state = pipeline.load_state(article)
+    assert job["scope"] == "wechat-draft"
+    assert job["final_path"] == "定稿.md"
+    assert job["final_sha256"] == sha256_file(article / "定稿.md")
+    assert job["meta_sha256"] == sha256_file(article / "article-meta.yaml")
+    assert state["mode"] == "release-from-final"
+    assert state["stages"]["outline"]["status"] == "adopted"
+    assert state["stages"]["writing"]["status"] == "done"
+    assert state["stages"]["writing"]["source_mode"] == "author-provided-final"
+    checkpoint = json.loads(
+        (article / "_checkpoint-receipts.json").read_text(encoding="utf-8")
+    )
+    assert checkpoint["checkpoints"]["draft"]["source_mode"] == "author-provided-final"
+
+
+def test_adopt_final_rejects_title_drift_without_writing_state(tmp_path):
+    article = _article(tmp_path)
+    meta = article / "article-meta.yaml"
+    meta.write_text(
+        meta.read_text(encoding="utf-8").replace(
+            "教程 | 一篇已经确认的文章", "教程 | 另一标题", 1
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(article, "adopt-final")
+
+    assert result.returncode == 2
+    assert "标题" in result.stdout
+    assert not (article / ".state.json").exists()
+    assert not (article / "_release-job.json").exists()
+
+
+def test_release_job_invalidates_when_final_changes(tmp_path):
+    article = _article(tmp_path)
+    assert _run(article, "adopt-final").returncode == 0
+    (article / "定稿.md").write_text(
+        (article / "定稿.md").read_text(encoding="utf-8") + "\n发布后又改了。\n",
+        encoding="utf-8",
+    )
+
+    result = _run(article, "verify-release-job")
+
+    assert result.returncode == 2
+    assert "定稿" in result.stdout and "变化" in result.stdout
+
+
+def test_author_provided_final_checkpoint_does_not_forge_writing_review_files(tmp_path):
+    article = _article(tmp_path)
+
+    assert _run(article, "adopt-final").returncode == 0
+
+    assert not (article / "_fact-check.md").exists()
+    assert not (article / "_stutter-list.md").exists()
+    assert not (article / "_draft-qc.md").exists()
+    assert pipeline._checkpoint_errors("writing", article) == []

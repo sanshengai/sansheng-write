@@ -112,45 +112,31 @@ def main() -> int:
     print(f"  {WARN}markdown→HTML 转换器：本 skill 不捆绑，需自装（见 README 依赖矩阵）")
 
     # ---------- 第 ③ 档 ----------
-    print("\n【③ 全自动】配图 / 封面 / 推送草稿箱")
-    g_key = _env_present("GOOGLE_API_KEY")
-    o_key = _env_present("OPENAI_API_KEY")
-    print(f"  {OK if g_key else WARN}GOOGLE_API_KEY   " + ("已配置" if g_key else "未配置 -- 生图不可用（可用 OPENAI 兼容端点兜底）"))
-    if g_key:
-        try:
-            import profile_config as pc
-            k = pc.load_secret("GOOGLE_API_KEY", required=False)
-            if k.startswith("AQ."):
-                proj = _env_present("GOOGLE_VERTEX_PROJECT")
-                print(f"  {OK if proj else BAD} 端点：Vertex Express（AQ. 前缀）"
-                      + ("" if proj else " -- 还缺 GOOGLE_VERTEX_PROJECT"))
-            else:
-                print(f"  {OK} 端点：AI Studio（AIza 前缀）")
-        except Exception:
-            pass
-    # openai 兜底不能只看 key 是否存在：曾出现「文档承诺、代码零实现」的假绿灯（key 配了
-    # 也没用）。这里探测 gen_img.gen_openai 真实可调才发 ✅，否则如实降级为 ⚠️。
-    openai_impl = False
-    openai_probe_err = ""
+    print("\n【③ 全自动】配图 / BGM / 官方读回草稿")
+    renderer_ready = False
     try:
-        import gen_img
-        openai_impl = callable(getattr(gen_img, "gen_openai", None))
-    except Exception as e:
-        openai_probe_err = str(e)[:80]
-    if o_key and openai_impl:
-        print(f"  {OK}OPENAI_API_KEY   已配置（生图兜底可用：gen_img.py --provider openai -m <模型名>）")
-        if not _env_present("OPENAI_BASE_URL"):
-            print(f"       OPENAI_BASE_URL 未配置 -- 默认打 {gen_img.DEFAULT_OPENAI_BASE_URL}；"
-                  f"用第三方兼容端点需在 .env 显式配置")
-    elif o_key:
-        print(f"  {WARN}OPENAI_API_KEY   已配置，但 gen_img.py 的 openai 兜底不可用"
-              + (f"（gen_img 导入失败：{openai_probe_err}）" if openai_probe_err
-                 else "（未找到 gen_openai 实现）"))
-    else:
-        print(f"  {WARN}OPENAI_API_KEY   未配置（可选兜底）")
+        from render_visuals import probe_renderer, resolve_renderer_command
+
+        renderer_command, revision, renderer_errors = resolve_renderer_command()
+        renderer_probe = (
+            probe_renderer(renderer_command)
+            if renderer_command and not renderer_errors
+            else {"ok": False, "error": "; ".join(renderer_errors)}
+        )
+        renderer_ready = bool(renderer_probe.get("ok"))
+        print(
+            f"  {OK if renderer_ready else BAD}baoyu-image-gen renderer  "
+            + (
+                f"能力探测通过（{revision[:12]}）"
+                if renderer_ready
+                else f"不可用 -- {renderer_probe.get('error')}"
+            )
+        )
+    except Exception as exc:
+        print(f"  {BAD}baoyu-image-gen renderer  探测失败 -- {exc}")
 
     mm = _env_present("MINIMAX_API_KEY")
-    print(f"  {OK if mm else WARN}MINIMAX_API_KEY  " + ("已配置" if mm else "未配置 -- 文章主题曲 BGM 会自动跳过（可选彩蛋）"))
+    print(f"  {OK if mm else BAD}MINIMAX_API_KEY  " + ("已配置" if mm else "未配置 -- BGM 是发布硬门"))
 
     # 微信凭证配在 baoyu 侧 ~/.baoyu-skills/.env（键名 WECHAT_APP_ID/WECHAT_APP_SECRET），
     # 不在本仓 .env——此前查错键名+错位置，永远发不了 ✅（复核 D5-1）
@@ -172,14 +158,13 @@ def main() -> int:
 
     # ---------- 结论 ----------
     print("\n" + "=" * 62)
-    img_ready = g_key or (o_key and openai_impl)  # 生图可用 = Google 主路，或 openai 兜底真实可调
-    if all(tier2) and img_ready:
+    if all(tier2) and renderer_ready and mm and wx:
         print("  结论：③ 全自动路径就绪 🎉")
     elif all(tier2):
-        print("  结论：② 排版路径就绪。配一个生图 key 就能解锁 ③。")
+        print("  结论：② 排版路径就绪。补齐上方③的硬门后才能自动推草稿。")
     else:
         print("  结论：① 纯方法论就绪。写作全流程可用；排版/配图按上面提示补齐。")
-    print("  任何一档缺东西都不影响更低档使用 -- 组件缺失只降级该环节，不断整链。")
+    print("  低档能力可独立使用；进入发布机械链后，任何硬门缺失都会明确非零退出。")
     print("=" * 62)
     return 0
 

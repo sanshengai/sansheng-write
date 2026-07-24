@@ -129,10 +129,10 @@ cp .env.example .env              # your own keys
 | Pillow | ③ | No image resize / compression | `pip install pillow` |
 | bun | ② | markdown→HTML conversion fails | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | No logo watermark | `cd scripts && npm install` |
-| **baoyu-skills plugin** | hard dep from ② | md→HTML / publish / infographics / image-cards all break | in Claude Code: `/plugin marketplace add JimLiu/baoyu-skills`; its keys live in **its own** `~/.baoyu-skills/.env` (WeChat keys `WECHAT_APP_ID`/`WECHAT_APP_SECRET`) |
-| `GOOGLE_API_KEY` | ③ | No image generation (OpenAI-compatible endpoint can stand in) | AI Studio or Vertex Express; the script routes by key prefix |
-| `MINIMAX_API_KEY` | ③ optional | Article BGM is skipped | pure easter egg |
-| WeChat appid/secret | ③ | Output lands as HTML; you paste it yourself | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP in the console |
+| **baoyu-skills plugin** | hard dep from ② | md→HTML, pixel rendering, and WeChat adapters are unavailable | install `JimLiu/baoyu-skills`; provider and WeChat credentials stay under its own `~/.baoyu-skills/` |
+| Configured image provider | ③ | `render-visuals` exits non-zero | configure provider/model through `baoyu-image-gen`; this Skill still owns the visual rules |
+| `MINIMAX_API_KEY` | ③ | The BGM release gate fails | MiniMax China API key |
+| WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP |
 | playwright / matplotlib | ③ optional | No SVG→PNG, no data charts | `pip install playwright matplotlib` |
 
 ---
