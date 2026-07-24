@@ -42,6 +42,28 @@ colors:
 visual:
   default_profile: "warm-light-clay"
   profiles:
+    montage-evidence:
+      style: "montage-evidence"
+      background: "#0E0E10"
+      accent: "brand-primary"
+      neutrals: ["#FFFFFF", "#141416", "#161618", "#1A1A1A", "#1F1F25"]
+      layout: "left-50-gap-6-right-44"
+      material: "flat-vector editorial object with thin physical depth and same-hue halftone"
+      lighting: "one upper-left 45-degree key light; all soft shadows fall lower-right"
+      required_visual_traits:
+        - "unified deep-charcoal canvas"
+        - "left text area and right evidence collage"
+        - "oversized dark English ghost watermark behind Chinese title"
+        - "one dominant metaphor object with two or three smaller evidence badges"
+        - "quiet low-contrast pill for article tags"
+      forbidden_visual_traits:
+        - "bright or photographic collage"
+        - "people, faces or hands"
+        - "centered or bottom-aligned poster title"
+        - "hard split-color panels"
+        - "neon, chrome, glassmorphism or glossy reflections"
+        - "brand text, account name, issue number or signature"
+
     warm-light-clay:
       style: "claymation"
       background: "#F5F0E6"
@@ -72,6 +94,43 @@ visual:
         dark_pixel_luma: 80
         dark_pixel_ratio_max: 0.18
         mean_saturation_max: 0.30
+
+    morandi-journal:
+      style: "morandi-journal"
+      background: "#F5F0E6"
+      accent: "#7BA3A8"
+      neutrals: ["#D4956A", "#4A4540", "#F5E6C8"]
+      material: "hand-drawn doodle with organic imperfect ink lines and subtle warm paper texture"
+      lighting: "flat editorial light; warm and cozy, never photographic"
+      required_prompt_groups:
+        - ["hand-drawn doodle", "手绘 doodle"]
+        - ["warm Morandi", "莫兰迪柔色"]
+        - ["washi tape", "和纸胶带"]
+        - ["bullet journal", "手账"]
+      forbidden_prompt_terms:
+        - "photorealistic"
+        - "stock illustration"
+        - "strict grid"
+        - "pure white background"
+        - "flat vector icons"
+        - "corporate"
+      required_visual_traits:
+        - "hand-drawn doodle illustrations with organic imperfect ink lines"
+        - "warm cream background with muted sage, terracotta and pale-yellow accents"
+        - "washi tape, dotted frames, curved arrows and rounded note cards"
+        - "clear handwritten-style hierarchy with highly legible Chinese"
+        - "clean-sketch bullet-journal variant with restrained decoration"
+      forbidden_visual_traits:
+        - "photographic or stock-image collage"
+        - "aged parchment, torn-paper scrapbook or watercolor scene panels"
+        - "flat vector icon system or rigid corporate grid"
+        - "pure white background"
+        - "digital dashboard, neon or metallic surface"
+      thresholds:
+        mean_luma_min: 178
+        dark_pixel_luma: 80
+        dark_pixel_ratio_max: 0.12
+        mean_saturation_max: 0.32
 
 radius:
   sm: "6px"                 # 序号块 / 图标底 / URL 框

@@ -35,12 +35,16 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
     ]
     images = []
     logs = []
-    recipe = pipeline._visual_recipe("warm-light-clay") if style == "claymation" else {}
+    recipe_name = {
+        "claymation": "warm-light-clay",
+        "morandi-journal": "morandi-journal",
+    }.get(style, "")
+    recipe = pipeline._visual_recipe(recipe_name) if recipe_name else {}
     for name, w, h, prompt_name in specs:
         rel = f"素材/{name}"
         _png(tmp_path / rel, w, h)
         prompt_path = tmp_path / "素材" / "prompts" / "final" / prompt_name
-        if recipe:
+        if style == "claymation":
             prompt_text = (
                 f"---\n"
                 f"style: {style}\n"
@@ -50,6 +54,18 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
                 f"palette_accent: \"{recipe['accent']}\"\n"
                 f"---\n"
                 "Warm beige background, light palette, matte clay, diffuse light.\n"
+            )
+        elif style == "morandi-journal":
+            prompt_text = (
+                f"---\n"
+                f"style: {style}\n"
+                f"visual_profile: {recipe['name']}\n"
+                f"visual_profile_sha256: {recipe['sha256']}\n"
+                f"palette_background: \"{recipe['background']}\"\n"
+                f"palette_accent: \"{recipe['accent']}\"\n"
+                f"---\n"
+                "Warm Morandi hand-drawn doodle, restrained washi tape, "
+                "clean-sketch bullet journal.\n"
             )
         else:
             prompt_text = f"---\nstyle: {style}\n---\n"
@@ -122,6 +138,33 @@ def test_final_assets_must_match_meta_latest_log_and_prompt(tmp_path):
 def test_visual_route_compliant_bundle_passes(tmp_path):
     article = _minimal_visual_article(tmp_path)
     assert pipeline._visual_route_errors(article) == []
+
+
+def test_morandi_route_rejects_prompt_that_only_names_style(tmp_path):
+    article = _minimal_visual_article(
+        tmp_path,
+        subject="phenomenon",
+        style="morandi-journal",
+    )
+    prompt = article / "素材" / "prompts" / "final" / "01.md"
+    prompt.write_text(
+        "---\nstyle: morandi-journal\n---\n"
+        "Muted pastel tactile editorial paper collage.\n",
+        encoding="utf-8",
+    )
+    logs = [
+        json.loads(line)
+        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    logs[0]["prompt_sha256"] = hashlib.sha256(prompt.read_bytes()).hexdigest()
+    (article / ".gen-log.jsonl").write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in logs) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = pipeline._visual_route_errors(article)
+
+    assert any("视觉配方" in error or "关键词组" in error for error in errors), errors
 
 
 def test_structured_renderer_style_does_not_require_legacy_cli_flag():

@@ -208,3 +208,59 @@ def test_no_configured_renderer_success_means_nonzero_contract(tmp_path):
     assert receipt is None
     assert any("simulated 503" in error for error in errors)
     assert not (article / "素材/render-receipt.json").exists()
+
+
+def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
+    from scripts.render_visuals import render_visuals
+
+    article = _article(tmp_path)
+    (article / "renderer-policy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "renderers": [
+                    {
+                        "id": "native-google",
+                        "provider": "sansheng-google",
+                        "model": "gemini-3.1-flash-image-preview",
+                        "quality": "1k",
+                        "imageSize": "1K",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_native(cwd, tasks, renderer, jobs):
+        results = []
+        for task in tasks:
+            output = cwd / "素材" / task["image"]
+            output.write_bytes(b"\x89PNG\r\n\x1a\n" + task["id"].encode("utf-8"))
+            results.append(
+                {
+                    "id": task["id"],
+                    "provider": "google",
+                    "model": "gemini-2.5-flash-image",
+                    "renderer": "gen_img",
+                    "outputPath": str(output),
+                    "success": True,
+                    "attempts": 1,
+                    "error": None,
+                }
+            )
+        return {"returncode": 0, "results": results}
+
+    receipt, errors = render_visuals(
+        article,
+        native_google_renderer=fake_native,
+        renderer_revision="native-test-revision",
+    )
+
+    assert errors == []
+    assert receipt["status"] == "done"
+    assert {asset["renderer"] for asset in receipt["assets"]} == {"gen_img"}
+    assert {asset["provider"] for asset in receipt["assets"]} == {"google"}
+    assert {asset["model"] for asset in receipt["assets"]} == {
+        "gemini-2.5-flash-image"
+    }

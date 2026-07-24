@@ -3,20 +3,27 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageStat
+import yaml
 
 try:
     from .evidence import build_visual_manifest, sha256_file
+    from .profile_config import identity, visual_profile
+    from .evidence import stable_digest
 except ImportError:  # pragma: no cover - direct script execution
     from evidence import build_visual_manifest, sha256_file
+    from profile_config import identity, visual_profile
+    from evidence import stable_digest
 
 
 QA_REQUEST_FILE = "_visual-qa-request.json"
@@ -28,7 +35,10 @@ REQUIRED_CHECKS = (
     "semantic_hierarchy",
     "style_consistent",
     "no_unexpected_text",
+    "style_contract_match",
+    "brand_palette_match",
 )
+COVER_REQUIRED_CHECKS = (*REQUIRED_CHECKS, "composition_contract_match")
 
 
 def _normalized_text(value: object) -> str:
@@ -66,9 +76,31 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
         return {}, [f"visual-plan.json 解析失败：{exc}"]
     expected: dict[str, list[str]] = {}
     cover = plan.get("cover") or {}
+    meta = {}
+    try:
+        meta = yaml.safe_load(
+            (cwd / "article-meta.yaml").read_text(encoding="utf-8")
+        ) or {}
+    except (FileNotFoundError, yaml.YAMLError):
+        pass
+    lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
+    uppercase = re.findall(
+        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
+        str(meta.get("cover_keywords") or ""),
+    )
+    ghost = " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else ""
+    brand_name = str(identity().get("nickname") or "").strip()
     expected["素材/cover.png"] = [
         str(value).strip()
-        for value in (cover.get("title"), cover.get("subtitle"))
+        for value in (
+            lead.get("line1") or cover.get("title"),
+            lead.get("line2") or cover.get("subtitle"),
+            lead.get("subtitle"),
+            lead.get("tag1"),
+            lead.get("tag2"),
+            ghost,
+            brand_name,
+        )
         if str(value or "").strip()
     ]
     hero = plan.get("hero") or {}
@@ -82,9 +114,70 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
         if not image_id:
             continue
         expected[f"素材/infographic-{image_id}.png"] = [
-            str(value).strip() for value in item.get("expected_text") or []
+            str(value).strip()
+            for value in (item.get("title"), *(item.get("expected_text") or []))
+            if str(value or "").strip()
         ]
+        if brand_name:
+            expected[f"素材/infographic-{image_id}.png"].append(brand_name)
     return expected, []
+
+
+def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    try:
+        meta = yaml.safe_load(
+            (cwd / "article-meta.yaml").read_text(encoding="utf-8")
+        ) or {}
+    except FileNotFoundError:
+        return {}, ["缺 article-meta.yaml，无法建立目标风格合同"]
+    except yaml.YAMLError as exc:
+        return {}, [f"article-meta.yaml 解析失败：{exc}"]
+    style = str(meta.get("infographic_style") or "").strip()
+    profile_name = {
+        "claymation": "warm-light-clay",
+        "morandi-journal": "morandi-journal",
+    }.get(style, "")
+    cover_recipe = visual_profile("montage-evidence") or {}
+    body_recipe = visual_profile(profile_name) or {}
+    if not cover_recipe or not body_recipe:
+        return {}, ["profile 缺封面或正文视觉配方，无法建立目标风格合同"]
+
+    def summarize(recipe: dict, *, layout: str = "") -> dict[str, Any]:
+        bound = dict(recipe)
+        digest = stable_digest(bound)
+        return {
+            "visual_profile": bound.get("name"),
+            "visual_profile_sha256": digest,
+            "layout": layout or bound.get("layout") or "",
+            "palette": {
+                "background": bound.get("background"),
+                "accent": bound.get("accent"),
+                "neutrals": bound.get("neutrals") or [],
+            },
+            "required_visual_traits": bound.get("required_visual_traits") or [],
+            "forbidden_visual_traits": bound.get("forbidden_visual_traits") or [],
+        }
+
+    contracts = {
+        "cover": {
+            "target_style": "montage-evidence",
+            "required_checks": list(COVER_REQUIRED_CHECKS),
+            "style_contract": summarize(
+                cover_recipe, layout="left-50-gap-6-right-44"
+            ),
+        },
+        "hero": {
+            "target_style": style,
+            "required_checks": list(REQUIRED_CHECKS),
+            "style_contract": summarize(body_recipe),
+        },
+        "infographic": {
+            "target_style": style,
+            "required_checks": list(REQUIRED_CHECKS),
+            "style_contract": summarize(body_recipe),
+        },
+    }
+    return contracts, []
 
 
 def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -94,6 +187,8 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     )
     expected, expected_errors = _expected_text_by_path(cwd)
     errors.extend(expected_errors)
+    contracts, contract_errors = _style_contracts(cwd)
+    errors.extend(contract_errors)
     assets = []
     for asset in manifest.get("assets", []):
         rel = str(asset["path"])
@@ -106,6 +201,17 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         except Exception as exc:
             errors.append(f"{rel} 无法读取像素：{exc}")
             continue
+        contract = copy.deepcopy(contracts.get(str(asset["stage"])) or {})
+        if asset.get("renderer") == "deterministic-compositor":
+            style_contract = contract.get("style_contract") or {}
+            style_contract["variant"] = "text-safe-morandi-journal"
+            style_contract["required_visual_traits"] = [
+                "warm cream background with muted sage, terracotta and pale-yellow accents",
+                "text-first bullet-journal cards with sketchy double borders",
+                "restrained washi tape, connecting arrows and rounded note cards",
+                "exact highly legible Chinese hierarchy with no generative glyphs",
+            ]
+            contract["style_contract"] = style_contract
         assets.append(
             {
                 "path": rel,
@@ -118,6 +224,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
                     "renderer": asset.get("renderer") or "",
                     "model": asset.get("model") or "",
                 },
+                **contract,
             }
         )
     if errors:
@@ -127,6 +234,11 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         "contract": {
             "reviewer_role": "independent-visual-reviewer",
             "required_checks": list(REQUIRED_CHECKS),
+            "stage_specific_checks": {
+                "cover": list(COVER_REQUIRED_CHECKS),
+                "hero": list(REQUIRED_CHECKS),
+                "infographic": list(REQUIRED_CHECKS),
+            },
             "all_checks_must_pass": True,
             "expected_text_must_be_observed": True,
         },
@@ -214,7 +326,10 @@ def validate_qa_result(
         if not isinstance(checks, dict):
             errors.append(f"{rel} 缺 checks")
         else:
-            for check in REQUIRED_CHECKS:
+            required_checks = expected_asset.get("required_checks") or list(
+                REQUIRED_CHECKS
+            )
+            for check in required_checks:
                 if checks.get(check) is not True:
                     errors.append(f"{rel} check.{check} 未通过")
         observed_values = [
@@ -254,7 +369,7 @@ def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
                 f"- ✅ 文字：{' / '.join(asset.get('observed_text') or [])}",
                 *[
                     f"- {'✅' if asset['checks'][check] else '❌'} {check}"
-                    for check in REQUIRED_CHECKS
+                    for check in asset["checks"]
                 ],
                 f"- 备注：{asset.get('notes') or '无'}",
                 "",

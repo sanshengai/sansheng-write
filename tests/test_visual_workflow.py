@@ -77,6 +77,12 @@ def _article(tmp_path: Path) -> Path:
         'title: "教程 | 视觉合同"\n'
         'digest: "一份稳定的视觉发布合同。"\n'
         'cover_style: "montage-evidence"\n'
+        "lead:\n"
+        '  line1: "规则不能丢"\n'
+        '  line2: "弱模型也能稳"\n'
+        '  subtitle: "确定性视觉合同"\n'
+        '  tag1: "规则内建"\n'
+        '  tag2: "独立验收"\n'
         'infographic_subject: "ai-product"\n'
         'infographic_style: "claymation"\n'
         'visual_profile: "warm-light-clay"\n',
@@ -143,13 +149,25 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     )
     assert f'producer: "{PRODUCER}"' in cover
     assert 'aspect_ratio: "2.35:1"' in cover
-    assert 'title_block_height: "20%"' in cover
+    assert "Canvas base: #0E0E10" in cover
+    assert "slightly larger left zone" in cover
+    assert "slightly smaller right zone" in cover
+    assert "narrow quiet gutter" in cover
+    assert "OVERSIZED GHOST-WATERMARK" in cover
+    assert "ONLY VISIBLE TEXT ALLOWLIST" in cover
+    assert "Never render layout guides, measurements or percentages" in cover
+    assert "Chinese L1: 规则不能丢" in cover
+    assert "Chinese L2: 弱模型也能稳" in cover
+    assert "一份任务单" not in cover
+    assert "一条发布入口" not in cover
+    assert "bright editorial evidence montage" not in cover
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
     assert 'visual_profile: "warm-light-clay"' in info
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
+    assert "定稿哈希绑定任务单" not in info
     batch = json.loads(
         (article / "素材/render-batch.json").read_text(encoding="utf-8")
     )
@@ -163,6 +181,47 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     ]
     assert all(task["promptFiles"][0].startswith("prompts/final/") for task in batch["tasks"])
     assert batch["producer"] == PRODUCER
+
+
+def test_morandi_compiler_embeds_full_baoyu_style_contract(tmp_path):
+    from scripts.visual_workflow import compile_visual_plan
+
+    article = _article(tmp_path)
+    meta = article / "article-meta.yaml"
+    text = meta.read_text(encoding="utf-8")
+    text = text.replace('infographic_subject: "ai-product"', 'infographic_subject: "phenomenon"')
+    text = text.replace('infographic_style: "claymation"', 'infographic_style: "morandi-journal"')
+    text = text.replace('visual_profile: "warm-light-clay"', 'visual_profile: ""')
+    meta.write_text(text, encoding="utf-8")
+
+    _, errors = compile_visual_plan(article)
+
+    assert errors == []
+    prompt = (article / "素材/prompts/final/infographic-01.md").read_text(
+        encoding="utf-8"
+    )
+    hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
+    assert 'visual_profile: "morandi-journal"' in prompt
+    assert "visual_profile_sha256:" in prompt
+    assert "#F5F0E6" in prompt
+    assert "#7BA3A8" in prompt
+    assert "#D4956A" in prompt
+    assert "#4A4540" in prompt
+    assert "hand-drawn doodle" in prompt
+    assert "warm Morandi" in prompt
+    assert "washi tape" in prompt
+    assert "bullet journal" in prompt
+    assert "warm Morandi" in hero
+    assert "bullet journal" in hero
+    assert "No flat vector icons" in prompt
+    assert "No stock illustration style" in prompt
+    assert "No strict grid layout" in prompt
+    assert "tactile editorial paper collage" not in prompt
+    assert "VISIBLE TEXT ALLOWLIST" in prompt
+    assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in prompt
+    assert "VISIBLE TEXT ALLOWLIST" in hero
+    assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in hero
+    assert "独立复核" not in hero
 
 
 def test_compiler_writes_analysis_and_structured_content_from_same_plan(tmp_path):

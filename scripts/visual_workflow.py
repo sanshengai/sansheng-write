@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -24,6 +25,10 @@ SUPPORTED_STYLES = {"claymation", "morandi-journal"}
 STYLE_BY_SUBJECT = {
     "ai-product": "claymation",
     "phenomenon": "morandi-journal",
+}
+PROFILE_BY_STYLE = {
+    "claymation": "warm-light-clay",
+    "morandi-journal": "morandi-journal",
 }
 
 
@@ -154,51 +159,119 @@ def _recipe(meta: dict) -> tuple[dict, list[str]]:
         )
     if style not in SUPPORTED_STYLES:
         errors.append("infographic_style 只允许 claymation / morandi-journal")
-    if style != "claymation":
-        if meta.get("visual_profile"):
-            errors.append("morandi-journal 不得填写 visual_profile")
-        return {}, errors
-    name = str(meta.get("visual_profile") or "")
-    if name != "warm-light-clay":
+    expected_name = PROFILE_BY_STYLE.get(style, "")
+    declared_name = str(meta.get("visual_profile") or "").strip()
+    if style == "claymation" and declared_name != expected_name:
         errors.append("claymation 必须 visual_profile: warm-light-clay")
         return {}, errors
+    if declared_name and declared_name != expected_name:
+        errors.append(
+            f"{style} 的 visual_profile 必须为 {expected_name} 或留空由编译器锁定"
+        )
+        return {}, errors
+    name = expected_name
     recipe = visual_profile(name) or {}
     if not recipe:
-        errors.append("profile 中缺 warm-light-clay 视觉配方")
+        errors.append(f"profile 中缺 {name} 视觉配方")
         return {}, errors
     recipe = dict(recipe)
     recipe["sha256"] = stable_digest(recipe)
     return recipe, errors
 
 
-def _cover_prompt(item: dict) -> str:
-    title = str(item.get("title") or "").strip()
-    subtitle = str(item.get("subtitle") or "").strip()
-    facts = "\n".join(f"- {value}" for value in item.get("visual_facts") or [])
+def _cover_text(meta: dict, item: dict) -> dict:
+    lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
+    line1 = str(lead.get("line1") or item.get("title") or "").strip()
+    line2 = str(lead.get("line2") or item.get("subtitle") or "").strip()
+    tags = [
+        str(value).strip()
+        for value in (
+            lead.get("subtitle"),
+            lead.get("tag1"),
+            lead.get("tag2"),
+        )
+        if str(value or "").strip()
+    ]
+    uppercase = re.findall(
+        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
+        str(meta.get("cover_keywords") or ""),
+    )
+    ghost = " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else ""
+    return {"line1": line1, "line2": line2, "tags": tags, "ghost": ghost}
+
+
+def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
+    text = _cover_text(meta, item)
+    title = text["line1"]
+    subtitle = text["line2"]
+    expected = [
+        value
+        for value in (title, subtitle, *text["tags"], text["ghost"])
+        if value
+    ]
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
         "stage": "cover",
         "style": "montage-evidence",
+        "visual_profile": recipe["name"],
+        "visual_profile_sha256": recipe["sha256"],
         "aspect_ratio": "2.35:1",
-        "title_block_height": "20%",
-        "expected_text_sha256": _expected_text_digest(
-            [value for value in (title, subtitle) if value]
-        ),
+        "expected_text_sha256": _expected_text_digest(expected),
     }
+    tags = " / ".join(text["tags"]) or "(none)"
+    ghost = text["ghost"] or "(derive three article-specific English keywords)"
+    accent = recipe["accent"]
     return (
         _frontmatter(fields)
-        + "\n"
-        + "\nCreate a bright editorial evidence montage for a WeChat article cover.\n"
-        "Composition: a restrained 2-4 fragment collage that visualizes the supplied facts, "
-        "with generous negative space and a clear left-to-right hierarchy.\n"
-        "Typography: render only the exact Chinese title and subtitle below. "
-        "The complete title block must occupy 18%-22% of image height; keep all text inside "
-        "the central crop-safe region. No extra words, logos, watermarks, fake UI, dark "
-        "technology background, neon, or overly heavy display type.\n\n"
-        f"Exact title: {title}\n"
-        f"Exact subtitle: {subtitle or '(none)'}\n"
-        f"Verified visual facts:\n{facts}\n"
+        + "\n\nCreate a polished dark editorial montage for a WeChat article cover.\n\n"
+        "## LAYOUT\n"
+        "- One unified deep-charcoal canvas, exact 2.35:1 landscape.\n"
+        "- Put the text in a slightly larger left zone, the evidence collage in a slightly "
+        "smaller right zone, and separate them with one narrow quiet gutter. Preserve "
+        "generous outer safe margins and abundant negative space.\n"
+        "- Keep the Chinese title block compact and vertically centered in the left zone. "
+        "Never center it across the full canvas or place it along the bottom.\n"
+        "- One upper-left 45-degree key light only; all soft shadows fall lower-right.\n\n"
+        "## ONLY VISIBLE TEXT ALLOWLIST\n"
+        f"- Chinese L1: {title}\n"
+        f"- Chinese L2: {subtitle or '(none)'}\n"
+        f"- Quiet pill tags: {tags}\n"
+        f"- OVERSIZED GHOST-WATERMARK behind the Chinese title: {ghost}\n"
+        "- L1 is refined bold white; L2 is semibold, with only its sharpest phrase in the "
+        f"accent color {accent}. Keep L2 on one line.\n"
+        "- The ghost is industrial condensed uppercase, very dark, 145%-155% of L1 size, "
+        "partly overlapped by Chinese text and feathered toward 10% opacity.\n"
+        "- Put all tags in one auto-fit quiet pill with near-background fill, no border, "
+        "glow, shadow or glass effect.\n\n"
+        "## RIGHT COLLAGE\n"
+        "- Use one dominant flat-vector metaphor object derived from the verified facts, "
+        "plus two or three much smaller dark evidence badges and restrained curved dashed "
+        "arrows. The main object must be the first visual focus.\n"
+        "- No photographs and no people, faces or hands. Use objects, curves, facilities, "
+        "maps or service nodes to express the argument.\n"
+        "- Main object: flat-vector editorial form with thin physical depth, same-hue "
+        "halftone, upper-left highlight and soft lower-right contact shadow.\n"
+        "- Badges: #1A1A1A fill, 1px accent border, rounded corners; never white cards.\n\n"
+        "## COLOR & BACKGROUND\n"
+        "- Canvas base: #0E0E10 deep charcoal.\n"
+        f"- Only visible accent hue: {accent}; other foreground text is pure white.\n"
+        "- Deep surfaces may use #141416, #161618, #1A1A1A and #1F1F25 only.\n"
+        "- No hard split-color panels; no bright, beige, photographic or scrapbook canvas.\n\n"
+        "## STRICT FORBIDDEN\n"
+        "- No people, faces, hands, photorealistic stock imagery, robots, glowing brains, "
+        "generic gear piles, code, file paths, UI, grids, stars, particles or random letters.\n"
+        "- No brand name, account name, issue number or signature text; logo is added later.\n"
+        "- No pure black, extra accent hues, neon, chrome, glassmorphism, glossy reflections, "
+        "centered giant headline, bottom title bar or crowded poster composition.\n"
+        "- Never render layout guides, measurements or percentages. Never render the facts "
+        "below, color names, hex codes, L1/L2, TITLE or SUBTITLE as visible text.\n"
+        "- The allowlist above is exhaustive: every other visible letter, word or number is "
+        "forbidden. Evidence badges must be pictorial and textless.\n\n"
+        "## PICTORIAL BRIEF\n"
+        "Use abstract curves and textless evidence objects suggested by the approved title. "
+        "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER because they must never become "
+        "accidental visible labels.\n"
     )
 
 
@@ -221,27 +294,40 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
                 "palette_accent": recipe["accent"],
             }
         )
-    facts = "\n".join(f"- {value}" for value in item.get("visual_facts") or [])
     palette = (
         "Warm beige light palette, matte soft clay, bright diffuse studio light, "
         "low contrast and soft shadows. No metallic, photorealistic, navy, black, "
         "neon or high-contrast surface."
-        if recipe
-        else "Muted Morandi pastel palette, tactile editorial paper collage, soft natural "
-        "light and restrained contrast. No dark technology background or neon."
+        if style == "claymation"
+        else "Use a warm Morandi / 莫兰迪柔色 palette: warm cream #F5F0E6 background "
+        "with muted sage #7BA3A8, terracotta "
+        "#D4956A and charcoal-brown #4A4540. Hand-drawn doodle, organic imperfect "
+        "ink lines, restrained washi tape and clean-sketch bullet journal composition. "
+        "No photographs, stock illustration, torn-paper scrapbook, watercolor scene "
+        "panels, flat vector icons, strict corporate grid, pure-white background or neon."
     )
     return (
         _frontmatter(fields)
         + "\n\n"
         + f"Create a square article Hero in {style} style. {palette}\n"
-        "Show one unmistakable visual hierarchy and render only the exact Chinese title. "
-        "No extra words, logos, watermarks or invented interface.\n\n"
-        f"Exact title: {expected[0]}\nVerified visual facts:\n{facts}\n"
+        "Show one unmistakable visual hierarchy.\n\n"
+        "## VISIBLE TEXT ALLOWLIST\n"
+        f"- {expected[0]}\n"
+        "This title is the only visible text. No data labels, fact sentences, extra words, "
+        "logos, watermarks or invented interface.\n\n"
+        "## PICTORIAL BRIEF\n"
+        "Build one clean metaphor from the approved title alone. SOURCE FACTS ARE NOT "
+        "PROVIDED TO THE RENDERER because they must never become accidental visible text.\n"
     )
 
 
 def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
-    expected = [str(value) for value in item.get("expected_text") or []]
+    title = str(item.get("title") or "").strip()
+    expected = [
+        value
+        for value in (title, *[str(value) for value in item.get("expected_text") or []])
+        if value
+    ]
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
@@ -262,31 +348,42 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
                 "palette_accent": recipe["accent"],
             }
         )
-    facts = "\n".join(f"- {value}" for value in item.get("facts") or [])
-    labels = "\n".join(f"- {value}" for value in expected)
+    labels = "\n".join(f"- {value}" for value in expected[1:])
     palette = (
         "Warm beige or warm ivory background, bright light palette, matte soft clay "
         "information objects, diffuse light, low contrast and soft shadows. Avoid dark "
         "background, navy, steel blue, brick red, mustard yellow, metallic, chrome, "
         "neon and photorealistic surfaces."
-        if recipe
-        else "Muted Morandi pastel editorial journal, tactile paper collage, quiet warm "
-        "background, restrained saturation and soft natural light. Avoid dark technology "
-        "backgrounds, neon, chrome and photorealistic stock imagery."
+        if style == "claymation"
+        else "Use a warm Morandi / 莫兰迪柔色 palette: warm cream background #F5F0E6; "
+        "muted sage #7BA3A8 for headers and "
+        "frames, terracotta #D4956A for highlights, charcoal-brown #4A4540 line art, "
+        "and pale yellow #F5E6C8 only for soft accents. Use hand-drawn doodle "
+        "illustrations with organic imperfect ink lines, restrained washi tape, dotted "
+        "frames, curved arrows, rounded note cards and a clean-sketch bullet journal "
+        "hierarchy. No flat vector icons. No stock illustration style. No strict grid "
+        "layout. No pure white background. No photographic collage, aged parchment, "
+        "torn-paper scrapbook, watercolor scene panels, digital corporate dashboard, "
+        "metal, chrome or neon."
     )
     return (
         _frontmatter(fields)
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
         f"{item.get('layout')} layout. {palette}\n"
-        "The graphic must communicate the verified facts below, not merely decorate them. "
-        "Render every expected label exactly once in readable Simplified Chinese. "
+        "The graphic must communicate the silent facts below, not merely decorate them. "
+        "Render every allowlisted line exactly once in readable Simplified Chinese. "
         "Do not invent numbers, labels, logos, watermarks, product UI or additional text. "
         "Keep all labels inside crop-safe margins and make the title > sections > details "
         "hierarchy obvious at thumbnail size.\n\n"
-        f"Exact title: {item.get('title')}\n"
-        f"Expected labels:\n{labels}\n"
-        f"Verified facts:\n{facts}\n"
+        "## VISIBLE TEXT ALLOWLIST — EXHAUSTIVE\n"
+        f"- {title}\n"
+        f"{labels}\n"
+        "Every other visible letter, word or number is forbidden.\n\n"
+        "## CONTENT BOUNDARY\n"
+        "Use the allowlisted title and labels themselves to determine the visual structure. "
+        "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER because they must never become "
+        "accidental visible labels or numbers.\n"
     )
 
 
@@ -309,7 +406,15 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
 
     prompt_specs: list[tuple[str, str, str, str]] = []
     cover_prompt = prompt_dir / "cover.md"
-    cover_prompt.write_text(_cover_prompt(plan["cover"]), encoding="utf-8")
+    cover_recipe = visual_profile("montage-evidence") or {}
+    if not cover_recipe:
+        return None, ["profile 中缺 montage-evidence 视觉配方"]
+    cover_recipe = dict(cover_recipe)
+    cover_recipe["sha256"] = stable_digest(cover_recipe)
+    cover_prompt.write_text(
+        _cover_prompt(plan["cover"], meta, cover_recipe),
+        encoding="utf-8",
+    )
     prompt_specs.append(("cover", "cover", "2.35:1", "cover.png"))
 
     hero_prompt = prompt_dir / "hero.md"

@@ -18,6 +18,15 @@
 
 renderer 不得修改 `expected_text`、比例、style 或 visual profile，不得在日志中冒充 producer。
 
+`visual-planner` 内置的是经过筛选的稳定视觉合同，不在运行时跨 Skill 临时读取规则：
+
+- 封面：`montage-evidence` 的深炭品牌构图。
+- AI 主轴：`warm-light-clay`。
+- 现象主轴：宝玉 `morandi-journal` 的配色、doodle、washi tape、bullet-journal 与 Avoid 清单。
+
+这些配方集中在 profile 的 `visual.profiles`，编译后写入 prompt frontmatter 和摘要。上游
+baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步进本合同，避免插件升级静默改变成图。
+
 ## 固定视觉集合
 
 - `素材/cover.png`：`2.35:1`。
@@ -34,7 +43,8 @@ renderer 不得修改 `expected_text`、比例、style 或 visual profile，不�
 - 现象、商业、人文判断是主轴，产品只是案例：`morandi-journal`。
 - 混合题材按信息架构主轴判定；产品/模型轴优先于趋势结论。
 
-`warm-light-clay` 的色值、材质、灯光和阈值只从 profile 的 `visual.profiles` 读取，编译时写入 prompt 摘要，避免文档与代码各存一份。
+两种正文风格与封面配方的色值、材质、灯光、必备特征和禁用特征只从 profile 的
+`visual.profiles` 读取，编译时写入 prompt 摘要，避免文档与代码各存一份。
 
 ## 确定性图表
 
@@ -63,5 +73,8 @@ python "$SKILL/scripts/pipeline.py" seal visual
 
 - `_visual-qa.json`：独立视觉审阅结果。
 - `_visual-receipt.json`：QA、prompt、日志和最终图片字节的封存。
+
+QA 必须逐图确认 `style_contract_match` 与 `brand_palette_match`；封面另需
+`composition_contract_match`。`style_consistent` 只表示同批一致，不能证明符合目标风格。
 
 Markdown QA 清单不具发布授权效力。

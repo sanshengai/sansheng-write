@@ -232,7 +232,7 @@ def _infographic_style_error(record: dict) -> str:
     return ""
 IMAGE_RENDERER_WHITELIST = {
     "gen_img", "imagegen", "codex-imagegen", "baoyu-image-gen",
-    "GenerateImage", "image_generate",
+    "GenerateImage", "image_generate", "deterministic-compositor",
 }
 
 GEN_LOG_FILE = ".gen-log.jsonl"
@@ -453,31 +453,35 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
         )
 
     recipe = {}
-    if style == "claymation":
-        if not profile_name:
+    profile_by_style = {
+        "claymation": "warm-light-clay",
+        "morandi-journal": "morandi-journal",
+    }
+    expected_profile = profile_by_style.get(style, "")
+    if style == "claymation" and not profile_name:
+        errors.append(
+            "article-meta.yaml 缺 visual_profile；claymation 新文章必须显式写 "
+            "visual_profile: warm-light-clay"
+        )
+    if expected_profile:
+        if profile_name and profile_name != expected_profile:
             errors.append(
-                "article-meta.yaml 缺 visual_profile；claymation 新文章必须显式写 "
-                "visual_profile: warm-light-clay"
+                f"infographic_style={style} 的 visual_profile 必须为 "
+                f"{expected_profile}，当前为 {profile_name}"
             )
-        recipe = _visual_recipe(profile_name)
-        if not recipe:
-            recipe = _visual_recipe()
+        recipe = _visual_recipe(expected_profile)
         if not recipe:
             errors.append(
-                f"visual_profile={profile_name or '(空)'} 无法解析；"
-                "claymation 必须绑定 warm-light-clay 视觉配方"
+                f"visual_profile={expected_profile} 无法解析；"
+                f"{style} 必须绑定可复验视觉配方"
             )
         elif recipe.get("style") != style:
             errors.append(
                 f"visual_profile={recipe.get('name')} 只适用于 {recipe.get('style')}，当前为 {style}"
             )
-        elif profile_name and profile_name != recipe.get("name"):
-            errors.append(
-                f"visual_profile={profile_name} 与实际解析配方 {recipe.get('name')} 不一致"
-            )
     elif profile_name:
         errors.append(
-            f"visual_profile={profile_name} 当前只用于 claymation；morandi-journal 不得误绑浅色黏土配方"
+            f"infographic_style={style or '(空)'} 不支持 visual_profile={profile_name}"
         )
 
     for rel in ("素材/infographic/analysis.md", "素材/infographic/structured-content.md"):

@@ -4,6 +4,20 @@
 
 ## [未发布]
 
+### 修复
+
+- **视觉合同不再丢失**：恢复深色 `montage-evidence` 品牌封面，并把完整的
+  `morandi-journal` 配色、手绘元素与禁用项编译进 canonical prompt，避免只传风格名导致照片拼贴或旧纸水彩偏移。
+- **视觉 QA 验目标而非只验一致**：每张图携带可复验的目标风格与品牌色板合同；
+  封面额外检查固定构图，错误但内部一致的一批图不能再进入发布链。
+- **断点续跑绑定 Prompt**：运行器会同时核对图片和 canonical prompt 摘要；
+  规则更新后不会误复用旧图。
+- **中文不再交给生图模型猜**：canonical prompt 使用可见文字白名单且不再把原始事实句喂给渲染器；
+  文字密集图可切到 `deterministic-compositor`，由本地字体精确写入中文，杜绝漏字、改字和把英文风格指令画进图。
+- **Vertex 快速路由可直接使用**：`renderer-policy.json` 可选 `sansheng-google`，
+  由 Skill 自带客户端识别 AI Studio / Vertex key、执行模型 ID fallback，并按任务并发出图，不再被外部插件的 Base URL 拼接方式卡住。
+- **合法 Logo 纳入 OCR 白名单**：视觉 QA 会把 profile 中的账号名视为后处理合法文字，并按封面与正文各自的目标风格检查一致性。
+
 ## [0.8.0] -- 2026-07-23
 
 ### 新增

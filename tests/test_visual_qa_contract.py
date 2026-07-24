@@ -19,6 +19,13 @@ def _article(root: Path) -> Path:
     (root / "素材/prompts/final").mkdir(parents=True)
     (root / "article-meta.yaml").write_text(
         'title: "视觉合同"\n'
+        'lead:\n'
+        '  line1: "规则不能丢"\n'
+        '  line2: "弱模型也能稳"\n'
+        '  subtitle: "视觉发布合同"\n'
+        '  tag1: "硬门"\n'
+        '  tag2: "证据链"\n'
+        'cover_keywords: "规则 合同 BIRTH CARE CITY"\n'
         'cover_style: "montage-evidence"\n'
         'infographic_subject: "ai-product"\n'
         'infographic_style: "claymation"\n'
@@ -95,8 +102,11 @@ def _reviewer(
     model: str = "review-model",
     omit_text: bool = False,
     split_first: bool = False,
+    omit_style_contract: bool = False,
 ) -> list[str]:
-    script = root / f"reviewer-{model}-{omit_text}-{split_first}.py"
+    script = root / (
+        f"reviewer-{model}-{omit_text}-{split_first}-{omit_style_contract}.py"
+    )
     script.write_text(
         f"""
 import hashlib
@@ -116,17 +126,15 @@ for asset in request["assets"]:
     if {str(split_first)} and asset["path"] == "素材/cover.png" and observed:
         first = observed.pop(0)
         observed = [first[:2], first[2:], *observed]
+    required_checks = list(asset.get("required_checks") or request["contract"]["required_checks"])
+    checks = {{name: True for name in required_checks}}
+    if {str(omit_style_contract)}:
+        checks.pop("style_contract_match", None)
     assets.append({{
         "path": asset["path"],
         "sha256": asset["sha256"],
         "observed_text": observed,
-        "checks": {{
-            "text_match": True,
-            "crop_safe": True,
-            "semantic_hierarchy": True,
-            "style_consistent": True,
-            "no_unexpected_text": True
-        }},
+        "checks": checks,
         "notes": ""
     }})
 payload = {{
@@ -149,9 +157,21 @@ output_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8"
 
 
 def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(tmp_path):
-    from scripts.visual_qa import run_visual_qa
+    from scripts.visual_qa import build_qa_request, run_visual_qa
 
     article = _article(tmp_path)
+    request, request_errors = build_qa_request(article)
+    assert request_errors == []
+    cover = next(asset for asset in request["assets"] if asset["stage"] == "cover")
+    info = next(asset for asset in request["assets"] if asset["stage"] == "infographic")
+    assert cover["target_style"] == "montage-evidence"
+    assert "BIRTH × CARE × CITY" in cover["expected_text"]
+    assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
+    assert "style_contract_match" in cover["required_checks"]
+    assert "composition_contract_match" in cover["required_checks"]
+    assert info["target_style"] == "claymation"
+    assert info["style_contract"]["visual_profile"] == "warm-light-clay"
+    assert "style_contract_match" in info["required_checks"]
     qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
 
     assert errors == []
@@ -161,6 +181,19 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     markdown = (article / "_visual-qa.md").read_text(encoding="utf-8")
     assert "此文件由 _visual-qa.json 派生" in markdown
     assert "✅" in markdown
+
+
+def test_qa_rejects_reviewer_that_does_not_confirm_target_style(tmp_path):
+    from scripts.visual_qa import run_visual_qa
+
+    article = _article(tmp_path)
+    qa, errors = run_visual_qa(
+        article,
+        reviewer_command=_reviewer(tmp_path, omit_style_contract=True),
+    )
+
+    assert qa is None
+    assert any("style_contract_match" in error for error in errors)
 
 
 def test_qa_rejects_checked_box_markdown_without_structured_result(tmp_path):

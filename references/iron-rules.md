@@ -22,6 +22,8 @@
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
 7. 最终图后处理后必须独立 `visual-qa` 并 `seal visual`；Markdown 勾选不算证据。
 8. 信息图引用只由 `assemble-release` 写入带 marker 的机器块；正文变化仍会令 release job 失效。
+9. `style_consistent` 不能代替目标风格验收；QA 必须通过 `style_contract_match`、
+   `brand_palette_match`，封面另过 `composition_contract_match`。
 
 ## 排版
 

@@ -110,11 +110,9 @@ def _visual_bundle(root: Path) -> Path:
                 "sha256": asset["sha256"],
                 "observed_text": asset["expected_text"],
                 "checks": {
-                    "text_match": True,
-                    "crop_safe": True,
-                    "semantic_hierarchy": True,
-                    "style_consistent": True,
-                    "no_unexpected_text": True,
+                    name: True
+                    for name in asset.get("required_checks")
+                    or request["contract"]["required_checks"]
                 },
                 "notes": "",
             }
