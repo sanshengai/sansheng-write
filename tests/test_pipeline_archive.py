@@ -259,10 +259,15 @@ def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatc
     )
 
     assert first == second
-    assert "🔥 教程 | 自动收尾" in first
-    assert "👉 去官网看完整方法" in first
-    assert "🔗 https://example.com" in first
-    assert "https://mp.weixin.qq.com/s/abc" in first
+    assert first == (
+        "🔥 教程 | 自动收尾\n"
+        "🧭 正式发布后自动归档、同步官网并生成朋友圈文案。\n"
+        "📖 https://mp.weixin.qq.com/s/abc\n"
+        "👉 去官网看完整方法\n"
+        "🔗 https://example.com\n"
+    )
+    assert all(line == line.strip() for line in first.splitlines())
+    assert (tmp_path / "_moments-copy.md").read_text(encoding="utf-8") == first
 
 
 def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):

@@ -2463,7 +2463,7 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
         lines.append(f"👉 {cta}")
     if site and site not in cta:
         lines.append(f"🔗 {site}")
-    text = "# 朋友圈文案\n\n" + "\n".join(lines) + "\n"
+    text = "\n".join(line.strip() for line in lines if line.strip()) + "\n"
     (cwd / "_moments-copy.md").write_text(text, encoding="utf-8")
     print("✅ 已生成朋友圈文案：_moments-copy.md（仅生成，不自动发朋友圈）")
     return text

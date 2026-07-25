@@ -43,6 +43,10 @@ python "$SKILL/scripts/pipeline.py" finalize \
 4. 执行 profile 中已配置的官网同步命令。
 5. 生成 `_moments-copy.md`；实际朋友圈发布仍由作者完成。
 
+`_moments-copy.md` 是可整段直接粘贴的纯文本：第一个字符就是首句 emoji，
+正文逐行排列，每行首尾均无空白，只在文件末尾保留一个换行。聊天交付同样直接
+从首句 emoji 开始，不添加标题、导语或 Markdown 包装。
+
 ## 凭证
 
 - `_publish-ready.json`：调用微信前的本地包摘要。
