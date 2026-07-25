@@ -2463,7 +2463,18 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
         lines.append(f"👉 {cta}")
     if site and site not in cta:
         lines.append(f"🔗 {site}")
-    text = "\n".join(line.strip() for line in lines if line.strip()) + "\n"
+    # 朋友圈交付是纯文本协议：首句直接起始、段落之间一个空行，去除
+    # 普通空白及常见不可见字符，避免 Markdown/富文本复制后出现首行缩进。
+    clean_lines = [
+        line.replace("\u200b", "")
+        .replace("\u200c", "")
+        .replace("\u200d", "")
+        .replace("\ufeff", "")
+        .strip()
+        for line in lines
+    ]
+    clean_lines = [line for line in clean_lines if line]
+    text = "\n\n".join(clean_lines) + "\n"
     (cwd / "_moments-copy.md").write_text(text, encoding="utf-8")
     print("✅ 已生成朋友圈文案：_moments-copy.md（仅生成，不自动发朋友圈）")
     return text

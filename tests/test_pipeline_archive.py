@@ -260,12 +260,15 @@ def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatc
 
     assert first == second
     assert first == (
-        "🔥 教程 | 自动收尾\n"
-        "🧭 正式发布后自动归档、同步官网并生成朋友圈文案。\n"
-        "📖 https://mp.weixin.qq.com/s/abc\n"
-        "👉 去官网看完整方法\n"
+        "🔥 教程 | 自动收尾\n\n"
+        "🧭 正式发布后自动归档、同步官网并生成朋友圈文案。\n\n"
+        "📖 https://mp.weixin.qq.com/s/abc\n\n"
+        "👉 去官网看完整方法\n\n"
         "🔗 https://example.com\n"
     )
+    assert first.startswith("🔥")
+    assert "# 朋友圈文案" not in first
+    assert not any(char in first for char in "\u200b\u200c\u200d\ufeff\u00a0")
     assert all(line == line.strip() for line in first.splitlines())
     assert (tmp_path / "_moments-copy.md").read_text(encoding="utf-8") == first
 
