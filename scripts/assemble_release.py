@@ -95,7 +95,6 @@ def assemble_release_markdown(
     audio_match = AUDIO_BLOCK_RE.search(clean)
     audio = audio_match.group(0).strip() if audio_match else ""
     body = AUDIO_BLOCK_RE.sub("", clean).rstrip()
-    headings = list(re.finditer(r"(?m)^##\s+.+$", body))
     items = list(plan["infographics"])
     opening = [item for item in items if item["position"] == "opening"]
     middle = [item for item in items if item["position"] == "middle"]
@@ -108,16 +107,17 @@ def assemble_release_markdown(
     def add(index: int, item: dict[str, Any]) -> None:
         insertions.setdefault(index, []).append(_visual_block(item))
 
-    opening_index = headings[0].start() if headings else len(body)
-    add(opening_index, opening[0])
-    for index, item in enumerate(middle):
-        if headings:
-            heading_index = round((index + 1) * len(headings) / (len(middle) + 1))
-            heading_index = min(max(heading_index, 0), len(headings) - 1)
-            add(headings[heading_index].start(), item)
-        else:
-            add(len(body), item)
-    add(len(body), closing[0])
+    # 不能再用 H2 数量均分猜图位：它会把“看似插进正文”的图放到错误论证段。
+    # visual-plan 的 anchor 是作者正文里唯一、原样可查的锚句；图片永远插在它之后。
+    for item in [*opening, *middle, *closing]:
+        anchor = str(item.get("anchor") or "")
+        hits = [match for match in re.finditer(re.escape(anchor), body)]
+        if len(hits) != 1:
+            return None, [
+                f"信息图 {item.get('id')} 的 anchor 必须在定稿.md 作者正文中唯一命中 1 次；"
+                f"当前命中 {len(hits)} 次：{anchor!r}"
+            ]
+        add(hits[0].end(), item)
 
     assembled = body
     for index in sorted(insertions, reverse=True):

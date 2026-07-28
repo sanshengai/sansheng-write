@@ -29,7 +29,7 @@ def _plan() -> dict:
                 "aspect_ratio": "9:16",
                 "title": "先锁定输入",
                 "layout": "structured-card",
-                "template_id": "curve-convergence",
+                "anchor": "# 教程 | 视觉合同",
                 "expected_text": ["作者定稿", "任务单"],
                 "facts": ["定稿哈希绑定任务单"],
             },
@@ -39,7 +39,7 @@ def _plan() -> dict:
                 "aspect_ratio": "16:9",
                 "title": "再编译规则",
                 "layout": "comparison",
-                "template_id": "service-map",
+                "anchor": "中段锚点一",
                 "expected_text": ["业务规则", "像素渲染"],
                 "facts": ["业务规则归 write", "渲染器可替换"],
             },
@@ -49,7 +49,7 @@ def _plan() -> dict:
                 "aspect_ratio": "16:9",
                 "title": "发布硬门",
                 "layout": "flow",
-                "template_id": "tiered-network",
+                "anchor": "中段锚点二",
                 "expected_text": ["预检", "发布", "读回"],
                 "facts": ["三步必须由一个命令完成"],
             },
@@ -59,7 +59,7 @@ def _plan() -> dict:
                 "aspect_ratio": "9:16",
                 "title": "草稿箱交付",
                 "layout": "checklist",
-                "template_id": "experience-loop",
+                "anchor": "结尾锚点",
                 "expected_text": ["草稿已读回", "正式发布人工完成"],
                 "facts": ["自动链终点是微信草稿箱"],
             },
@@ -74,7 +74,13 @@ def _article(tmp_path: Path) -> Path:
         "---\n"
         'title: "教程 | 视觉合同"\n'
         'description: "一份稳定的视觉发布合同。"\n'
-        "---\n\n# 教程 | 视觉合同\n\n" + "正文段落。\n" * 80,
+        "---\n\n# 教程 | 视觉合同\n\n"
+        + "正文段落。\n" * 20
+        + "中段锚点一\n\n"
+        + "正文段落。\n" * 20
+        + "中段锚点二\n\n"
+        + "正文段落。\n" * 20
+        + "结尾锚点\n",
         encoding="utf-8",
     )
     (article / "article-meta.yaml").write_text(
@@ -139,17 +145,15 @@ def test_visual_plan_requires_four_images_and_unique_ids():
     assert any("id 必须唯一" in error for error in errors)
 
 
-def test_visual_plan_requires_reviewed_template_ids_for_each_slot():
+def test_visual_plan_requires_a_unique_author_text_anchor_for_each_slot():
     from scripts.visual_workflow import validate_visual_plan
 
     plan = _plan()
-    plan["infographics"][0].pop("template_id")
-    plan["infographics"][1]["template_id"] = "experience-loop"
+    plan["infographics"][0].pop("anchor")
 
     errors = validate_visual_plan(plan)
 
-    assert any("template_id" in error for error in errors)
-    assert any("middle" in error and "experience-loop" in error for error in errors)
+    assert any("anchor" in error for error in errors)
 
 
 def test_visual_plan_rejects_suspicious_double_character_typo_clusters():
@@ -192,7 +196,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     )
     assert f'producer: "{PRODUCER}"' in cover
     assert 'aspect_ratio: "2.35:1"' in cover
-    assert "Canvas base: #0E0E10" in cover
+    assert "Canvas base: deep charcoal" in cover
     assert "slightly larger left zone" in cover
     assert "slightly smaller right zone" in cover
     assert "narrow quiet gutter" in cover
@@ -230,7 +234,8 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
-    assert 'template_id: "curve-convergence"' in info
+    assert 'template_id:' not in info
+    assert "reviewed editorial composition contract" in info
     assert "定稿哈希绑定任务单" not in info
     batch = json.loads(
         (article / "素材/render-batch.json").read_text(encoding="utf-8")
@@ -303,6 +308,7 @@ def test_compiler_writes_analysis_and_structured_content_from_same_plan(tmp_path
     assert "01 · opening · 9:16" in analysis
     assert "定稿哈希绑定任务单" in structured
     assert "自动链终点是微信草稿箱" in structured
+    assert "anchor=中段锚点一" in analysis
 
 
 def test_pipeline_compile_visuals_command(tmp_path):
@@ -350,8 +356,8 @@ def test_release_markdown_assembly_is_idempotent_and_references_every_infographi
         assert text.count(image) == 1
         assert text.count(f"SANSHENG-VISUAL-START:{item['id']}") == 1
         assert text.count(f"SANSHENG-VISUAL-END:{item['id']}") == 1
-    assert text.index("infographic-01.png") < text.index("## 第一部分")
-    assert text.index("infographic-04.png") > text.index("## 第三部分")
+    assert text.index("infographic-01.png") > text.index("# 教程 | 视觉合同")
+    assert text.index("infographic-04.png") > text.index("结尾锚点")
 
 
 def test_release_markdown_assembly_removes_legacy_unsealed_infographic_refs(

@@ -30,11 +30,6 @@ PROFILE_BY_STYLE = {
     "claymation": "warm-light-clay",
     "morandi-journal": "morandi-journal",
 }
-TEMPLATE_IDS_BY_POSITION = {
-    "opening": {"curve-convergence"},
-    "middle": {"service-map", "tiered-network"},
-    "closing": {"experience-loop"},
-}
 _SUSPICIOUS_DOUBLE_CHARACTER_CLUSTER = re.compile(
     r"([\u4e00-\u9fff])\1([\u4e00-\u9fff])\2"
 )
@@ -98,7 +93,7 @@ def validate_visual_plan(plan: dict) -> list[str]:
             "aspect_ratio",
             "title",
             "layout",
-            "template_id",
+            "anchor",
         ):
             if not str(item.get(field) or "").strip():
                 errors.append(f"{label}.{field} 不能为空")
@@ -114,13 +109,6 @@ def validate_visual_plan(plan: dict) -> list[str]:
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")
         aspect = str(item.get("aspect_ratio") or "")
-        template_id = str(item.get("template_id") or "")
-        allowed_templates = TEMPLATE_IDS_BY_POSITION.get(position, set())
-        if template_id and template_id not in allowed_templates:
-            errors.append(
-                f"{label}.template_id={template_id} 不适用于 position={position}；"
-                f"只允许 {sorted(allowed_templates)}"
-            )
         if index == 0 and (position != "opening" or aspect != "9:16"):
             errors.append("首张信息图必须 position=opening 且 aspect_ratio=9:16")
         elif index == len(images) - 1 and (
@@ -440,7 +428,6 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         # layout 只在正文的 COMPOSITION GUIDANCE 段出现一次，且那一段带着
         # 「绝不可渲染为可见文字」的显式禁令；放两处等于把禁令稀释掉。
         # 溯源不受影响：guidance 段本身就在同一份 canonical prompt 里，照样入 SHA。
-        "template_id": str(item.get("template_id") or ""),
         "aspect_ratio": str(item.get("aspect_ratio") or ""),
         "expected_text_sha256": _expected_text_digest(expected),
     }
@@ -472,7 +459,7 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         _frontmatter(fields)
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
-        f"reviewed template {item.get('template_id')}. {palette}\n"
+        f"reviewed editorial composition contract. {palette}\n"
         # 🔴 layout 是中文的排布说明，必须显式声明「只描述构图、不得当作可见文字」。
         # 早期版本把它直接嵌在这句里（`... template X (中文排布说明)`），模型会把这句
         # 中文当成标题画进图里——实测出现过整句排布说明被渲成图上大标题，
@@ -577,7 +564,7 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     for item in plan["infographics"]:
         analysis_lines.append(
             f"- {item['id']} · {item['position']} · {item['aspect_ratio']} · "
-            f"{item['layout']} · {item['title']}"
+            f"{item['layout']} · {item['title']} · anchor={item['anchor']}"
         )
         structured_lines.extend(
             [

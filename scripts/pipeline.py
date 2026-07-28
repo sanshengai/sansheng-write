@@ -2526,6 +2526,28 @@ def cmd_verify_release_job(cwd: Path) -> None:
     )
 
 
+def cmd_release_check(cwd: Path) -> None:
+    """Single final binding + publish-preflight command after machine assembly."""
+    from release_job import rebind_release_job, validate_release_job
+
+    job, rebound, errors = rebind_release_job(cwd)
+    if errors or job is None:
+        print("❌ release check 未通过：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    _, validation_errors = validate_release_job(cwd)
+    preflight_errors = _pre_publish_errors(cwd)
+    all_errors = validation_errors + preflight_errors
+    if all_errors:
+        print("❌ release check 未通过：")
+        for error in all_errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    action = "已重绑定机器装配后的定稿字节" if rebound else "定稿绑定无需更新"
+    print(f"✅ release check 通过：{action}，可执行 release-to-draft")
+
+
 def cmd_compile_visuals(cwd: Path) -> None:
     from visual_workflow import compile_visual_plan
 
@@ -2553,21 +2575,48 @@ def cmd_assemble_release(cwd: Path) -> None:
     print(f"✅ {action}定稿.md：嵌入 {result['image_count']} 张信息图")
 
 
-def cmd_render_visuals(cwd: Path, only: str = "") -> None:
+def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
     from render_visuals import render_visuals
 
     selected = {part.strip() for part in only.split(",") if part.strip()} or None
-    receipt, errors = render_visuals(cwd, only=selected)
+    receipt, errors = render_visuals(cwd, only=selected, candidate_count=candidates)
     if errors:
         print("❌ 图片渲染失败：")
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
     scope = f"，本轮重渲 {sorted(selected)}，其余沿用" if selected else ""
+    candidate_note = (
+        f"；已生成 {candidates} 组候选，需运行 select-visuals 后才能进入视觉 QA"
+        if candidates > 1 else ""
+    )
     print(
         f"✅ 已渲染 {len(receipt['assets'])} 张图{scope}；"
-        f"renderer={receipt['renderer']} revision={receipt['renderer_revision'][:12]}"
+        f"renderer={receipt['renderer']} revision={str(receipt.get('renderer_revision') or '')[:12]}{candidate_note}"
     )
+
+
+def cmd_select_visuals(cwd: Path, specs: list[str]) -> None:
+    from render_visuals import select_visual_candidates
+
+    selections: dict[str, int] = {}
+    for spec in specs:
+        if "=" not in spec:
+            print(f"❌ 候选选择格式必须为 task_id=序号，收到：{spec}")
+            raise SystemExit(2)
+        task_id, raw = spec.split("=", 1)
+        try:
+            selections[task_id.strip()] = int(raw)
+        except ValueError:
+            print(f"❌ 候选序号必须为整数：{spec}")
+            raise SystemExit(2)
+    receipt, errors = select_visual_candidates(cwd, selections)
+    if errors or receipt is None:
+        print("❌ 候选图选择失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 已选中 {len(receipt['assets'])} 张生成式候选图；现在可运行 visual-qa")
 
 
 def cmd_visual_qa(cwd: Path) -> None:
@@ -2841,6 +2890,10 @@ def main():
         help="校验 _release-job.json 与当前定稿/meta/state 是否仍一致",
     )
     sub.add_parser(
+        "release-check",
+        help="机器装配后重绑定定稿字节并一次完成发布前硬门",
+    )
+    sub.add_parser(
         "compile-visuals",
         help="把受限 visual-plan.json 编译为 canonical prompts 与 render batch",
     )
@@ -2860,6 +2913,18 @@ def main():
              "其余沿用磁盘已有产物与其历史生成记录。用于生成式渲染逐张掷骰子时"
              "补渲个别不满意的图，避免整批重跑把已满意的一起掷掉。",
     )
+    p_rv.add_argument(
+        "--candidates",
+        type=int,
+        default=1,
+        metavar="N",
+        help="每张图生成 2-4 个候选；必须随后 select-visuals 显式选中，默认 1",
+    )
+    p_sv = sub.add_parser(
+        "select-visuals",
+        help="把显式选中的生成式候选提升为最终图；格式 cover=1 hero=2 infographic-01=1",
+    )
+    p_sv.add_argument("selections", nargs="+", metavar="TASK=候选序号")
     sub.add_parser(
         "visual-qa",
         help="调用独立看图进程，生成结构化 _visual-qa.json",
@@ -2931,12 +2996,20 @@ def main():
         cmd_adopt_final(cwd, args.final, args.meta)
     elif args.cmd == "verify-release-job":
         cmd_verify_release_job(cwd)
+    elif args.cmd == "release-check":
+        cmd_release_check(cwd)
     elif args.cmd == "compile-visuals":
         cmd_compile_visuals(cwd)
     elif args.cmd == "assemble-release":
         cmd_assemble_release(cwd)
     elif args.cmd == "render-visuals":
-        cmd_render_visuals(cwd, getattr(args, "only", "") or "")
+        cmd_render_visuals(
+            cwd,
+            getattr(args, "only", "") or "",
+            getattr(args, "candidates", 1),
+        )
+    elif args.cmd == "select-visuals":
+        cmd_select_visuals(cwd, args.selections)
     elif args.cmd == "visual-qa":
         cmd_visual_qa(cwd)
     elif args.cmd == "release-to-draft":

@@ -123,6 +123,47 @@ def test_release_job_allows_only_registered_machine_assembly_blocks(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_release_check_rebinds_machine_assembly_without_resetting_stages(tmp_path):
+    article = _article(tmp_path)
+    assert _run(article, "adopt-final").returncode == 0
+    draft = article / "定稿.md"
+    draft.write_text(
+        draft.read_text(encoding="utf-8")
+        + "\n<!-- SANSHENG-VISUAL-START:01 -->\n"
+        + "![先锁定输入](素材/infographic-01.png)\n"
+        + "<!-- SANSHENG-VISUAL-END:01 -->\n",
+        encoding="utf-8",
+    )
+    # release-check 还会跑完整发布硬门；这里仅测底层重绑定不会重置作者接管状态。
+    from scripts.release_job import rebind_release_job
+
+    job, changed, errors = rebind_release_job(article)
+
+    assert errors == []
+    assert changed is True
+    assert job["final_sha256"] == sha256_file(draft)
+    assert job.get("rebound_at")
+    state = pipeline.load_state(article)
+    assert state["stages"]["writing"]["status"] == "done"
+
+
+def test_release_rebind_refuses_author_body_drift(tmp_path):
+    article = _article(tmp_path)
+    assert _run(article, "adopt-final").returncode == 0
+    draft = article / "定稿.md"
+    draft.write_text(
+        draft.read_text(encoding="utf-8").replace("作者已经审定", "作者又改写", 1),
+        encoding="utf-8",
+    )
+    from scripts.release_job import rebind_release_job
+
+    job, changed, errors = rebind_release_job(article)
+
+    assert job is None
+    assert changed is False
+    assert any("作者正文" in error for error in errors)
+
+
 def test_release_job_rejects_body_drift_even_when_machine_blocks_exist(tmp_path):
     article = _article(tmp_path)
     assert _run(article, "adopt-final").returncode == 0

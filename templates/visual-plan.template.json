@@ -16,7 +16,7 @@
       "aspect_ratio": "9:16",
       "title": "开篇知识图",
       "layout": "structured-card",
-      "template_id": "curve-convergence",
+      "anchor": "定稿中唯一的一句开篇锚句（图片插在这句之后）",
       "expected_text": ["图内文字一", "图内文字二"],
       "facts": ["已核实事实"]
     },
@@ -26,7 +26,7 @@
       "aspect_ratio": "16:9",
       "title": "中段知识图一",
       "layout": "comparison",
-      "template_id": "service-map",
+      "anchor": "定稿中唯一的一句中段锚句",
       "expected_text": ["图内文字"],
       "facts": ["已核实事实"]
     },
@@ -36,7 +36,7 @@
       "aspect_ratio": "16:9",
       "title": "中段知识图二",
       "layout": "flow",
-      "template_id": "tiered-network",
+      "anchor": "定稿中唯一的另一句中段锚句",
       "expected_text": ["图内文字"],
       "facts": ["已核实事实"]
     },
@@ -46,7 +46,7 @@
       "aspect_ratio": "9:16",
       "title": "结尾知识图",
       "layout": "checklist",
-      "template_id": "experience-loop",
+      "anchor": "定稿中唯一的一句结尾锚句",
       "expected_text": ["图内文字"],
       "facts": ["已核实事实"]
     }

@@ -505,6 +505,17 @@ def run_visual_qa(
     reviewer_command: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     cwd = cwd.resolve()
+    candidate_set = cwd / "素材" / "candidates" / "candidate-set.json"
+    if candidate_set.is_file():
+        try:
+            candidate_payload = json.loads(candidate_set.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            return None, [f"candidate-set.json 解析失败：{exc}"]
+        if candidate_payload.get("status") == "selection-required":
+            return None, [
+                "候选图尚未显式选中；先运行 pipeline.py select-visuals，"
+                "再允许独立视觉 QA 审最终图"
+            ]
     request, errors = build_qa_request(cwd)
     if errors or request is None:
         return None, errors

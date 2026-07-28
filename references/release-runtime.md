@@ -30,9 +30,8 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。
 - 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。
-- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout`、`template_id`、`expected_text`、`facts`。
-- `template_id` 只能选已审核模板：开篇 `curve-convergence`；中段
-  `service-map` / `tiered-network`；收尾 `experience-loop`。模型不得自创版式。
+- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout`、`anchor`、`expected_text`、`facts`。
+- `anchor` 是定稿作者正文中唯一命中的原文片段；装配器把该图插在锚句之后，找不到或命中多次即失败，禁止再按 H2 数量猜图位。
 - 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，
   不等于任务单文案本身正确。
 - AI 产品/模型主轴用 `claymation + warm-light-clay`；现象/商业/人文主轴用 `morandi-journal`。
@@ -49,14 +48,27 @@ python "$SKILL/scripts/pipeline.py" compile-visuals
 python "$SKILL/scripts/pipeline.py" render-visuals
 ```
 
+需要比较同一张图的多种生成结果时，用候选闭环，而不是反复覆盖最终文件：
+
+```bash
+python "$SKILL/scripts/pipeline.py" render-visuals --candidates 3
+python "$SKILL/scripts/pipeline.py" select-visuals \
+  cover=2 hero=1 infographic-01=3 infographic-02=1 infographic-03=2 infographic-04=1
+```
+
+候选只保存在 `素材/candidates/`；未执行 `select-visuals` 时视觉 QA 会硬拦。系统绝不把最后一张随机生成图冒充为“最佳图”。
+
 当前适配器可调用 `baoyu-image-gen` CLI，也可使用本 Skill 的已审核模板渲染器。
-外部渲染器只负责像素，不决定版式、风格、文字或比例。运行前会探测 batch
+外部渲染器只负责像素，不决定版式、风格、文字或比例。图中文字必须由生成模型与画面一起原生生成；不允许本地模板/Pillow 绘制或后期叠字。运行前会探测 batch
 能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。
 未配置 policy 时使用已安装渲染器的默认 provider。
 
 **默认走 `provider: sansheng-google`**（模板 `templates/renderer-policy.template.json`
 已按此预置）。该路径由本 Skill 自带的 `gen_img.py` 渲染，按 key 前缀自动分流
 AI Studio / Vertex Express 端点，并记录实际 fallback 后的模型 ID。
+
+运行 `render-visuals` 前会先对本次 Google renderer 做零配额路由预检：Vertex Express 必须是
+`/v1/projects/{project}/locations/global/publishers/google/models/{model}:generateContent`。预检失败会在首张图之前停下；它不会拿一批图片请求去“试”端点。
 
 🔴 **模型 ID 不要带 `-preview`。** 这些模型转正后 preview 的 ID 会下线返回 404，
 而降级链会先撞一次 404 再发真请求 —— 等于每张图多打一发空枪，一批 6 张变 12 次
@@ -69,23 +81,12 @@ AI Studio / Vertex Express 端点，并记录实际 fallback 后的模型 ID。
 把它和 404 混在同一条降级链里，会拿好模型去撞已经满的配额，还把真因掩盖成
 「模型不行」。
 
-⚠️ **`provider: sansheng-template-safe` 是例外路径，不是默认。** 它用
-`render_text_safe_visual.py` 按 `template_id` 渲染，中文字形与坐标绝对稳定、
-数字零幻觉；代价是**每套模板的插画元素是随某一篇文章的题材做出来的**（房子、
-人群、社区节点这类），换个题材就会画出与内容完全无关的东西，而且改任务单没用。
-只在「文字极密 + 数字绝不容错 + 题材恰好匹配某套模板」时手动切过去，
-**切之前先渲一张看看再决定**。每张图同时生成同名 `.design.json`，绑定模板、
-文字框、安全区、视觉元素与渲染前图片摘要。缺清单、越界或模板不兼容都会在视觉
-QA 前硬失败。`sansheng-google-text-safe` 仅保留为兼容旧策略的路径。
-
-⚠️ **`expected_text` 每张信息图恰好 4 条**（标题另算，走 `title` 字段）。
-确定性模板会硬断言这一点；生成式路径虽不断言，但超过 4 条会显著提高重复与
-增殖的概率。
+⚠️ `sansheng-template-safe` 与 `sansheng-google-text-safe` 已被运行时拒绝；历史配置必须改成生成式 provider。`expected_text` 越少越好，超过 4 条会显著提高重复与错字概率。
 
 每张图必须记录：
 
 - `producer=sansheng-write.visual-planner`
-- 实际 renderer（如 `baoyu-image-gen` 或 `deterministic-template-compositor`）
+- 实际 renderer（如 `baoyu-image-gen` 或 `gen_img`）
 - 实际 provider、model、renderer revision、attempt
 - prompt/output SHA-256
 
@@ -97,7 +98,6 @@ QA 前硬失败。`sansheng-google-text-safe` 仅保留为兼容旧策略的路�
 
 ```bash
 python "$SKILL/scripts/pipeline.py" assemble-release
-python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
 2. 运行 `generate_article_bgm.py`，生成 MP3 并插入 AUDIO-CARD。
@@ -133,7 +133,7 @@ python "$SKILL/scripts/pipeline.py" visual-qa
 python "$SKILL/scripts/pipeline.py" seal visual
 ```
 
-授权源是结构门、设计清单与 `_visual-qa.json` 的共同结果，不是 Markdown 勾选框。
+授权源是结构门与 `_visual-qa.json` 的共同结果，不是 Markdown 勾选框。
 QA request 会逐图携带目标 style、配方摘要、
 必备视觉特征、禁用视觉特征与所需 checks；审阅必须检查预期文字、意外杂字、裁切安全、主次层级、
 目标风格、品牌色板和同篇一致性，封面另验固定构图。模型审阅必须给出实际对象、数量、
@@ -145,6 +145,7 @@ QA request 会逐图携带目标 style、配方摘要、
 ## 5. 唯一草稿箱事务
 
 ```bash
+python "$SKILL/scripts/pipeline.py" release-check
 python "$SKILL/scripts/pipeline.py" release-to-draft
 ```
 
@@ -173,7 +174,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 ## 失败处理
 
 - 非零退出：修复明确报错后重跑同一命令。
-- 长命令尚未退出：等待当前单写者返回；禁止另开终端、直调 renderer 或重复启动同一命令。
+- 长命令尚未退出：每 60 秒以内报告一次存活进度，等待当前单写者返回；禁止另开终端、直调 renderer 或重复启动同一命令。
 - 图片或 prompt 改动：重新 `visual-qa`、`seal visual`、`release-to-draft`。
 - 草稿已创建但读回失败：不得删除 attempt，不得手工登记 media ID。
 - 需要换 provider：只改 `renderer-policy.json`，不得改 canonical prompt 或图片比例。

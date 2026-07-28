@@ -277,3 +277,38 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
     except SystemExit:
         errors.append("缺 .state.json，release job 无对应状态机")
     return job, errors
+
+
+def rebind_release_job(cwd: Path) -> tuple[dict | None, bool, list[str]]:
+    """Refresh byte hashes after registered machine assembly only.
+
+    `author_content_sha256` is the authority boundary.  A visual/audio assembly can
+    change file bytes while leaving author prose intact; rebind records that honestly
+    without resetting release stages or manufacturing a new author approval.
+    """
+    cwd = Path(cwd).resolve()
+    job, errors = validate_release_job(cwd)
+    if errors or job is None:
+        return None, False, errors
+    final = cwd / Path(str(job["final_path"]))
+    meta = cwd / Path(str(job["meta_path"]))
+    author_hash = author_content_sha256(final.read_text(encoding="utf-8"))
+    if author_hash != str(job.get("author_content_sha256") or ""):
+        return None, False, ["定稿作者正文已变化，拒绝用机器重绑定掩盖；请重新 adopt-final"]
+    next_final_sha = sha256_file(final)
+    next_meta_sha = sha256_file(meta)
+    if next_meta_sha != str(job.get("meta_sha256") or ""):
+        return None, False, ["article-meta.yaml 已变化，机器重绑定不接受内容配置漂移；请重新 adopt-final"]
+    if next_final_sha == str(job.get("final_sha256") or ""):
+        return job, False, []
+    rebound = dict(job)
+    rebound["final_sha256"] = next_final_sha
+    rebound["rebound_at"] = _now_iso()
+    rebound["job_digest"] = stable_digest(
+        {key: value for key, value in rebound.items() if key != "job_digest"}
+    )
+    (cwd / RELEASE_JOB_FILE).write_text(
+        json.dumps(rebound, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return rebound, True, []

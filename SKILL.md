@@ -27,6 +27,8 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 进任何 `{数据目录}/{N}-{选题名}/` 目录**第一件事**跑 `python "$SKILL/scripts/pipeline.py" status`。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
 
+**长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段；命令未返回期间每 60 秒以内报告一次“仍在运行 / 已完成数量 / 当前阻塞”。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
+
 ## 快速路由（🔴 = 进该阶段前必读）
 
 | 意图（含该行必要约束） | 读 |

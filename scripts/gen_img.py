@@ -23,6 +23,7 @@
 # 日志行刻意纯 ASCII：emoji 在 GBK 控制台会 UnicodeEncodeError。
 # 出图后照常: add_logo.js -> compress_images.py -> pipeline.py log
 import sys, os, json, base64, io, time
+import re
 import urllib.request
 import urllib.error
 from PIL import Image
@@ -71,6 +72,39 @@ def _endpoint(model: str, key: str) -> str:
         )
         return VERTEX_EXPRESS.format(project=project, model=model)
     return AI_STUDIO.format(model=model)
+
+
+def validate_google_route(model: str, key: str | None = None) -> str:
+    """Validate the exact API route without sending a billable generation request.
+
+    A Vertex Express key must use the project/location/publisher route.  A bare
+    aiplatform base URL may look plausible but returns 404 for every image call;
+    this guard catches that class of configuration regression before a batch starts.
+    """
+    model = str(model or "").strip()
+    if not model:
+        raise SystemExit("Google 图片端点预检缺少 model")
+    actual_key = key or _key()
+    endpoint = _endpoint(model, actual_key)
+    if actual_key.startswith("AQ."):
+        pattern = (
+            r"^https://aiplatform\.googleapis\.com/v1/projects/[^/]+/"
+            r"locations/global/publishers/google/models/[^/:]+:generateContent$"
+        )
+        if not re.fullmatch(pattern, endpoint):
+            raise SystemExit(
+                "Vertex Express 路由不完整：必须包含 "
+                "/v1/projects/{project}/locations/global/publishers/google/models/{model}:generateContent"
+            )
+    elif not re.fullmatch(
+        r"^https://generativelanguage\.googleapis\.com/v1beta/models/[^/:]+:generateContent$",
+        endpoint,
+    ):
+        raise SystemExit(
+            "AI Studio 路由不完整：必须为 "
+            "/v1beta/models/{model}:generateContent"
+        )
+    return endpoint
 
 def _aspect_ratio(w, h):
     """把目标 W×H 映射到 Banana 支持的最近 aspectRatio 档。
@@ -305,10 +339,21 @@ def _main(argv=None):
                     help="模型名（给了就覆盖位置参数里的 model；openai 未指定时回退 OPENAI_IMAGE_MODEL）")
     ap.add_argument("--dry-run", action="store_true",
                     help="只打印将发的请求摘要（URL/模型/尺寸，不含 key），不真正调 API")
-    ap.add_argument("args", nargs="+", metavar="prompt_file out_png [model] W H",
+    ap.add_argument("--preflight", action="store_true",
+                    help="只验证 Google/Vertex 的项目路由，不发图片请求、不消耗配额；需配合 -m")
+    ap.add_argument("args", nargs="*", metavar="prompt_file out_png [model] W H",
                     help="model 可省略（用 -m 或 OPENAI_IMAGE_MODEL 代替）")
     ns = ap.parse_args(argv)
     pos = ns.args
+    if ns.preflight:
+        if ns.provider != "google":
+            ap.error("--preflight 当前只支持 provider=google")
+        if not ns.model_opt:
+            ap.error("--preflight 需要 -m <模型名>")
+        if pos:
+            ap.error("--preflight 不接受图片位置参数")
+        print(f"OK Google route: {validate_google_route(ns.model_opt)}")
+        return
     # `-m` 给全批次统一模型时，每组 4 项；否则 Google 每组 5 项（逐图模型）。
     # OpenAI 兼容旧的单组 4 项（模型由 env 解析）。多组按输入顺序串行，避免并发
     # 生图把上游打到 429 / RESOURCE_EXHAUSTED。

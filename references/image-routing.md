@@ -17,14 +17,8 @@
 | renderer | 按 canonical prompt 生成像素 | 当前适配 `baoyu-image-gen`，可按配置替换 |
 
 renderer 不得修改 `expected_text`、比例、style 或 visual profile，不得在日志中冒充 producer。
-弱模型只能在 `visual-plan.json` 选择已审核 `template_id`，不能自由设计最终布局：
-
-- `opening` → `curve-convergence`
-- `middle` → `service-map` 或 `tiered-network`
-- `closing` → `experience-loop`
-
-确定性模板渲染必须生成同名 `.design.json`；视觉 QA 先校验模板、图片摘要、
-安全区和文字框，再要求看图模型提供像素级观察证据。
+图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
+`layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 
 `visual-planner` 内置的是经过筛选的稳定视觉合同，不在运行时跨 Skill 临时读取规则：
 
@@ -83,7 +77,7 @@ baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步�
    视觉 QA 逐张看。
 
 ⚠️ 选渲染器前先读 [release-runtime.md](release-runtime.md) 的渲染器一节：
-默认是生成式，确定性模板是例外，且**模板的插画元素与题材绑定**。
+当前只允许生成式 renderer；错字或构图不合格时走独立 QA + 单张重渲，不降级成本地模板。
 
 ## 执行
 
@@ -104,7 +98,6 @@ python "$SKILL/scripts/pipeline.py" seal visual
 
 最终授权只认：
 
-- 每张确定性模板图的 `.design.json` 结构证据。
 - `_visual-qa.json`：独立视觉审阅结果。
 - `_visual-receipt.json`：QA、prompt、日志和最终图片字节的封存。
 

@@ -53,8 +53,9 @@ _DEFAULT_JOBS = 2
 NATIVE_GOOGLE_PROVIDER = "sansheng-google"
 NATIVE_GOOGLE_TEXT_SAFE_PROVIDER = "sansheng-google-text-safe"
 NATIVE_TEMPLATE_SAFE_PROVIDER = "sansheng-template-safe"
-NATIVE_PROVIDERS = {
-    NATIVE_GOOGLE_PROVIDER,
+# 文字必须由本次模型原生生成在图内；本地/Pillow 模板不再是自动或手动 fallback。
+NATIVE_PROVIDERS = {NATIVE_GOOGLE_PROVIDER}
+BLOCKED_LOCAL_PROVIDERS = {
     NATIVE_GOOGLE_TEXT_SAFE_PROVIDER,
     NATIVE_TEMPLATE_SAFE_PROVIDER,
 }
@@ -222,10 +223,17 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
             errors.append(f"renderers[{index}] 含未知字段：{', '.join(unknown)}")
             continue
         renderer_id = str(item.get("id") or f"attempt-{index + 1}").strip()
+        provider = item.get("provider") or None
+        if provider in BLOCKED_LOCAL_PROVIDERS:
+            errors.append(
+                f"renderers[{index}]={provider} 会用本地模板绘制图中文字；"
+                "当前合同要求由生成模型原生出字，请改为 sansheng-google 或外部生成式 renderer"
+            )
+            continue
         normalized.append(
             {
                 "id": renderer_id,
-                "provider": item.get("provider") or None,
+                "provider": provider,
                 "model": item.get("model") or None,
                 "quality": item.get("quality") or "2k",
                 "imageSize": item.get("imageSize") or "1K",
@@ -380,6 +388,171 @@ def _run_native_google_task(
     }
 
 
+def _candidate_manifest_path(cwd: Path) -> Path:
+    return cwd / "素材" / "candidates" / "candidate-set.json"
+
+
+def _render_visual_candidates(
+    cwd: Path,
+    *,
+    candidate_count: int,
+    only: set[str] | None,
+    renderer_command: list[str] | None,
+    renderer_revision: str,
+    native_google_renderer: Callable[[Path, list[dict[str, Any]], dict[str, Any], int], dict[str, Any]],
+    google_route_preflight: Callable[[str], str] | None,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Generate several truthful candidates, but never silently choose one as final."""
+    if candidate_count < 2 or candidate_count > 4:
+        return None, ["--candidates 只允许 2 到 4；避免无界消耗图片配额"]
+    batch, errors = _load_batch(cwd)
+    if errors or batch is None:
+        return None, errors
+    material = cwd / "素材"
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_dir = material / "candidates" / f"run-{run_id}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    candidates: dict[str, list[dict[str, Any]]] = {}
+    last_receipt: dict[str, Any] | None = None
+    for number in range(1, candidate_count + 1):
+        receipt, run_errors = render_visuals(
+            cwd,
+            only=only,
+            renderer_command=renderer_command,
+            renderer_revision=renderer_revision,
+            native_google_renderer=native_google_renderer,
+            google_route_preflight=google_route_preflight,
+            candidate_count=1,
+        )
+        if run_errors or receipt is None:
+            return None, run_errors or ["候选图渲染未返回凭证"]
+        last_receipt = receipt
+        for record in receipt["assets"]:
+            task_id = Path(str(record["output"])).stem
+            source = cwd / Path(str(record["output"]))
+            destination = run_dir / f"{task_id}-candidate-{number:02d}.png"
+            shutil.copy2(source, destination)
+            stored = dict(record)
+            stored.update(
+                {
+                    "candidate": number,
+                    "path": destination.relative_to(cwd).as_posix(),
+                    "sha256": _sha256(destination),
+                }
+            )
+            candidates.setdefault(task_id, []).append(stored)
+    manifest = {
+        "schema_version": 1,
+        "status": "selection-required",
+        "created_at": _now(),
+        "candidate_count": candidate_count,
+        "run_dir": run_dir.relative_to(cwd).as_posix(),
+        "tasks": candidates,
+    }
+    manifest_path = _candidate_manifest_path(cwd)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        **(last_receipt or {}),
+        "status": "selection-required",
+        "candidate_manifest": manifest_path.relative_to(cwd).as_posix(),
+    }, []
+
+
+def select_visual_candidates(cwd: Path, selections: dict[str, int]) -> tuple[dict[str, Any] | None, list[str]]:
+    """Promote explicitly selected generated candidates to final asset paths."""
+    cwd = cwd.resolve()
+    path = _candidate_manifest_path(cwd)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, ["缺素材/candidates/candidate-set.json；先用 render-visuals --candidates 生成候选"]
+    except json.JSONDecodeError as exc:
+        return None, [f"candidate-set.json 解析失败：{exc}"]
+    tasks = manifest.get("tasks") if isinstance(manifest, dict) else None
+    if not isinstance(tasks, dict) or not tasks:
+        return None, ["candidate-set.json 缺 tasks"]
+    if set(selections) != set(tasks):
+        return None, [
+            "必须为每张图显式选择一个候选："
+            f"需要 {sorted(tasks)}，收到 {sorted(selections)}"
+        ]
+    selected_records: list[dict[str, Any]] = []
+    for task_id, choices in tasks.items():
+        chosen = next(
+            (
+                item for item in choices
+                if isinstance(item, dict) and int(item.get("candidate") or 0) == selections[task_id]
+            ),
+            None,
+        )
+        if not chosen:
+            return None, [f"{task_id} 没有候选 {selections[task_id]}"]
+        source = cwd / Path(str(chosen.get("path") or ""))
+        target = cwd / Path(str(chosen.get("output") or ""))
+        if not source.is_file() or not str(chosen.get("output") or ""):
+            return None, [f"{task_id} 候选文件或目标路径缺失"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        if _sha256(target) != str(chosen.get("sha256") or ""):
+            return None, [f"{task_id} 候选复制后摘要不一致"]
+        record = dict(chosen)
+        record.update(
+            {
+                "record_id": f"selected-{task_id}-{_sha256(target)[:12]}",
+                "timestamp": _now(),
+                "output": target.relative_to(cwd).as_posix(),
+                "output_sha256": _sha256(target),
+                "selected_candidate": selections[task_id],
+                "cmd": "select-visuals <task>=<candidate>",
+            }
+        )
+        record.pop("path", None)
+        record.pop("sha256", None)
+        selected_records.append(record)
+    with (cwd / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
+        for record in selected_records:
+            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+    infographic_images = [
+        {
+            "path": record["output"],
+            "aspect": str(record.get("aspect_ratio") or ""),
+            "bytes": (cwd / Path(record["output"])).stat().st_size,
+            "producer": VISUAL_PRODUCER,
+            "renderer": str(record.get("renderer") or ""),
+            "style": str(record.get("style") or ""),
+        }
+        for record in selected_records
+        if _stage(Path(record["output"]).stem) == "infographic"
+    ]
+    info_dir = cwd / "素材" / "infographic"
+    info_dir.mkdir(parents=True, exist_ok=True)
+    (info_dir / "final-set.json").write_text(
+        json.dumps({"schema_version": 2, "producer": VISUAL_PRODUCER, "images": infographic_images}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    manifest["status"] = "selected"
+    manifest["selected_at"] = _now()
+    manifest["selections"] = selections
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    receipt = {
+        "schema_version": 1,
+        "status": "done",
+        "producer": VISUAL_PRODUCER,
+        "renderer": "selected-generated-candidates",
+        "assets": selected_records,
+        "candidate_manifest": path.relative_to(cwd).as_posix(),
+        "created_at": _now(),
+    }
+    (cwd / "素材" / "render-receipt.json").write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return receipt, []
+
+
 def _render_native_google(
     cwd: Path,
     tasks: list[dict[str, Any]],
@@ -416,15 +589,57 @@ def render_visuals(
     native_google_renderer: Callable[
         [Path, list[dict[str, Any]], dict[str, Any], int], dict[str, Any]
     ] = _render_native_google,
+    google_route_preflight: Callable[[str], str] | None = None,
+    candidate_count: int = 1,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """Render all compiled tasks and record immutable, truthful provenance."""
     cwd = cwd.resolve()
+    if candidate_count > 1:
+        return _render_visual_candidates(
+            cwd,
+            candidate_count=candidate_count,
+            only=only,
+            renderer_command=renderer_command,
+            renderer_revision=renderer_revision,
+            native_google_renderer=native_google_renderer,
+            google_route_preflight=google_route_preflight,
+        )
     batch, errors = _load_batch(cwd)
     if errors or batch is None:
         return None, errors
     policy, policy_errors = _load_policy(cwd)
     if policy_errors:
         return None, policy_errors
+
+    # 404 的根因若是 Vertex 项目路由少了 /publishers/google，首张之前就必须停。
+    # 这只校验本次真实 renderer 的 URL 合同，不发网络请求、不消耗图片配额。
+    google_models = sorted(
+        {
+            str(renderer.get("model") or "").strip()
+            for renderer in policy
+            if renderer.get("provider") == NATIVE_GOOGLE_PROVIDER
+        }
+    )
+    if google_models:
+        if google_route_preflight is None:
+            try:
+                from gen_img import validate_google_route
+            except ImportError:  # pragma: no cover - package execution fallback
+                from scripts.gen_img import validate_google_route
+            google_route_preflight = validate_google_route
+        route_errors: list[str] = []
+        for model in google_models:
+            try:
+                google_route_preflight(model)
+            except SystemExit as exc:
+                route_errors.append(str(exc))
+            except Exception as exc:  # pragma: no cover - defensive boundary
+                route_errors.append(str(exc))
+        if route_errors:
+            return None, [
+                "Google/Vertex 图片端点预检失败（未发送任何出图请求）："
+                + "；".join(route_errors)
+            ]
 
     command = renderer_command
     revision = renderer_revision
