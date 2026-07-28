@@ -266,6 +266,67 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
     }
 
 
+def test_partial_native_success_is_logged_for_resume(tmp_path):
+    from scripts.render_visuals import render_visuals
+
+    article = _article(tmp_path)
+    (article / "renderer-policy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "renderers": [
+                    {
+                        "id": "native-google",
+                        "provider": "sansheng-google",
+                        "model": "gemini-3.1-flash-image",
+                        "quality": "1k",
+                        "imageSize": "1K",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def partial_native(cwd, tasks, renderer, jobs):
+        results = []
+        for task in tasks:
+            success = task["id"] != "hero"
+            output = cwd / "素材" / task["image"]
+            if success:
+                output.write_bytes(b"\x89PNG\r\n\x1a\n" + task["id"].encode("utf-8"))
+            results.append(
+                {
+                    "id": task["id"],
+                    "provider": "google",
+                    "model": renderer["model"],
+                    "renderer": "gen_img",
+                    "outputPath": str(output),
+                    "success": success,
+                    "attempts": 1,
+                    "error": None if success else "simulated 429",
+                }
+            )
+        return {"returncode": 1, "results": results}
+
+    receipt, errors = render_visuals(
+        article,
+        native_google_renderer=partial_native,
+        renderer_revision="native-test-revision",
+    )
+
+    assert receipt is None
+    assert any("simulated 429" in error for error in errors)
+    records = [
+        json.loads(line)
+        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert {record["output"] for record in records} == {
+        "素材/cover.png",
+        "素材/infographic-01.png",
+    }
+
+
 def test_native_google_route_preflight_fails_before_any_render_call(tmp_path):
     from scripts.render_visuals import render_visuals
 

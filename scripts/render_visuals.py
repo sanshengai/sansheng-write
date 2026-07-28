@@ -757,8 +757,65 @@ def render_visuals(
         pending = list(tasks_by_id)
 
     successes: dict[str, dict[str, Any]] = {}
+    written_records: dict[str, dict[str, Any]] = {}
     attempt_reports: list[dict[str, Any]] = []
     last_errors: dict[str, str] = {}
+
+    def persist_success(task_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        """A successful render is evidence even when another task later fails.
+
+        Persist it immediately so a quota/error-interrupted batch can resume without
+        regenerating already valid assets.
+        """
+        task = tasks_by_id[task_id]
+        output = material / str(task["image"])
+        prompt = material / str(task["promptFiles"][0])
+        if not output.is_file():
+            raise RuntimeError(f"renderer 报告成功但输出不存在：{output.relative_to(cwd)}")
+        if not prompt.is_file():
+            raise RuntimeError(f"canonical prompt 不存在：{prompt.relative_to(cwd)}")
+        output_rel = output.relative_to(cwd).as_posix()
+        prompt_rel = prompt.relative_to(cwd).as_posix()
+        prompt_meta = _prompt_meta(prompt)
+        actual_renderer = str(result.get("renderer") or "baoyu-image-gen")
+        record = {
+            "schema_version": 3,
+            "record_id": f"render-{task_id}-{_sha256(output)[:12]}",
+            "timestamp": _now(),
+            "stage": _stage(task_id),
+            "producer": VISUAL_PRODUCER,
+            "producer_chain": list(task.get("producer_chain") or [VISUAL_PRODUCER]),
+            "tool": VISUAL_PRODUCER,
+            "renderer": actual_renderer,
+            "renderer_revision": revision,
+            "provider": result.get("provider") or "",
+            "model": result.get("model") or "",
+            "attempt_id": result["attempt_id"],
+            "policy_id": result["policy_id"],
+            "output": output_rel,
+            "output_sha256": _sha256(output),
+            "prompt": prompt_rel,
+            "prompt_sha256": _sha256(prompt),
+            "aspect_ratio": task["ar"],
+            "style": str(prompt_meta.get("style") or ""),
+            "visual_profile": str(prompt_meta.get("visual_profile") or ""),
+            "visual_profile_sha256": str(
+                prompt_meta.get("visual_profile_sha256") or ""
+            ),
+            "cmd": (
+                "gen_img.py <canonical-prompt> <output> <model> <width> <height>"
+                if actual_renderer == "gen_img"
+                else (
+                    "render_text_safe_visual.py <canonical-prompt> <output>"
+                    if actual_renderer == "deterministic-template-compositor"
+                    else "baoyu-image-gen --batchfile <sealed-attempt> --json"
+                )
+            ),
+        }
+        with (cwd / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        written_records[task_id] = record
+        return record
 
     for attempt_number, renderer in enumerate(policy, start=1):
         attempt_tasks = []
@@ -827,11 +884,18 @@ def render_visuals(
         for task_id in pending:
             result = by_id.get(task_id)
             if result and result.get("success"):
-                successes[task_id] = {
+                success = {
                     **result,
                     "policy_id": renderer["id"],
                     "attempt_id": attempt_number,
                 }
+                successes[task_id] = success
+                try:
+                    persist_success(task_id, success)
+                except RuntimeError as exc:
+                    next_pending.append(task_id)
+                    successes.pop(task_id, None)
+                    last_errors[task_id] = str(exc)
             else:
                 next_pending.append(task_id)
                 last_errors[task_id] = (
@@ -911,51 +975,12 @@ def render_visuals(
                 }
             )
             continue
-        result = successes[task_id]
         output = material / str(task["image"])
         prompt = material / str(task["promptFiles"][0])
-        if not output.is_file():
-            return None, [f"renderer 报告成功但输出不存在：{output.relative_to(cwd)}"]
-        if not prompt.is_file():
-            return None, [f"canonical prompt 不存在：{prompt.relative_to(cwd)}"]
+        record = written_records[task_id]
         output_rel = output.relative_to(cwd).as_posix()
-        prompt_rel = prompt.relative_to(cwd).as_posix()
         prompt_meta = _prompt_meta(prompt)
-        actual_renderer = str(result.get("renderer") or "baoyu-image-gen")
-        record = {
-            "schema_version": 3,
-            "record_id": f"render-{task_id}-{_sha256(output)[:12]}",
-            "timestamp": _now(),
-            "stage": _stage(task_id),
-            "producer": VISUAL_PRODUCER,
-            "producer_chain": list(task.get("producer_chain") or [VISUAL_PRODUCER]),
-            "tool": VISUAL_PRODUCER,
-            "renderer": actual_renderer,
-            "renderer_revision": revision,
-            "provider": result.get("provider") or "",
-            "model": result.get("model") or "",
-            "attempt_id": result["attempt_id"],
-            "policy_id": result["policy_id"],
-            "output": output_rel,
-            "output_sha256": _sha256(output),
-            "prompt": prompt_rel,
-            "prompt_sha256": _sha256(prompt),
-            "aspect_ratio": task["ar"],
-            "style": str(prompt_meta.get("style") or ""),
-            "visual_profile": str(prompt_meta.get("visual_profile") or ""),
-            "visual_profile_sha256": str(
-                prompt_meta.get("visual_profile_sha256") or ""
-            ),
-            "cmd": (
-                "gen_img.py <canonical-prompt> <output> <model> <width> <height>"
-                if actual_renderer == "gen_img"
-                else (
-                    "render_text_safe_visual.py <canonical-prompt> <output>"
-                    if actual_renderer == "deterministic-template-compositor"
-                    else "baoyu-image-gen --batchfile <sealed-attempt> --json"
-                )
-            ),
-        }
+        actual_renderer = str(record.get("renderer") or "baoyu-image-gen")
         records.append(record)
         images.append(
             {
@@ -968,14 +993,6 @@ def render_visuals(
             }
         )
 
-    # 只把**本轮真正渲染**的记录追加进日志。沿用的那几条已经在日志里了，
-    # 再写一遍会让「同一张图生成过很多次」这件事凭空出现，日志就不再是事实。
-    reused_ids = set(reused_records)
-    with (cwd / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
-        for task, record in zip(batch["tasks"], records):
-            if str(task["id"]) in reused_ids:
-                continue
-            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
     infographic_images = [
         image for task, image in zip(batch["tasks"], images) if _stage(str(task["id"])) == "infographic"
     ]
