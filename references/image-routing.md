@@ -17,6 +17,9 @@
 | renderer | 按 canonical prompt 生成像素 | 当前适配 `baoyu-image-gen`，可按配置替换 |
 
 renderer 不得修改 `expected_text`、比例、style 或 visual profile，不得在日志中冒充 producer。
+封面和信息图的 producer chain 还必须分别包含 `baoyu-cover-image` 与 `baoyu-infographic`；
+前者完成五维封面设计，后者完成命名布局×风格、内容结构化与 prompt 合成。
+仅复制一段风格描述、随后调用 `baoyu-image-gen`，不算完整执行 Baoyu 工作流。
 图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
 `layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 

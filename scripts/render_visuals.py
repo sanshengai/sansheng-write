@@ -413,6 +413,25 @@ def _render_visual_candidates(
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_dir = material / "candidates" / f"run-{run_id}"
     run_dir.mkdir(parents=True, exist_ok=False)
+    manifest_path = _candidate_manifest_path(cwd)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    batch_sha256 = _sha256(material / "render-batch.json")
+    initial_manifest = {
+        "schema_version": 1,
+        "status": "rendering",
+        "created_at": _now(),
+        "candidate_count": 0,
+        "requested_candidate_count": candidate_count,
+        "run_id": run_id,
+        "run_dir": run_dir.relative_to(cwd).as_posix(),
+        "batch_sha256": batch_sha256,
+        "plan_digest": batch.get("plan_digest") or "",
+        "tasks": {},
+    }
+    manifest_path.write_text(
+        json.dumps(initial_manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     candidates: dict[str, list[dict[str, Any]]] = {}
     last_receipt: dict[str, Any] | None = None
     for number in range(1, candidate_count + 1):
@@ -426,6 +445,21 @@ def _render_visual_candidates(
             candidate_count=1,
         )
         if run_errors or receipt is None:
+            # Keep already-rendered candidates selectable after a later
+            # candidate hits a transient quota/rate-limit error.  Losing the
+            # manifest here strands valid images and tempts callers to bypass
+            # explicit selection; the command still returns non-zero below.
+            manifest = {
+                **initial_manifest,
+                "status": "incomplete",
+                "candidate_count": number - 1,
+                "tasks": candidates,
+                "partial_failure": run_errors or ["候选图渲染未返回凭证"],
+            }
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
             return None, run_errors or ["候选图渲染未返回凭证"]
         last_receipt = receipt
         for record in receipt["assets"]:
@@ -447,11 +481,13 @@ def _render_visual_candidates(
         "status": "selection-required",
         "created_at": _now(),
         "candidate_count": candidate_count,
+        "requested_candidate_count": candidate_count,
+        "run_id": run_id,
         "run_dir": run_dir.relative_to(cwd).as_posix(),
+        "batch_sha256": batch_sha256,
+        "plan_digest": batch.get("plan_digest") or "",
         "tasks": candidates,
     }
-    manifest_path = _candidate_manifest_path(cwd)
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -476,6 +512,25 @@ def select_visual_candidates(cwd: Path, selections: dict[str, int]) -> tuple[dic
     tasks = manifest.get("tasks") if isinstance(manifest, dict) else None
     if not isinstance(tasks, dict) or not tasks:
         return None, ["candidate-set.json 缺 tasks"]
+    batch_path = cwd / "素材" / "render-batch.json"
+    if (
+        not batch_path.is_file()
+        or manifest.get("batch_sha256") != _sha256(batch_path)
+    ):
+        return None, ["candidate-set.json 未绑定当前 render-batch.json"]
+    requested_count = int(manifest.get("requested_candidate_count") or manifest.get("candidate_count") or 0)
+    actual_count = int(manifest.get("candidate_count") or 0)
+    if requested_count and actual_count < requested_count:
+        return None, [
+            "候选生成不完整，禁止把单一残留候选标成已选择："
+            f"请求 {requested_count}，实际 {actual_count}"
+        ]
+    incomplete = [
+        task_id for task_id, choices in tasks.items()
+        if not isinstance(choices, list) or len(choices) < max(2, requested_count)
+    ]
+    if incomplete:
+        return None, [f"候选不足，禁止选择：{sorted(incomplete)}"]
     if set(selections) != set(tasks):
         return None, [
             "必须为每张图显式选择一个候选："
@@ -873,6 +928,7 @@ def render_visuals(
             "timestamp": _now(),
             "stage": _stage(task_id),
             "producer": VISUAL_PRODUCER,
+            "producer_chain": list(task.get("producer_chain") or [VISUAL_PRODUCER]),
             "tool": VISUAL_PRODUCER,
             "renderer": actual_renderer,
             "renderer_revision": revision,
@@ -939,6 +995,7 @@ def render_visuals(
         "schema_version": 1,
         "status": "done",
         "producer": VISUAL_PRODUCER,
+        "producer_chain": list(batch.get("producer_chain") or [VISUAL_PRODUCER]),
         "renderer": renderers_used[0] if len(renderers_used) == 1 else "mixed",
         "renderer_revision": revision,
         "batch_sha256": _sha256(material / "render-batch.json"),
@@ -950,6 +1007,23 @@ def render_visuals(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    candidate_manifest = _candidate_manifest_path(cwd)
+    if candidate_manifest.is_file():
+        candidate_manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "status": "direct-render",
+                    "created_at": _now(),
+                    "batch_sha256": _sha256(material / "render-batch.json"),
+                    "plan_digest": batch.get("plan_digest") or "",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return receipt, []
 
 

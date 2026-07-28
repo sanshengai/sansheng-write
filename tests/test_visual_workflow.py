@@ -28,6 +28,7 @@ def _plan() -> dict:
                 "position": "opening",
                 "aspect_ratio": "9:16",
                 "title": "先锁定输入",
+                "layout_type": "linear-progression",
                 "layout": "structured-card",
                 "anchor": "# 教程 | 视觉合同",
                 "expected_text": ["作者定稿", "任务单"],
@@ -38,6 +39,7 @@ def _plan() -> dict:
                 "position": "middle",
                 "aspect_ratio": "16:9",
                 "title": "再编译规则",
+                "layout_type": "binary-comparison",
                 "layout": "comparison",
                 "anchor": "中段锚点一",
                 "expected_text": ["业务规则", "像素渲染"],
@@ -48,6 +50,7 @@ def _plan() -> dict:
                 "position": "middle",
                 "aspect_ratio": "16:9",
                 "title": "发布硬门",
+                "layout_type": "hub-spoke",
                 "layout": "flow",
                 "anchor": "中段锚点二",
                 "expected_text": ["预检", "发布", "读回"],
@@ -58,6 +61,7 @@ def _plan() -> dict:
                 "position": "closing",
                 "aspect_ratio": "9:16",
                 "title": "草稿箱交付",
+                "layout_type": "winding-roadmap",
                 "layout": "checklist",
                 "anchor": "结尾锚点",
                 "expected_text": ["草稿已读回", "正式发布人工完成"],
@@ -203,19 +207,19 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "OVERSIZED GHOST-WATERMARK" in cover
     assert "ONLY VISIBLE TEXT ALLOWLIST" in cover
     assert "Never render layout guides, measurements or percentages" in cover
-    assert "Chinese L1: 规则不能丢" in cover
-    assert "Chinese L2: 弱模型也能稳" in cover
+    assert "Main Chinese headline: 规则不能丢" in cover
+    assert "Supporting Chinese subtitle: 弱模型也能稳" in cover
     # 🔴 钉的是「字号必须锚在画布上」这条契约本身，不是措辞。
     # 旧版只说 L1 是 100% scale，没有画布锚点，模型可自由决定 L1 多大 ——
     # 实测同一份提示词跑出过 L1 占画布高 8% 和 12% 两种结果（前者主标题比
     # ghost 还小，整张封面失去视觉主体）。这两条断言防止锚点被改回相对值。
     assert "cap height MUST be 12%-14% of the canvas height" in cover
-    assert "L2 is a supporting subtitle at 58%-64% of L1 cap height" in cover
+    assert "supporting subtitle is 58%-64% of the headline cap height" in cover
     # ghost 必须小于等于 L1 量级且只作背景纹理；旧值 145%-155% 等于要求英文比中文大。
-    assert "105%-120% of L1 cap height" in cover
-    assert "Fitting the ghost must never shrink L1" in cover
+    assert "105%-120% of headline cap height" in cover
+    assert "Fitting the ghost must never shrink the headline" in cover
     # 主题色只染 L2，L1 靠字号称王 —— 防止「两行都染 / 主标题染色」回潮。
-    assert "Never colour any part of L1" in cover
+    assert "Never colour any part of the main headline" in cover
     # 🔴 品牌胶囊：主题色 78%-85% + 哑光磨砂。满色 100% 会跟 L1 争焦点。
     assert "78%-85% opacity" in cover
     assert "FLAT MATTE frosted body" in cover
@@ -225,8 +229,9 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "no specular highlight" in cover
     assert "Two to four tags maximum" in cover
     assert "Descriptor tags: 确定性视觉合同" in cover
-    assert "一份任务单" not in cover
-    assert "一条发布入口" not in cover
+    assert "一份任务单" in cover
+    assert "一条发布入口" in cover
+    assert "TEXTLESS visual evidence only" in cover
     assert "bright editorial evidence montage" not in cover
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
@@ -240,6 +245,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     batch = json.loads(
         (article / "素材/render-batch.json").read_text(encoding="utf-8")
     )
+    assert batch["jobs"] == 1
     assert [task["ar"] for task in batch["tasks"]] == [
         "2.35:1",
         "1:1",
@@ -289,7 +295,8 @@ def test_morandi_compiler_embeds_full_baoyu_style_contract(tmp_path):
     assert "VISIBLE TEXT ALLOWLIST" in prompt
     assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in prompt
     assert "VISIBLE TEXT ALLOWLIST" in hero
-    assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in hero
+    assert "Use facts only as textless objects" in hero
+    assert "Render this title EXACTLY ONCE" in hero
     assert "独立复核" not in hero
 
 

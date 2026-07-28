@@ -24,10 +24,16 @@
 8. 信息图引用只由 `assemble-release` 写入带 marker 的机器块；正文变化仍会令 release job 失效。
 9. `style_consistent` 不能代替目标风格验收；QA 必须通过 `style_contract_match`、
    `brand_palette_match`，封面另过 `composition_contract_match`。
-10. 弱模型只能选择已审核 `template_id`；确定性模板图必须带与图片摘要绑定的
-    `.design.json`，缺失、越界或模板不兼容立即阻断。
+10. 所有正文视觉均须由登记的生成式 renderer 原生生成；图中文字必须随画面一起生成，
+    禁止以 `template_id`、Pillow、本地模板或后期叠字替代。生成失败只能按 policy
+    切换另一生成式 renderer，不能降级为确定性模板。
 11. 看图模型不是视觉发布的唯一授权者；没有实际对象、数量、位置和版式观察的
     布尔式 QA 不得放行。
+12. `text_match`、`no_unexpected_text`、`style_contract_match` 不得从发布硬门移除；
+    `required_text` 每条恰好出现一次。Hero 与最终 HTML 实际引用的所有生成图必须送审。
+13. 同一发布任务中不得修改 QA 规则迁就现图；编译后 QA 代码发生变化时凭证失效。
+14. 封面与信息图必须分别留下 `baoyu-cover-image` / `baoyu-infographic` producer chain；
+    只调用 `baoyu-image-gen` renderer 不等于执行了完整 Baoyu 视觉工作流。
 
 ## 排版
 

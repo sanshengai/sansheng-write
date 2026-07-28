@@ -64,6 +64,7 @@ def _prompt(**over) -> str:
         "position": "opening",
         "aspect_ratio": "9:16",
         "title": "重置的间隔正在收窄",
+        "layout_type": "linear-progression",
         "layout": "四级台阶横向递进，每级一个日期与用户数标签",
         "template_id": "tiered-network",
         "expected_text": ["7月14日 700万", "7月15日 800万", "7月16日 900万", "7月22日 1000万"],

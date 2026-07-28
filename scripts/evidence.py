@@ -173,6 +173,7 @@ def build_visual_manifest(
             continue
 
         producer = _producer(rec)
+        producer_chain = [str(value) for value in rec.get("producer_chain") or []]
         renderer = _renderer(rec)
         model = str(rec.get("model") or "").strip()
         provenance_mode = str(rec.get("provenance_mode") or "rendered").strip()
@@ -182,6 +183,14 @@ def build_visual_manifest(
             errors.append(
                 f"{rel} producer={producer or '(空)'}；应为 {sorted(allowed_producers)}"
             )
+        if stage == "cover" and "baoyu-cover-image" not in producer_chain:
+            errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
+        if (
+            stage == "infographic"
+            and producer == VISUAL_PRODUCER
+            and "baoyu-infographic" not in producer_chain
+        ):
+            errors.append(f"{rel} 缺 baoyu-infographic producer chain")
         if not renderer:
             errors.append(f"{rel} 缺 renderer，无法区分 baoyu 语义生产者与像素后端")
         if strict and not model:
@@ -226,6 +235,7 @@ def build_visual_manifest(
             "prompt": prompt_rel,
             "prompt_sha256": prompt_sha,
             "producer": producer,
+            "producer_chain": producer_chain,
             "renderer": renderer,
             "renderer_revision": str(rec.get("renderer_revision") or ""),
             "provider": str(rec.get("provider") or ""),

@@ -30,7 +30,7 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。
 - 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。
-- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout`、`anchor`、`expected_text`、`facts`。
+- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout_type`、`layout`、`anchor`、`expected_text`、`facts`。`layout_type` 必须是已登记的 Baoyu 布局类型。
 - `anchor` 是定稿作者正文中唯一命中的原文片段；装配器把该图插在锚句之后，找不到或命中多次即失败，禁止再按 H2 数量猜图位。
 - 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，
   不等于任务单文案本身正确。
@@ -41,6 +41,8 @@ python "$SKILL/scripts/pipeline.py" compile-visuals
 ```
 
 编译器生成 canonical prompts 和 `素材/render-batch.json`。业务生产者固定为 `sansheng-write.visual-planner`。
+封面生产链必须记录 `baoyu-cover-image`，信息图生产链必须记录 `baoyu-infographic`；
+只有风格名而没有 producer chain 的任务不得发布。
 
 ## 2. 调用外部像素渲染器
 
@@ -57,8 +59,9 @@ python "$SKILL/scripts/pipeline.py" select-visuals \
 ```
 
 候选只保存在 `素材/candidates/`；未执行 `select-visuals` 时视觉 QA 会硬拦。系统绝不把最后一张随机生成图冒充为“最佳图”。
+请求多候选但因 429 等原因只生成出一张时，选择命令必须失败，禁止把残留单图标成“已选择”。
 
-当前适配器可调用 `baoyu-image-gen` CLI，也可使用本 Skill 的已审核模板渲染器。
+当前适配器只可调用登记的生成式 renderer（例如 `baoyu-image-gen` CLI）。
 外部渲染器只负责像素，不决定版式、风格、文字或比例。图中文字必须由生成模型与画面一起原生生成；不允许本地模板/Pillow 绘制或后期叠字。运行前会探测 batch
 能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。
 未配置 policy 时使用已安装渲染器的默认 provider。
@@ -138,6 +141,9 @@ QA request 会逐图携带目标 style、配方摘要、
 必备视觉特征、禁用视觉特征与所需 checks；审阅必须检查预期文字、意外杂字、裁切安全、主次层级、
 目标风格、品牌色板和同篇一致性，封面另验固定构图。模型审阅必须给出实际对象、数量、
 位置和版式观察；只返回布尔勾选不得放行。`_visual-qa.md` 只是派生的人读摘要。
+QA 资产集合从最终 HTML 与 Markdown 的实际引用共同计算；Hero 即使只由排版器写入 HTML，也必须送审。
+`text_match`、`no_unexpected_text`、`style_contract_match` 是不可移除的发布硬门；
+每条 `required_text` 必须在整图恰好出现一次。视觉编译后若 QA 代码字节变化，旧凭证立即失效。
 
 仓内自带一个 Codex CLI 后端的适配器 `scripts/visual_qa_codex.py`，配置与三种静默失效
 （提示词没送达 / 糊字被脑补成通顺句 / 转写被打碎误杀好图）见 `visual-qa.md`。

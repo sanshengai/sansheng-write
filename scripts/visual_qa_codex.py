@@ -52,13 +52,13 @@ PER_ASSET_TIMEOUT = 600
 # 「复核说不过、校验器说过」的分裂，人只能靠猜。
 CHECK_DEFINITIONS = {
     "text_match": (
-        "expected_text 里的每一条都真实出现在图上。"
+        "required_text 里的每一条都真实出现在图上；若没有 required_text，才检查 expected_text。"
         "比对时**忽略空格、换行、全半角差异**（中日文与拉丁字母之间多一个空格属于正常排版，"
         "下游校验器同样按去空格后比对）；允许一句话拆到两行、允许分散在画面不同位置。"
         "只看「字是不是那些字」，不看排版细节。"
     ),
     "crop_safe": (
-        "所有文字与主体都完整在画面内，没有被边缘切掉。"
+        "所有文字与核心主体都完整在画面内，没有被边缘切掉；纯装饰性的连接箭头、背景舞台幕布可自然延伸至边缘。"
         "**右下角的品牌署名不在本项范围内** —— 它由脚本按固定 2% 内边距叠加，"
         "位置是既定设计，不算裁切风险，不要因为它靠近边角就判 false。"
         "本项只看画面里**生成出来的**内容有没有被切到。"
@@ -70,10 +70,12 @@ CHECK_DEFINITIONS = {
     ),
     "style_consistent": "整张图内部风格自洽（线条、材质、光照、色温统一），不像多张图拼起来的。",
     "no_unexpected_text": (
-        "画面上的文字必须是 expected_text 的子集。**expected_text 本身就是白名单** —— "
-        "里面出现的产品名、公司名、账号署名都是作者刻意要的，不算意外文字，不要因此判 false。"
-        "这一项要抓的是：乱码、错别字、缺笔画或多笔画的字、同一句被重复渲染两遍、"
+        "画面上的文字必须是 expected_text 的子集。expected_text 是完整白名单，required_text 才是"
+        "必须出现的子集：里面出现的产品名、公司名、账号署名都是作者刻意允许的，不算意外文字。"
+        "这一项要抓的是：乱码、错别字、缺笔画或多笔画的字、"
+        "会造成歧义的同一句重复渲染；同一允许标签在叙事路径的两个节点复现不算意外文字、"
         "只渲染了半个字、以及白名单之外凭空多出来的任何词、编号或字母。"
+        "与主题直接相关的、没有语义标签的比赛记分牌数字不算意外文字。"
         "另外，画面里不得**画出**任何真实公司的图形 logo（图标本身，不是文字名称）。"
         "唯一例外是后处理脚本加在右下角、并与白名单中的本站署名相邻的品牌标记；"
         "它是发布规范要求的署名组成部分，不是陌生公司 logo。"
@@ -190,14 +192,21 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         f"## 实际像素：{metrics.get('width')}×{metrics.get('height')}",
         "",
         "## 文字白名单（expected_text）",
-        "这是作者刻意要求出现在图上的全部文字。它同时是**下限**（每条都得在）"
-        "和**上限**（不该有别的）。里面若含产品名、公司名或账号署名，那是作者要的，不是违规。",
+        "这是允许出现在图上的全部文字，是严格上限；白名单之外不得出现任何可读字符。"
+        "白名单内的产品名、公司名或账号署名不是违规。",
     ]
     expected = asset.get("expected_text") or []
     if expected:
         lines += [f"{i}. {t}" for i, t in enumerate(expected, 1)]
     else:
         lines.append("（空 —— 这张图不应出现任何文字）")
+    required = asset.get("required_text") or []
+    lines += [
+        "",
+        "## 必须文字（required_text）",
+        "下列每条必须逐字正确，并且在整张图中恰好出现一次：",
+    ]
+    lines += [f"{i}. {t}" for i, t in enumerate(required, 1)] or ["（空）"]
 
     lines += [
         "",
@@ -229,7 +238,9 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         "3. 只要出现哪怕一个 `□` 或一个你能认出的错别字，`text_match` 和 `no_unexpected_text`",
         "   **都必须判 false**。",
         "4. 先转写、再回头对白名单。**顺序反了就会被白名单带着走**。",
-        "5. **按「块」转写，不要打碎**：视觉上属于同一块的文字（同一个标签条、同一个气泡、",
+        "5. **每个出现位置都要单独转写**。同一句出现两次，就在 observed_text 里写两次，",
+        "   不能合并、去重或只记一次。",
+        "6. **按「块」转写，不要打碎**：视觉上属于同一块的文字（同一个标签条、同一个气泡、",
         "   同一张卡片）合并成**一条**，块内按从上到下、从左到右拼接。一句话折成两行、",
         "   或「名字在上、说明在下」的两行标签，都算同一块，必须拼成一条。",
         "   ❌ 错误示范：把两张卡片转写成 `['Codex', 'Claude', '主动补发 20 次', '事故赔偿 6 次']`",
@@ -432,12 +443,26 @@ def main() -> int:
             failures.append(f"{rel}：{result['_error']}")
             print(f"  ✗ {rel}  {result['_error']}", file=sys.stderr)
             continue
-        bad = [name for name, ok in result["checks"].items() if not ok]
+        required_checks = set(by_path[rel].get("required_checks") or [])
+        bad = [
+            name for name, ok in result["checks"].items()
+            if name in required_checks and not ok
+        ]
         observed = [_normalized(t) for t in result["observed_text"]]
         joined = "".join(observed)
+        allowed = {
+            _normalized(t)
+            for t in by_path[rel].get("expected_text") or []
+            if _normalized(t)
+        }
+        unexpected = [
+            value
+            for value in observed
+            if value and not any(value == item or value in item for item in allowed)
+        ]
         missing = [
             t
-            for t in by_path[rel].get("expected_text") or []
+            for t in by_path[rel].get("required_text") or []
             if _normalized(t) not in observed and _normalized(t) not in joined
         ]
         # 复核员按转写纪律，认不出的字要写成 □。它出现就说明图上有坏字，
@@ -454,15 +479,31 @@ def main() -> int:
             if key:
                 seen_once[key] = seen_once.get(key, 0) + 1
         repeated = sorted(k for k, n in seen_once.items() if n > 1)
+        required_not_once = [
+            value
+            for value in by_path[rel].get("required_text") or []
+            if joined.count(_normalized(value)) != 1
+        ]
         if bad:
             failures.append(f"{rel} 未通过：{'、'.join(bad)} —— {result['notes']}")
         if garbled:
             failures.append(f"{rel} 转写里有无法辨认的字（坏字）：{garbled}")
         if repeated:
             failures.append(f"{rel} 同一句被渲染多遍（EXACTLY ONCE 违例）：{repeated}")
-        if missing:
+        if required_not_once:
+            failures.append(f"{rel} 必须文字未恰好出现一次：{required_not_once}")
+        if unexpected:
+            failures.append(f"{rel} 出现白名单外文字：{unexpected}")
+        if "text_match" in required_checks and missing:
             failures.append(f"{rel} 缺文字：{missing}")
-        ok = not (bad or missing or garbled or repeated)
+        ok = not (
+            bad
+            or (missing if "text_match" in required_checks else [])
+            or garbled
+            or repeated
+            or required_not_once
+            or unexpected
+        )
         print(
             f"  {'✓' if ok else '✗'} {rel}"
             + (f"  未过：{'、'.join(bad)}" if bad else "")

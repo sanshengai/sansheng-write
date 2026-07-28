@@ -23,7 +23,7 @@ def _text(path: Path) -> str:
 def test_release_runtime_is_short_single_source_with_all_hard_commands():
     path = ROOT / "references/release-runtime.md"
     text = _text(path)
-    assert len(text.splitlines()) <= 180
+    assert len(text.splitlines()) <= 190
     for command in (
         "adopt-final",
         "compile-visuals",
@@ -36,12 +36,10 @@ def test_release_runtime_is_short_single_source_with_all_hard_commands():
         assert command in text
 
 
-def test_active_release_docs_use_internal_planner_not_old_semantic_skills():
-    forbidden = ("baoyu-cover-image", "baoyu-infographic")
-    for path in ACTIVE_RELEASE_DOCS:
-        text = _text(path)
-        for token in forbidden:
-            assert token not in text, f"{path.name} still contains {token}"
+def test_active_release_docs_bind_internal_planner_to_baoyu_semantic_producers():
+    combined = "\n".join(_text(path) for path in ACTIVE_RELEASE_DOCS)
+    assert "baoyu-cover-image" in combined
+    assert "baoyu-infographic" in combined
     routing = _text(ROOT / "references/image-routing.md")
     assert "sansheng-write.visual-planner" in routing
     assert "baoyu-image-gen" in routing

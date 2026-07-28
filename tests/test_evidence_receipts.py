@@ -8,6 +8,7 @@ import pytest
 from scripts import pipeline
 from scripts.evidence import (
     seal_visual_receipt,
+    stable_digest,
     sha256_file,
     verify_publish_receipt,
     verify_publish_ready,
@@ -51,6 +52,16 @@ def _visual_bundle(root: Path) -> Path:
             "record_id": f"rec-{i}",
             "stage": stage,
             "producer": producer,
+            "producer_chain": [
+                producer,
+                *(
+                    ["baoyu-cover-image"]
+                    if stage == "cover"
+                    else ["baoyu-infographic"]
+                    if stage == "infographic"
+                    else []
+                ),
+            ],
             "tool": producer,
             "renderer": "imagegen",
             "model": "test-model",
@@ -83,6 +94,34 @@ def _visual_bundle(root: Path) -> Path:
                 ],
             },
             ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (root / "定稿.md").write_text(
+        "\n".join(
+            f"![图](素材/infographic-{index:02d}.png)" for index in range(1, 5)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "定稿.html").write_text(
+        '<img src="素材/hero.png">\n',
+        encoding="utf-8",
+    )
+    scripts_dir = Path(__file__).parents[1] / "scripts"
+    (root / "素材/visual-compile-receipt.json").write_text(
+        json.dumps(
+            {
+                "plan_digest": stable_digest(
+                    json.loads((root / "visual-plan.json").read_text(encoding="utf-8"))
+                ),
+                "validator_hashes": {
+                    "visual_qa.py": sha256_file(scripts_dir / "visual_qa.py"),
+                    "visual_qa_codex.py": sha256_file(
+                        scripts_dir / "visual_qa_codex.py"
+                    ),
+                }
+            }
         ),
         encoding="utf-8",
     )

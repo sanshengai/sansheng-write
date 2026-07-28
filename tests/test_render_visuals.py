@@ -331,6 +331,31 @@ def test_candidates_require_explicit_selection_before_final_receipt(tmp_path):
     assert (article / "素材/cover.png").is_file()
 
 
+def test_incomplete_candidate_run_cannot_be_marked_selected(tmp_path):
+    from scripts.render_visuals import render_visuals, select_visual_candidates
+
+    article = _article(tmp_path)
+    receipt, errors = render_visuals(
+        article,
+        renderer_command=_fake_renderer(tmp_path),
+        renderer_revision="test-revision",
+        candidate_count=2,
+    )
+    assert errors == []
+    manifest_path = article / "素材/candidates/candidate-set.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["requested_candidate_count"] = 3
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    final, selection_errors = select_visual_candidates(
+        article,
+        {task_id: 1 for task_id in manifest["tasks"]},
+    )
+
+    assert final is None
+    assert any("候选生成不完整" in error for error in selection_errors)
+
+
 def test_template_safe_policy_is_rejected_to_keep_text_model_native(tmp_path):
     from scripts.render_visuals import render_visuals
 

@@ -21,6 +21,8 @@ except ImportError:  # pragma: no cover - direct script execution
 
 VISUAL_PLAN_FILE = "visual-plan.json"
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
+BAOYU_COVER_PRODUCER = "baoyu-cover-image"
+BAOYU_INFOGRAPHIC_PRODUCER = "baoyu-infographic"
 SUPPORTED_STYLES = {"claymation", "morandi-journal"}
 STYLE_BY_SUBJECT = {
     "ai-product": "claymation",
@@ -33,6 +35,12 @@ PROFILE_BY_STYLE = {
 _SUSPICIOUS_DOUBLE_CHARACTER_CLUSTER = re.compile(
     r"([\u4e00-\u9fff])\1([\u4e00-\u9fff])\2"
 )
+INFOGRAPHIC_LAYOUTS = {
+    "linear-progression": "one directional sequence with clearly ordered causal stages",
+    "hub-spoke": "one central subject connected to distinct contributing conditions and one outcome",
+    "binary-comparison": "two separated evidence zones with a controlled transition between them",
+    "winding-roadmap": "one continuous route with ordered milestones and a decisive final action",
+}
 
 
 def _nonempty_list(value: object) -> bool:
@@ -41,6 +49,10 @@ def _nonempty_list(value: object) -> bool:
         and bool(value)
         and all(isinstance(item, str) and item.strip() for item in value)
     )
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def validate_visual_plan(plan: dict) -> list[str]:
@@ -92,11 +104,18 @@ def validate_visual_plan(plan: dict) -> list[str]:
             "position",
             "aspect_ratio",
             "title",
+            "layout_type",
             "layout",
             "anchor",
         ):
             if not str(item.get(field) or "").strip():
                 errors.append(f"{label}.{field} 不能为空")
+        layout_type = str(item.get("layout_type") or "")
+        if layout_type and layout_type not in INFOGRAPHIC_LAYOUTS:
+            errors.append(
+                f"{label}.layout_type 必须是已登记 Baoyu 布局："
+                f"{sorted(INFOGRAPHIC_LAYOUTS)}"
+            )
         if not _nonempty_list(item.get("expected_text")):
             errors.append(f"{label}.expected_text 必须是非空字符串列表")
         else:
@@ -252,6 +271,11 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         if text.get("accent_phrase")
         else "its final 2-5 characters (the semantic landing phrase of the line)"
     )
+    pictorial_facts = "\n".join(
+        f"- {str(fact).strip()}"
+        for fact in item.get("visual_facts") or []
+        if str(fact).strip()
+    )
     return (
         _frontmatter(fields)
         + "\n\nCreate a polished dark editorial montage for a WeChat article cover.\n\n"
@@ -264,8 +288,8 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "Never center it across the full canvas or place it along the bottom.\n"
         "- One upper-left 45-degree key light only; all soft shadows fall lower-right.\n\n"
         "## ONLY VISIBLE TEXT ALLOWLIST\n"
-        f"- Chinese L1: {title}\n"
-        f"- Chinese L2: {subtitle or '(none)'}\n"
+        f"- Main Chinese headline: {title}\n"
+        f"- Supporting Chinese subtitle: {subtitle or '(none)'}\n"
         f"- Quiet pill tags: {tags}\n"
         f"- OVERSIZED GHOST-WATERMARK behind the Chinese title: {ghost}\n"
         # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比。
@@ -273,19 +297,19 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         # 模型可以把 L1 定成任意大小，整组跟着缩。实测第 81 篇 L1 只有画布高 8%，
         # 比 ghost 还小，主次颠倒；而同一份提示词在第 76/80 篇却给出 12% 的 L1。
         # 同理 ghost 旧值 145%-155% of L1 等于**规范本身在要求英文比中文大**。
-        "- L1 is the headline and the single dominant element on the entire canvas: "
+        "- The main headline is the single dominant element on the entire canvas: "
         "pure white, heaviest weight, first reading focus. Its cap height MUST be "
-        "12%-14% of the canvas height, and the L1 line MUST span 70%-90% of the width "
-        "of the left text zone. No other high-contrast text may be set larger than L1.\n"
-        "- L2 is a supporting subtitle at 58%-64% of L1 cap height: semibold white, "
+        "12%-14% of the canvas height, and its line MUST span 70%-90% of the width "
+        "of the left text zone. No other high-contrast text may be set larger than it.\n"
+        "- The supporting subtitle is 58%-64% of the headline cap height: semibold white, "
         f"one line only, with ONLY {accent_hint} rendered in the muted emerald accent. "
-        "Never colour any part of L1 — L1 earns dominance through size, not hue.\n"
+        "Never colour any part of the main headline — it earns dominance through size, not hue.\n"
         f"- Descriptor tags: {tags}. Render them at "
-        "30%-34% of L1 cap height inside the pill; tags never compete with the headline.\n"
-        "- The ghost is industrial condensed uppercase at 105%-120% of L1 cap height, "
+        "30%-34% of headline cap height inside the pill; tags never compete with the headline.\n"
+        "- The ghost is industrial condensed uppercase at 105%-120% of headline cap height, "
         "in a near-background dark tone at 8%-12% opacity, partly overlapped by the Chinese "
         "block. It is BACKGROUND TEXTURE, never a headline — if it reads as the loudest "
-        "element, the cover is wrong. Fitting the ghost must never shrink L1: L1's size is "
+        "element, the cover is wrong. Fitting the ghost must never shrink the headline: its size is "
         "fixed by the canvas rule above and takes precedence.\n"
         # 🔴 品牌胶囊（2026-07-28 sandy 拍板）。她认可的两张封面里，底部这条
         # 主题色标签胶囊是**辨识度的主要来源**——但满色 100% 不透明太抢眼，
@@ -303,9 +327,10 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "white. Two to four tags maximum; never wrap the pill onto a second line.\n\n"
         "## RIGHT COLLAGE\n"
         "- Use one dominant flat-vector metaphor object derived from the verified facts, "
-        "plus two or three much smaller dark evidence badges and restrained curved dashed "
+        "plus exactly three much smaller dark evidence badges and restrained curved dashed "
         "arrows. The main object must be the first visual focus.\n"
-        "- No photographs and no people, faces or hands. Use objects, curves, facilities, "
+        "- No photographs, recognisable faces or hands. A small faceless athlete silhouette is allowed "
+        "when it is directly required by a source fact; otherwise use objects, curves, facilities, "
         "maps or service nodes to express the argument.\n"
         "- Main object: flat-vector editorial form with thin physical depth, same-hue "
         "halftone, upper-left highlight and soft lower-right contact shadow.\n"
@@ -316,19 +341,20 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "- Deep surfaces use only near-black charcoal shades.\n"
         "- No hard split-color panels; no bright, beige, photographic or scrapbook canvas.\n\n"
         "## STRICT FORBIDDEN\n"
-        "- No people, faces, hands, photorealistic stock imagery, robots, glowing brains, "
+        "- No recognisable faces, detailed hands, photorealistic stock imagery, robots, glowing brains, "
         "generic gear piles, code, file paths, UI, grids, stars, particles or random letters.\n"
         "- No brand name, account name, issue number or signature text; logo is added later.\n"
         "- No pure black, extra accent hues, neon, chrome, glassmorphism, glossy reflections, "
         "centered giant headline, bottom title bar or crowded poster composition.\n"
         "- Never render layout guides, measurements or percentages. Never render the facts "
-        "below, color names, hex codes, L1/L2, TITLE or SUBTITLE as visible text.\n"
+        "below, color names, hex codes, layout labels or instruction words as visible text.\n"
         "- The allowlist above is exhaustive: every other visible letter, word or number is "
         "forbidden. Evidence badges must be pictorial and textless.\n\n"
         "## PICTORIAL BRIEF\n"
-        "Use abstract curves and textless evidence objects suggested by the approved title. "
-        "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER because they must never become "
-        "accidental visible labels.\n"
+        "Build the right-side collage from the following source facts as TEXTLESS visual "
+        "evidence only: interpret their objects, spaces, paths and relationships; never "
+        "render any sentence, number, label or proper noun from this list as visible text.\n"
+        f"{pictorial_facts or '- Derive textless evidence objects from the approved title.'}\n"
     )
 
 
@@ -367,6 +393,9 @@ def _clay_palette(recipe: dict) -> str:
 
 def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     expected = [str(item.get("title") or "").strip()]
+    pictorial_facts = "\n".join(
+        f"- {str(fact).strip()}" for fact in item.get("visual_facts") or [] if str(fact).strip()
+    )
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
@@ -401,11 +430,15 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
         "Show one unmistakable visual hierarchy.\n\n"
         "## VISIBLE TEXT ALLOWLIST\n"
         f"- {expected[0]}\n"
-        "This title is the only visible text. No data labels, fact sentences, extra words, "
+        "Render this title EXACTLY ONCE, in one top title area only. Do not repeat it in a "
+        "bottom banner, card, ribbon or caption. No data labels, fact sentences, extra words, "
         "logos, watermarks or invented interface.\n\n"
         "## PICTORIAL BRIEF\n"
-        "Build one clean metaphor from the approved title alone. SOURCE FACTS ARE NOT "
-        "PROVIDED TO THE RENDERER because they must never become accidental visible text.\n"
+        "Build one clean metaphor from the approved title and the following source facts. "
+        "Use facts only as textless objects, spaces and causal relations; never render any "
+        "fact sentence, number, label or proper noun as visible text. Keep all essential "
+        "objects inside a generous 8% crop-safe margin and include one clear dotted frame.\n"
+        f"{pictorial_facts or '- Use a single textless causal metaphor.'}\n"
     )
 
 
@@ -441,6 +474,8 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
             }
         )
     labels = "\n".join(f"- {value}" for value in expected[1:])
+    layout_type = str(item.get("layout_type") or "linear-progression")
+    layout_contract = INFOGRAPHIC_LAYOUTS[layout_type]
     palette = (
         _clay_palette(recipe)
         if style == "claymation"
@@ -460,6 +495,8 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
         f"reviewed editorial composition contract. {palette}\n"
+        f"BAOYU LAYOUT CONTRACT — {layout_type}: {layout_contract}. "
+        "This is structural guidance only and must never become visible text.\n"
         # 🔴 layout 是中文的排布说明，必须显式声明「只描述构图、不得当作可见文字」。
         # 早期版本把它直接嵌在这句里（`... template X (中文排布说明)`），模型会把这句
         # 中文当成标题画进图里——实测出现过整句排布说明被渲成图上大标题，
@@ -549,7 +586,7 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     analysis_lines = [
         "# Visual Plan Analysis",
         "",
-        f"- producer: {VISUAL_PRODUCER}",
+        f"- producer chain: {VISUAL_PRODUCER} → {BAOYU_INFOGRAPHIC_PRODUCER}",
         f"- style: {style}",
         f"- plan_digest: {stable_digest(plan)}",
         "",
@@ -557,14 +594,14 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     structured_lines = [
         "# Structured Visual Content",
         "",
-        f"- producer: {VISUAL_PRODUCER}",
+        f"- producer chain: {VISUAL_PRODUCER} → {BAOYU_INFOGRAPHIC_PRODUCER}",
         f"- style: {style}",
         "",
     ]
     for item in plan["infographics"]:
         analysis_lines.append(
             f"- {item['id']} · {item['position']} · {item['aspect_ratio']} · "
-            f"{item['layout']} · {item['title']} · anchor={item['anchor']}"
+            f"{item['layout_type']} · {item['layout']} · {item['title']} · anchor={item['anchor']}"
         )
         structured_lines.extend(
             [
@@ -585,19 +622,33 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
 
     tasks = []
     for task_id, prompt_stem, aspect, image_name in prompt_specs:
+        stage = "cover" if task_id == "cover" else (
+            "hero" if task_id == "hero" else "infographic"
+        )
+        producer_chain = [VISUAL_PRODUCER]
+        if stage == "cover":
+            producer_chain.append(BAOYU_COVER_PRODUCER)
+        elif stage == "infographic":
+            producer_chain.append(BAOYU_INFOGRAPHIC_PRODUCER)
         tasks.append(
             {
                 "id": task_id,
                 "promptFiles": [f"prompts/final/{prompt_stem}.md"],
                 "image": image_name,
                 "ar": aspect,
+                "producer_chain": producer_chain,
             }
         )
     batch = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
+        "producer_chain": [
+            VISUAL_PRODUCER,
+            BAOYU_COVER_PRODUCER,
+            BAOYU_INFOGRAPHIC_PRODUCER,
+        ],
         "plan_digest": stable_digest(plan),
-        "jobs": 4,
+        "jobs": 1,
         "tasks": tasks,
     }
     (cwd / "素材" / "render-batch.json").write_text(
@@ -607,7 +658,34 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     result = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
+        "producer_chain": batch["producer_chain"],
+        "cover_workflow": {
+            "producer": BAOYU_COVER_PRODUCER,
+            "type": "conceptual",
+            "palette": "dark",
+            "rendering": "flat-vector",
+            "text": "text-rich",
+            "mood": "balanced",
+            "font": "clean",
+            "aspect": "2.35:1",
+        },
+        "infographic_workflow": [
+            {
+                "id": str(item["id"]),
+                "producer": BAOYU_INFOGRAPHIC_PRODUCER,
+                "layout": str(item["layout_type"]),
+                "style": style,
+                "aspect": str(item["aspect_ratio"]),
+            }
+            for item in plan["infographics"]
+        ],
         "style": style,
+        "validator_hashes": {
+            "visual_qa.py": _file_sha256(Path(__file__).with_name("visual_qa.py")),
+            "visual_qa_codex.py": _file_sha256(
+                Path(__file__).with_name("visual_qa_codex.py")
+            ),
+        },
         "plan_digest": stable_digest(plan),
         "batch": batch,
         "prompt_count": len(tasks),

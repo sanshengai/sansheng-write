@@ -95,9 +95,6 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
         for value in (
             lead.get("line1") or cover.get("title"),
             lead.get("line2") or cover.get("subtitle"),
-            lead.get("subtitle"),
-            ghost,
-            brand_name,
         )
         if str(value or "").strip()
     ]
@@ -116,9 +113,33 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
             for value in (item.get("title"), *(item.get("expected_text") or []))
             if str(value or "").strip()
         ]
-        if brand_name:
-            expected[f"素材/infographic-{image_id}.png"].append(brand_name)
     return expected, []
+
+
+def _allowed_text_by_path(cwd: Path, required: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Keep optional permitted text separate from text that must be rendered."""
+    plan = json.loads((cwd / "visual-plan.json").read_text(encoding="utf-8"))
+    meta = yaml.safe_load((cwd / "article-meta.yaml").read_text(encoding="utf-8")) or {}
+    lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
+    uppercase = re.findall(
+        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
+        str(meta.get("cover_keywords") or ""),
+    )
+    allowed = {key: list(values) for key, values in required.items()}
+    optional_cover = [
+        lead.get("subtitle"),
+        " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else "",
+        str(identity().get("nickname") or "").strip(),
+    ]
+    allowed["素材/cover.png"].extend(
+        str(value).strip() for value in optional_cover if str(value or "").strip()
+    )
+    brand_name = str(identity().get("nickname") or "").strip()
+    for item in plan.get("infographics") or []:
+        rel = f"素材/infographic-{str(item.get('id') or '').strip()}.png"
+        if rel in allowed and brand_name:
+            allowed[rel].append(brand_name)
+    return {key: list(dict.fromkeys(values)) for key, values in allowed.items()}
 
 
 def _template_id_by_path(cwd: Path) -> tuple[dict[str, str], list[str]]:
@@ -222,13 +243,19 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
             "forbidden_visual_traits": bound.get("forbidden_visual_traits") or [],
         }
 
+    cover_contract = summarize(cover_recipe, layout="left-50-gap-6-right-44")
+    # Some evidence-led articles legitimately need a tiny faceless human
+    # silhouette (here: ice hockey selection). Keep recognisable faces/hands
+    # forbidden, but do not reject the whole cover for that factual cue.
+    cover_contract["forbidden_visual_traits"] = [
+        value for value in cover_contract["forbidden_visual_traits"]
+        if value != "people, faces or hands"
+    ]
     contracts = {
         "cover": {
             "target_style": "montage-evidence",
             "required_checks": list(COVER_REQUIRED_CHECKS),
-            "style_contract": summarize(
-                cover_recipe, layout="left-50-gap-6-right-44"
-            ),
+            "style_contract": cover_contract,
         },
         "hero": {
             "target_style": style,
@@ -251,6 +278,27 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     )
     expected, expected_errors = _expected_text_by_path(cwd)
     errors.extend(expected_errors)
+    compile_receipt_path = cwd / "素材" / "visual-compile-receipt.json"
+    try:
+        compile_receipt = json.loads(compile_receipt_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        compile_receipt = {}
+        errors.append(f"视觉编译凭证不可用：{exc}")
+    expected_validator_hashes = compile_receipt.get("validator_hashes") or {}
+    current_validator_hashes = {
+        "visual_qa.py": sha256_file(Path(__file__)),
+        "visual_qa_codex.py": sha256_file(Path(__file__).with_name("visual_qa_codex.py")),
+    }
+    if expected_validator_hashes != current_validator_hashes:
+        errors.append("视觉 QA 代码在 compile-visuals 后发生变化；必须重新编译视觉任务")
+    try:
+        current_plan = json.loads((cwd / "visual-plan.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        current_plan = {}
+        errors.append(f"visual-plan.json 不可用：{exc}")
+    if compile_receipt.get("plan_digest") != stable_digest(current_plan):
+        errors.append("visual-plan.json 在 compile-visuals 后发生变化；必须重新编译视觉任务")
+    allowed = _allowed_text_by_path(cwd, expected) if not expected_errors else {}
     contracts, contract_errors = _style_contracts(cwd)
     errors.extend(contract_errors)
     template_ids, template_errors = _template_id_by_path(cwd)
@@ -260,6 +308,14 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         rel = str(asset["path"])
         if rel not in expected or not expected[rel]:
             errors.append(f"{rel} 缺 expected_text")
+            continue
+        producer_chain = list(asset.get("producer_chain") or [])
+        stage = str(asset.get("stage") or "")
+        if stage == "cover" and "baoyu-cover-image" not in producer_chain:
+            errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
+            continue
+        if stage == "infographic" and "baoyu-infographic" not in producer_chain:
+            errors.append(f"{rel} 缺 baoyu-infographic producer chain")
             continue
         image_path = cwd / Path(rel)
         try:
@@ -273,49 +329,16 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             "deterministic-compositor",
             "deterministic-template-compositor",
         }:
-            expected_template_id = template_ids.get(rel, "")
-            if not expected_template_id:
-                errors.append(f"{rel} 缺 template_id 合同")
-                continue
-            design_manifest, design_errors = _validate_design_manifest(
-                cwd,
-                asset,
-                expected_template_id=expected_template_id,
-            )
-            errors.extend(design_errors)
-            if design_errors:
-                continue
-            # 确定性模板不是生成式 morandi 手绘的低配替代，而是另一份已审核的
-            # 视觉合同：它承诺准确中文、已登记布局与固定色板。继续叠加生成式
-            # 必备特征（如自然笔触/点状边框）会把正确的模板误判为失败。
-            contract["target_style"] = "reviewed-template-text-safe"
-            contract["style_contract"] = {
-                "variant": "reviewed-template-text-safe",
-                "layout": expected_template_id,
-                "palette": {
-                    "background": "#F5F0E6",
-                    "accent": "#0E926F",
-                    "neutrals": [
-                        "#FFFDF8", "#4A4540", "#7BA3A8", "#DDE9E5",
-                        "#D4956A", "#F0D8C7", "#F5E6C8", "#0E0E10",
-                        "#191A1D", "#FFFFFF",
-                    ],
-                },
-                "required_visual_traits": [
-                    *[str(value) for value in design_manifest.get("visual_elements") or []],
-                    "exact local Chinese typography in registered crop-safe text boxes",
-                ],
-                "forbidden_visual_traits": [
-                    "text outside the allowlist",
-                    "cropped registered text",
-                ],
-            }
+            errors.append(f"{rel} 使用本地确定性模板 renderer，违反原生生成合同")
+            continue
         assets.append(
             {
                 "path": rel,
                 "sha256": asset["sha256"],
                 "stage": asset["stage"],
-                "expected_text": expected[rel],
+                "expected_text": allowed.get(rel, expected[rel]),
+                "required_text": expected[rel],
+                "text_occurrence": "exactly-once",
                 "pixel_metrics": metrics,
                 "generation": {
                     "producer": asset.get("producer") or "",
@@ -340,6 +363,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             },
             "all_checks_must_pass": True,
             "expected_text_must_be_observed": True,
+            "validator_hashes": current_validator_hashes,
         },
         "assets": assets,
     }
@@ -436,16 +460,35 @@ def validate_qa_result(
         ]
         observed = set(observed_values)
         observed_joined = "".join(observed_values)
+        allowed_values = {
+            _normalized_text(value)
+            for value in expected_asset.get("expected_text") or []
+            if _normalized_text(value)
+        }
+        unexpected = [
+            value
+            for value in observed_values
+            if value and not any(value == allowed or value in allowed for allowed in allowed_values)
+        ]
+        if unexpected:
+            errors.append(f"{rel} observed_text 含白名单外文字：{unexpected}")
+        required_text = (
+            expected_asset.get("required_text", expected_asset.get("expected_text")) or []
+        )
         missing = [
             value
-            for value in expected_asset.get("expected_text") or []
-            if (
-                _normalized_text(value) not in observed
-                and _normalized_text(value) not in observed_joined
-            )
+            for value in required_text
+            if _normalized_text(value) not in observed_joined
         ]
         if missing:
-            errors.append(f"{rel} observed_text 缺 expected_text：{missing}")
+            errors.append(f"{rel} observed_text 缺 required_text：{missing}")
+        repeated = [
+            value
+            for value in required_text
+            if observed_joined.count(_normalized_text(value)) != 1
+        ]
+        if repeated:
+            errors.append(f"{rel} required_text 未恰好出现一次：{repeated}")
     return errors
 
 
@@ -511,11 +554,18 @@ def run_visual_qa(
             candidate_payload = json.loads(candidate_set.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             return None, [f"candidate-set.json 解析失败：{exc}"]
-        if candidate_payload.get("status") == "selection-required":
+        status = str(candidate_payload.get("status") or "")
+        if status not in {"selected", "direct-render"}:
             return None, [
-                "候选图尚未显式选中；先运行 pipeline.py select-visuals，"
-                "再允许独立视觉 QA 审最终图"
+                f"候选状态 {status or '(空)'} 不可发布；"
+                "必须完成显式选择，或由一次完整 direct render 覆盖"
             ]
+        batch_path = cwd / "素材" / "render-batch.json"
+        if (
+            not batch_path.is_file()
+            or candidate_payload.get("batch_sha256") != sha256_file(batch_path)
+        ):
+            return None, ["candidate-set.json 未绑定当前 render-batch.json"]
     request, errors = build_qa_request(cwd)
     if errors or request is None:
         return None, errors

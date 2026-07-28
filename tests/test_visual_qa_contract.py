@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from scripts.evidence import seal_visual_receipt
+from scripts.evidence import seal_visual_receipt, stable_digest
 
 
 PRODUCER = "sansheng-write.visual-planner"
@@ -46,6 +46,13 @@ def _article(root: Path) -> Path:
                 "position": "opening" if index == 1 else "closing" if index == 4 else "middle",
                 "aspect_ratio": "9:16" if index in (1, 4) else "16:9",
                 "title": f"步骤 {index}",
+                "layout_type": (
+                    "linear-progression"
+                    if index == 1
+                    else "winding-roadmap"
+                    if index == 4
+                    else "hub-spoke"
+                ),
                 "layout": "flow",
                 "template_id": (
                     "curve-convergence"
@@ -87,6 +94,16 @@ def _article(root: Path) -> Path:
                 "record_id": f"rec-{index}",
                 "stage": stage,
                 "producer": PRODUCER,
+                "producer_chain": [
+                    PRODUCER,
+                    *(
+                        ["baoyu-cover-image"]
+                        if stage == "cover"
+                        else ["baoyu-infographic"]
+                        if stage == "infographic"
+                        else []
+                    ),
+                ],
                 "tool": PRODUCER,
                 "renderer": "baoyu-image-gen",
                 "renderer_revision": "rev-1",
@@ -100,6 +117,28 @@ def _article(root: Path) -> Path:
         )
     (root / ".gen-log.jsonl").write_text(
         "\n".join(json.dumps(item, ensure_ascii=False) for item in logs) + "\n",
+        encoding="utf-8",
+    )
+    refs = "\n".join(
+        f"![图](素材/infographic-{index:02d}.png)" for index in range(1, 5)
+    )
+    (root / "定稿.md").write_text(refs + "\n", encoding="utf-8")
+    (root / "定稿.html").write_text(
+        '<img src="素材/hero.png">\n' + refs,
+        encoding="utf-8",
+    )
+    scripts_dir = Path(__file__).parents[1] / "scripts"
+    (root / "素材/visual-compile-receipt.json").write_text(
+        json.dumps(
+            {
+                "plan_digest": stable_digest(plan),
+                "validator_hashes": {
+                    "visual_qa.py": _sha(scripts_dir / "visual_qa.py"),
+                    "visual_qa_codex.py": _sha(scripts_dir / "visual_qa_codex.py"),
+                }
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     return root
@@ -171,12 +210,16 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     article = _article(tmp_path)
     request, request_errors = build_qa_request(article)
     assert request_errors == []
+    assert len(request["assets"]) == 6
     cover = next(asset for asset in request["assets"] if asset["stage"] == "cover")
+    assert any(asset["stage"] == "hero" for asset in request["assets"])
     info = next(asset for asset in request["assets"] if asset["stage"] == "infographic")
     assert cover["target_style"] == "montage-evidence"
     assert "BIRTH × CARE × CITY" in cover["expected_text"]
     assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
     assert "style_contract_match" in cover["required_checks"]
+    assert "text_match" in cover["required_checks"]
+    assert "no_unexpected_text" in cover["required_checks"]
     assert "composition_contract_match" in cover["required_checks"]
     assert info["target_style"] == "claymation"
     assert info["style_contract"]["visual_profile"] == "warm-light-clay"
@@ -222,7 +265,7 @@ def test_qa_rejects_deterministic_compositor_without_bound_design_manifest(tmp_p
     request, errors = build_qa_request(article)
 
     assert request is None
-    assert any("design manifest" in error for error in errors)
+    assert any("违反原生生成合同" in error for error in errors)
 
 
 def test_qa_rejects_checked_box_markdown_without_structured_result(tmp_path):
@@ -246,8 +289,22 @@ def test_qa_rejects_missing_expected_ocr_text_even_if_model_says_pass(tmp_path):
     )
 
     assert qa is None
-    assert any("expected_text" in error for error in errors)
+    assert any("required_text" in error for error in errors)
     assert not (article / "_visual-qa.json").exists()
+
+
+def test_qa_rejects_required_text_that_appears_twice(tmp_path):
+    from scripts.visual_qa import run_visual_qa, validate_qa_result
+
+    article = _article(tmp_path)
+    qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
+    assert errors == []
+    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    qa["assets"][0]["observed_text"].append(qa["assets"][0]["observed_text"][0])
+
+    validation_errors = validate_qa_result(article, qa, request=request)
+
+    assert any("恰好出现一次" in error for error in validation_errors)
 
 
 def test_qa_accepts_one_expected_line_split_into_adjacent_observed_fragments(tmp_path):
