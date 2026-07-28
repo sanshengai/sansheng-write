@@ -54,14 +54,33 @@ python "$SKILL/scripts/pipeline.py" render-visuals
 能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。
 未配置 policy 时使用已安装渲染器的默认 provider。
 
-当本机使用 Vertex Express key、而外部渲染器不支持该端点时，可在
-`renderer-policy.json` 选择 `provider: sansheng-google`。该路径由本 Skill
-自带的 `gen_img.py` 并发渲染，并记录实际 fallback 后的模型 ID。文字密集的
-中文文字和版式必须稳定时，使用 `provider: sansheng-template-safe`。该路径用
-`render_text_safe_visual.py` 按 `template_id` 渲染封面、Hero 与信息图；
-模型不拥有中文字形、坐标或版式自由度。每张图同时生成同名 `.design.json`，
-绑定模板、文字框、安全区、视觉元素与渲染前图片摘要。缺清单、越界或模板不兼容
-都会在视觉 QA 前硬失败。`sansheng-google-text-safe` 仅保留为兼容旧策略的路径。
+**默认走 `provider: sansheng-google`**（模板 `templates/renderer-policy.template.json`
+已按此预置）。该路径由本 Skill 自带的 `gen_img.py` 渲染，按 key 前缀自动分流
+AI Studio / Vertex Express 端点，并记录实际 fallback 后的模型 ID。
+
+🔴 **模型 ID 不要带 `-preview`。** 这些模型转正后 preview 的 ID 会下线返回 404，
+而降级链会先撞一次 404 再发真请求 —— 等于每张图多打一发空枪，一批 6 张变 12 次
+调用，突发速率翻倍后触发按分钟计的配额（429）。典型症状是「一批总有两三张失败，
+重跑又换成另外几张失败」。`gen_img.py` 检测到这一支会打印 `[🔴 请改配置]`，
+看到就去改 `renderer-policy.json`，别当噪音。
+
+🔴 **429 不是「模型不可用」，换模型没有用。** 它按分钟配额触发，处置是退避重试
+（`gen_img.py` 内建）+ 降并发（`render_visuals.py` 的 `_DEFAULT_JOBS`）。
+把它和 404 混在同一条降级链里，会拿好模型去撞已经满的配额，还把真因掩盖成
+「模型不行」。
+
+⚠️ **`provider: sansheng-template-safe` 是例外路径，不是默认。** 它用
+`render_text_safe_visual.py` 按 `template_id` 渲染，中文字形与坐标绝对稳定、
+数字零幻觉；代价是**每套模板的插画元素是随某一篇文章的题材做出来的**（房子、
+人群、社区节点这类），换个题材就会画出与内容完全无关的东西，而且改任务单没用。
+只在「文字极密 + 数字绝不容错 + 题材恰好匹配某套模板」时手动切过去，
+**切之前先渲一张看看再决定**。每张图同时生成同名 `.design.json`，绑定模板、
+文字框、安全区、视觉元素与渲染前图片摘要。缺清单、越界或模板不兼容都会在视觉
+QA 前硬失败。`sansheng-google-text-safe` 仅保留为兼容旧策略的路径。
+
+⚠️ **`expected_text` 每张信息图恰好 4 条**（标题另算，走 `title` 字段）。
+确定性模板会硬断言这一点；生成式路径虽不断言，但超过 4 条会显著提高重复与
+增殖的概率。
 
 每张图必须记录：
 

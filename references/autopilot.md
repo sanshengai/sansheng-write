@@ -14,8 +14,27 @@ python "$SKILL/scripts/pipeline.py" status
 
 1. **选题与大纲**
    - 读取 `outline.md`、近三篇作品和必要信源。
-   - 写 `大纲.md` 与 `article-meta.yaml`。
+   - 写 `大纲.md` 与 `article-meta.yaml`。**`article-meta.yaml` 从
+     `templates/article-meta.template.yaml` 复制再改**，不要手写 —— 模板里带着
+     `infographic_subject` / `visual_profile` / `tags` 受控词表这些必填项的注释，
+     手写极易漏，而它们要到 `adopt-final` 才报错。
    - 配置 blueprint 检查点时等待作者确认并执行 `approve blueprint`。
+
+   🔴 **blueprint 锚点文件必须同时含下面六项**，缺一 `verify outline` 就拦
+   （作者明说免检时写「作者免检授权」整体放行）：
+
+   | 锚点 | 判据 |
+   |---|---|
+   | 5 套标题+封面文案 | 文中出现 `方案 1` ~ `方案 5`；或写明「作者指定标题」 |
+   | 开头选择 | 含「开头」 |
+   | 大纲结论 | 含「大纲」 |
+   | 封面风格 | 含「封面风格」 |
+   | 信息图主题 | 含「信息图主题」且跟着 `ai-product` 或 `phenomenon` |
+   | 信息图风格 | 含「信息图风格」且跟着 `claymation` 或 `morandi-journal` |
+
+   审批结论另需单独一行 `审批结论：通过`（或「作者免检授权：免检」），且全文不得
+   出现「不通过 / 未通过 / 拒绝 / 驳回 / 不同意 / 尚未确认 / 待确认」——
+   出现任一即判 rejected。
 2. **内容增强**
    - 按 `content-enhance.md` 补充案例、反例、类比和可验证事实。
 3. **正文**
@@ -39,6 +58,19 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 ```
 
 这不是伪造写作历史，而是显式进入 `release-from-final` 模式。
+
+⚠️ **`adopt-final` 会把 `_draft-approval.md` 覆写成机器接管块**（绑定定稿 SHA）。
+作者拍板时说的话、以及当时定下的取舍，要写在**另一个文件**里（如
+`_draft-decisions.md`），否则接管一跑就没了。
+
+## 合同门要求 subagent，但当前运行时不给 subagent 时
+
+事实复核（`fact-check.md`）与语义冷读（`semantic-review.md`）都要求独立上下文，
+视觉 QA 还要求独立看图进程。**当宿主运行时不允许派 subagent 时，这不是跳过的理由，
+而是降级执行**：由主 agent 就地完成，但必须在产出文件顶部**显式写明执行方式与
+诚实边界**（哪些是机器可定位的、哪些是同模型自审照不出的盲区）。
+
+伪造成「已派独立评审」是不允许的；直接 `skip` 也是不允许的。
 
 ## 合法停顿
 

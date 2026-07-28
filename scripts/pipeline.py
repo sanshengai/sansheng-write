@@ -2553,17 +2553,19 @@ def cmd_assemble_release(cwd: Path) -> None:
     print(f"✅ {action}定稿.md：嵌入 {result['image_count']} 张信息图")
 
 
-def cmd_render_visuals(cwd: Path) -> None:
+def cmd_render_visuals(cwd: Path, only: str = "") -> None:
     from render_visuals import render_visuals
 
-    receipt, errors = render_visuals(cwd)
+    selected = {part.strip() for part in only.split(",") if part.strip()} or None
+    receipt, errors = render_visuals(cwd, only=selected)
     if errors:
         print("❌ 图片渲染失败：")
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
+    scope = f"，本轮重渲 {sorted(selected)}，其余沿用" if selected else ""
     print(
-        f"✅ 已渲染 {len(receipt['assets'])} 张图；"
+        f"✅ 已渲染 {len(receipt['assets'])} 张图{scope}；"
         f"renderer={receipt['renderer']} revision={receipt['renderer_revision'][:12]}"
     )
 
@@ -2846,9 +2848,17 @@ def main():
         "assemble-release",
         help="按 visual-plan 位置幂等装配信息图引用，不改变作者正文",
     )
-    sub.add_parser(
+    p_rv = sub.add_parser(
         "render-visuals",
-        help="探测并调用外部 baoyu-image-gen renderer，失败时只按配置降级",
+        help="探测并调用已配置 renderer 渲染视觉资产，失败时只按配置降级",
+    )
+    p_rv.add_argument(
+        "--only",
+        default="",
+        metavar="ID[,ID...]",
+        help="只重渲点名的资产（如 --only infographic-02 或 --only cover,hero），"
+             "其余沿用磁盘已有产物与其历史生成记录。用于生成式渲染逐张掷骰子时"
+             "补渲个别不满意的图，避免整批重跑把已满意的一起掷掉。",
     )
     sub.add_parser(
         "visual-qa",
@@ -2926,7 +2936,7 @@ def main():
     elif args.cmd == "assemble-release":
         cmd_assemble_release(cwd)
     elif args.cmd == "render-visuals":
-        cmd_render_visuals(cwd)
+        cmd_render_visuals(cwd, getattr(args, "only", "") or "")
     elif args.cmd == "visual-qa":
         cmd_visual_qa(cwd)
     elif args.cmd == "release-to-draft":

@@ -41,6 +41,15 @@ REQUIRED_CAPABILITIES = {
     "--imageSize",
 }
 
+# 🔴 并发数默认 2，不是 4。
+# 图像模型的配额按「每分钟请求数」算，一批通常 6 张（封面 + Hero + 4 张信息图），
+# 4 并发会在几秒内把一分钟的额度打满，症状是「总有两三张 429，重跑又换成另外几张」。
+# gen_img.py 自己是串行设计（注释里写着「多组按输入顺序串行，避免并发打到 429」），
+# 但这里每张图起一个独立进程，那份保护绕不过来——所以要在这一层限流。
+# 配合 gen_img 的 429 退避重试，2 并发实测能把一批 6 张一次跑完。
+# 需要更快可在 render-batch.json 里显式写 jobs，但先确认账号配额撑得住。
+_DEFAULT_JOBS = 2
+
 NATIVE_GOOGLE_PROVIDER = "sansheng-google"
 NATIVE_GOOGLE_TEXT_SAFE_PROVIDER = "sansheng-google-text-safe"
 NATIVE_TEMPLATE_SAFE_PROVIDER = "sansheng-template-safe"
@@ -401,6 +410,7 @@ def _render_native_google(
 def render_visuals(
     cwd: Path,
     *,
+    only: set[str] | None = None,
     renderer_command: list[str] | None = None,
     renderer_revision: str = "",
     native_google_renderer: Callable[
@@ -447,7 +457,34 @@ def render_visuals(
 
     material = cwd / "素材"
     tasks_by_id = {str(task["id"]): task for task in batch["tasks"]}
-    pending = list(tasks_by_id)
+
+    # 🔴 选渲：只重渲点名的几张，其余沿用磁盘上已有的图。
+    # 为什么需要：生成式渲染是逐张掷骰子，一批 6 张常常 5 张满意、1 张中文糊了。
+    # 没有选渲的话，为补那 1 张必须整批重跑，把已经满意的 5 张一起掷掉 ——
+    # 实测为补一张连跑七轮，每轮都在毁掉上一轮的好结果。
+    #
+    # 证据不会因此被伪造：.gen-log.jsonl 按 output 路径追加、消费方取最新一条，
+    # 所以没重渲的图**自动**沿用它自己那条真实记录（renderer/model/prompt 摘要全是
+    # 当初真实生成时写下的）。这里只需保证 receipt 仍覆盖全部资产。
+    # 若点名了不存在的 id，或某张没渲过又没有历史产物，一律硬失败，不静默略过。
+    if only:
+        unknown = sorted(set(only) - set(tasks_by_id))
+        if unknown:
+            return None, [f"--only 指定了不存在的任务 id：{unknown}；可选：{sorted(tasks_by_id)}"]
+        reuse_ids = [tid for tid in tasks_by_id if tid not in only]
+        missing_outputs = [
+            tid for tid in reuse_ids if not (material / str(tasks_by_id[tid]["image"])).is_file()
+        ]
+        if missing_outputs:
+            return None, [
+                f"--only 会沿用未点名的资产，但这些还没有产物：{missing_outputs}；"
+                "先跑一次完整 render-visuals，再用 --only 补渲个别图"
+            ]
+        pending = [tid for tid in tasks_by_id if tid in only]
+    else:
+        reuse_ids = []
+        pending = list(tasks_by_id)
+
     successes: dict[str, dict[str, Any]] = {}
     attempt_reports: list[dict[str, Any]] = []
     last_errors: dict[str, str] = {}
@@ -472,7 +509,7 @@ def render_visuals(
             attempt_tasks.append(rendered)
         attempt_batch = {
             "tasks": attempt_tasks,
-            "jobs": batch.get("jobs") or 4,
+            "jobs": batch.get("jobs") or _DEFAULT_JOBS,
         }
         attempt_path = material / f".render-attempt-{attempt_number:02d}.json"
         attempt_path.write_text(
@@ -552,10 +589,57 @@ def render_visuals(
         ]
         return None, errors
 
+    # 沿用的资产：从 .gen-log.jsonl 取该 output 最新那条真实记录，原样带进新 receipt。
+    # 不重新编造 renderer/model/attempt —— 那些字段只有当初真正生成它的那一次说了算。
+    reused_records: dict[str, dict[str, Any]] = {}
+    if reuse_ids:
+        log_path = cwd / ".gen-log.jsonl"
+        by_output: dict[str, dict[str, Any]] = {}
+        if log_path.is_file():
+            for line in log_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(entry, dict) and entry.get("output"):
+                    by_output[str(entry["output"])] = entry  # 后写的覆盖先写的 = 取最新
+        for task_id in reuse_ids:
+            task = tasks_by_id[task_id]
+            output = material / str(task["image"])
+            rel = output.relative_to(cwd).as_posix()
+            prior = by_output.get(rel)
+            if not prior:
+                return None, [
+                    f"{rel} 没有历史生成记录，无法沿用；先跑一次完整 render-visuals"
+                ]
+            if prior.get("output_sha256") != _sha256(output):
+                return None, [
+                    f"{rel} 的文件内容与历史记录对不上（可能被手工替换过）；"
+                    "证据链不接受来历不明的图，请重渲该张"
+                ]
+            reused_records[task_id] = prior
+
     records: list[dict[str, Any]] = []
     images: list[dict[str, Any]] = []
     for task in batch["tasks"]:
         task_id = str(task["id"])
+        if task_id in reused_records:
+            records.append(reused_records[task_id])
+            reused_output = material / str(task["image"])
+            images.append(
+                {
+                    "path": reused_output.relative_to(cwd).as_posix(),
+                    "aspect": task["ar"],
+                    "bytes": reused_output.stat().st_size,
+                    "producer": VISUAL_PRODUCER,
+                    "renderer": str(reused_records[task_id].get("renderer") or ""),
+                    "style": str(reused_records[task_id].get("style") or ""),
+                }
+            )
+            continue
         result = successes[task_id]
         output = material / str(task["image"])
         prompt = material / str(task["promptFiles"][0])
@@ -612,8 +696,13 @@ def render_visuals(
             }
         )
 
+    # 只把**本轮真正渲染**的记录追加进日志。沿用的那几条已经在日志里了，
+    # 再写一遍会让「同一张图生成过很多次」这件事凭空出现，日志就不再是事实。
+    reused_ids = set(reused_records)
     with (cwd / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
-        for record in records:
+        for task, record in zip(batch["tasks"], records):
+            if str(task["id"]) in reused_ids:
+                continue
             fp.write(json.dumps(record, ensure_ascii=False) + "\n")
     infographic_images = [
         image for task, image in zip(batch["tasks"], images) if _stage(str(task["id"])) == "infographic"

@@ -1,12 +1,22 @@
 {
+  "_comment_1": "默认走生成式渲染器：首选 Banana Pro，失败降级 Banana flash。两条都由 gen_img.py 按 key 前缀自动分流 AI Studio / Vertex Express 端点。",
+  "_comment_2": "🔴 模型 ID 不要带 -preview。这些模型转正后 -preview 的 ID 会下线返回 404，而降级链会先撞一次 404 再发真请求 —— 等于每张图多打一发空枪，一批 6 张变 12 次调用，突发速率翻倍后触发每分钟配额（429）。典型症状：一批总有两三张失败，重跑又换成另外几张失败。",
+  "_comment_3": "确定性模板渲染器 sansheng-template-safe 不再是默认。它的中文字形与坐标绝对稳定，但每套模板的插画元素是随某一篇文章的题材做出来的（房子、人群、社区节点这类），换个题材就会画出与内容无关的东西。只有在「文字极密 + 数字绝不容错 + 题材恰好匹配某套模板」时才手动切过去，切之前先渲一张看看再决定。",
   "schema_version": 1,
   "renderers": [
     {
-      "id": "reviewed-template-safe",
-      "provider": "sansheng-template-safe",
-      "model": "Pillow-reviewed-template",
-      "quality": "1k",
-      "imageSize": "1K"
+      "id": "banana-pro",
+      "provider": "sansheng-google",
+      "model": "gemini-3-pro-image",
+      "quality": "2k",
+      "imageSize": "2K"
+    },
+    {
+      "id": "banana-flash",
+      "provider": "sansheng-google",
+      "model": "gemini-3.1-flash-image",
+      "quality": "2k",
+      "imageSize": "2K"
     }
   ]
 }

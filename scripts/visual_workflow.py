@@ -363,7 +363,11 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         "id": str(item.get("id") or ""),
         "position": str(item.get("position") or ""),
         "style": style,
-        "layout": str(item.get("layout") or ""),
+        # 🔴 layout 不进 frontmatter。渲染器把**整个 prompt 文件**（含 frontmatter）
+        # 原样发给模型，所以 frontmatter 里的中文一样会被读到、被画进图里。
+        # layout 只在正文的 COMPOSITION GUIDANCE 段出现一次，且那一段带着
+        # 「绝不可渲染为可见文字」的显式禁令；放两处等于把禁令稀释掉。
+        # 溯源不受影响：guidance 段本身就在同一份 canonical prompt 里，照样入 SHA。
         "template_id": str(item.get("template_id") or ""),
         "aspect_ratio": str(item.get("aspect_ratio") or ""),
         "expected_text_sha256": _expected_text_digest(expected),
@@ -399,10 +403,20 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         _frontmatter(fields)
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
-        f"reviewed template {item.get('template_id')} ({item.get('layout')}). {palette}\n"
+        f"reviewed template {item.get('template_id')}. {palette}\n"
+        # 🔴 layout 是中文的排布说明，必须显式声明「只描述构图、不得当作可见文字」。
+        # 早期版本把它直接嵌在这句里（`... template X (中文排布说明)`），模型会把这句
+        # 中文当成标题画进图里——实测出现过整句排布说明被渲成图上大标题，
+        # 而下一段才说「白名单外任何可见文字都禁止」，两条指令互相打架。
+        "COMPOSITION GUIDANCE — describes arrangement only. Never render this guidance, "
+        "or any word from it, as visible text in the image: "
+        f"{item.get('layout')}\n"
         "The graphic must communicate the silent facts below, not merely decorate them. "
         "Render every allowlisted line exactly once in readable Simplified Chinese. "
+        "Each allowlisted line must appear EXACTLY ONCE — never repeat a line as both a "
+        "badge and a caption, and never echo it on a nearby surface. "
         "Do not invent numbers, labels, logos, watermarks, product UI or additional text. "
+        "Never draw any real company or product logo, even in the illustration style. "
         "Keep all labels inside crop-safe margins and make the title > sections > details "
         "hierarchy obvious at thumbnail size.\n\n"
         "## VISIBLE TEXT ALLOWLIST — EXHAUSTIVE\n"

@@ -22,7 +22,7 @@
 # 并在输出里打印实际使用的模型（fallback 到 2.5 且图含中文时务必核字）。
 # 日志行刻意纯 ASCII：emoji 在 GBK 控制台会 UnicodeEncodeError。
 # 出图后照常: add_logo.js -> compress_images.py -> pipeline.py log
-import sys, os, json, base64, io
+import sys, os, json, base64, io, time
 import urllib.request
 import urllib.error
 from PIL import Image
@@ -36,6 +36,23 @@ VERTEX_EXPRESS = ("https://aiplatform.googleapis.com/v1/projects/{project}/locat
                   "publishers/google/models/{model}:generateContent")
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+# 429 退避重试。图像模型的配额通常按「每分钟请求数」算，一批六七张图并发发出去
+# 很容易在几秒内打满，而这跟模型好坏无关——换模型没用，等一会儿就好。
+# 退避到 4/8/16 秒共三次，覆盖一分钟级的配额窗口。
+_RETRY_MAX_ATTEMPTS = 4
+_RETRY_BASE_SECONDS = 4
+
+
+def _is_rate_limited(err_text: str) -> bool:
+    """429 / RESOURCE_EXHAUSTED 判定。
+
+    单独成函数是因为它决定「重试」还是「换模型」：两者的处置完全相反，
+    而早期版本把 429 混进 404 的降级链里，结果是拿一个好模型去撞已经满了的配额，
+    撞完还把错误报成「模型不可用」，掩盖了真正的原因。
+    """
+    low = (err_text or "").lower()
+    return "429" in low or "resource_exhausted" in low or "rate limit" in low
 
 
 def _key():
@@ -114,27 +131,51 @@ def gen(prompt_file, out_path, model, w, h):
                              "imageConfig": {"imageSize": "1K", "aspectRatio": _aspect_ratio(w, h)}},
     }
     key = _key()
-    # 404/not-found 才沿 fallback 链降级；非 404 错误（配额、鉴权、参数等）直接报错，不降级
+    # 404/not-found 才沿 fallback 链降级；鉴权、参数等错误直接报错，不降级。
+    # 429（配额耗尽）单独处理：它不是「这个模型不行」，而是「现在打太快了」，
+    # 换模型没有用，只能退避重排。见下方 _RETRY_* 常量的说明。
     resp, used, last_err = None, None, None
     for cand in _candidate_models(model):
-        text = _post_json(_endpoint(cand, key), {"x-goog-api-key": key}, body)
-        if not text.strip():
-            raise SystemExit("empty response from Google endpoint")
-        resp = json.loads(text)
-        if "error" not in resp:
-            used = cand
+        delay = _RETRY_BASE_SECONDS
+        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
+            text = _post_json(_endpoint(cand, key), {"x-goog-api-key": key}, body)
+            if not text.strip():
+                raise SystemExit("empty response from Google endpoint")
+            resp = json.loads(text)
+            if "error" not in resp:
+                used = cand
+                break
+            last_err = json.dumps(resp["error"])
+            if not _is_rate_limited(last_err):
+                break
+            if attempt == _RETRY_MAX_ATTEMPTS:
+                print(f"  [warn] model {cand} 连续 {attempt} 次被限流(429)，放弃该候选")
+                break
+            print(f"  [warn] 被限流(429)，{delay}s 后重试（第 {attempt}/{_RETRY_MAX_ATTEMPTS - 1} 次）")
+            time.sleep(delay)
+            delay *= 2
+        if used:
             break
-        last_err = json.dumps(resp["error"])
-        if "404" in last_err or "not found" in last_err.lower():
+        if _is_rate_limited(last_err or ""):
+            continue
+        if "404" in (last_err or "") or "not found" in (last_err or "").lower():
             print(f"  [warn] model {cand} unavailable (404), trying next in fallback chain")
             continue
-        raise SystemExit(f"API error: {pc.redact(last_err[:400])}")
+        raise SystemExit(f"API error: {pc.redact((last_err or '')[:400])}")
     if not used:
         raise SystemExit(
             f"API error: fallback 链全部失败，最后错误: {pc.redact((last_err or '')[:400])}"
         )
     if used != model:
         print(f"  [info] requested {model} unavailable in this project, auto-fell-back to {used}")
+        if model.endswith("-preview") and used == model[: -len("-preview")]:
+            # 这一支专门喊出来：它「能用」，但每张图都白白多打一发 404。
+            # 一批图的请求数因此翻倍，是 429 最常见的自造原因。
+            print(
+                f"  [🔴 请改配置] renderer-policy.json 里把 {model} 换成 {used}"
+                "（该模型已转正，-preview 的 ID 已下线）。"
+                "不改的话每张图都要先撞一次 404，整批请求数翻倍，很容易自己把自己限流。"
+            )
     data = None
     for c in resp.get("candidates", []):
         for part in c.get("content", {}).get("parts", []):
