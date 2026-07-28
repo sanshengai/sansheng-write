@@ -212,7 +212,15 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "Fitting the ghost must never shrink L1" in cover
     # 主题色只染 L2，L1 靠字号称王 —— 防止「两行都染 / 主标题染色」回潮。
     assert "Never colour any part of L1" in cover
-    assert "Descriptor line: 确定性视觉合同" in cover
+    # 🔴 品牌胶囊：主题色 78%-85% + 哑光磨砂。满色 100% 会跟 L1 争焦点。
+    assert "78%-85% opacity" in cover
+    assert "FLAT MATTE frosted body" in cover
+    # 「磨砂」与「毛玻璃」必须泾渭分明——合并掉就会渲成廉价玻璃按钮
+    assert "NOT glassmorphism" in cover
+    assert "glassmorphism" in cover.split("STRICT FORBIDDEN")[1]
+    assert "no specular highlight" in cover
+    assert "Two to four tags maximum" in cover
+    assert "Descriptor tags: 确定性视觉合同" in cover
     assert "一份任务单" not in cover
     assert "一条发布入口" not in cover
     assert "bright editorial evidence montage" not in cover

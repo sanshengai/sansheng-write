@@ -110,16 +110,11 @@ node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 ```
 
-🔴 **微信只收 jpg / png。** 截图工具常默认存 `.webp`（体积小），而
-`media/uploadimg` 对 webp/avif/heic/bmp/tiff 一律返回 `40005 invalid file type`，
-**且 baoyu-post-to-wechat 把上传异常 catch 掉只打一行 stderr、img 标签原样保留本地
-`src`** —— 结果是草稿里一片坏图，而 `image_count` 数量对得上、全部校验显示通过
-（2026-07-28 六张截图连推三版才发现）。两道防线都已内建，不必手动记：
-
-- `compress_images.py` 收图前**自动**把不支持的格式转成 PNG，并改写 `定稿.md` /
-  `定稿.html` 里的引用、删掉原文件；
-- `build_expected_draft` 在推送前**硬拦**任何仍指向这些后缀的引用，
-  `_compare_readback` 再在回读后兜一层（仍是本地路径的 img 一律判失败）。
+🔴 **微信只收 jpg / png**，webp/avif/heic/bmp/tiff 一律 `40005`，且上传器会**吞掉**
+这个失败、把本地 `src` 原样留在正文里（草稿一片坏图，而 `image_count` 数量对得上、
+校验全绿——2026-07-28 连推三版才发现）。三道防线已内建，不必手动记：
+`compress_images.py` 收图前自动转 PNG 并改写引用；`build_expected_draft` 推送前硬拦；
+`_compare_readback` 回读后兜底。
 
 数据图只允许根据已核实数字用本地确定性图表代码渲染；精确拓扑图可走 `baoyu-diagram`。两者都不得让生成模型编造数值。
 

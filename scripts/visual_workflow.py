@@ -211,11 +211,14 @@ def _cover_text(meta: dict, item: dict) -> dict:
     lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
     line1 = str(lead.get("line1") or item.get("title") or "").strip()
     line2 = str(lead.get("line2") or item.get("subtitle") or "").strip()
-    tags = [
-        str(value).strip()
-        for value in (lead.get("subtitle"),)
-        if str(value or "").strip()
-    ]
+    # subtitle 可写成字符串（单条）或 YAML 列表（2-4 个短标签）。
+    # 用列表而不是「拿分隔符切一个长字符串」，是因为标签自身就可能含 `/`
+    # （如「5h/7d 额度」），切了必错。
+    raw_subtitle = lead.get("subtitle")
+    if isinstance(raw_subtitle, (list, tuple)):
+        tags = [str(v).strip() for v in raw_subtitle if str(v or "").strip()][:4]
+    else:
+        tags = [str(raw_subtitle).strip()] if str(raw_subtitle or "").strip() else []
     uppercase = re.findall(
         r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
         str(meta.get("cover_keywords") or ""),
@@ -289,15 +292,27 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "- L2 is a supporting subtitle at 58%-64% of L1 cap height: semibold white, "
         f"one line only, with ONLY {accent_hint} rendered in the accent color {accent}. "
         "Never colour any part of L1 — L1 earns dominance through size, not hue.\n"
-        f"- Descriptor line: {text['tags'][0] if text['tags'] else '(none)'}. Render it at "
-        "30%-34% of L1 cap height inside the quiet pill; tags never compete with the headline.\n"
+        f"- Descriptor tags: {tags}. Render them at "
+        "30%-34% of L1 cap height inside the pill; tags never compete with the headline.\n"
         "- The ghost is industrial condensed uppercase at 105%-120% of L1 cap height, "
         "in a near-background dark tone at 8%-12% opacity, partly overlapped by the Chinese "
         "block. It is BACKGROUND TEXTURE, never a headline — if it reads as the loudest "
         "element, the cover is wrong. Fitting the ghost must never shrink L1: L1's size is "
         "fixed by the canvas rule above and takes precedence.\n"
-        "- Put all tags in one auto-fit quiet pill with near-background fill, no border, "
-        "glow, shadow or glass effect.\n\n"
+        # 🔴 品牌胶囊（2026-07-28 sandy 拍板）。她认可的两张封面里，底部这条
+        # 主题色标签胶囊是**辨识度的主要来源**——但满色 100% 不透明太抢眼，
+        # 会跟 L1 争视觉焦点。故降到 ~80% 并加一点哑光磨砂。
+        # ⚠️ 「磨砂」≠「毛玻璃」：下面 STRICT FORBIDDEN 里的 glassmorphism /
+        # glossy reflections 依然全图有效，这里要的是**半透明 + 细微颗粒的哑光**，
+        # 不是高光条、镜面反射或彩虹边。两者一旦混淆就会渲成廉价的玻璃按钮。
+        "- Put all tags in ONE auto-fit pill sitting directly under L2. Fill the pill "
+        f"with the accent color {accent} at 78%-85% opacity over the dark canvas, so it "
+        "reads as a soft branded chip rather than a bright solid block. Give it a FLAT "
+        "MATTE frosted body: slight translucency plus a very faint grain. No border, no "
+        "glow, no drop shadow, no specular highlight, no rim light, no gradient sheen, "
+        "no reflection. Frosted here means matte translucency only, NOT glassmorphism.\n"
+        "- Separate the tags with thin vertical dividers or a slash. Tag text is pure "
+        "white. Two to four tags maximum; never wrap the pill onto a second line.\n\n"
         "## RIGHT COLLAGE\n"
         "- Use one dominant flat-vector metaphor object derived from the verified facts, "
         "plus two or three much smaller dark evidence badges and restrained curved dashed "
