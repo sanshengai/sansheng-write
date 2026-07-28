@@ -342,7 +342,9 @@ def generate_music_cover(song_name: str, imagery: list, output_dir: Path):
     prompt_file = prompt_dir / "bgm_cover.md"
     prompt_file.write_text(prompt, encoding="utf-8")
     cmd = [sys.executable, str(gen_img), str(prompt_file), str(img_path),
-           "gemini-3.1-flash-image-preview", "1024", "1024"]
+           # 🔴 不带 -preview：该模型已转正，preview 的 ID 一律 404，
+           # 而 gen_img 的降级链会先撞 404 再发真请求（白打一发空枪）。
+           "gemini-3.1-flash-image", "1024", "1024"]
     try:
         print("  🚀 调用 gen_img.py 生成 1:1 方形封面（Vertex 端点）...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)

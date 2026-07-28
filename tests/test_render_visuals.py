@@ -222,7 +222,7 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
                     {
                         "id": "native-google",
                         "provider": "sansheng-google",
-                        "model": "gemini-3.1-flash-image-preview",
+                        "model": "gemini-3.1-flash-image",
                         "quality": "1k",
                         "imageSize": "1K",
                     }
