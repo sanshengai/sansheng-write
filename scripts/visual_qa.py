@@ -285,15 +285,31 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             errors.extend(design_errors)
             if design_errors:
                 continue
-            style_contract = contract.get("style_contract") or {}
-            style_contract["variant"] = "reviewed-template-text-safe"
-            style_contract["layout"] = expected_template_id
-            style_contract["required_visual_traits"] = [
-                *(style_contract.get("required_visual_traits") or []),
-                *[str(value) for value in design_manifest.get("visual_elements") or []],
-                "exact local Chinese typography inside crop-safe registered boxes",
-            ]
-            contract["style_contract"] = style_contract
+            # 确定性模板不是生成式 morandi 手绘的低配替代，而是另一份已审核的
+            # 视觉合同：它承诺准确中文、已登记布局与固定色板。继续叠加生成式
+            # 必备特征（如自然笔触/点状边框）会把正确的模板误判为失败。
+            contract["target_style"] = "reviewed-template-text-safe"
+            contract["style_contract"] = {
+                "variant": "reviewed-template-text-safe",
+                "layout": expected_template_id,
+                "palette": {
+                    "background": "#F5F0E6",
+                    "accent": "#0E926F",
+                    "neutrals": [
+                        "#FFFDF8", "#4A4540", "#7BA3A8", "#DDE9E5",
+                        "#D4956A", "#F0D8C7", "#F5E6C8", "#0E0E10",
+                        "#191A1D", "#FFFFFF",
+                    ],
+                },
+                "required_visual_traits": [
+                    *[str(value) for value in design_manifest.get("visual_elements") or []],
+                    "exact local Chinese typography in registered crop-safe text boxes",
+                ],
+                "forbidden_visual_traits": [
+                    "text outside the allowlist",
+                    "cropped registered text",
+                ],
+            }
         assets.append(
             {
                 "path": rel,

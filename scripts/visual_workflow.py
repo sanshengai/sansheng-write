@@ -290,7 +290,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "12%-14% of the canvas height, and the L1 line MUST span 70%-90% of the width "
         "of the left text zone. No other high-contrast text may be set larger than L1.\n"
         "- L2 is a supporting subtitle at 58%-64% of L1 cap height: semibold white, "
-        f"one line only, with ONLY {accent_hint} rendered in the accent color {accent}. "
+        f"one line only, with ONLY {accent_hint} rendered in the muted emerald accent. "
         "Never colour any part of L1 — L1 earns dominance through size, not hue.\n"
         f"- Descriptor tags: {tags}. Render them at "
         "30%-34% of L1 cap height inside the pill; tags never compete with the headline.\n"
@@ -306,7 +306,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         # glossy reflections 依然全图有效，这里要的是**半透明 + 细微颗粒的哑光**，
         # 不是高光条、镜面反射或彩虹边。两者一旦混淆就会渲成廉价的玻璃按钮。
         "- Put all tags in ONE auto-fit pill sitting directly under L2. Fill the pill "
-        f"with the accent color {accent} at 78%-85% opacity over the dark canvas, so it "
+        "with the muted emerald accent at 78%-85% opacity over the dark canvas, so it "
         "reads as a soft branded chip rather than a bright solid block. Give it a FLAT "
         "MATTE frosted body: slight translucency plus a very faint grain. No border, no "
         "glow, no drop shadow, no specular highlight, no rim light, no gradient sheen, "
@@ -321,11 +321,11 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "maps or service nodes to express the argument.\n"
         "- Main object: flat-vector editorial form with thin physical depth, same-hue "
         "halftone, upper-left highlight and soft lower-right contact shadow.\n"
-        "- Badges: #1A1A1A fill, 1px accent border, rounded corners; never white cards.\n\n"
+        "- Badges: very dark charcoal fill, a hairline emerald border, rounded corners; never white cards.\n\n"
         "## COLOR & BACKGROUND\n"
-        "- Canvas base: #0E0E10 deep charcoal.\n"
-        f"- Only visible accent hue: {accent}; other foreground text is pure white.\n"
-        "- Deep surfaces may use #141416, #161618, #1A1A1A and #1F1F25 only.\n"
+        "- Canvas base: deep charcoal.\n"
+        "- Only visible accent hue: muted emerald; other foreground text is pure white.\n"
+        "- Deep surfaces use only near-black charcoal shades.\n"
         "- No hard split-color panels; no bright, beige, photographic or scrapbook canvas.\n\n"
         "## STRICT FORBIDDEN\n"
         "- No people, faces, hands, photorealistic stock imagery, robots, glowing brains, "
@@ -362,9 +362,9 @@ def _clay_palette(recipe: dict) -> str:
     # "bright diffuse studio light"）过不了 —— 而且因为 prompt_sha256 是硬校验，
     # 改一个字就得整批重渲，代价不小。改这段前先跑 tests/test_visual_route.py。
     return (
-        f"Warm ivory background {background} with a bright light palette. "
-        f"STRICT PALETTE — use these colours and nothing else: that ivory background; "
-        f"a single accent green {accent}; warm neutrals {neutrals}; "
+        "Warm ivory background with a bright light palette. "
+        "STRICT PALETTE — use these colours and nothing else: warm ivory; "
+        "a single muted jade-green accent; soft warm stone-gray neutrals; "
         "plus soft natural clay skin and wood tones for figures and props. "
         "Matte soft clay material, diffuse light, low contrast, soft shadows.\n"
         "Never introduce a SECOND HUE. When two groups, sides or outcomes must be told "

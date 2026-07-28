@@ -559,8 +559,8 @@ def _render_curve_convergence(item: dict[str, Any], output: Path) -> None:
         text_boxes=text_boxes,
         visual_elements=[
             "school-doodle",
-            "elder-family-doodle",
-            "two-converging-population-curves",
+            "four-person-group-doodle",
+            "two-stage-resource-lines",
             "three-stage-staircase",
             "washi-note-cards",
         ],

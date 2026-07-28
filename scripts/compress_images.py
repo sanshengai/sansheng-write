@@ -194,6 +194,35 @@ def stamp_gen_log(targets: list[Path], *, verbose: bool = True) -> int:
             by_output[str(entry["output"])] = entry  # 后写覆盖先写 = 取最新
 
     appended = []
+
+    def sync_template_manifest(path: Path, image_sha256: str) -> None:
+        """让确定性模板的设计清单绑定水印/压缩后的最终字节。
+
+        模板清单约束的是文字框、safe bounds 与视觉结构；add_logo / 压缩不改变这些
+        结构，却会改变 PNG 字节。若只补 .gen-log 而不同步这里，视觉 QA 会把自身
+        已记录的合法后处理误判为来源不明。
+        """
+        manifest_path = path.with_suffix(".design.json")
+        if not manifest_path.is_file():
+            return
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if manifest.get("renderer") != "deterministic-template-compositor":
+            return
+        if manifest.get("image_sha256") == image_sha256:
+            return
+        manifest["image_sha256"] = image_sha256
+        manifest["post_process"] = {
+            "tool": "compress_images.py",
+            "reason": "发布前水印与压缩改变 PNG 字节；设计结构未变",
+        }
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
     for path in targets:
         path = path.resolve()
         if not path.is_file():
@@ -206,6 +235,7 @@ def stamp_gen_log(targets: list[Path], *, verbose: bool = True) -> int:
         if not prior:
             continue
         actual = _sha256(path)
+        sync_template_manifest(path, actual)
         if prior.get("output_sha256") == actual:
             continue  # 字节没变，不必留痕
         record = dict(prior)
