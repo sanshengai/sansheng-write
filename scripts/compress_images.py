@@ -19,6 +19,9 @@
 """
 
 import argparse
+import datetime as _dt
+import hashlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -88,6 +91,83 @@ def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tupl
     return (orig_mb, new_mb, tag.strip())
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def stamp_gen_log(targets: list[Path], *, verbose: bool = True) -> int:
+    """把后处理造成的字节变化补记进 .gen-log.jsonl。
+
+    为什么必须记：`render-visuals --only` 沿用未重渲的图时，会拿磁盘字节和生图日志里
+    最新一条的 output_sha256 对账，对不上就拒绝沿用（"证据链不接受来历不明的图"）。
+    而 add_logo.js 打水印、本脚本压缩，都会正当地改变字节 —— 不补记的话，任何做过
+    后处理的文章都再也补渲不了单张，只能整批重出，等于把 --only 废掉，还平白多烧几次生图配额。
+
+    补记不是给证据链开口子，而是把「谁在什么时候改了这些字节」明确写下来：
+    记录里保留原生成条目的 renderer/model/prompt 等出身信息，另加 post_process 字段
+    说明这次变化的来源。找不到原始生成记录的图**不补记** —— 那种图本来就来历不明，
+    正是校验该拦下的。
+    """
+    if not targets:
+        return 0
+    article_dir = targets[0].resolve().parent
+    # 素材/ 在文章目录下，日志在文章目录根。逐级上找，最多两层。
+    for candidate in (article_dir, article_dir.parent):
+        log_path = candidate / ".gen-log.jsonl"
+        if log_path.is_file():
+            break
+    else:
+        return 0
+    cwd = log_path.parent
+
+    by_output: dict[str, dict] = {}
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and entry.get("output"):
+            by_output[str(entry["output"])] = entry  # 后写覆盖先写 = 取最新
+
+    appended = []
+    for path in targets:
+        path = path.resolve()
+        if not path.is_file():
+            continue
+        try:
+            rel = path.relative_to(cwd).as_posix()
+        except ValueError:
+            continue
+        prior = by_output.get(rel)
+        if not prior:
+            continue
+        actual = _sha256(path)
+        if prior.get("output_sha256") == actual:
+            continue  # 字节没变，不必留痕
+        record = dict(prior)
+        record["record_id"] = f"postprocess-{rel.rsplit('/', 1)[-1]}-{actual[:12]}"
+        record["timestamp"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        record["output_sha256"] = actual
+        record["bytes"] = path.stat().st_size
+        record["post_process"] = {
+            "tool": "compress_images.py",
+            "reason": "发布前后处理（水印 + 压缩）改变了字节",
+            "source_sha256": prior.get("output_sha256"),
+        }
+        appended.append(record)
+
+    if appended:
+        with log_path.open("a", encoding="utf-8") as fh:
+            for record in appended:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if verbose:
+            print(f"gen-log: 补记 {len(appended)} 条后处理记录 -> {log_path}")
+    return len(appended)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="图片压缩（PIL 实现，中文路径友好）"
@@ -134,6 +214,10 @@ def main():
             skipped += 1
         elif status in ("OPT", "RESIZE"):
             processed += 1
+
+    # 无论本次是否真的压缩了，都按当前磁盘字节对账补记 ——
+    # 水印是上一步 add_logo.js 打的，它同样会让字节漂移。
+    stamp_gen_log(targets, verbose=verbose)
 
     print()
     print(

@@ -18,11 +18,11 @@ import yaml
 
 try:
     from .evidence import build_visual_manifest, sha256_file
-    from .profile_config import identity, visual_profile
+    from .profile_config import identity, load_secret, visual_profile
     from .evidence import stable_digest
 except ImportError:  # pragma: no cover - direct script execution
     from evidence import build_visual_manifest, sha256_file
-    from profile_config import identity, visual_profile
+    from profile_config import identity, load_secret, visual_profile
     from evidence import stable_digest
 
 
@@ -463,10 +463,14 @@ def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
 
 
 def _resolve_reviewer_command() -> tuple[list[str] | None, list[str]]:
-    raw = os.getenv("SANSHENG_WRITE_VISUAL_QA_COMMAND", "").strip()
+    # 读取顺序 shell env → 仓根 .env（与 profile/data 指针、各家 key 同一个配置面，
+    # 换机复刻只需拷一份 .env）。这里刻意**不**给默认复核器：
+    # 谁来看图必须由使用者显式指定，skill 自己指派一个复核器就等于自己给自己发合格证。
+    raw = load_secret("SANSHENG_WRITE_VISUAL_QA_COMMAND", required=False).strip()
     if not raw:
         return None, [
             "缺 SANSHENG_WRITE_VISUAL_QA_COMMAND；视觉 QA 必须交给独立看图进程"
+            "（可用适配器：scripts/visual_qa_codex.py，见 references/release-runtime.md §4）"
         ]
     try:
         if raw.startswith("["):

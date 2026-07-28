@@ -1484,8 +1484,12 @@ def process_lists(html):
         return ('<section style="display:table;width:100%;margin:0.5em 0;">'
                 '<span style="display:table-cell;width:1.7em;vertical-align:top;'
                 f'color:{BG};font-size:15px;line-height:1.85;">{UL_MARKER}</span>'
+                # text-align:left + word-break:break-all 与要点卡（process_key_points）
+                # 同源同理：列表项经常混进 URL 或长英文，微信会对含超长 token 的行做两端
+                # 对齐，把中文撑成大字间距。要点卡早就加了，这里漏了 —— 症状是「信息来源」
+                # 里带路径的网址把那一行拉散，且读者长按选不中。
                 f'<span style="display:table-cell;vertical-align:top;color:{TEXT_BODY};'
-                f'line-height:1.85;">{text}</span></section>')
+                f'line-height:1.85;text-align:left;word-break:break-all;">{text}</span></section>')
 
     def num_row(n, text):
         return ('<section style="display:table;width:100%;margin:0.6em 0;">'
@@ -1494,7 +1498,8 @@ def process_lists(html):
                 f'background:{BG};color:#fff;border-radius:50%;text-align:center;'
                 f'font-size:12px;font-weight:bold;">{n}</span></span>'
                 f'<span style="display:table-cell;vertical-align:top;color:{TEXT_BODY};'
-                f'line-height:1.85;padding-top:1px;">{text}</span></section>')
+                f'line-height:1.85;padding-top:1px;text-align:left;word-break:break-all;">'
+                f'{text}</span></section>')
 
     def conv_ul(m):
         items = re.findall(r'<li[^>]*>(.*?)</li>', m.group(0), re.DOTALL)

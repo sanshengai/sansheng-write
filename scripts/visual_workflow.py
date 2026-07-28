@@ -303,6 +303,39 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     )
 
 
+def _clay_palette(recipe: dict) -> str:
+    """claymation 的配色约束（hero 与信息图共用同一段，避免两处各写一版而漂移）。
+
+    早期版本只给了一串 `Avoid dark background, navy, brick red, mustard yellow...`
+    的负面清单。实测**负面清单压不住**：图里照样出现砖橙标签条、芥末黄金币、蓝齿轮。
+    根因在于凡是「左右对比 / 两组对照」的题材，只给一个主色时，模型必然自己发明
+    第二个色相去区分两边 —— 它不是没看见禁令，是没有别的手段可用。
+    所以这里改成**正面清单 + 明确给出区分两组的替代手段**（同色深浅、形状、材质）。
+    """
+    background = (recipe or {}).get("background") or "#F5F0E6"
+    accent = (recipe or {}).get("accent") or "#0E926F"
+    neutrals = ", ".join((recipe or {}).get("neutrals") or ["#FBF8F2", "#D8D2C7", "#5A554F"])
+    # 🔴 下面这句必须原样包含配方 required_prompt_groups 要求的词：
+    # `warm ivory` / `bright light palette` / `soft clay` / `diffuse light`。
+    # pipeline.py 的 visual_route 门是**逐字子串比对**，写同义表述（如
+    # "bright diffuse studio light"）过不了 —— 而且因为 prompt_sha256 是硬校验，
+    # 改一个字就得整批重渲，代价不小。改这段前先跑 tests/test_visual_route.py。
+    return (
+        f"Warm ivory background {background} with a bright light palette. "
+        f"STRICT PALETTE — use these colours and nothing else: that ivory background; "
+        f"a single accent green {accent}; warm neutrals {neutrals}; "
+        "plus soft natural clay skin and wood tones for figures and props. "
+        "Matte soft clay material, diffuse light, low contrast, soft shadows.\n"
+        "Never introduce a SECOND HUE. When two groups, sides or outcomes must be told "
+        "apart, distinguish them with light versus dark tints of the SAME accent green, "
+        "or with shape, size, texture and position — never by giving one side a different "
+        "colour. This applies to label bars, arrows, containers, highlights and props alike.\n"
+        "Forbidden anywhere in the image: orange, terracotta, brick red, mustard yellow, "
+        "navy, steel blue, purple, dark or black background, metallic, chrome, neon, "
+        "high-contrast or photorealistic surfaces."
+    )
+
+
 def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     expected = [str(item.get("title") or "").strip()]
     fields = {
@@ -323,9 +356,7 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
             }
         )
     palette = (
-        "Warm beige light palette, matte soft clay, bright diffuse studio light, "
-        "low contrast and soft shadows. No metallic, photorealistic, navy, black, "
-        "neon or high-contrast surface."
+        _clay_palette(recipe)
         if style == "claymation"
         else "Use a warm Morandi / 莫兰迪柔色 palette: warm cream #F5F0E6 background "
         "with muted sage #7BA3A8, terracotta "
@@ -383,10 +414,7 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         )
     labels = "\n".join(f"- {value}" for value in expected[1:])
     palette = (
-        "Warm beige or warm ivory background, bright light palette, matte soft clay "
-        "information objects, diffuse light, low contrast and soft shadows. Avoid dark "
-        "background, navy, steel blue, brick red, mustard yellow, metallic, chrome, "
-        "neon and photorealistic surfaces."
+        _clay_palette(recipe)
         if style == "claymation"
         else "Use a warm Morandi / 莫兰迪柔色 palette: warm cream background #F5F0E6; "
         "muted sage #7BA3A8 for headers and "
@@ -412,7 +440,16 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         "or any word from it, as visible text in the image: "
         f"{item.get('layout')}\n"
         "The graphic must communicate the silent facts below, not merely decorate them. "
+        # 🔴 中文字形是这条链上最脆弱的一环：糊字既不报错、又会被看图模型「脑补」成
+        # 通顺句子而漏检（实测 hero 图渲成「重置不是祸利，是昀家公司付溻针」，
+        # 复核仍判 text_match 通过）。所以这里要求宁可放大、减量，也不许把字画歪。
         "Render every allowlisted line exactly once in readable Simplified Chinese. "
+        "CHARACTER ACCURACY IS CRITICAL: every Chinese character must be a complete, "
+        "correct, standard Simplified glyph. Never approximate a character, never invent "
+        "or merge strokes, never output a character that does not exist. If a line cannot "
+        "be rendered accurately at the planned size, render it LARGER and simpler rather "
+        "than distorting the glyphs — losing decoration is acceptable, a broken character "
+        "is not. "
         "Each allowlisted line must appear EXACTLY ONCE — never repeat a line as both a "
         "badge and a caption, and never echo it on a nearby surface. "
         "Do not invent numbers, labels, logos, watermarks, product UI or additional text. "
