@@ -51,15 +51,11 @@ baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步�
 两种正文风格与封面配方的色值、材质、灯光、必备特征和禁用特征只从 profile 的
 `visual.profiles` 读取，编译时写入 prompt 摘要，避免文档与代码各存一份。
 
-## 封面 ghost 水印由 `cover_keywords` 决定
+## 封面背景不再生成 ghost 文字
 
-封面配方里的巨大英文水印，取自 `article-meta.yaml` 的 `cover_keywords` 中
-**末尾三个全大写 ASCII 词**。`cover_keywords` 若只有中文，取不到词，prompt 会
-退化成「由模型自行拟三个英文关键词」——模型会自己编，实测编出过重复词。
-
-所以 `cover_keywords` 必须显式带上大写英文词，例如
-`"日历 热力图 重置 额度 RESET ARCHIVE CALENDAR"`。蓝图闸让作者拍板的 ghost 文案，
-就落在这里。
+`cover_keywords` 只用于语义检索和视觉概念选择，不再被编译为可见英文水印。
+封面背景只允许抽象线条与低对比图形；所有可见文字都必须进入明确白名单，
+并由视觉质检逐项核对。
 
 ## 确定性图表
 

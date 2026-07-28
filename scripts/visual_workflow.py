@@ -226,11 +226,6 @@ def _cover_text(meta: dict, item: dict) -> dict:
         tags = [str(v).strip() for v in raw_subtitle if str(v or "").strip()][:4]
     else:
         tags = [str(raw_subtitle).strip()] if str(raw_subtitle or "").strip() else []
-    uppercase = re.findall(
-        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
-        str(meta.get("cover_keywords") or ""),
-    )
-    ghost = " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else ""
     # 主题色落点：meta 显式指定优先。不指定就让模型自己挑 L2 的收尾短语 ——
     # 能出图，但落点会飘（同一批封面里有的染动词、有的染名词）。
     # 显式写死才能让「哪几个字是绿的」在标题阶段就拍板，见 references/title.md。
@@ -239,7 +234,6 @@ def _cover_text(meta: dict, item: dict) -> dict:
         "line1": line1,
         "line2": line2,
         "tags": tags,
-        "ghost": ghost,
         "accent_phrase": accent_phrase,
     }
 
@@ -250,7 +244,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     subtitle = text["line2"]
     expected = [
         value
-        for value in (title, subtitle, *text["tags"], text["ghost"])
+        for value in (title, subtitle, *text["tags"])
         if value
     ]
     fields = {
@@ -264,7 +258,6 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "expected_text_sha256": _expected_text_digest(expected),
     }
     tags = " / ".join(text["tags"]) or "(none)"
-    ghost = text["ghost"] or "(derive three article-specific English keywords)"
     accent = recipe["accent"]
     accent_hint = (
         f"the exact characters 「{text['accent_phrase']}」"
@@ -291,7 +284,6 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         f"- Main Chinese headline: {title}\n"
         f"- Supporting Chinese subtitle: {subtitle or '(none)'}\n"
         f"- Quiet pill tags: {tags}\n"
-        f"- OVERSIZED GHOST-WATERMARK behind the Chinese title: {ghost}\n"
         # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比。
         # 旧版写的是「L1 at 100% scale」+ 其余按 L1 的比例 —— 但 100% 相对谁没定义，
         # 模型可以把 L1 定成任意大小，整组跟着缩。实测第 81 篇 L1 只有画布高 8%，
@@ -306,11 +298,8 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "Never colour any part of the main headline — it earns dominance through size, not hue.\n"
         f"- Descriptor tags: {tags}. Render them at "
         "30%-34% of headline cap height inside the pill; tags never compete with the headline.\n"
-        "- The ghost is industrial condensed uppercase at 105%-120% of headline cap height, "
-        "in a near-background dark tone at 8%-12% opacity, partly overlapped by the Chinese "
-        "block. It is BACKGROUND TEXTURE, never a headline — if it reads as the loudest "
-        "element, the cover is wrong. Fitting the ghost must never shrink the headline: its size is "
-        "fixed by the canvas rule above and takes precedence.\n"
+        "- Keep the background purely pictorial: abstract lines and low-contrast shapes only. "
+        "Do not render ghost words, watermark text, letters or numbers behind the Chinese block.\n"
         # 🔴 品牌胶囊（2026-07-28 sandy 拍板）。她认可的两张封面里，底部这条
         # 主题色标签胶囊是**辨识度的主要来源**——但满色 100% 不透明太抢眼，
         # 会跟 L1 争视觉焦点。故降到 ~80% 并加一点哑光磨砂。

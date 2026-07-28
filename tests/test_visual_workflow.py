@@ -204,7 +204,8 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "slightly larger left zone" in cover
     assert "slightly smaller right zone" in cover
     assert "narrow quiet gutter" in cover
-    assert "OVERSIZED GHOST-WATERMARK" in cover
+    assert "Do not render ghost words" in cover
+    assert "CONDITION × SIGNAL × LEVER" not in cover
     assert "ONLY VISIBLE TEXT ALLOWLIST" in cover
     assert "Never render layout guides, measurements or percentages" in cover
     assert "Main Chinese headline: 规则不能丢" in cover
@@ -212,12 +213,9 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     # 🔴 钉的是「字号必须锚在画布上」这条契约本身，不是措辞。
     # 旧版只说 L1 是 100% scale，没有画布锚点，模型可自由决定 L1 多大 ——
     # 实测同一份提示词跑出过 L1 占画布高 8% 和 12% 两种结果（前者主标题比
-    # ghost 还小，整张封面失去视觉主体）。这两条断言防止锚点被改回相对值。
+    # 整张封面失去视觉主体）。这条断言防止锚点被改回相对值。
     assert "cap height MUST be 12%-14% of the canvas height" in cover
     assert "supporting subtitle is 58%-64% of the headline cap height" in cover
-    # ghost 必须小于等于 L1 量级且只作背景纹理；旧值 145%-155% 等于要求英文比中文大。
-    assert "105%-120% of headline cap height" in cover
-    assert "Fitting the ghost must never shrink the headline" in cover
     # 主题色只染 L2，L1 靠字号称王 —— 防止「两行都染 / 主标题染色」回潮。
     assert "Never colour any part of the main headline" in cover
     # 🔴 品牌胶囊：主题色 78%-85% + 哑光磨砂。满色 100% 会跟 L1 争焦点。

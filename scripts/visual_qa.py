@@ -84,11 +84,6 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
     except (FileNotFoundError, yaml.YAMLError):
         pass
     lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
-    uppercase = re.findall(
-        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
-        str(meta.get("cover_keywords") or ""),
-    )
-    ghost = " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else ""
     brand_name = str(identity().get("nickname") or "").strip()
     expected["素材/cover.png"] = [
         str(value).strip()
