@@ -100,6 +100,49 @@ def _image_count(html: str) -> int:
     return len(re.findall(r"<img\b", str(html or ""), flags=re.I))
 
 
+# 微信 media/uploadimg 只认 jpg / png，其余一律 40005 invalid file type。
+_WECHAT_UNSUPPORTED_SUFFIX = (".webp", ".avif", ".heic", ".heif", ".bmp", ".tiff", ".tif")
+
+
+def _unsupported_local_images(html: str) -> list[str]:
+    """正文里引用了微信不收的图片格式——发出去必然是坏图，发布前就拦。
+
+    与 `_unuploaded_images` 的分工：这条在**推送前**看本地 HTML（能防患于未然、
+    报错时还能指出该转哪几张），那条在**回读后**看远端（兜住其它原因的上传失败）。
+    """
+    bad: list[str] = []
+    for match in re.finditer(
+        r'<img[^>]*\s(?:data-local-path|src)=["\']([^"\']+)["\']',
+        str(html or ""),
+        flags=re.I,
+    ):
+        value = match.group(1).strip()
+        if value.lower().endswith(_WECHAT_UNSUPPORTED_SUFFIX):
+            name = value.replace("\\", "/").rsplit("/", 1)[-1]
+            if name not in bad:
+                bad.append(name)
+    return bad
+
+
+def _unuploaded_images(html: str) -> list[str]:
+    """回读正文里仍指向本地路径的图片 src。
+
+    🔴 2026-07-28 补。此前只有 `_image_count`（数 <img> 个数），而
+    baoyu-post-to-wechat 的上传循环把失败 **catch 掉只打一行 stderr**，
+    img 标签原样保留本地 src。于是「六张 .webp 全被微信以 40005
+    invalid file type 拒收」这件事，连推三版都显示校验通过——数量对得上，
+    可读者看到的是六个坏图。数量相等 ≠ 图传上去了，必须验 src 真的换成了远端地址。
+    """
+    bad: list[str] = []
+    for match in re.finditer(
+        r"<img[^>]*\ssrc=[\"']([^\"']+)[\"']", str(html or ""), flags=re.I
+    ):
+        src = match.group(1).strip()
+        if not re.match(r"https?://", src, flags=re.I):
+            bad.append(src[:80])
+    return bad
+
+
 def _load_meta(cwd: Path) -> tuple[dict[str, Any], list[str]]:
     path = cwd / "article-meta.yaml"
     try:
@@ -142,6 +185,14 @@ def build_expected_draft(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     profile = brand()
     html = html_path.read_text(encoding="utf-8")
     content = _extract_content(html)
+    unsupported = _unsupported_local_images(content)
+    if unsupported:
+        return None, [
+            f"正文引用了 {len(unsupported)} 张微信不收的图片格式"
+            f"（media/uploadimg 只认 jpg/png，其余返回 40005 invalid file type，"
+            f"而上传器会吞掉这个失败、把本地路径原样留在正文里）：{unsupported}"
+            "；跑一次 `compress_images.py <素材目录>` 会就地转 PNG 并改好引用",
+        ]
     return {
         "title": title,
         "digest": digest,
@@ -420,11 +471,20 @@ def _compare_readback(
         expected["content"]
     ) == _semantic_body_digest(content)
     checks["image_count"] = expected["image_count"] == _image_count(content)
+    unuploaded = _unuploaded_images(content)
+    checks["image_src_uploaded"] = not unuploaded
     checks["cover_media_id"] = (
         bool(cover_media_id)
         and cover_media_id == str(actual.get("thumb_media_id") or "")
     )
     errors = [f"draft/get 回读字段不一致：{name}" for name, ok in checks.items() if not ok]
+    if unuploaded:
+        # 单独给一条能直接照着修的报错：只说「image_src_uploaded 不一致」
+        # 等于把人推回去逐张翻 HTML，而失败原因（微信拒收某种格式）就藏在文件名里。
+        errors.append(
+            f"以下 {len(unuploaded)} 张图未上传成功、仍指向本地路径"
+            f"（微信只收 jpg/png，webp 会被 40005 拒收）：{unuploaded}"
+        )
     return checks, errors
 
 

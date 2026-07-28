@@ -95,6 +95,67 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# 微信 media/uploadimg 只收 jpg / png。其余格式一律 40005 invalid file type，
+# 而 baoyu-post-to-wechat 把上传异常 catch 掉只打一行 stderr、img 保留本地 src
+# —— 于是草稿里是坏图，所有校验却显示通过（2026-07-28 六张 .webp 连推三版才发现）。
+# 所以在**发布前的最后一道机械步骤**就地转掉，不依赖任何人记得这条规则。
+WECHAT_UNSUPPORTED = {".webp", ".avif", ".heic", ".heif", ".bmp", ".tiff", ".tif"}
+
+
+def convert_unsupported(directory: Path, *, verbose: bool = True) -> list[tuple[Path, Path]]:
+    """把微信不收的图片格式就地转成 PNG，并改写 定稿.md / 定稿.html 里的引用。
+
+    转完删除原文件：留着只会让下次有人又引用回去。
+    """
+    if not directory.is_dir():
+        return []
+    targets = sorted(
+        p for p in directory.iterdir()
+        if p.is_file() and p.suffix.lower() in WECHAT_UNSUPPORTED
+    )
+    if not targets:
+        return []
+
+    from PIL import Image
+
+    converted: list[tuple[Path, Path]] = []
+    for src in targets:
+        dst = src.with_suffix(".png")
+        try:
+            with Image.open(src) as im:
+                im.convert("RGB").save(dst, "PNG", optimize=True)
+        except Exception as exc:  # noqa: BLE001 - 转换失败要说清是哪张，不能静默
+            print(f"WARN: {src.name} 转 PNG 失败：{exc}", file=sys.stderr)
+            continue
+        converted.append((src, dst))
+
+    if not converted:
+        return []
+
+    # 改引用。文章目录是 素材/ 的上一级。
+    article_dir = directory.parent
+    for doc in ("定稿.md", "定稿.html"):
+        path = article_dir / doc
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        original = text
+        for src, dst in converted:
+            text = text.replace(src.name, dst.name)
+        if text != original:
+            path.write_text(text, encoding="utf-8")
+            if verbose:
+                print(f"  ↻ {doc} 中的引用已改为 .png")
+
+    for src, _ in converted:
+        src.unlink(missing_ok=True)
+
+    if verbose:
+        names = "、".join(s.name for s, _ in converted)
+        print(f"⚠️  微信不收这些格式，已转为 PNG（{len(converted)} 张）：{names}")
+    return converted
+
+
 def stamp_gen_log(targets: list[Path], *, verbose: bool = True) -> int:
     """把后处理造成的字节变化补记进 .gen-log.jsonl。
 
@@ -194,6 +255,8 @@ def main():
     if input_path.is_file():
         targets = [input_path]
     else:
+        # 先转掉微信不收的格式，再收集 PNG —— 顺序反了新转出来的图就漏压了
+        convert_unsupported(input_path, verbose=not args.quiet)
         targets = sorted(input_path.glob("*.png"))
 
     if not targets:
