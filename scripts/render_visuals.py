@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -409,7 +410,7 @@ def _render_visual_candidates(
     if errors or batch is None:
         return None, errors
     material = cwd / "素材"
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_dir = material / "candidates" / f"run-{run_id}"
     run_dir.mkdir(parents=True, exist_ok=False)
     candidates: dict[str, list[dict[str, Any]]] = {}
