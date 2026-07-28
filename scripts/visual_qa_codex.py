@@ -441,16 +441,30 @@ def main() -> int:
         # 复核员按转写纪律，认不出的字要写成 □。它出现就说明图上有坏字，
         # 无论复核员把 checks 判成了什么 —— 这不是替它裁决，是执行它自己给出的信号。
         garbled = [t for t in result["observed_text"] if "□" in t]
+
+        # 同一句渲染两遍：确定性可判，**不要指望模型自觉**。
+        # 实测复核员如实转写出了 ['57 条档案', '53 条官方出处', '57 条档案', '53 条官方出处']
+        # —— 重复就摆在它自己的输出里，它照样把 no_unexpected_text 判成 true。
+        # 凡是能用代码判死的规则就别留给模型：它的职责是「看见」，判定交给这里。
+        seen_once: dict[str, int] = {}
+        for value in result["observed_text"]:
+            key = _normalized(value)
+            if key:
+                seen_once[key] = seen_once.get(key, 0) + 1
+        repeated = sorted(k for k, n in seen_once.items() if n > 1)
         if bad:
             failures.append(f"{rel} 未通过：{'、'.join(bad)} —— {result['notes']}")
         if garbled:
             failures.append(f"{rel} 转写里有无法辨认的字（坏字）：{garbled}")
+        if repeated:
+            failures.append(f"{rel} 同一句被渲染多遍（EXACTLY ONCE 违例）：{repeated}")
         if missing:
             failures.append(f"{rel} 缺文字：{missing}")
-        mark = "✓" if not bad and not missing and not garbled else "✗"
+        ok = not (bad or missing or garbled or repeated)
         print(
-            f"  {mark} {rel}"
+            f"  {'✓' if ok else '✗'} {rel}"
             + (f"  未过：{'、'.join(bad)}" if bad else "")
+            + (f"  重复：{repeated}" if repeated else "")
             + (f"  缺字：{missing}" if missing else ""),
             file=sys.stderr,
         )
