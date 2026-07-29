@@ -280,6 +280,13 @@ def _slots_for(channel: str, ctx: dict, cfg: dict) -> dict:
             },
             "fill": {"title": "", "body": "", "tags": []},
             "upstream_required": "xhs-outline.md（按 xhs-storyboard.md 提炼，禁按段落切）",
+            # 🔴 与另外两个渠道相反：这里一个字的引流都不能有
+            "divert_policy": (
+                "零引流。禁止任何 URL / 联系方式 / 「看主页」「私信我」「进群」/ "
+                "引导去站外搜账号（含「公众号搜 XX」）。2026-06 起间接导流同样违规且扣分不清零。"
+                "回流靠账号同名沉淀，结尾用站内互动收口（如「你怎么看，评论区聊聊」）。"
+                "verify 会机器扫描并拦截。"
+            ),
         }
 
     if channel == "weibo":
@@ -294,7 +301,13 @@ def _slots_for(channel: str, ctx: dict, cfg: dict) -> dict:
                 "image_max": int(cfg.get("image_max", 4)),
             },
             "fill": {"body": "", "tags": [], "images": []},
-            "note": "URL 会被自动转 t.cn 短链，约占 25 字符，计入 140 字",
+            "note": (
+                "URL 自动转 t.cn 短链，约占 25 字符且计入 140 字 → 正文实际可用约 90-100 字。"
+                "微博是三渠道里唯一能直给链接的，**引流链接写进正文**，"
+                "不要放评论区（多一次点击，且会被后来的评论淹没）"
+            ),
+            "divert_url": ctx["wechat_url"],
+            "divert_format": "正文末尾另起一行：🔗 全文：<链接>",
         }
 
     if channel == "podcast":
@@ -453,6 +466,31 @@ def _find_tags(text: str) -> list[str]:
     return re.findall(r"#[^#\s]+#?", text)
 
 
+# 🔴 小红书站外导流违禁模式。2026-06 起平台把**间接导流**也纳入处罚：
+# 不只是明写联系方式，"看主页 / 私信我 / 去某处搜我" 这类软引导同样违规，
+# 且扣分累计不清零、到阈值直接限流或封号。所以这里不是"建议"，是硬门。
+# 谐音变体没必要在这里穷举 —— 平台侧已是语义模型，我们只负责不主动写。
+XHS_DIVERT_PATTERNS: list[tuple[str, str]] = [
+    (r"https?://|www\.|\.com|\.cn\b|\.top\b", "站外链接"),
+    (r"微信|公众号|weixin|wechat", "微信 / 公众号字样"),
+    (r"加\s*[Vv微薇]\b|扫码|二维码|私我|私信我", "联系方式引导"),
+    # 「看我主页」「看她主页」中间会夹字，别写死成「看主页」
+    (r"主页|置顶笔记", "主页引导（主页若含联系方式即违规，一律不写）"),
+    (r"(搜索?|关注)\s*(一下)?\s*[「『\"']?[\w一-龥]{2,}[」』\"']?\s*(公众号|号)",
+     "引导站外搜索账号"),
+    (r"进群|加群|领取资料|回复关键词", "私域引导"),
+]
+
+
+def xhs_divert_hits(text: str) -> list[str]:
+    """扫小红书文案里的站外导流风险点，返回命中的风险描述。"""
+    hits = []
+    for pattern, label in XHS_DIVERT_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            hits.append(label)
+    return hits
+
+
 def xhs_char_count(text: str) -> float:
     """小红书官方字数算法：中文 / emoji / 中文标点 = 1，英文数字 = 0.5，空格不计。
 
@@ -535,6 +573,14 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
                 problems.append(f"标签用了微博的 #话题# 格式：{' '.join(bad[:3])}（小红书是 #标签）")
             if not (cdir / "images").is_dir() or not list((cdir / "images").glob("*")):
                 problems.append(f"缺图：{cdir / 'images'} 为空（小红书是图文，没图发不了）")
+            # 🔴 站外导流硬门：命中即拦，不给"要不要改"的余地。
+            # 平台扣分累计不清零，一次侥幸的代价是账号长期降权。
+            divert = xhs_divert_hits(f"{parsed['title']}\n{parsed['body']}")
+            if divert:
+                problems.append(
+                    "含站外导流风险：" + "、".join(divert)
+                    + "。小红书 2026-06 起间接导流同样违规（扣分不清零），"
+                      "见 distribute.md「引流策略」——这一路只做认知，不做引流")
         else:
             bmax = cons.get("body_max", 140)
             total = len(parsed["body"].replace("\n", "").strip())

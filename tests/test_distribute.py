@@ -368,3 +368,51 @@ def test_中文列宽按显示宽度算(article):
 
 def test_status_可在未配置时运行(article):
     assert distribute.cmd_status(article) == 0
+
+
+# ===== 小红书站外导流硬门（2026-06 平台把间接导流也纳入处罚） =====
+
+@pytest.mark.parametrize("text,label", [
+    ("公众号搜「某某」看全文", "引导站外搜账号"),
+    ("详见主页简介", "主页引导"),
+    ("想了解更多看我主页", "夹字的主页引导"),
+    ("全文见 https://example.com/a", "站外链接"),
+    ("私信我发你完整版", "私信引导"),
+    ("加V领取资料", "联系方式变体"),
+    ("进群一起聊", "私域引导"),
+    ("扫码关注", "二维码引导"),
+])
+def test_小红书导流违禁词被识别(text, label):
+    assert distribute.xhs_divert_hits(text), f"漏判：{label} — {text}"
+
+
+@pytest.mark.parametrize("text", [
+    "五本书拆穿了同一个错觉。你怎么看，评论区聊聊。",
+    "条件塑造结果，判断可能误读结果。",
+    "从《引爆点》到《逆转》，作者反复提醒一件事。",
+])
+def test_正常文案不被误拦(text):
+    assert not distribute.xhs_divert_hits(text), f"误伤：{text}"
+
+
+def test_小红书文案含导流时_verify_阻断(article, all_enabled):
+    """🔴 硬门：命中即拦。平台扣分累计不清零，一次侥幸换来的是账号长期降权。"""
+    distribute.cmd_plan(article)
+    _write_social(article, xhs_body="正文。\n\n公众号搜「某某」看全文\n\n#测试 #分发 #写作 #效率")
+    _write_images(article)
+    assert distribute.cmd_verify(article, "xhs") == 2
+
+
+def test_微博含链接不被拦(article, all_enabled):
+    """微博是唯一能直给链接的渠道，不能套用小红书的规则。"""
+    distribute.cmd_plan(article)
+    _write_social(article, weibo_body="一个判断加一个数字。\n\n🔗 全文：https://example.invalid/s/X\n\n#测试# #分发#")
+    _write_images(article)
+    assert distribute.cmd_verify(article, "weibo") == 0
+
+
+def test_计划里给出各渠道的引流口径(article, all_enabled):
+    distribute.cmd_plan(article)
+    plan = json.loads((distribute.dist_dir(article) / distribute.PLAN_FILE).read_text(encoding="utf-8"))
+    assert "零引流" in plan["channels"]["xhs"]["divert_policy"]
+    assert plan["channels"]["weibo"]["divert_url"] == WECHAT_URL
