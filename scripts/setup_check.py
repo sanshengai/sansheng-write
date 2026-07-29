@@ -52,6 +52,43 @@ def _env_present(name: str) -> bool:
         return False
 
 
+def _check_optional_distribute() -> None:
+    """一稿多投是可选模块：**没启用就一个字都不打印**。
+
+    见发布规约 optional-features.md：可选模块默认关闭、未启用即静默。
+    一个只想写文章的用户跑完体检，不该知道这些渠道存在。
+    """
+    try:
+        import distribute
+    except Exception:
+        return
+
+    enabled = [c for c in distribute.CHANNELS if distribute.channel_enabled(c)]
+    if not enabled:
+        return
+
+    print("\n【可选 · 一稿多投】" + " / ".join(distribute.CHANNELS[c]["label"] for c in enabled))
+    for ch in enabled:
+        cfg = distribute.channel_config(ch)
+        label = distribute.CHANNELS[ch]["label"]
+        if distribute.CHANNELS[ch]["dispatch_mode"] == "assisted":
+            script = distribute.resolve_post_script(ch, cfg)
+            bun_ok = bool(distribute._find_bun())
+            ok = bool(script) and bun_ok
+            detail = ("已就绪" if ok else
+                      ("缺发布脚本 -- 配 profile 的 "
+                       f"distribute.channels.{ch}.post_script" if not script
+                       else "缺 bun -- https://bun.sh"))
+        else:
+            need = ("focus_prompt", "remote_host", "remote_episodes_dir", "feed_rebuild_command")
+            missing = [k for k in need if not str(cfg.get(k) or "").strip()]
+            ok = not missing
+            detail = "已就绪" if ok else f"缺 {', '.join(missing)}"
+        # 中文占 2 列，用字符数对齐会参差；复用 distribute 的显示宽度
+        pad = " " * max(0, 14 - distribute._display_width(label))
+        print(f"  {OK if ok else WARN}{label}{pad}{detail}")
+
+
 def main() -> int:
     print("=" * 62)
     print("  sansheng-write 环境体检")
@@ -155,6 +192,11 @@ def main() -> int:
 
     pil = _py_mod("PIL")
     print(f"  {OK if pil else WARN}Pillow           " + ("" if pil else "缺 -- pip install pillow（生图缩放 / 配图压缩）"))
+
+    # ---------- 可选模块：一稿多投 ----------
+    # 🔴 只体检**已启用**的渠道。未启用 = 完全静默：不检查、不提示、不计入结论。
+    # 只想写文章的人不该在体检报告里看见小红书/微博/播客——他想了解时会去读 README。
+    _check_optional_distribute()
 
     # ---------- 结论 ----------
     print("\n" + "=" * 62)

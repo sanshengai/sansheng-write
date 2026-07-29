@@ -137,6 +137,39 @@ cp .env.example .env              # your own keys
 
 ---
 
+## Optional features (all off by default)
+
+Beyond the three tiers there is a set of **cross-posting** modules: deriving other-platform
+versions from an article you already published.
+
+**They are all off by default.** If you don't enable them they never show up in any command's
+output — no errors, no nags, no noise. If you just want to write, skip this section entirely.
+
+| Module | What it does | What you must provide | If you don't enable it |
+|---|---|---|---|
+| Xiaohongshu (RED) | Re-narrates the piece as 6-16 carousel cards, opens a browser with title/body/images filled in, you click Publish | A RED account + a script that drives the creator platform (bring your own) | No effect at all on writing or WeChat publishing |
+| Weibo | Generates a ≤140-char post reusing the RED images, opens a browser filled in, you click Send | A Weibo account (the posting script is auto-discovered) | Same |
+| Podcast (RSS) | Turns the piece into a two-host audio episode, ships it to your own feed host, platforms pick it up | NotebookLM session, ffmpeg, a host for the mp3 and `feed.xml` (SSH-reachable) | Same |
+
+**How to enable:**
+
+```bash
+python scripts/setup.py        # interactive: asks which ones you want, collects only what those need
+```
+
+It only asks about the modules you select, skips anything already configured, and a second run
+edits your config rather than starting over. In a non-interactive environment (CI, pipes) it just
+prints the checklist and exits instead of blocking.
+
+> With `ruamel.yaml` installed (`pip install ruamel.yaml`) it edits your profile in place and
+> **preserves comments**. Without it, it writes nothing and prints a snippet for you to paste —
+> it will never silently strip the comments from your profile.
+
+**Common ground rule**: these modules fill the content into the platform's composer and then stop.
+**You always click the final Publish button.** A wrong draft can be fixed; a published post cannot.
+
+---
+
 ## Install
 
 ```bash

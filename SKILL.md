@@ -2,7 +2,7 @@
 name: sansheng-write
 description: Use when 用户要写、改、润色或排版中文长文和公众号文章，包含选题、标题、封面或图文化需求；触发词：写文章、帮我写、改稿、定稿、公众号文章。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 metadata:
-  version: "0.9.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
+  version: "0.8.4"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent, TodoWrite]
 ---
 
@@ -53,7 +53,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 转图文 / 拆图文 | xhs-storyboard.md |
-| 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**finalize 之后**的第二段链路） | distribute.md |
+| 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭**；未在 profile 启用时本行不适用，不要主动提及） | distribute.md |
 | 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md + agent-contracts.md |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |
