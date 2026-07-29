@@ -4,6 +4,35 @@
 
 ## [未发布]
 
+### 修复
+
+- **`layout` 不再允许中文散文，编译前硬拦（中文 ≤ 24 字）**：`layout` 会原样进入
+  prompt 的 `COMPOSITION GUIDANCE` 段。那段带着「绝不可渲染为可见文字」的禁令，
+  但禁令压得住短标签、压不住整段中文 —— 模型看见中文就想画。同一篇文章、同一条
+  流水线、同一份配方、同一个模型下实测：`layout` 中文 0 字的两张图一次成功；
+  108 字那张连废 4 版（其中一版把 layout 里的「训练和比赛」原样画成了图上标签
+  「训练与比赛」）；158 字那张出乱码「实近仆禽人粒」；181 字那张多画白名单外的
+  「污染」。稳定跑完 100+ 篇的历史文章，`layout` 中文都在 11–20 字。英文长描述
+  无害（538 字英文一次成功），构图细节请写英文。
+
+### 变更
+
+- ⚠ 破坏性：**取消信息图风格路由，全站统一 `claymation + warm-light-clay`**。
+  旧版让 `infographic_subject`（"具名 AI 产品是不是信息架构主轴"）这个主观判断
+  决定视觉，而 `pipeline.py` / `release_job.py` / `visual_workflow.py` 三处校验
+  都只查 subject 与 style 配不配套、从不查 subject 本身填得对不对 —— 填错之后
+  整条链完全自洽：六层一致性门全绿、独立 QA 逐项通过、字节封存成功，作者来回
+  退了四五轮没有任何闸门报警。风险源就是这条路由本身。
+  `morandi-journal` 配方仍封存在 profile 的 `visual.profiles` 里，改
+  `visual_workflow.py` 的 `INFOGRAPHIC_STYLE` 一处即可切回。
+- `article-meta.yaml` 的 `infographic_style` / `visual_profile` 改为固定值；
+  `infographic_subject` 不再参与任何校验。
+- blueprint 检查点不再要求声明「信息图主题 / 信息图风格」—— 没有可选项之后，
+  再要求写一遍只是仪式，而「信息图主题」正是当初诱导判断出错的那个字段。
+- `add_logo.js` 的 `SKIP_PREFIXES` 补上 `shot-`：`image-routing.md` 写明作者供图
+  默认不加水印，但代码里只有 `news-` / `vendor-`，用 `素材/*.png` 批量加水印时
+  会把作者供图一起打上。
+
 ## [0.8.4] -- 2026-07-24
 
 ### 修复

@@ -396,7 +396,7 @@
 
 🔴 **每个标题候选带 2 字分类标签前缀**（`标签 | 正文标题`，如「精选 | …」）：出候选前先按裁决链 6 选 1 定 `outward_category` 并回填 `article-meta.yaml`，5 个候选统一带同一前缀盲选 -- 完整方法见 [title.md 第一步：定分类标签前缀](title.md)。
 
-> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 排序 + 推荐**，每个候选配 L1/L2 与 2--4 个可视化事实，组成 5 套配套方案；作者已明确指定标题时可标“作者指定标题”免候选。大纲、标题封面方案、开头候选与**视觉路由**一包交付：明写 `封面风格`、`信息图主题 ai-product/phenomenon`、`信息图风格 claymation/morandi-journal`。作者确认后把这些字段全部落 `_blueprint-approval.md`；`pipeline.py verify outline` 查内容结构，不只查文件名。细则见 [autopilot.md §检查点闸门](autopilot.md)。
+> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 排序 + 推荐**，每个候选配 L1/L2 与 2--4 个可视化事实，组成 5 套配套方案；作者已明确指定标题时可标“作者指定标题”免候选。大纲、标题封面方案、开头候选一包交付：明写 `封面风格`（信息图风格不必写，全站固定 `claymation`）。作者确认后把这些字段全部落 `_blueprint-approval.md`；`pipeline.py verify outline` 查内容结构，不只查文件名。细则见 [autopilot.md §检查点闸门](autopilot.md)。
 
 #### 信息图结构稿
 

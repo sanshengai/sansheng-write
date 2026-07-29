@@ -94,17 +94,13 @@ cover_keywords: ""           # 封面图核心视觉符号关键词
 cover_style: "montage-evidence"  # 新文章固定；历史复刻才允许显式使用旧风格。
 
 # 信息图参数（配图阶段确定）
-infographic_subject: ""      # 必填二选一：ai-product / phenomenon
-                             # ai-product = 具名模型/工具/产品/功能承担卡片、对比列或时间线主轴；即使外层是趋势稿仍选它
-                             # phenomenon = 产品仅是例子，信息架构主轴是现象/商业关系/人文判断
-infographic_style: ""        # 必填二选一：
-                             #   claymation       -- AI 工具 / 教程 / 产品评测 / 功能解读 / 技术拆解
-                             #   morandi-journal  -- 趋势 / 商业评论 / 人文反思 / 育儿 / 生活方式 / 温和议题
-                             # 同篇所有信息图（≥4 张）必须统一风格；其余 20 种已封存。
-                             # 详见 references/image-routing.md「信息图 style 选择铁律」
-visual_profile: ""           # claymation 必填 warm-light-clay；morandi-journal 留空。
-                             # 配方会把暖米黄背景、当前主题主色、浅色阈值同时绑定到信息图与 Hero。
-                             # 从文章目录运行 pipeline.py visual-contract，复制输出到每个 canonical prompt。
+infographic_style: "claymation"      # 固定值，全站统一粘土风。不按题材分流。
+                                     # 旧版按 infographic_subject 在 claymation / morandi-journal
+                                     # 之间路由，而校验只查两者配不配套、从不查题材判断本身对不对，
+                                     # 填错之后整条链自洽、所有闸门放行。这条路由已整体砍掉。
+                                     # morandi-journal 配方仍封存在 profile 的 visual.profiles 里。
+visual_profile: "warm-light-clay"    # 固定值，与 claymation 绑定。
+                                     # 配方会把暖米黄背景、当前主题主色、浅色阈值同时绑定到信息图与 Hero。
 
 # 音乐配置（BGM 阶段确定；引擎 MiniMax，风格池收窄为 4 种舒缓系）
 music:

@@ -1,4 +1,5 @@
 {
+  "_comment_layout": "🔴 layout 写英文或短标签，中文上限 24 字（编译器会拦）。它原样进 prompt 的 COMPOSITION GUIDANCE 段，模型看见中文就会照着画进图里 —— 实测 layout 中文 0 字的图一次成功，108 字那张连废 4 版（其中一版把 layout 里的『训练和比赛』画成了图上标签），181 字那张多画出『污染』。英文长描述无害，写多少都行。",
   "schema_version": 1,
   "cover": {
     "title": "逐字填写封面标题",

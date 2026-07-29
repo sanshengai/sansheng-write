@@ -261,43 +261,83 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert batch["producer"] == PRODUCER
 
 
-def test_morandi_compiler_embeds_full_baoyu_style_contract(tmp_path):
+def test_morandi_route_is_retired(tmp_path):
+    """morandi-journal 不再可路由：全站统一粘土风。
+
+    配方本身仍封存在 profile 的 visual.profiles 里（想切回来只需改回这里的映射），
+    但 meta 写 morandi-journal 必须被编译器直接拒绝，不能再产出 prompt。
+    """
     from scripts.visual_workflow import compile_visual_plan
 
     article = _article(tmp_path)
     meta = article / "article-meta.yaml"
     text = meta.read_text(encoding="utf-8")
-    text = text.replace('infographic_subject: "ai-product"', 'infographic_subject: "phenomenon"')
     text = text.replace('infographic_style: "claymation"', 'infographic_style: "morandi-journal"')
     text = text.replace('visual_profile: "warm-light-clay"', 'visual_profile: ""')
     meta.write_text(text, encoding="utf-8")
 
     _, errors = compile_visual_plan(article)
 
+    assert any("claymation" in e for e in errors), errors
+
+
+def test_clay_compiler_embeds_full_style_contract(tmp_path):
+    from scripts.visual_workflow import compile_visual_plan
+
+    article = _article(tmp_path)
+    _, errors = compile_visual_plan(article)
+
     assert errors == []
     prompt = (article / "素材/prompts/final/infographic-01.md").read_text(
         encoding="utf-8"
     )
-    hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
-    assert 'visual_profile: "morandi-journal"' in prompt
+    assert 'visual_profile: "warm-light-clay"' in prompt
     assert "visual_profile_sha256:" in prompt
     assert "#F5F0E6" in prompt
-    assert "#7BA3A8" in prompt
-    assert "#D4956A" in prompt
-    assert "#4A4540" in prompt
-    assert "hand-drawn doodle" in prompt
-    assert "warm Morandi" in prompt
-    assert "washi tape" in prompt
-    assert "bullet journal" in prompt
-    assert "warm Morandi" in hero
-    assert "bullet journal" in hero
-    assert "handwritten editorial marker or brush-pen" in hero
-    assert "No flat vector icons" in prompt
-    assert "No stock illustration style" in prompt
-    assert "No strict grid layout" in prompt
-    assert "tactile editorial paper collage" not in prompt
+    assert "claymation" in prompt
     assert "VISIBLE TEXT ALLOWLIST" in prompt
     assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in prompt
+
+
+def test_long_chinese_layout_is_rejected(tmp_path):
+    """layout 里的中文散文会被模型照着画进图里，必须在编译前拦掉。
+
+    实测（82-格拉德威尔五本书，同流水线同配方同模型）：layout 中文 0 字的两张一次
+    成功；108 字那张连废 4 版，其中一版直接把 layout 里的「训练和比赛」画成了图上
+    标签「训练与比赛」；158 字那张出乱码；181 字那张多画「污染」。
+    """
+    from scripts.visual_workflow import validate_visual_plan
+
+    plan = json.loads((_article(tmp_path) / "visual-plan.json").read_text(encoding="utf-8"))
+    plan["infographics"][0]["layout"] = (
+        "从左上方的一条无日期、无刻度分组线起步，经由少年选拔、训练和比赛时间，"
+        "向右下方的能力放大形成一条连续因果链；让冰球和训练场景承担叙事，"
+        "不要画日历、钟表、计分牌、队服标识或通用卡片拼贴"
+    )
+    errors = validate_visual_plan(plan)
+    assert any("layout" in e and "中文" in e for e in errors), errors
+
+    # 历史上稳定跑完 100+ 篇的短中文标签照常放行
+    plan["infographics"][0]["layout"] = "三段式因果对比"
+    assert not [e for e in validate_visual_plan(plan) if "layout 含" in e]
+
+    # 英文长描述无害：实测 538 字英文一次成功
+    plan["infographics"][0]["layout"] = (
+        "Use one clean S-shaped roadmap with exactly five text slots: the title once "
+        "at the top and the four allowlisted labels once along the road. Never add "
+        "secondary captions, explanatory sentences, repeated labels or blank text cards."
+    )
+    assert not [e for e in validate_visual_plan(plan) if "layout 含" in e]
+
+
+def test_hero_prompt_keeps_text_guards(tmp_path):
+    from scripts.visual_workflow import compile_visual_plan
+
+    article = _article(tmp_path)
+    _, errors = compile_visual_plan(article)
+    assert errors == []
+    hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
+
     assert "VISIBLE TEXT ALLOWLIST" in hero
     assert "Use facts only as textless objects" in hero
     assert "Render this title EXACTLY ONCE" in hero

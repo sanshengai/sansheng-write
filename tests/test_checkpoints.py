@@ -76,12 +76,12 @@ def test_checkpoint_gate_blocks_then_structured_anchor_passes(tmp_path, monkeypa
         (art / "_blueprint-approval.md").write_text("标题1/开头A/大纲OK", encoding="utf-8")
         (art / "_draft-approval.md").write_text("审批结论：通过", encoding="utf-8")
         errs = _checkpoint_errors("outline", art)
-        assert errs and "视觉路由" in errs[0]
+        assert errs and "封面风格" in errs[0]
 
+        # 信息图主题/风格不再进闸门：全站固定 claymation，蓝图不必再声明视觉路由
         (art / "_blueprint-approval.md").write_text(
             "作者指定标题：标题1\n开头：A\n大纲：通过\n"
-            "封面风格：montage-evidence\n"
-            "信息图主题：ai-product\n信息图风格：claymation\n",
+            "封面风格：montage-evidence\n",
             encoding="utf-8",
         )
         (art / "大纲.md").write_text("# 标题1\n\n" + "大纲内容" * 80, encoding="utf-8")

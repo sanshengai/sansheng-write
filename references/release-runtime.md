@@ -34,7 +34,7 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 - `anchor` 是定稿作者正文中唯一命中的原文片段；装配器把该图插在锚句之后，找不到或命中多次即失败，禁止再按 H2 数量猜图位。
 - 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，
   不等于任务单文案本身正确。
-- AI 产品/模型主轴用 `claymation + warm-light-clay`；现象/商业/人文主轴用 `morandi-journal`。
+- 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一，不按题材分流。
 
 ```bash
 python "$SKILL/scripts/pipeline.py" compile-visuals

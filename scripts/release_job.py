@@ -96,25 +96,15 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
     if not str(meta.get("digest") or "").strip():
         errors.append("article-meta.yaml 缺 digest")
 
-    expected_style = {
-        "ai-product": "claymation",
-        "phenomenon": "morandi-journal",
-    }
-    subject = str(meta.get("infographic_subject") or "")
+    # 全站统一粘土风，不再按 infographic_subject 做风格路由（见 visual_workflow.py 注释）
     style = str(meta.get("infographic_style") or "")
-    if subject not in expected_style:
-        errors.append("infographic_subject 必须为 ai-product 或 phenomenon")
-    elif style != expected_style[subject]:
+    if style != "claymation":
         errors.append(
-            f"infographic_subject={subject} 必须使用 {expected_style[subject]}"
+            f"infographic_style 必须是 claymation（全站统一粘土风）；"
+            f"当前为 {style or '(空)'}"
         )
-    if style == "claymation" and meta.get("visual_profile") != "warm-light-clay":
-        errors.append("claymation 必须显式 visual_profile: warm-light-clay")
-    if style == "morandi-journal" and meta.get("visual_profile"):
-        errors.append(
-            "morandi-journal 的 visual_profile 必须留空（配方由 infographic_style 推导）；"
-            f"当前填了 {meta.get('visual_profile')!r}"
-        )
+    if meta.get("visual_profile") != "warm-light-clay":
+        errors.append("必须显式 visual_profile: warm-light-clay")
     cover_style = str(meta.get("cover_style") or "montage-evidence")
     if cover_style != "montage-evidence":
         errors.append("release-from-final 当前只接受 cover_style: montage-evidence")

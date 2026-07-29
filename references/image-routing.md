@@ -26,8 +26,7 @@ renderer 不得修改 `expected_text`、比例、style 或 visual profile，不�
 `visual-planner` 内置的是经过筛选的稳定视觉合同，不在运行时跨 Skill 临时读取规则：
 
 - 封面：`montage-evidence` 的深炭品牌构图。
-- AI 主轴：`warm-light-clay`。
-- 现象主轴：宝玉 `morandi-journal` 的配色、doodle、washi tape、bullet-journal 与 Avoid 清单。
+- 信息图与 Hero：`warm-light-clay` 粘土配方（全站唯一正文风格）。
 
 这些配方集中在 profile 的 `visual.profiles`，编译后写入 prompt frontmatter 和摘要。上游
 baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步进本合同，避免插件升级静默改变成图。
@@ -42,14 +41,43 @@ baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步�
 
 信息图总数至少 4 张；同篇统一风格。
 
-## 风格路由
+## 正文风格：全站统一粘土风，没有路由
 
-- 具名 AI 产品、模型、工具或功能是信息架构主轴：`claymation`，必须绑定 `warm-light-clay`。
-- 现象、商业、人文判断是主轴，产品只是案例：`morandi-journal`。
-- 混合题材按信息架构主轴判定；产品/模型轴优先于趋势结论。
+信息图与 Hero 一律 `claymation` + `warm-light-clay`。不按题材分流，不需要判断，
+`article-meta.yaml` 里这两个字段是固定值。
 
-两种正文风格与封面配方的色值、材质、灯光、必备特征和禁用特征只从 profile 的
-`visual.profiles` 读取，编译时写入 prompt 摘要，避免文档与代码各存一份。
+**为什么砍掉路由**：旧版让 `infographic_subject`（"具名 AI 产品是不是信息架构主轴"）
+这个主观判断去决定视觉。三处校验都只查 subject 与 style 配不配套，从不查 subject
+本身填得对不对 —— 填错之后整条链完全自洽：六层一致性门全绿、独立 QA 逐项通过、
+字节封存成功。作者来回退了四五轮，没有任何一道闸门报过警。风险源就是这条路由本身。
+
+`morandi-journal` 配方仍封存在 profile 的 `visual.profiles` 里，只是不再被路由到；
+将来要切回去，改 `visual_workflow.py` 的 `INFOGRAPHIC_STYLE` 一处即可。
+
+配方的色值、材质、灯光、必备特征和禁用特征只从 profile 的 `visual.profiles` 读取，
+编译时写入 prompt 摘要，避免文档与代码各存一份。
+
+## 🔴 layout 不许写中文散文
+
+`layout` 会**原样进入 prompt** 的 `COMPOSITION GUIDANCE` 段。那段带着「绝不可渲染为
+可见文字」的禁令，但禁令压得住短标签，压不住整段中文 —— 模型看见中文就想画。
+
+编译器强制中文 ≤ 24 字（`LAYOUT_CJK_MAX`）。构图细节请写英文，英文长描述实测无害。
+
+同一篇文章、同一条流水线、同一份配方、同一个模型下的实测：
+
+| layout 中文字数 | 结果 |
+|---|---|
+| 0（英文 538 字） | 一次成功 |
+| 0 | 一次成功 |
+| 108 | 连废 4 版：标签错位 / 多画「训练与比赛」/ 标题重复两次 / 乱码「50对选中，牵」 |
+| 158 | 乱码「实近仆禽人粒」 |
+| 181 | 多画白名单外的「污染」 |
+
+「训练与比赛」的来源就是 layout 里那句「经由少年选拔、训练和比赛时间」。
+
+稳定跑完 100+ 篇的历史文章，layout 中文都在 11–20 字这种短标签量级。这不是模型变差，
+是 prompt 被灌进了模型会照着画的中文。
 
 ## 封面背景不再生成 ghost 文字
 

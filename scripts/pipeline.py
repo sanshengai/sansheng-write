@@ -435,22 +435,13 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
     except Exception as exc:
         return [f"article-meta.yaml 解析失败，无法校验信息图视觉路由：{exc}"]
 
-    subject = str(meta.get("infographic_subject") or "").strip()
     style = str(meta.get("infographic_style") or "").strip()
     profile_name = str(meta.get("visual_profile") or "").strip()
-    expected = {"ai-product": "claymation", "phenomenon": "morandi-journal"}
-    if subject not in expected:
+    # 全站统一粘土风，不再按 infographic_subject 做风格路由（见 visual_workflow.py 注释）
+    if style != "claymation":
         errors.append(
-            "article-meta.yaml 缺合法 infographic_subject（ai-product / phenomenon）；"
-            "产品/模型是否承担信息架构主轴必须显式落盘"
-        )
-    elif style != expected[subject]:
-        errors.append(
-            f"infographic_subject={subject} 必须使用 {expected[subject]}，当前为 {style or '(空)'}"
-        )
-    if style not in {"claymation", "morandi-journal"}:
-        errors.append(
-            f"infographic_style={style or '(空)'} 非法；新文章只允许 claymation / morandi-journal"
+            f"infographic_style 必须是 claymation（全站统一粘土风）；"
+            f"当前为 {style or '(空)'}"
         )
 
     recipe = {}
@@ -461,7 +452,7 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
     expected_profile = profile_by_style.get(style, "")
     if style == "claymation" and not profile_name:
         errors.append(
-            "article-meta.yaml 缺 visual_profile；claymation 新文章必须显式写 "
+            "article-meta.yaml 缺 visual_profile；必须显式写 "
             "visual_profile: warm-light-clay"
         )
     if expected_profile:
@@ -813,13 +804,11 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
                 missing.append("大纲结论")
             if "封面风格" not in text:
                 missing.append("封面风格")
-            if not re.search(r"信息图主题.*(?:ai-product|phenomenon)", text):
-                missing.append("信息图主题 ai-product/phenomenon")
-            if not re.search(r"信息图风格.*(?:claymation|morandi-journal)", text):
-                missing.append("信息图风格")
+            # 信息图主题/风格不再进闸门：全站统一粘土风，没有可选项，
+            # 再要求写一遍只是仪式。「信息图主题」正是当初诱导判断出错的那个字段。
             if missing:
                 return [
-                    f"checkpoint:blueprint 锚点结构不完整（视觉路由不可省）：缺 {missing}；"
+                    f"checkpoint:blueprint 锚点结构不完整：缺 {missing}；"
                     f"补齐 {anchor} 后再继续"
                 ]
     if name in cps:

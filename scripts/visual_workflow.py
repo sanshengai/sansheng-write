@@ -23,11 +23,14 @@ VISUAL_PLAN_FILE = "visual-plan.json"
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
 BAOYU_COVER_PRODUCER = "baoyu-cover-image"
 BAOYU_INFOGRAPHIC_PRODUCER = "baoyu-infographic"
-SUPPORTED_STYLES = {"claymation", "morandi-journal"}
-STYLE_BY_SUBJECT = {
-    "ai-product": "claymation",
-    "phenomenon": "morandi-journal",
-}
+# 🔴 全站信息图统一粘土风，不再按题材做风格路由（2026-07-29 作者拍板）。
+# 旧机制让 infographic_subject 这个主观判断去决定视觉：填 ai-product 走 claymation、
+# 填 phenomenon 走 morandi-journal，而三处校验只查「subject 与 style 是否配套」，
+# 从不查 subject 本身填得对不对——填错之后整条链自洽，六层门全绿、QA 全绿、封存通过，
+# 作者来回退了四五轮都没有任何闸门报警。风险源就是这条路由本身，直接砍掉。
+# morandi-journal 配方仍留在 profile 的 visual.profiles 里封存，只是不再被路由到。
+INFOGRAPHIC_STYLE = "claymation"
+SUPPORTED_STYLES = {INFOGRAPHIC_STYLE}
 PROFILE_BY_STYLE = {
     "claymation": "warm-light-clay",
     "morandi-journal": "morandi-journal",
@@ -35,6 +38,20 @@ PROFILE_BY_STYLE = {
 _SUSPICIOUS_DOUBLE_CHARACTER_CLUSTER = re.compile(
     r"([\u4e00-\u9fff])\1([\u4e00-\u9fff])\2"
 )
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+# \ud83d\udd34 layout \u4f1a\u539f\u6837\u8fdb prompt \u7684 COMPOSITION GUIDANCE \u6bb5\u3002\u90a3\u6bb5\u5e26\u7740\u300c\u7edd\u4e0d\u53ef\u6e32\u67d3\u4e3a
+# \u53ef\u89c1\u6587\u5b57\u300d\u7684\u7981\u4ee4\uff0c\u4f46\u7981\u4ee4\u538b\u5f97\u4f4f\u77ed\u6807\u7b7e\uff0c\u538b\u4e0d\u4f4f\u6574\u6bb5\u4e2d\u6587\u6563\u6587\u2014\u2014\u6a21\u578b\u770b\u89c1\u4e2d\u6587\u5c31\u60f3\u753b\u3002
+# \u5b9e\u6d4b\uff0882-\u683c\u62c9\u5fb7\u5a01\u5c14\u4e94\u672c\u4e66\uff0c\u540c\u4e00\u6761\u6d41\u6c34\u7ebf\u3001\u540c\u4e00\u4efd\u914d\u65b9\u3001\u540c\u4e00\u4e2a\u6a21\u578b\uff09\uff1a
+#   layout \u4e2d\u6587 0 \u5b57   \u2192 hero / infographic-04 \u4e00\u6b21\u6210\u529f
+#   layout \u4e2d\u6587 108 \u5b57 \u2192 infographic-01 \u8fde\u5e9f 4 \u7248\uff08\u6807\u7b7e\u9519\u4f4d\u3001\u591a\u753b\u300c\u8bad\u7ec3\u4e0e\u6bd4\u8d5b\u300d\u3001
+#                        \u6807\u9898\u91cd\u590d\u4e24\u6b21\u3001\u4e71\u7801\u300c50\u5bf9\u9009\u4e2d\uff0c\u7275\u300d\uff09
+#   layout \u4e2d\u6587 158 \u5b57 \u2192 infographic-02 \u4e71\u7801\u300c\u5b9e\u8fd1\u4ec6\u79bd\u4eba\u7c92\u300d
+#   layout \u4e2d\u6587 181 \u5b57 \u2192 infographic-03 \u591a\u753b\u300c\u6c61\u67d3\u300d
+# \u300c\u8bad\u7ec3\u4e0e\u6bd4\u8d5b\u300d\u6b63\u662f layout \u91cc\u300c\u7ecf\u7531\u5c11\u5e74\u9009\u62d4\u3001\u8bad\u7ec3\u548c\u6bd4\u8d5b\u65f6\u95f4\u300d\u88ab\u7167\u7740\u753b\u4e86\u51fa\u6765\u3002
+# \u7a33\u5b9a\u8dd1\u5b8c 100+ \u7bc7\u7684\u5386\u53f2\u6587\u7ae0\uff0clayout \u4e2d\u6587\u90fd\u5728 11-20 \u5b57\uff08"\u4e09\u6bb5\u5bf9\u6bd4"\u8fd9\u7c7b\u77ed\u6807\u7b7e\uff09\u3002
+# \u9608\u503c\u53d6 24\uff1a\u5bb9\u5f97\u4e0b\u5386\u53f2\u5199\u6cd5\uff0c\u62e6\u5f97\u4f4f\u6563\u6587\u3002\u6784\u56fe\u7ec6\u8282\u8bf7\u5199\u82f1\u6587\uff0c\u82f1\u6587\u957f\u63cf\u8ff0\u5b9e\u6d4b\u65e0\u5bb3
+# \uff08infographic-04 \u7528\u4e86 538 \u5b57\u82f1\u6587\uff0c\u4e00\u6b21\u6210\u529f\uff09\u3002
+LAYOUT_CJK_MAX = 24
 INFOGRAPHIC_LAYOUTS = {
     "linear-progression": "one directional sequence with clearly ordered causal stages",
     "hub-spoke": "one central subject connected to distinct contributing conditions and one outcome",
@@ -116,6 +133,14 @@ def validate_visual_plan(plan: dict) -> list[str]:
                 f"{label}.layout_type 必须是已登记 Baoyu 布局："
                 f"{sorted(INFOGRAPHIC_LAYOUTS)}"
             )
+        layout_cjk = len(_CJK.findall(str(item.get("layout") or "")))
+        if layout_cjk > LAYOUT_CJK_MAX:
+            errors.append(
+                f"{label}.layout 含 {layout_cjk} 个中文字，超过上限 {LAYOUT_CJK_MAX}。"
+                "layout 会原样进 prompt，模型会把这段中文当成要画的文字"
+                "（实测：108 字 → 连废 4 版，181 字 → 多画「污染」；"
+                "0 字 → 一次成功）。请改用英文描述构图，或压到短标签"
+            )
         if not _nonempty_list(item.get("expected_text")):
             errors.append(f"{label}.expected_text 必须是非空字符串列表")
         else:
@@ -184,20 +209,16 @@ def _expected_text_digest(values: list[str]) -> str:
 
 def _recipe(meta: dict) -> tuple[dict, list[str]]:
     style = str(meta.get("infographic_style") or "")
-    subject = str(meta.get("infographic_subject") or "")
     errors: list[str] = []
-    if subject not in STYLE_BY_SUBJECT:
-        errors.append("infographic_subject 必须为 ai-product 或 phenomenon")
-    elif style != STYLE_BY_SUBJECT[subject]:
+    if style != INFOGRAPHIC_STYLE:
         errors.append(
-            f"infographic_subject={subject} 必须使用 {STYLE_BY_SUBJECT[subject]}"
+            f"infographic_style 必须是 {INFOGRAPHIC_STYLE}（全站统一粘土风）；"
+            f"当前为 {style or '(空)'}"
         )
-    if style not in SUPPORTED_STYLES:
-        errors.append("infographic_style 只允许 claymation / morandi-journal")
-    expected_name = PROFILE_BY_STYLE.get(style, "")
+    expected_name = PROFILE_BY_STYLE.get(INFOGRAPHIC_STYLE, "")
     declared_name = str(meta.get("visual_profile") or "").strip()
-    if style == "claymation" and declared_name != expected_name:
-        errors.append("claymation 必须 visual_profile: warm-light-clay")
+    if declared_name != expected_name:
+        errors.append(f"visual_profile 必须是 {expected_name}")
         return {}, errors
     if declared_name and declared_name != expected_name:
         errors.append(

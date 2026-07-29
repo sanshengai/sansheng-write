@@ -107,10 +107,20 @@ def _enable_warm_light_profile(article: Path) -> None:
         )
 
 
-def test_ai_product_subject_requires_claymation(tmp_path):
-    article = _minimal_visual_article(tmp_path, subject="ai-product", style="morandi-journal")
+def test_only_claymation_is_routable(tmp_path):
+    """全站统一粘土风：任何非 claymation 的 style 都要被拦下。
+
+    旧行为是按 infographic_subject 路由（ai-product→claymation、
+    phenomenon→morandi-journal），而校验只查两者配不配套、从不查 subject 填得对不对。
+    subject 填错之后整条链自洽，所有闸门放行。这条路由已整体砍掉。
+    """
+    article = _minimal_visual_article(tmp_path, subject="phenomenon", style="morandi-journal")
     errors = pipeline._visual_route_errors(article)
-    assert any("ai-product" in e and "claymation" in e for e in errors), errors
+    assert any("claymation" in e for e in errors), errors
+
+    # subject 填什么都不再影响风格，只有 style 本身说了算
+    ok = _minimal_visual_article(tmp_path / "ok", subject="phenomenon", style="claymation")
+    assert not [e for e in pipeline._visual_route_errors(ok) if "claymation" in e]
 
 
 def test_final_assets_must_match_meta_latest_log_and_prompt(tmp_path):
@@ -411,11 +421,13 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
     assert record["visual_profile_sha256"] == recipe["sha256"]
 
 
-def test_reference_declares_product_axis_precedence_and_refined_cover_cap():
+def test_reference_declares_single_clay_style_and_refined_cover_cap():
     root = Path(__file__).resolve().parents[1]
     routing = (root / "references" / "image-routing.md").read_text(encoding="utf-8")
     cover = (root / "references" / "cover-styles.md").read_text(encoding="utf-8")
-    assert "产品/模型轴优先于趋势结论" in routing
+    # 风格路由已砍掉：文档必须写明全站统一粘土风，并保留 layout 中文上限这条铁律
+    assert "全站统一粘土风" in routing
+    assert "layout 不许写中文散文" in routing
     assert "标题块总高度上限" in cover
     assert "禁止把 `largest` / `extra-black`" in cover
 

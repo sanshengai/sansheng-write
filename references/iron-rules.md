@@ -16,7 +16,7 @@
 
 1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 renderer。
 2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。
-3. AI 产品主轴用 `claymation + warm-light-clay`；现象主轴用 `morandi-journal`；同篇不混。
+3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。
 4. 真人真事优先真实授权图片，禁止生成相似人物肖像。
 5. 精确数字图走本地确定性代码；精确拓扑可走 `baoyu-diagram`。
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
