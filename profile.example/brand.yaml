@@ -241,4 +241,8 @@ publish:
 #       feed_command: ""       # 重建 feed.xml 的命令；支持 {audio}/{date}
 #       focus_prompt: ""       # 主持风格提示词文件路径（决定节目调性，必须自备）
 #       episode_title_max: 60
+#       # 文章标题若自带分类前缀（「洞察 | 正文标题」），套上单集前缀后会变成
+#       # 「深聊 | 洞察 | 正文标题」两道竖线。列出你自己的分类词即可去掉。
+#       # 只精确匹配你列出的词，不做模式猜测——留空就完全不改标题。
+#       episode_title_strip_prefixes: []
 #       shownotes_max: 800

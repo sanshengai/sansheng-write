@@ -247,10 +247,37 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
                 log(f"（清理 notebook 失败，可忽略：{str(e)[:120]}）")
 
 
+def strip_category_prefix(title: str, prefixes: list[str]) -> str:
+    """去掉文章标题自带的分类前缀，避免单集标题出现两道竖线。
+
+    标题常写成「洞察 | 正文标题」，播客再套一层「深聊 | 」就成了
+    「深聊 | 洞察 | 正文标题」——在播客 App 的列表里又长又难看。
+
+    🔴 只认 profile 里**显式列出**的分类词，不做任何模式猜测。
+    先前试过「吃掉分隔符前 6 字以内的第一段」这种启发式，当场就把
+    「这届年轻人 | 到底在焦虑什么」切成了「到底在焦虑什么」——那半句是
+    标题本身。标题多两个字只是不好看，切错了是事故，所以宁可不切：
+    没配 `episode_title_strip_prefixes` 就原样保留。
+    """
+    for p in prefixes:
+        p = str(p).strip()
+        if not p:
+            continue
+        for sep in ("|", "｜"):
+            head = f"{p} {sep} "
+            if title.startswith(head):
+                return title[len(head):].lstrip()
+            head = f"{p}{sep}"
+            if title.startswith(head):
+                return title[len(head):].lstrip()
+    return title
+
+
 def write_sidecar(article_dir: Path, mp3: Path, title: str, c: dict) -> Path:
     """写 feed 生成器要读的 sidecar。"""
     prefix = str(c.get("episode_title_prefix") or "深聊 | ")
-    ep_title = f"{prefix}{title}"
+    strip_list = c.get("episode_title_strip_prefixes") or []
+    ep_title = f"{prefix}{strip_category_prefix(title, strip_list)}"
     tmax = int(c.get("episode_title_max") or 60)
     if len(ep_title) > tmax:
         ep_title = ep_title[:tmax - 1] + "…"
