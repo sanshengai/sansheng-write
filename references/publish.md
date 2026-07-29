@@ -49,12 +49,18 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - 每个逻辑句是一段；段落之间恰好一个空行（两个 `\n`），句子内部不得插入换行。
 - 每段首尾无普通空白、不可见零宽字符或 BOM；网址必须与所属句保持同一段。
 - 文件末尾只保留一个换行。聊天交付必须从首句 emoji 开始，不添加 Markdown 包装。
+- 🔴 **聊天交付必须独占最终消息**：状态、解释和其他路径都在 commentary 里先说完；
+  final 只逐字输出 `_moments-copy.md`，不得在它前后追加分隔线、播客状态或任何说明。
+  禁止手敲复写，必须读取文件原文后原样发送。
 
 ## 之后：一稿多投
 
 `finalize` 拿到永久链接后，同一篇可以派生到小红书 / 微博 / 播客——见 [distribute.md](distribute.md)。
 分发是**独立的第二段链路**，不阻塞 finalize：生图、NotebookLM 与浏览器自动化都可能跑很久，
 不该拖住归档与官网同步。
+
+若 profile 已为播客显式配置 `auto_after_finalize: true`，`finalize` 完成核心收尾后会继续
+生成音频并推送 RSS；失败会以非零退出明确暴露，但不会回滚已经完成的归档和官网同步。
 
 ## 凭证
 

@@ -4,6 +4,8 @@
 注意：cmd_archive 用裸名 import 兄弟模块，故测试也用裸名导入同一实例。
 """
 import json
+import sys
+import types
 import pytest
 import scripts.pipeline as pipeline   # 触发 pipeline 顶部 bootstrap，把 scripts/ 加进 sys.path
 import works_registry as wr
@@ -11,6 +13,7 @@ import render_articles_md as ram
 import render_works_dashboard as rwd
 import generate_recommend_html as grh
 import profile_config as pc
+import distribute
 
 
 def _allow_golden(monkeypatch, tmp_path, article_name):
@@ -231,9 +234,12 @@ def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
     monkeypatch.setattr(
         pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
     )
+    monkeypatch.setattr(
+        pipeline, "_handoff_to_distribute", lambda *a, **k: calls.append("distribute") or True
+    )
 
     pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
-    assert calls == ["publish", "archive", "verify", "website", "moments"]
+    assert calls == ["publish", "archive", "verify", "website", "moments", "distribute"]
 
 
 def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatch):
@@ -271,6 +277,44 @@ def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatc
     assert not any(char in first for char in "\u200b\u200c\u200d\ufeff\u00a0")
     assert all(line == line.strip() for line in first.splitlines())
     assert (tmp_path / "_moments-copy.md").read_text(encoding="utf-8") == first
+
+
+def test_handoff_auto_podcast_runs_generate_then_publish(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    monkeypatch.setattr(distribute, "cmd_plan", lambda cwd: calls.append("plan") or 0)
+    monkeypatch.setattr(
+        distribute, "channel_config",
+        lambda ch: {"enabled": True, "auto_after_finalize": True},
+    )
+    monkeypatch.setattr(distribute, "get_status", lambda *a: "planned")
+    monkeypatch.setattr(distribute, "_is_drifted", lambda *a: False)
+    fake = types.SimpleNamespace(
+        cmd_generate=lambda cwd: calls.append("generate") or 0,
+        cmd_publish=lambda cwd, confirm=False: calls.append(("publish", confirm)) or 0,
+    )
+    monkeypatch.setitem(sys.modules, "podcast_episode", fake)
+
+    assert pipeline._handoff_to_distribute(tmp_path) is True
+    assert calls == ["plan", "generate", ("publish", True)]
+
+
+def test_handoff_auto_podcast_failure_is_not_reported_as_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    monkeypatch.setattr(distribute, "cmd_plan", lambda cwd: 0)
+    monkeypatch.setattr(
+        distribute, "channel_config",
+        lambda ch: {"enabled": True, "auto_after_finalize": True},
+    )
+    monkeypatch.setattr(distribute, "get_status", lambda *a: "planned")
+    monkeypatch.setattr(distribute, "_is_drifted", lambda *a: False)
+    fake = types.SimpleNamespace(
+        cmd_generate=lambda cwd: 3,
+        cmd_publish=lambda *a, **k: pytest.fail("认证失败后不得继续 publish"),
+    )
+    monkeypatch.setitem(sys.modules, "podcast_episode", fake)
+
+    assert pipeline._handoff_to_distribute(tmp_path) is False
 
 
 def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):

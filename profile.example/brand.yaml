@@ -235,6 +235,10 @@ publish:
 #     # ---- 播客：NotebookLM 生成音频 → 自建 RSS → 平台侧抓取 ----
 #     podcast:
 #       enabled: false
+#       # true = finalize 完成归档/官网后自动生成音频并推送 RSS；
+#       # false = 只生成分发计划，之后由你另行运行 generate/publish。
+#       # NotebookLM 登录失效时仍可能需要在真实浏览器运行一次 nlm login。
+#       auto_after_finalize: false
 #       channel_title: "你的节目名"
 #       feed_base_url: "https://podcast.example.com"   # feed.xml 与音频的公网前缀
 #       episodes_dir: ""       # 音频落盘目录（本机或远端挂载点）

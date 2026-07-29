@@ -2482,36 +2482,83 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
         raise SystemExit(2)
     _write_moments_copy(cwd, wechat_url)
     print("✅ 发布后闭环完成：归档已验、官网已处理、朋友圈文案已生成。")
-    _handoff_to_distribute(cwd)
+    if not _handoff_to_distribute(cwd):
+        # 核心收尾已经完成，不回滚；但显式启用的自动分发没完成就不能返回 0，
+        # 否则上层会把「plan 已生成」误报成「播客已上线」。
+        raise SystemExit(3)
 
 
-def _handoff_to_distribute(cwd: Path) -> None:
-    """finalize 之后自动起分发计划，并把下一步说清楚。
+def _handoff_to_distribute(cwd: Path) -> bool:
+    """finalize 后规划分发；显式授权的播客继续生成并上线。
 
-    只跑 plan（几秒，纯本地）——不在这里连发布带生音频一起做：
-    浏览器填充要作者在场逐个确认，音频生成要 10-20 分钟，两样都塞进
-    finalize 会把一条几秒的收尾命令变成一次漫长的阻塞等待。
-    分发失败也不该回滚已经完成的归档与官网同步，所以这里不抛异常。
+    assisted 渠道仍停在填充前，最后一下由作者确认。RSS 没有发布按钮：
+    profile 的 ``podcast.auto_after_finalize: true`` 就是长期授权，因此必须
+    生成到 receipt 才算完成。失败返回 False，让 finalize 非零退出；已经完成的
+    归档/官网同步保持不回滚。
     """
     try:
         import distribute
     except ImportError:
-        return
+        return True
     if not distribute.enabled_channels():
-        return
+        return True
     try:
         print()
         distribute.cmd_plan(cwd)
-        print()
-        print("下一步（一稿多投）：")
-        print("  1. 按 references/distribute.md 的口径填 dist/社媒文案.txt")
-        print("  2. python pipeline.py distribute verify xhs / verify weibo")
-        print("  3. distribute dispatch xhs --confirm   → 开浏览器填好，你点「发布」")
-        print("     distribute dispatch weibo --confirm → 同上，你点「发送」")
-        print("  4. python scripts/podcast_episode.py generate --dir .   → 音频（10-20 分钟，可后台）")
-        print("     python pipeline.py distribute dispatch podcast --confirm → 上线小宇宙")
     except Exception as e:                                  # noqa: BLE001
         print(f"⚠ 分发计划生成失败（不影响已完成的发布收尾）：{str(e)[:200]}")
+        return False
+
+    enabled = distribute.enabled_channels()
+    assisted = [ch for ch in enabled
+                 if distribute.CHANNELS[ch]["dispatch_mode"] == "assisted"]
+    podcast_cfg = distribute.channel_config("podcast")
+    podcast_auto = (
+        "podcast" in enabled
+        and bool(podcast_cfg.get("auto_after_finalize"))
+    )
+
+    if assisted:
+        print()
+        print("下一步（需作者确认的分发）：")
+        print("  1. 按 references/distribute.md 的口径填 dist/社媒文案.txt")
+        print("  2. verify 后 dispatch --confirm 填好发布框，最后一下由作者点击")
+
+    if "podcast" not in enabled:
+        return True
+    if not podcast_auto:
+        print()
+        print("下一步（播客）：运行 podcast_episode.py generate，再 publish --confirm。")
+        return True
+
+    receipt = distribute.channel_dir(cwd, "podcast") / distribute.RECEIPT_FILE
+    if (
+        receipt.is_file()
+        and distribute.get_status(cwd, "podcast") == "dispatched"
+        and not distribute._is_drifted(cwd, "podcast")
+    ):
+        print("✓ 播客已有与当前定稿一致的 receipt，跳过重复生成。")
+        return True
+
+    print()
+    print("播客已配置 auto_after_finalize=true，继续自动生成并推送 RSS…")
+    try:
+        import podcast_episode
+        rc = podcast_episode.cmd_generate(cwd)
+        if rc != 0:
+            print(
+                "✗ 播客生成未完成。若提示认证失效，请运行 `nlm login` 后重跑 finalize；"
+                "这是重新授权，不是手动生成音频。"
+            )
+            return False
+        rc = podcast_episode.cmd_publish(cwd, confirm=True)
+        if rc != 0:
+            print("✗ 播客上传或 feed 重建失败；没有 receipt，不算上线。")
+            return False
+    except Exception as e:                                  # noqa: BLE001
+        print(f"✗ 播客自动分发异常：{str(e)[:300]}")
+        return False
+    return True
 
 
 def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:

@@ -138,6 +138,20 @@ def test_plan_拒绝未知渠道(article, all_enabled):
     assert distribute.cmd_plan(article, only="douyin") == 2
 
 
+def test_plan_不把已有同源receipt倒退为planned(article, all_enabled):
+    """finalize 可重跑；同一份定稿已经发过的播客不能因此再次生成。"""
+    distribute.set_status(
+        article, "podcast", "dispatched",
+        source_digest=distribute._digest(distribute.read_final_text(article)),
+    )
+    receipt = distribute.channel_dir(article, "podcast") / distribute.RECEIPT_FILE
+    receipt.parent.mkdir(parents=True, exist_ok=True)
+    receipt.write_text('{"channel":"podcast"}\n', encoding="utf-8")
+
+    assert distribute.cmd_plan(article, only="podcast") == 0
+    assert distribute.get_status(article, "podcast") == "dispatched"
+
+
 def test_无定稿时_plan_失败(tmp_path, all_enabled):
     empty = tmp_path / "空目录"
     empty.mkdir()

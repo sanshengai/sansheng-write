@@ -149,7 +149,10 @@ output — no errors, no nags, no noise. If you just want to write, skip this se
 |---|---|---|---|
 | Xiaohongshu (RED) | Re-narrates the piece as 6-16 carousel cards, opens a browser with title/body/images filled in, you click Publish | A RED account + a script that drives the creator platform (bring your own) | No effect at all on writing or WeChat publishing |
 | Weibo | Generates a ≤140-char post reusing the RED images, opens a browser filled in, you click Send | A Weibo account (the posting script is auto-discovered) | Same |
-| Podcast (RSS) | Turns the piece into a two-host audio episode, ships it to your own feed host, platforms pick it up | NotebookLM session, ffmpeg, a host for the mp3 and `feed.xml` (SSH-reachable) | Same |
+| Podcast (RSS) | Turns the piece into a two-host audio episode and ships it to your feed host; `auto_after_finalize` can run the whole RSS handoff after the permanent article URL is finalized | NotebookLM session, ffmpeg, a host for the mp3 and `feed.xml` (SSH-reachable) | Same |
+
+Moments copy is written to `_moments-copy.md` as a paste-ready payload: the first byte of visible
+content is the opening emoji, with no heading, code fence, leading whitespace, or status text.
 
 **How to enable:**
 

@@ -382,7 +382,16 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
             **_slots_for(ch, ctx, cfg),
         }
         channel_dir(article_dir, ch).mkdir(parents=True, exist_ok=True)
-        set_status(article_dir, ch, "planned", source_digest=plan["source_digest"])
+        # finalize 可安全重跑：已有同源 receipt 的渠道不能被 plan 从 dispatched
+        # 倒退到 planned，更不能因此触发重复发布。
+        receipt = channel_dir(article_dir, ch) / RECEIPT_FILE
+        already_dispatched = (
+            get_status(article_dir, ch) == "dispatched"
+            and receipt.is_file()
+            and not _is_drifted(article_dir, ch)
+        )
+        if not already_dispatched:
+            set_status(article_dir, ch, "planned", source_digest=plan["source_digest"])
 
     plan_path = dist_dir(article_dir) / PLAN_FILE
     _write_json(plan_path, plan)

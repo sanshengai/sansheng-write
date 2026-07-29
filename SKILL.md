@@ -43,7 +43,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 | 去 AI 味 / 磨稿 | anti-ai-filter.md |
 | 冷读外审（磨稿后排版前派**不同模型族** subagent，产 `_stutter-list.md`，与事实复核同窗口并行） | semantic-review.md |
 | 事实复核 / 数据版本价格核验（磨稿后排版前派**无上下文** subagent，产 `_fact-check.md`，preflight 硬断言 exit 2） | fact-check.md |
-| 排版 / 转HTML / 导读栏 | layout.md |
+| 排版 / 转HTML / 导读栏 / 文末继续阅读与信息来源卡 | layout.md |
 | 排版兼容 / 表格 / 卡片 / 平台过滤 | wechat-compat.md |
 | 排版踩坑 / 样式异常（**按需，日常 SOP 不读**） | layout-reference.md |
 | 🔴 改任何颜色/圆角前必读（视觉 SSOT，改一处全局生效） | design-tokens.md |

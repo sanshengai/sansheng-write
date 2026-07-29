@@ -177,6 +177,9 @@ python "$SKILL/scripts/pipeline.py" finalize \
 
 固定顺序：登记永久链接 → 归档作品库 → 验证归档 → 执行已配置官网同步 → 生成 `_moments-copy.md`。官网命令未配置时记录 skipped；配置后执行失败会阻断朋友圈文案生成。
 
+- 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。NotebookLM 登录失效只提示 `nlm login`，不得误说成“音频只能手动生成”。
+- 朋友圈状态先放 commentary；final 只逐字输出 `_moments-copy.md`，首字符为 emoji，前后不得混入解释。
+
 ## 失败处理
 
 - 非零退出：修复明确报错后重跑同一命令。

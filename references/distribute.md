@@ -213,7 +213,15 @@ python "$SKILL/scripts/podcast_episode.py" publish  --dir . --confirm
 
 `pipeline.py finalize <永久链接>` 收尾后会**自动起一份分发计划**并打印下一步。
 
-只跑 `plan`（几秒、纯本地），不在 finalize 里连发布带生音频一起做——浏览器填充要作者在场逐个确认，音频要 10-20 分钟，两样都塞进去会把一条几秒的收尾命令变成漫长的阻塞等待。分发失败也不回滚已完成的归档与官网同步。
+默认只跑 `plan`（几秒、纯本地）。若某个播客频道已显式启用
+`auto_after_finalize: true`，则这是作者对该 RSS 的长期自动分发授权：核心收尾完成后，
+控制器继续执行 `generate → publish --confirm`，直到写出 receipt；已有同源 receipt 时
+幂等跳过。分发失败不回滚已完成的归档与官网同步，但整个命令以非零退出暴露失败，
+不能把“计划已生成”汇报成“音频已上线”。
+
+NotebookLM 登录态无法永久无人值守。`nlm login` 可能需要作者在真实浏览器里重新授权，
+这是**认证人工点**，不是“手动生成音频”：登录有效后，建 notebook、生成、轮询、下载、
+转码、sidecar、上传和 feed 重建仍由脚本完成。
 
 ## 铁律
 

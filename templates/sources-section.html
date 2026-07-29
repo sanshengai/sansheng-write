@@ -1,0 +1,36 @@
+<!--
+  文末「信息来源」模块模板
+  =====================================================
+  用途：承接正文实际使用的外部视频、报告、公司资料与数据页面。它不是普通 H2，
+  而是与 deep-read-section.html 同族的品牌容器模块。
+
+  位置：正文结束后、DEEP READ 之后、推荐阅读 + 关注卡片之前。
+  只列正文真正使用过的来源；每项 = 来源主体 + 标题/用途 + 可复制 URL。
+  不写 Markdown [title](url)，不把 URL 裸放在普通段落。
+
+  颜色与圆角只使用 design-tokens 的中性默认值，format_layout.py 会按 profile
+  自动换成当前主题；禁止在文章里自创一套绿色。
+
+  变量：
+  - {{SOURCE_INTRO}}：为什么列出这些来源，默认「正文中的数字、案例与引述可在以下页面复核。」
+  - {{SOURCE_CARDS}}：1-N 个来源卡，重复下方卡片；最后一项下 padding 用 16px。
+-->
+<!-- SANSHENG-SOURCES -->
+<section style="margin:22px 8px;border:1px solid #d7e3ea;border-radius:12px;overflow:hidden;background:#f2f7f9;">
+  <section style="padding:16px 16px 12px;border-bottom:1px solid #eef0f2;">
+    <section style="font-size:11px;font-weight:bold;color:#2F6F8F;letter-spacing:2px;">SOURCES</section>
+    <section style="font-size:18px;font-weight:bold;color:#26333a;margin-top:3px;">信息来源</section>
+    <section style="font-size:13px;color:#8a929a;line-height:1.7;margin-top:7px;">{{SOURCE_INTRO}}</section>
+  </section>
+  {{SOURCE_CARDS}}
+</section>
+
+<!--
+  单张来源卡；多项就重复。中间项 padding:12px 16px 4px，最后一项改 12px 16px 16px。
+
+  <section style="padding:14px 16px 4px;">
+    <section style="font-size:15px;font-weight:bold;color:#26333a;">{{SOURCE_NAME}}</section>
+    <section style="font-size:12px;color:#8a929a;margin-top:2px;">{{SOURCE_META}}</section>
+    <section style="font-size:13px;color:#4a6b7a;font-weight:600;line-height:1.55;margin-top:7px;word-break:break-all;background:#eaf1f5;border-radius:6px;padding:7px 9px;">{{SOURCE_URL}}</section>
+  </section>
+-->

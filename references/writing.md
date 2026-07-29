@@ -837,12 +837,16 @@ H2 固定为 **PART 编号格式**（`01 PART | 标题`），H3 固定为**时�
 
 > 🔴 进入 `format_layout.py --all` 之前的硬门 -- 由 `contracts.verify_publish_assets()` + `verify_article_meta_lead()` 强制执行。任一阻塞错误 → format_layout 直接 exit 2。
 
-**verify_publish_assets**（6 项，阻塞）：
+**verify_publish_assets**（9 项，阻塞）：
 - frontmatter 含 title + description
 - 素材/*.png 全部在 定稿.md 中嵌入（自动排除 cover/hero/logo/bgm_cover 等不在正文嵌入的图）
 - AUDIO-CARD 块软兜底（不存在不阻塞 publish；存在则校验"仅 1 次"+"距文末 ≤800 字符"。硬存在校验在 `pipeline.py verify bgm`）
 - 不含 `[插图]` 占位符
 - 信息来源不使用 ### H3 标题、不含 [title](url) MD 链接
+- `endmatter.deep_read: true` 时必须使用 `templates/deep-read-section.html`，并兑现
+  `weave.link/base` 中声明的 URL
+- `endmatter.sources: true/auto` 且有外部事实依据时必须使用
+  `templates/sources-section.html`
 
 **verify_article_meta_lead**（仅警告，不阻塞）：
 - `article-meta.yaml` 的 `lead.line1/line2/subtitle` 三项必填（缺则排版回退到默认占位文案"深度拆解/硬核干货"）

@@ -150,6 +150,20 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     log(f"文章：{title}")
     log(f"提示词：{prompt_path.name}（{len(focus)} 字）")
 
+    # 登录态失效若不在创建前拦下，create 可能侥幸成功、后续 status 查询却连续
+    # 失败 30 分钟，最后只留下一个已完成但没下载的孤儿 artifact。先做只读探针，
+    # 让人工边界停在真实的认证动作，而不是让作者去 NotebookLM 手动生成音频。
+    try:
+        run_nlm("notebook", "list", "--json", want_json=True, timeout=60)
+    except Exception as e:                                  # noqa: BLE001
+        msg = str(e)
+        if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
+            log("✗ NotebookLM 登录态已失效，请先运行 `nlm login`")
+            log("  这一步只恢复真实浏览器授权；音频生成、下载、转码和发布仍由脚本完成")
+            return 3
+        log(f"✗ NotebookLM 连接预检失败：{msg[:240]}")
+        return 1
+
     # 1. notebook
     nb = _extract_id(
         _retry("create notebook", lambda: run_nlm(
@@ -200,7 +214,13 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
                     log(f"✗ NotebookLM 报 failed：https://notebooklm.google.com/notebook/{nb}")
                     return 1
             except Exception as e:                   # noqa: BLE001
-                log(f"  查询出错（继续轮询）：{str(e)[:150]}")
+                msg = str(e)
+                if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
+                    log("✗ 生成期间 NotebookLM 登录态失效，请运行 `nlm login` 后续接")
+                    log(f"  notebook 保留供排障：https://notebooklm.google.com/notebook/{nb}")
+                    keep_notebook = True
+                    return 3
+                log(f"  查询出错（继续轮询）：{msg[:150]}")
         else:
             log(f"✗ 超时（{POLL_TIMEOUT // 60} 分钟）未完成，最后状态 {status}")
             log(f"  手动查看：https://notebooklm.google.com/notebook/{nb}")

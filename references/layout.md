@@ -22,8 +22,11 @@
 3. 导读栏。
 4. AUDIO-CARD。
 5. 正文与信息图。
-6. 推荐阅读。
-7. 关注卡片。
+6. `DEEP READ / 继续往下读`：`endmatter.deep_read: true` 时必有，优先放 1 篇
+   与本文直接相关的已发内容，再放 profile 的自有站点。
+7. `SOURCES / 信息来源`：正文使用了外部案例、数据、视频或报告时必有。
+8. 推荐阅读。
+9. 关注卡片。
 
 信息图按 `visual-plan.json` 的 opening/middle/closing 位置嵌入。素材存在但正文未引用会被发布预检拦截。
 
@@ -50,6 +53,7 @@ python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 - `quote-card.html`
 - `link-card.html`
 - `deep-read-section.html`
+- `sources-section.html`
 - `footer-recommended.html`
 
 颜色、圆角、账号身份只从 profile 读取。禁止在文章里另存一套主题色。
@@ -60,9 +64,23 @@ python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 - 方法论清单：编号模块、对比块、关键结论。
 - 深度文：导读、时间线、案例、金句。
 - 单个外部链接：link card。
-- 多个来源或延伸阅读：deep-read section。
+- 延伸阅读 / 自有阵地：deep-read section。
+- 外部案例、报告、视频与数据出处：sources section。
 
 金句卡不加装饰性引号；出处行使用发丝线和弱化右对齐。
+
+### 文末双模块合同
+
+- `DEEP READ` 与 `SOURCES` 是两件事，禁止合并：前者负责“读者接下来去哪”，后者负责
+  “正文依据从哪来”。
+- 两者都使用容器模块语言：主题浅底 + 主题边框 + 绿色小标 + 浅色 URL 内嵌框；
+  颜色和圆角一律走 design tokens。
+- 固定顺序：正文 → DEEP READ → SOURCES → 推荐阅读 → 关注卡片。
+- 写入时必须保留模板标记 `SANSHENG-DEEP-READ` / `SANSHENG-SOURCES`。机器门据此
+  判断是否真的用了标准组件，不能用一个普通 H2 或几行裸 URL 冒充。
+- DEEP READ 最多放 1 篇强相关旧文 + 1 个自有阵地；找不到强相关旧文时只放自有阵地，
+  不为了凑数塞弱相关内容。
+- SOURCES 只列正文实际使用过的来源，按“来源主体 / 标题或用途 / URL”三层填写。
 
 ## 4. 图片后处理
 
@@ -88,16 +106,14 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 - 标题、导读、摘要一致。
 - H2/H3 与 `article-meta.yaml` 数量一致。
 - 无裸露不可点击 URL、无脚本/样式注入、无未替换占位符。
-- Hero、AUDIO-CARD、推荐与关注组件位置正确。
+- Hero、AUDIO-CARD、文末双模块、推荐与关注组件位置正确。
 - 所有正文图已上传前可解析，且最终视觉凭证有效。
 
 ## 常见故障
 
 - H2 数量不一致：修 `article-meta.yaml.part_subtitles` 或正文标题，不手改 HTML 结构。
-  ⚠️ **「信息来源」也是一个 H2，照样计入 `part_subtitles`**（补它时别忘了同时加一条
-  副标题）。该段另有两条硬约束：**不能用 `###` H3**（会被转成时间线格式），
-  **不能含 `[标题](链接)` 的 markdown 链接语法**（转换器的引用展开会重复一遍），
-  一律写纯文本 URL。
+  `信息来源` 不再写成 Markdown H2/H3，而是直接使用 `sources-section.html`，因此不计入
+  `part_subtitles`。禁止 `[标题](链接)`；URL 放在模板的浅色可复制框里。
 - 末节出现 800 字以上的纯文字连排：排版会提示字墙。找 2--4 个天然推进点拆 `###`
   H3，不要靠加空行硬断 —— H3 会自动转成时间线格式，本身就是视觉换气。
 - 微信样式丢失：使用模板支持的行内样式，避免依赖外部 CSS/JS。

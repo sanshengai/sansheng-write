@@ -1427,6 +1427,8 @@ def verify_publish_assets(article_dir: str) -> dict:
       5. 定稿.md 不含 [插图] 占位符
       6. 信息来源（若存在）不使用 ### H3 标题
       7. 信息来源（若存在）不含 markdown 链接语法 [title](url)
+      8. 新文章声明 endmatter.deep_read 时使用标准 DEEP READ 模板并兑现链接
+      9. 新文章声明 endmatter.sources 时使用标准 SOURCES 模板
 
     :param article_dir: 文章工作目录（含 定稿.md + 素材/）
     :return: {
@@ -1434,7 +1436,7 @@ def verify_publish_assets(article_dir: str) -> dict:
         'errors': [str],        # 阻塞错误，会让 format_layout 退出 2
         'warnings': [str],      # 提示性，不阻塞
         'checks_passed': int,
-        'checks_total': 7,
+        'checks_total': 9,
     }
     """
     import re
@@ -1445,7 +1447,7 @@ def verify_publish_assets(article_dir: str) -> dict:
     errors = []
     warnings = []
     passed = 0
-    total = 7
+    total = 9
 
     if not md.exists():
         return {
@@ -1589,7 +1591,108 @@ def verify_publish_assets(article_dir: str) -> dict:
         warnings.append('未识别到「信息来源」段（深度文若有引用源建议补；非引用类文章可忽略）')
         passed += 1
 
-    # 附加信号（不计入 checks_total 的 7 项契约，仅 warning）：信息图张数前移检查。
+    # 8-9) 文末双模块合同。只对 article-meta 显式声明 endmatter.version >= 1
+    # 的新文章生效，历史稿不追溯；新文章统一从模板复制 meta，所以不会靠时间猜。
+    meta = {}
+    meta_path = base / 'article-meta.yaml'
+    if meta_path.is_file():
+        try:
+            import yaml as _yaml
+            meta = _yaml.safe_load(meta_path.read_text(encoding='utf-8')) or {}
+        except Exception as exc:
+            warnings.append(f'article-meta.yaml 无法解析，跳过文末双模块合同：{exc}')
+    endmatter = meta.get('endmatter') or {}
+    try:
+        endmatter_v = int(endmatter.get('version') or 0)
+    except (TypeError, ValueError):
+        endmatter_v = 0
+
+    if endmatter_v < 1:
+        passed += 2
+    else:
+        # 8) DEEP READ：标准 marker + 固定标题 + weave/站点 URL 全兑现。
+        deep_required = bool(endmatter.get('deep_read'))
+        if not deep_required:
+            passed += 1
+        else:
+            deep_errors = []
+            deep_marker = '<!-- SANSHENG-DEEP-READ -->'
+            if deep_marker not in text:
+                deep_errors.append(
+                    'endmatter.deep_read=true 但未使用 templates/deep-read-section.html'
+                    '（缺 SANSHENG-DEEP-READ 标记）'
+                )
+            if 'DEEP READ' not in text or '继续往下读' not in text:
+                deep_errors.append('DEEP READ 模块缺固定小标或「继续往下读」标题')
+
+            expected_urls = []
+            weave = meta.get('weave') or {}
+            for key in ('link', 'base'):
+                value = str(weave.get(key) or '')
+                if value and not value.lstrip().startswith('不织'):
+                    expected_urls.extend(
+                        u.rstrip('，。；：、】》”’')
+                        for u in re.findall(r'https?://[^\s<>"）)]+', value)
+                    )
+            try:
+                from profile_config import identity as _identity
+                site = str((_identity() or {}).get('site') or '').strip()
+                if site:
+                    expected_urls.append(site)
+            except Exception:
+                pass
+            for url in dict.fromkeys(expected_urls):
+                if url not in text:
+                    deep_errors.append(f'DEEP READ 未兑现 article-meta/profile 声明的入口：{url}')
+            if deep_errors:
+                errors.extend(deep_errors)
+            else:
+                passed += 1
+
+        # 9) SOURCES：true 强制；auto 在事实复核产物含 URL 时强制。
+        sources_mode = endmatter.get('sources', 'auto')
+        fact_files = sorted(base.glob('_fact-check*.md'))
+        fact_has_url = any(
+            re.search(r'https?://', p.read_text(encoding='utf-8', errors='replace'))
+            for p in fact_files
+        )
+        sources_required = (
+            sources_mode is True
+            or str(sources_mode).strip().lower() in ('true', 'required', 'yes')
+            or (
+                str(sources_mode).strip().lower() == 'auto'
+                and fact_has_url
+            )
+        )
+        if not sources_required:
+            passed += 1
+        else:
+            source_errors = []
+            source_marker = '<!-- SANSHENG-SOURCES -->'
+            if source_marker not in text:
+                source_errors.append(
+                    '正文存在外部事实依据，但未使用 templates/sources-section.html'
+                    '（缺 SANSHENG-SOURCES 标记）'
+                )
+            if 'SOURCES' not in text or '信息来源' not in text:
+                source_errors.append('SOURCES 模块缺固定小标或「信息来源」标题')
+            if source_marker in text:
+                source_tail = text.split(source_marker, 1)[1]
+                if not re.search(r'https?://', source_tail):
+                    source_errors.append('SOURCES 模块没有任何可复核 URL')
+            if (
+                deep_required
+                and '<!-- SANSHENG-DEEP-READ -->' in text
+                and source_marker in text
+                and text.index(source_marker) < text.index('<!-- SANSHENG-DEEP-READ -->')
+            ):
+                source_errors.append('文末顺序错误：SOURCES 必须位于 DEEP READ 之后')
+            if source_errors:
+                errors.extend(source_errors)
+            else:
+                passed += 1
+
+    # 附加信号（不计入 checks_total 的 9 项契约，仅 warning）：信息图张数前移检查。
     # 把「信息图缺图」信号从 publish/verify infographic 前移到排版阶段（原本要到
     # pipeline.py verify infographic 才暴露，41 号曾漏整组直到 publish 后才发现）。
     # 状态感知 + 软提示：仅当 stages.infographic.status == 'done' 时才扫张数，<4 张报
