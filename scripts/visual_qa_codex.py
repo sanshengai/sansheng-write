@@ -194,6 +194,10 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         "## 文字白名单（expected_text）",
         "这是允许出现在图上的全部文字，是严格上限；白名单之外不得出现任何可读字符。"
         "白名单内的产品名、公司名或账号署名不是违规。",
+        "右下角由后处理添加的官方品牌 Logo 作为一个完整图形标识验收：其中固定的"
+        "中文名、Sansheng 字样与 AI 缩写均已在白名单内；不要因其极小字号无法逐字 OCR "
+        "而判 no_unexpected_text=false。此例外只限右下角官方 Logo，本图其他位置的"
+        "微小、模糊或未知文字仍必须判为违规。",
     ]
     expected = asset.get("expected_text") or []
     if expected:

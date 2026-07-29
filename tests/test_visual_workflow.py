@@ -187,6 +187,7 @@ def test_shipped_visual_plan_template_satisfies_current_contract():
 
 
 def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
+    from scripts.profile_config import visual_profile
     from scripts.visual_workflow import compile_visual_plan
 
     article = _article(tmp_path)
@@ -206,6 +207,10 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "narrow quiet gutter" in cover
     assert "Do not render ghost words" in cover
     assert "CONDITION × SIGNAL × LEVER" not in cover
+    assert any(
+        "purely pictorial low-contrast background" in trait
+        for trait in visual_profile("montage-evidence")["required_visual_traits"]
+    )
     assert "ONLY VISIBLE TEXT ALLOWLIST" in cover
     assert "Never render layout guides, measurements or percentages" in cover
     assert "Main Chinese headline: 规则不能丢" in cover
@@ -286,6 +291,7 @@ def test_morandi_compiler_embeds_full_baoyu_style_contract(tmp_path):
     assert "bullet journal" in prompt
     assert "warm Morandi" in hero
     assert "bullet journal" in hero
+    assert "handwritten editorial marker or brush-pen" in hero
     assert "No flat vector icons" in prompt
     assert "No stock illustration style" in prompt
     assert "No strict grid layout" in prompt

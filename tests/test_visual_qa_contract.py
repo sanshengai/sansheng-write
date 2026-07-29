@@ -215,7 +215,7 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert any(asset["stage"] == "hero" for asset in request["assets"])
     info = next(asset for asset in request["assets"] if asset["stage"] == "infographic")
     assert cover["target_style"] == "montage-evidence"
-    assert "BIRTH × CARE × CITY" in cover["expected_text"]
+    assert "BIRTH × CARE × CITY" not in cover["expected_text"]
     assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
     assert "style_contract_match" in cover["required_checks"]
     assert "text_match" in cover["required_checks"]
@@ -317,6 +317,22 @@ def test_qa_accepts_one_expected_line_split_into_adjacent_observed_fragments(tmp
 
     assert errors == []
     assert qa["status"] == "pass"
+
+
+def test_qa_accepts_adjacent_allowlisted_lines_merged_into_one_ocr_block(tmp_path):
+    from scripts.visual_qa import run_visual_qa, validate_qa_result
+
+    article = _article(tmp_path)
+    qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
+    assert errors == []
+    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    cover = next(asset for asset in qa["assets"] if asset["path"] == "素材/cover.png")
+    cover["observed_text"] = [
+        cover["observed_text"][0] + cover["observed_text"][1],
+        *cover["observed_text"][2:],
+    ]
+
+    assert validate_qa_result(article, qa, request=request) == []
 
 
 def test_qa_reviewer_must_be_independent_from_generation_model(tmp_path):

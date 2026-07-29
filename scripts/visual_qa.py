@@ -45,6 +45,21 @@ def _normalized_text(value: object) -> str:
     return "".join(str(value or "").split()).casefold()
 
 
+def _fully_segmented_by_allowed(value: str, allowed: set[str]) -> bool:
+    """Accept an OCR block only when every character belongs to allowlisted chunks."""
+    if not value:
+        return True
+    tokens = sorted((token for token in allowed if token), key=len, reverse=True)
+    reachable = {0}
+    for index in range(len(value)):
+        if index not in reachable:
+            continue
+        for token in tokens:
+            if value.startswith(token, index):
+                reachable.add(index + len(token))
+    return len(value) in reachable
+
+
 def _pixel_metrics(path: Path) -> dict[str, Any]:
     with Image.open(path) as image:
         rgb = image.convert("RGB")
@@ -116,24 +131,26 @@ def _allowed_text_by_path(cwd: Path, required: dict[str, list[str]]) -> dict[str
     plan = json.loads((cwd / "visual-plan.json").read_text(encoding="utf-8"))
     meta = yaml.safe_load((cwd / "article-meta.yaml").read_text(encoding="utf-8")) or {}
     lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
-    uppercase = re.findall(
-        r"(?<![A-Za-z0-9])[A-Z][A-Z0-9-]*(?![A-Za-z0-9])",
-        str(meta.get("cover_keywords") or ""),
-    )
+    brand_identity = identity()
+    logo_text = [
+        str(value).strip()
+        for value in brand_identity.get("logo_text_allowlist") or []
+        if str(value or "").strip()
+    ]
     allowed = {key: list(values) for key, values in required.items()}
     optional_cover = [
         lead.get("subtitle"),
-        " × ".join(uppercase[-3:]) if len(uppercase) >= 3 else "",
-        str(identity().get("nickname") or "").strip(),
+        str(brand_identity.get("nickname") or "").strip(),
+        *logo_text,
     ]
     allowed["素材/cover.png"].extend(
         str(value).strip() for value in optional_cover if str(value or "").strip()
     )
-    brand_name = str(identity().get("nickname") or "").strip()
+    brand_name = str(brand_identity.get("nickname") or "").strip()
     for item in plan.get("infographics") or []:
         rel = f"素材/infographic-{str(item.get('id') or '').strip()}.png"
-        if rel in allowed and brand_name:
-            allowed[rel].append(brand_name)
+        if rel in allowed:
+            allowed[rel].extend([brand_name, *logo_text])
     return {key: list(dict.fromkeys(values)) for key, values in allowed.items()}
 
 
@@ -463,7 +480,9 @@ def validate_qa_result(
         unexpected = [
             value
             for value in observed_values
-            if value and not any(value == allowed or value in allowed for allowed in allowed_values)
+            if value
+            and not any(value in allowed for allowed in allowed_values)
+            and not _fully_segmented_by_allowed(value, allowed_values)
         ]
         if unexpected:
             errors.append(f"{rel} observed_text 含白名单外文字：{unexpected}")

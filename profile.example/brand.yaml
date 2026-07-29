@@ -53,7 +53,7 @@ visual:
       required_visual_traits:
         - "unified deep-charcoal canvas"
         - "left text area and right evidence collage"
-        - "oversized dark English ghost watermark behind Chinese title"
+        - "purely pictorial low-contrast background with no ghost words or watermark text"
         - "one dominant metaphor object with two or three smaller evidence badges"
         - "quiet low-contrast pill for article tags"
       forbidden_visual_traits:
@@ -149,6 +149,7 @@ radius:
 identity:
   platform: "wechat"                    # wechat | none
   nickname: "YOUR_ACCOUNT_NAME"         # 必须改
+  logo_text_allowlist: []               # 官方 Logo 自带的固定英文/缩写，逐项白名单
   alias: "YOUR_ACCOUNT_ALIAS"           # 必须改
   biz_id: "REPLACE_WITH_YOUR_BIZ_ID"    # 必须改（公众号 biz，base64）
   headimg: ""                           # 必须改（头像 URL；留空则不渲染头像）
