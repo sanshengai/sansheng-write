@@ -142,7 +142,9 @@ python "$SKILL/scripts/podcast_episode.py" publish  --dir . --confirm
 #   等价于 pipeline.py distribute dispatch podcast --confirm
 ```
 
-- **nlm 版本差异**：0.9.x 的 CLI 与 0.6.x 不同（`nlm audio create` 而非 `nlm create audio`，且各命令支持 `--json`，不必再从纯文本 regex 抠 ID）。0.9.x 仍兼容旧的 verb-first 写法。
+- **nlm 版本**：两端（本机 + feed 主机）统一在 **0.9.4**，用 `uv tool upgrade` / venv `pip install -U` 各自升级。0.9.x 各命令支持 `--json`，不必再从纯文本 regex 抠 ID；`nlm audio create` 与旧的 verb-first `nlm create audio` 两种写法都受支持。
+  > 🔴 别拿 `generate_podcast.py` 里的注释判断当前版本——那些注释停留在 0.6.x 时代，会让人误以为服务端落后好几个大版本。查版本就跑 `nlm --version`。
+  > 🔴 0.9.3 起支持 Google 的 "Gemini Notebook" 改名（部分账号被重定向到 `notebook.google.com`）。**低于 0.9.3 的版本在账号被迁移后会认证全挂**，这是必须升级的理由，不只是跟进版本号。
 - 🔴 **先传 sidecar 再传 mp3**。反过来的话，两次传输之间若正好触发 feed 重建，mp3 会被当成「无 sidecar 且文件名非纯日期」而静默跳过。
 - 生成完会自动删掉 NotebookLM 里的 notebook，避免后台无限堆积（`--keep-notebook` 可保留排障）。
 
