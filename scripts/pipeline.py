@@ -2937,10 +2937,22 @@ def main():
     p_rt = sub.add_parser("retitle", help="改标题并连锁同步 meta/定稿/大纲/state（附后续动作提醒）")
     p_rt.add_argument("title", help="新标题")
 
+    # 一稿多投分发层（finalize 之后的第二段链路，见 references/distribute.md）
+    # 子命令与参数由 distribute.py 自己解析，这里只做转发，避免两处重复定义。
+    p_dist = sub.add_parser(
+        "distribute",
+        help="一稿多投：小红书 / 微博 / 播客（子命令 status|plan|verify|dispatch）",
+    )
+    p_dist.add_argument("rest", nargs=argparse.REMAINDER,
+                        help="转发给 distribute.py 的参数")
+
     args = parser.parse_args()
     cwd = Path.cwd()
 
-    if args.cmd == "init":
+    if args.cmd == "distribute":
+        import distribute
+        sys.exit(distribute.main(args.rest or ["status"]))
+    elif args.cmd == "init":
         cmd_init(cwd)
     elif args.cmd == "status":
         cmd_status(cwd)

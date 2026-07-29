@@ -198,3 +198,41 @@ publish:
 # _blueprint-approval.md / _draft-approval.md 锚点（作者拍板记录，防跨会话静默跳闸）。
 # workflow:
 #   checkpoints: [blueprint, draft]
+
+# ============================================================================
+#  一稿多投分发层（可选）—— 微信草稿箱之后的第二段链路
+#  引擎 scripts/distribute.py，方法论 references/distribute.md。
+#  这里的值是「私有但非密」（账号名、主机、目录），跟品牌 token 同层放 profile；
+#  真正的密钥仍然只走 .env，永远不写进本文件。
+#  未配置本段 = 所有渠道未启用，distribute 不会做任何事。
+# ============================================================================
+# distribute:
+#   channels:
+#     # ---- 小红书图文：平台无开放发布接口，dispatch 只产手动发布包 ----
+#     xhs:
+#       enabled: false
+#       account: "你的小红书账号名"
+#       title_max: 20          # 平台标题上限
+#       body_max: 1000         # 正文上限（含标签）
+#       tag_min: 4
+#       image_min: 6           # 轮播图张数区间，见 xhs-storyboard.md
+#       image_max: 16
+#
+#     # ---- 微博：走 baoyu-post-to-weibo 的 Chrome CDP，可自动发 ----
+#     weibo:
+#       enabled: false
+#       account: "你的微博账号名"
+#       body_soft_max: 140     # 超过会被折叠成「展开全文」，压阅读率
+#       tag_min: 2
+#       image_max: 4           # 4 张自动排九宫格
+#
+#     # ---- 播客：NotebookLM 生成音频 → 自建 RSS → 平台侧抓取 ----
+#     podcast:
+#       enabled: false
+#       channel_title: "你的节目名"
+#       feed_base_url: "https://podcast.example.com"   # feed.xml 与音频的公网前缀
+#       episodes_dir: ""       # 音频落盘目录（本机或远端挂载点）
+#       feed_command: ""       # 重建 feed.xml 的命令；支持 {audio}/{date}
+#       focus_prompt: ""       # 主持风格提示词文件路径（决定节目调性，必须自备）
+#       episode_title_max: 60
+#       shownotes_max: 800

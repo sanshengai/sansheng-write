@@ -50,6 +50,12 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - 每段首尾无普通空白、不可见零宽字符或 BOM；网址必须与所属句保持同一段。
 - 文件末尾只保留一个换行。聊天交付必须从首句 emoji 开始，不添加 Markdown 包装。
 
+## 之后：一稿多投
+
+`finalize` 拿到永久链接后，同一篇可以派生到小红书 / 微博 / 播客——见 [distribute.md](distribute.md)。
+分发是**独立的第二段链路**，不阻塞 finalize：生图、NotebookLM 与浏览器自动化都可能跑很久，
+不该拖住归档与官网同步。
+
 ## 凭证
 
 - `_publish-ready.json`：调用微信前的本地包摘要。

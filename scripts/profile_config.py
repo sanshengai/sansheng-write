@@ -176,6 +176,21 @@ def identity() -> dict:
     return brand().get("identity", {})
 
 
+def distribute_config() -> dict:
+    """一稿多投的渠道配置（brand.yaml `distribute:`）。
+
+    渠道账号、播客 feed 主机、节目 ID 这些都是**私有但非密**的值，跟品牌 token
+    同层，所以放 profile 而不是 .env；公开仓的 profile.example 只留占位。
+    未配置返回空字典 —— 由 distribute.py 解释成「所有渠道未启用」，而不是硬跑默认值。
+    """
+    return brand().get("distribute") or {}
+
+
+def distribute_channel(name: str) -> dict:
+    """单个渠道的配置。未声明 = 未启用（不做「缺键兜底成 enabled」的危险默认）。"""
+    return (distribute_config().get("channels") or {}).get(name) or {}
+
+
 def workflow_checkpoints() -> list:
     """profile 启用的人工检查点闸门（brand.yaml `workflow.checkpoints`）。
 

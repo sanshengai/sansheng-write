@@ -16,11 +16,14 @@
 公众号定稿.md ──[本模块]──▶ xhs-outline.md ──[baoyu-xhs-images]──▶ 图片
 ```
 
-> **输出路径规则**：生成的小红书图片**必须保存在源文章所在的文件夹下**，以 `xhs-images/` 为子目录。
-> 例如：用户说「把 `<数据目录>/2-小龙虾/定稿.md` 转小红书」，则图片输出路径为：
-> `<数据目录>/2-小龙虾/xhs-images/NN-slug.png`
-> 中间工作文件（`gen.js`、`batch.json`、生图提示词目录）也一并放在 `xhs-images/` 下。
+> **输出路径规则**：产物**必须落在源文章所在的文件夹下**，统一收进分发层目录 `dist/xhs/`。
+> 例如「把 `<数据目录>/2-小龙虾/定稿.md` 转小红书」：
+> - 剧本 → `<数据目录>/2-小龙虾/dist/xhs/xhs-outline.md`
+> - 图片 → `<数据目录>/2-小龙虾/dist/xhs/images/NN-slug.png`
+> - 中间工作文件（`gen.js`、`batch.json`、生图提示词目录）一并放 `dist/xhs/` 下。
+>
 > **不要**把图片输出到其他文章的目录或全局共享目录。
+> 📌 2026-07-29 起路径从 `xhs-images/` 改为 `dist/xhs/`，与 [distribute.md](distribute.md) 的分发层目录约定统一；`distribute verify xhs` 按新路径查产物。
 
 
 ## 触发方式

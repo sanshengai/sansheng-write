@@ -4,6 +4,28 @@
 
 ## [未发布]
 
+### 新增
+
+- **分发层：一稿多投（小红书 / 微博 / 播客）**。新增 `scripts/distribute.py` 与
+  [references/distribute.md](references/distribute.md)，把 `finalize` 之后的多渠道
+  派生做成第二段链路：`plan`（产约束与待填槽）→ `verify`（机器闸门）→ `dispatch`
+  （默认 dry-run）。沿用本 skill 一贯的分工——**脚本做闸门，agent 做内容**。
+  - 渠道口径差异由机器拦，不靠人记：小红书 `#标签` 与微博 `#话题#` 写反、微博超
+    140 字（会被折叠成「展开全文」）、小红书标题超 20 字，`verify` 一律 exit 2。
+  - **上游漂移即失效**：`定稿.md` 一变，对应渠道的文案标记过期，`verify` 与
+    `dispatch` 双双阻断。只在 `verify` 查是不够的——`plan --only weibo` 之后小红书
+    仍停在 `verified`，光看状态就会把对应旧定稿的文案发出去。
+  - **不写假状态**：未接线的自动派发明确 exit 3，绝不写一条没发生过的发布记录。
+    小红书没有开放发布接口，`dispatch` 只产手动发布包，不去驱动 UI 自动化冒充自动发布。
+  - 渠道配置（账号、feed 主机、节目名）属「私有但非密」，与品牌 token 同层走 profile
+    的 `distribute:` 段；`profile.example` 只留占位。密钥仍然只走 `.env`。
+  - 入口同时挂在 `pipeline.py distribute <子命令>`。
+
+### 变更
+
+- 小红书产物路径从 `xhs-images/` 改为 `dist/xhs/`（剧本 `dist/xhs/xhs-outline.md`、
+  图片 `dist/xhs/images/`），与分发层目录约定统一。改动前仓内无既有产物，无迁移负担。
+
 ### 修复
 
 - **`layout` 不再允许中文散文，编译前硬拦（中文 ≤ 24 字）**：`layout` 会原样进入
