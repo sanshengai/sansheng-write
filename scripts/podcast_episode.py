@@ -299,8 +299,15 @@ def write_sidecar(article_dir: Path, mp3: Path, title: str, c: dict) -> Path:
     log(f"✓ sidecar: {side.name}")
 
     shownotes = mp3.parent / "shownotes.md"
+    body = f"# {ep_title}\n\n{desc}\n"
     if not shownotes.exists():
-        shownotes.write_text(f"# {ep_title}\n\n{desc}\n", encoding="utf-8")
+        shownotes.write_text(body, encoding="utf-8")
+    elif shownotes.read_text(encoding="utf-8") != body:
+        # 不覆盖：这份可能被人改过，手写的 shownotes 比自动生成的值钱。
+        # 但也不能默默留着——重跑之后它会与本集实际标题/摘要不一致，
+        # 而 shownotes 是**读者在播客 App 里真正看到的那段文字**。
+        log(f"⚠ {shownotes.name} 已存在且与本次内容不一致，未覆盖")
+        log(f"  若不是你手动改的，删掉它重跑即可刷新（当前标题应为：{ep_title}）")
     return side
 
 
