@@ -51,7 +51,9 @@ const SKIP_FILES = ['hero.png', 'hero.jpg', 'bgm_cover.png', 'bgm_cover.jpg', 'm
 // ③ news-* 前缀 = 人物/事件新闻真实照片（非本号产物），打品牌水印等于冒认版权
 // ④ vendor-* 前缀 = 第三方厂商官方素材（产品界面截图 / 官方配图，如 Claude Code、Codex 的官方运行界面图）
 //    同理：非本号产物，打自家水印等于冒认版权。评测 / 对比类文章引用官方截图时统一用此前缀命名
-const SKIP_PREFIXES = ['news-', 'vendor-'];
+// ⑤ shot-* 前缀 = 作者供图 / 排版组件截图。references/image-routing.md 规定「保留原图，默认不加 AI 图水印」；
+//    过去只在文档里写、代码没实现，用 "素材/*.png" 批量加水印时会连作者供图一起打上
+const SKIP_PREFIXES = ['news-', 'vendor-', 'shot-'];
 
 async function addLogo(imagePath, logoDir) {
   const fname = path.basename(imagePath).toLowerCase();

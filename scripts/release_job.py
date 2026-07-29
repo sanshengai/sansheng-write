@@ -111,7 +111,10 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
     if style == "claymation" and meta.get("visual_profile") != "warm-light-clay":
         errors.append("claymation 必须显式 visual_profile: warm-light-clay")
     if style == "morandi-journal" and meta.get("visual_profile"):
-        errors.append("morandi-journal 不得绑定 claymation visual_profile")
+        errors.append(
+            "morandi-journal 的 visual_profile 必须留空（配方由 infographic_style 推导）；"
+            f"当前填了 {meta.get('visual_profile')!r}"
+        )
     cover_style = str(meta.get("cover_style") or "montage-evidence")
     if cover_style != "montage-evidence":
         errors.append("release-from-final 当前只接受 cover_style: montage-evidence")
