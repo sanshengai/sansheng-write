@@ -10,8 +10,10 @@ NotebookLM 的登录态只有真实浏览器能维持。服务器是 headless �
 
 两步，可分开跑（生成要 10-20 分钟，适合后台）：
 
-    python podcast_episode.py generate --dir <文章目录>   # → audio.mp3 + sidecar
-    python podcast_episode.py publish  --dir <文章目录>   # → 推送 + 重建 feed
+    python podcast_episode.py --dir <文章目录> generate   # → audio.mp3 + sidecar
+    python podcast_episode.py --dir <文章目录> publish    # → 推送 + 重建 feed
+
+`--dir` 放在子命令前后都认（子命令那份用 SUPPRESS 兜底，不会用默认值把前面的覆盖掉）。
 
 sidecar（与 mp3 同名的 .json）是必需品，不是可选优化：feed 生成器对没有
 sidecar 的文件要求文件名必须是纯 YYYY-MM-DD.mp3，否则**静默跳过**；就算
@@ -337,10 +339,19 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="podcast_episode.py", description="文章 → 播客单集")
     ap.add_argument("--dir", default=".", help="文章目录")
+
+    # `--dir` 子命令前后都能写。子命令那份的默认值必须是 SUPPRESS：
+    # argparse 的子解析器会把自己的默认值写进同一个 namespace，
+    # 用普通默认值会让 `--dir X generate` 里的 X 被子命令的默认值悄悄覆盖掉
+    # ——参数被无声吃掉，然后在当前目录找不到定稿，报的错还指不到真原因。
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--dir", default=argparse.SUPPRESS, help="文章目录")
+
     sub = ap.add_subparsers(dest="cmd", required=True)
-    g = sub.add_parser("generate", help="本机生成音频 + sidecar（10-20 分钟）")
+    g = sub.add_parser("generate", parents=[common],
+                       help="本机生成音频 + sidecar（10-20 分钟）")
     g.add_argument("--keep-notebook", action="store_true", help="不删 NotebookLM notebook（排障用）")
-    p = sub.add_parser("publish", help="上传到 feed 主机并重建 feed")
+    p = sub.add_parser("publish", parents=[common], help="上传到 feed 主机并重建 feed")
     p.add_argument("--confirm", action="store_true")
 
     a = ap.parse_args(argv)

@@ -402,8 +402,11 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
         print("             （格式见 references/distribute.md，与晨报社媒文案.txt 一致），")
         print("             再跑 " + " / ".join(f"`distribute verify {ch}`" for ch in copy_targets) + "。")
     if "podcast" in targets:
-        print("             下一步（播客）：`python scripts/podcast_episode.py generate --dir .`")
-        print("             生成要 10-20 分钟，跑完再 `publish --confirm` 才对外可见。")
+        # 用脚本自己的绝对路径：命令是在**文章目录**里跑的，写 `scripts/…` 那种
+        # 相对路径在那儿根本不存在，照着粘贴必然 No such file。
+        ep = Path(__file__).resolve().parent / "podcast_episode.py"
+        print(f'             下一步（播客）：`python "{ep}" --dir . generate`')
+        print("             生成要 10-20 分钟，跑完再换 publish --confirm 才对外可见。")
     if using_example_profile():
         print("             ⚠ 当前跑在示例 profile 上，账号与节目信息均为占位值。")
     return 0
