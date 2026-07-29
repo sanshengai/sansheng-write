@@ -394,9 +394,16 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
     for ch in targets:
         print(f"             · {CHANNELS[ch]['label']}（{CHANNELS[ch]['dispatch_mode']}）→ {channel_dir(article_dir, ch)}")
     print()
-    print(f"             下一步：把两段文案写进 {dist_dir(article_dir) / SOCIAL_COPY_FILE}")
-    print("             （格式见 references/distribute.md，与晨报社媒文案.txt 一致），")
-    print("             再跑 `distribute verify xhs` / `verify weibo`。")
+    # 下一步提示按**实际启用的渠道**推导。写死"去写社媒文案、verify xhs/weibo"
+    # 在只开播客时会指向不存在的活儿——照着做的人会以为流程坏了。
+    copy_targets = [ch for ch in targets if CHANNELS[ch]["dispatch_mode"] == "assisted"]
+    if copy_targets:
+        print(f"             下一步：把文案写进 {dist_dir(article_dir) / SOCIAL_COPY_FILE}")
+        print("             （格式见 references/distribute.md，与晨报社媒文案.txt 一致），")
+        print("             再跑 " + " / ".join(f"`distribute verify {ch}`" for ch in copy_targets) + "。")
+    if "podcast" in targets:
+        print("             下一步（播客）：`python scripts/podcast_episode.py generate --dir .`")
+        print("             生成要 10-20 分钟，跑完再 `publish --confirm` 才对外可见。")
     if using_example_profile():
         print("             ⚠ 当前跑在示例 profile 上，账号与节目信息均为占位值。")
     return 0
