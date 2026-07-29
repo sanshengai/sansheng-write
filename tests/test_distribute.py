@@ -60,14 +60,32 @@ def all_enabled(monkeypatch):
     return cfg
 
 
-def _write_copy(article: Path, channel: str, text: str) -> None:
-    p = distribute.channel_dir(article, channel) / "文案.txt"
+GOOD_XHS_TITLE = "五个字的标题"
+GOOD_XHS_BODY = "正文写在这里，能独立成立。\n\n#测试 #分发 #写作 #效率"
+GOOD_WEIBO_BODY = "一个完整的判断，配一个具体的数字：这套流程把分发成本压到近乎零。\n\n#测试# #分发#"
+
+
+def _write_social(article: Path, xhs_title=GOOD_XHS_TITLE, xhs_body=GOOD_XHS_BODY,
+                  weibo_body=GOOD_WEIBO_BODY) -> None:
+    """写 dist/社媒文案.txt（与晨报同款双段格式）。"""
+    text = (
+        "════════════ 小红书 ════════════\n\n"
+        f"# 标题\n\n{xhs_title}\n\n"
+        f"# 正文\n\n{xhs_body}\n\n\n"
+        "════════════ 微博 ════════════\n\n"
+        f"# 正文\n\n{weibo_body}\n"
+    )
+    p = distribute.dist_dir(article) / distribute.SOCIAL_COPY_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
 
 
-GOOD_WEIBO = "一个完整的判断，配一个具体的数字：这套流程把分发成本压到了近乎零。\n\n#测试# #分发#"
-GOOD_XHS = "五个字的标题\n\n正文写在这里，能独立成立。\n\n#测试 #分发 #写作 #效率"
+def _write_images(article: Path, n: int = 6) -> None:
+    """小红书是图文，verify 会查图。"""
+    d = distribute.channel_dir(article, "xhs") / "images"
+    d.mkdir(parents=True, exist_ok=True)
+    for i in range(n):
+        (d / f"{i + 1:02d}-p.png").write_bytes(b"x")
 
 
 # ===== 配置解析 =====
@@ -130,32 +148,35 @@ def test_无定稿时_plan_失败(tmp_path, all_enabled):
 
 def test_微博超字数被拦(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", "字" * 200 + "\n\n#测试# #分发#")
+    _write_social(article, weibo_body="字" * 200 + "\n\n#测试# #分发#")
     assert distribute.cmd_verify(article, "weibo") == 2
 
 
 def test_微博标签缺尾井号被拦(article, all_enabled):
     """小红书格式误用到微博——最容易犯的错，机器必须拦住。"""
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", "短正文。\n\n#测试 #分发")
+    _write_social(article, weibo_body="短正文。\n\n#测试 #分发")
     assert distribute.cmd_verify(article, "weibo") == 2
 
 
 def test_小红书误用微博标签格式被拦(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "xhs", "标题\n\n正文。\n\n#测试# #分发# #写作# #效率#")
+    _write_social(article, xhs_body="正文。\n\n#测试# #分发# #写作# #效率#")
+    _write_images(article)
     assert distribute.cmd_verify(article, "xhs") == 2
 
 
 def test_小红书标题超长被拦(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "xhs", "字" * 30 + "\n\n正文。\n\n#测试 #分发 #写作 #效率")
+    _write_social(article, xhs_title="字" * 30)
+    _write_images(article)
     assert distribute.cmd_verify(article, "xhs") == 2
 
 
 def test_标签数量不足被拦(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "xhs", "标题\n\n正文。\n\n#测试")
+    _write_social(article, xhs_body="正文。\n\n#测试")
+    _write_images(article)
     assert distribute.cmd_verify(article, "xhs") == 2
 
 
@@ -166,15 +187,15 @@ def test_缺文案文件被拦(article, all_enabled):
 
 def test_合规文案通过并置状态(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", GOOD_WEIBO)
-    _write_copy(article, "xhs", GOOD_XHS)
+    _write_social(article)
+    _write_images(article)
     assert distribute.cmd_verify(article, "weibo") == 0
     assert distribute.cmd_verify(article, "xhs") == 0
     assert distribute.get_status(article, "weibo") == "verified"
 
 
 def test_未先_plan_不能_verify(article, all_enabled):
-    _write_copy(article, "weibo", GOOD_WEIBO)
+    _write_social(article)
     assert distribute.cmd_verify(article, "weibo") == 2
 
 
@@ -182,7 +203,7 @@ def test_未先_plan_不能_verify(article, all_enabled):
 
 def test_定稿变更后_verify_阻断(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", GOOD_WEIBO)
+    _write_social(article)
     assert distribute.cmd_verify(article, "weibo") == 0
     (article / "定稿.md").write_text(FINAL_TEXT + "\n改了一句。\n", encoding="utf-8")
     assert distribute.cmd_verify(article, "weibo") == 2
@@ -193,8 +214,8 @@ def test_定稿变更后_dispatch_也阻断(article, all_enabled):
     `plan --only weibo` 之后小红书仍停在 verified，dispatch 光看状态
     就会把对应旧定稿的文案发出去。"""
     distribute.cmd_plan(article)
-    _write_copy(article, "xhs", GOOD_XHS)
-    _write_copy(article, "weibo", GOOD_WEIBO)
+    _write_social(article)
+    _write_images(article)
     assert distribute.cmd_verify(article, "xhs") == 0
     assert distribute.cmd_verify(article, "weibo") == 0
 
@@ -214,32 +235,123 @@ def test_未_verify_不能_dispatch(article, all_enabled):
 
 def test_dry_run_不写凭证(article, all_enabled):
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", GOOD_WEIBO)
+    _write_social(article)
     distribute.cmd_verify(article, "weibo")
     assert distribute.cmd_dispatch(article, "weibo", confirm=False) == 0
     assert not (distribute.channel_dir(article, "weibo") / distribute.RECEIPT_FILE).exists()
     assert distribute.get_status(article, "weibo") == "verified"
 
 
-def test_未接线的自动派发明确失败(article, all_enabled):
-    """🔴 宁可 exit 3，也不能写一条没发生过的发布记录。"""
+@pytest.fixture
+def fake_browser(monkeypatch, tmp_path):
+    """拦掉真实的 Chrome 启动。
+
+    🔴 dispatch 会打开浏览器并填入内容，测试里绝不能真跑——既慢又会
+    在维护者机器上弹窗，CI 上还没有登录态。这里替换掉脚本解析、bun 查找
+    与子进程调用，只验证「传了什么参数、写没写凭证」。
+    """
+    script = tmp_path / "fake-post.ts"
+    script.write_text("// fake", encoding="utf-8")
+    calls = []
+
+    def fake_call(argv):
+        calls.append(argv)
+        return fake_call.rc
+
+    fake_call.rc = 0
+    monkeypatch.setattr(distribute, "resolve_post_script", lambda ch, cfg: script)
+    monkeypatch.setattr(distribute, "_find_bun", lambda: "bun")
+    monkeypatch.setattr(distribute.subprocess, "call", fake_call)
+    return fake_call, calls
+
+
+def test_找不到发布脚本时失败且不写凭证(article, all_enabled, monkeypatch):
+    """🔴 宁可失败，也不能写一条没发生过的发布记录。"""
+    monkeypatch.setattr(distribute, "resolve_post_script", lambda ch, cfg: None)
     distribute.cmd_plan(article)
-    _write_copy(article, "weibo", GOOD_WEIBO)
+    _write_social(article)
     distribute.cmd_verify(article, "weibo")
-    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 3
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 2
     assert distribute.get_status(article, "weibo") == "verified"   # 状态不许前进
     assert not (distribute.channel_dir(article, "weibo") / distribute.RECEIPT_FILE).exists()
 
 
-def test_手动渠道确认后写凭证(article, all_enabled):
+def test_填充失败不写凭证(article, all_enabled, fake_browser):
+    """脚本非零退出（比如没登录）时，状态必须停在 verified。"""
+    fake_call, _ = fake_browser
+    fake_call.rc = 1
     distribute.cmd_plan(article)
-    _write_copy(article, "xhs", GOOD_XHS)
+    _write_social(article)
+    distribute.cmd_verify(article, "weibo")
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 2
+    assert distribute.get_status(article, "weibo") == "verified"
+    assert not (distribute.channel_dir(article, "weibo") / distribute.RECEIPT_FILE).exists()
+
+
+def test_小红书填充成功后写凭证(article, all_enabled, fake_browser):
+    _, calls = fake_browser
+    distribute.cmd_plan(article)
+    _write_social(article)
+    _write_images(article)
     distribute.cmd_verify(article, "xhs")
     assert distribute.cmd_dispatch(article, "xhs", confirm=True) == 0
+
+    argv = calls[0]
+    assert "--title" in argv and GOOD_XHS_TITLE in argv
+    assert "--content" in argv
+    assert argv.count("--image") == 6          # 六张轮播图都传了
+
     receipt = json.loads(
         (distribute.channel_dir(article, "xhs") / distribute.RECEIPT_FILE).read_text(encoding="utf-8"))
-    assert receipt["mode"] == "manual"
+    assert receipt["mode"] == "assisted"
     assert distribute.get_status(article, "xhs") == "dispatched"
+
+
+def test_微博文案走位置参数而非_content(article, all_enabled, fake_browser):
+    """两个脚本的调用约定不同：weibo-post.ts 的文案是位置参数。"""
+    _, calls = fake_browser
+    distribute.cmd_plan(article)
+    _write_social(article)
+    _write_images(article)
+    distribute.cmd_verify(article, "weibo")
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 0
+
+    argv = calls[0]
+    assert "--content" not in argv
+    assert argv[2].startswith("一个完整的判断")
+
+
+def test_微博限图数量(article, all_enabled, fake_browser, monkeypatch):
+    """微博最多 4 张自动排九宫格，不能把 16 张轮播图全丢过去。"""
+    cfg = {"enabled": True, "body_soft_max": 140, "tag_min": 2, "image_max": 4}
+    monkeypatch.setattr(distribute, "distribute_channel",
+                        lambda n: cfg if n == "weibo" else {"enabled": True, "tag_min": 4})
+    _, calls = fake_browser
+    distribute.cmd_plan(article, only="weibo")
+    _write_social(article)
+    _write_images(article, n=16)
+    distribute.cmd_verify(article, "weibo")
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 0
+    assert calls[0].count("--image") == 4
+
+
+# ===== 小红书字数算法 =====
+
+def test_小红书字数算法(article):
+    """🔴 中文/emoji/标点=1，英文数字=0.5，空格不计。
+    用 len() 会和平台自己的计数对不上，把合规标题误判超长（晨报 2026-07-08 踩过）。"""
+    assert distribute.xhs_char_count("中文五个字啊") == 6
+    assert distribute.xhs_char_count("abcd") == 2.0
+    assert distribute.xhs_char_count("a b c d") == 2.0       # 空格不计
+    assert distribute.xhs_char_count("AI 早安 07/29") == pytest.approx(2 + 1 + 2.5)
+
+
+def test_英文标题不会被误判超长(article, all_enabled):
+    """40 个英文字符按官方算法只有 20 字，正好卡线——用 len() 会误拦。"""
+    distribute.cmd_plan(article)
+    _write_social(article, xhs_title="a" * 40)
+    _write_images(article)
+    assert distribute.cmd_verify(article, "xhs") == 0
 
 
 # ===== 杂项 =====

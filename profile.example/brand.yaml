@@ -208,20 +208,26 @@ publish:
 # ============================================================================
 # distribute:
 #   channels:
-#     # ---- 小红书图文：平台无开放发布接口，dispatch 只产手动发布包 ----
+#     # ---- 小红书图文：CDP 开浏览器填好内容，最后一下由你点「发布」----
 #     xhs:
 #       enabled: false
 #       account: "你的小红书账号名"
+#       # 驱动创作服务平台网页端的发布脚本（自备）。小红书没有开放 API，
+#       # 但网页端可以被 CDP 驱动——所以不是"只能手动复制粘贴"。
+#       post_script: "/abs/path/to/xiaohongshu-post.ts"
 #       title_max: 20          # 平台标题上限
 #       body_max: 1000         # 正文上限（含标签）
 #       tag_min: 4
 #       image_min: 6           # 轮播图张数区间，见 xhs-storyboard.md
 #       image_max: 16
 #
-#     # ---- 微博：走 baoyu-post-to-weibo 的 Chrome CDP，可自动发 ----
+#     # ---- 微博：走 baoyu-post-to-weibo 的 Chrome CDP ----
 #     weibo:
 #       enabled: false
 #       account: "你的微博账号名"
+#       # 留空则自动在 baoyu 插件缓存里递归查 weibo-post.ts
+#       # （那个目录名带版本 hash，写死必然在插件升级后失效）
+#       post_script: ""
 #       body_soft_max: 140     # 超过会被折叠成「展开全文」，压阅读率
 #       tag_min: 2
 #       image_max: 4           # 4 张自动排九宫格

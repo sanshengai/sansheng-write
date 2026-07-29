@@ -32,6 +32,8 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,15 +58,15 @@ from profile_config import (  # noqa: E402
 CHANNELS: dict[str, dict] = {
     "xhs": {
         "label": "小红书图文",
-        "dispatch_mode": "manual",
-        "artifacts": ["文案.txt", "images/"],
+        "dispatch_mode": "assisted",
+        "artifacts": ["社媒文案.txt", "xhs/images/"],
         "upstream": "xhs-outline.md",
-        "note": "小红书无开放发布接口，dispatch 只产手动发布包",
+        "note": "CDP 开浏览器填好标题/正文/图，作者点「发布」",
     },
     "weibo": {
         "label": "微博",
-        "dispatch_mode": "auto",
-        "artifacts": ["文案.txt"],
+        "dispatch_mode": "assisted",
+        "artifacts": ["社媒文案.txt"],
         "upstream": "定稿.md",
         "note": "复用小红书图；正文超 140 字会被折叠",
     },
@@ -73,8 +75,16 @@ CHANNELS: dict[str, dict] = {
         "dispatch_mode": "rss",
         "artifacts": ["audio.mp3", "shownotes.md"],
         "upstream": "定稿.md",
-        "note": "NotebookLM 生成音频 → 自建 feed.xml → 平台侧抓取",
+        "note": "本机 NotebookLM 生成 → scp 上 VPS → 重建 feed.xml → 平台侧抓取",
     },
+}
+
+# 社媒文案单文件双段，格式与晨报的「社媒文案.txt」完全一致——
+# 同一套分隔符、同一套小节名，才能复用同一批发布脚本和作者已有的肌肉记忆。
+SOCIAL_COPY_FILE = "社媒文案.txt"
+SECTION_RE = {
+    "xhs": re.compile(r"═+\s*小红书\s*═+"),
+    "weibo": re.compile(r"═+\s*微博\s*═+"),
 }
 
 STATE_FILE = "_distribute-state.json"
@@ -371,8 +381,9 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
     for ch in targets:
         print(f"             · {CHANNELS[ch]['label']}（{CHANNELS[ch]['dispatch_mode']}）→ {channel_dir(article_dir, ch)}")
     print()
-    print("             下一步：按 references/distribute.md 各渠道口径填写文案，")
-    print("             写入 dist/<渠道>/文案.txt，再跑 `distribute verify <渠道>`。")
+    print(f"             下一步：把两段文案写进 {dist_dir(article_dir) / SOCIAL_COPY_FILE}")
+    print("             （格式见 references/distribute.md，与晨报社媒文案.txt 一致），")
+    print("             再跑 `distribute verify xhs` / `verify weibo`。")
     if using_example_profile():
         print("             ⚠ 当前跑在示例 profile 上，账号与节目信息均为占位值。")
     return 0
@@ -380,22 +391,84 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
 
 # ===== 【第 6 节】verify —— 硬门 =====
 
-def _parse_copy_file(path: Path) -> dict:
-    """文案文件格式：首个空行前是标题段，其后是正文，`#` 开头的行汇总为标签。
+def parse_social_copy(article_dir: Path) -> dict:
+    """解析 dist/社媒文案.txt，返回 {"xhs": {...}, "weibo": {...}}。
 
-    刻意选了「人能直接复制粘贴」的纯文本而不是 YAML——这些文件的最终用途
-    就是被人整段选中贴进平台输入框，多一层语法就多一次贴错的机会。
+    格式（与晨报的社媒文案.txt 逐字一致）：
+
+        ════════════ 小红书 ════════════
+
+        # 标题
+
+        <标题>
+
+        # 正文
+
+        <正文，含 #标签>
+
+        ════════════ 微博 ════════════
+
+        # 正文
+
+        <正文，含 #话题#>
+
+    用纯文本而不是 YAML 是有意的：这些内容的最终用途就是被整段选中贴进
+    平台输入框，多一层语法就多一次贴错的机会。
     """
+    path = dist_dir(article_dir) / SOCIAL_COPY_FILE
     if not path.is_file():
         return {}
-    raw = path.read_text(encoding="utf-8").replace("\r\n", "\n").strip("\n")
-    if not raw.strip():
-        return {}
-    blocks = re.split(r"\n\s*\n", raw, maxsplit=1)
-    head = blocks[0].strip()
-    body = blocks[1].strip() if len(blocks) > 1 else ""
-    tags = re.findall(r"#[^#\s]+#?", raw)
-    return {"head": head, "body": body, "tags": tags, "raw": raw}
+    raw = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+    out: dict[str, dict] = {}
+
+    xhs_split = SECTION_RE["xhs"].split(raw)
+    if len(xhs_split) >= 2:
+        block = SECTION_RE["weibo"].split(xhs_split[1])[0]
+        title, body = _split_title_body(block)
+        out["xhs"] = {"title": title, "body": body, "tags": _find_tags(body)}
+
+    weibo_split = SECTION_RE["weibo"].split(raw)
+    if len(weibo_split) >= 2:
+        _, body = _split_title_body(weibo_split[1])
+        body = body or weibo_split[1].strip()
+        out["weibo"] = {"title": "", "body": body, "tags": _find_tags(body)}
+
+    return out
+
+
+def _split_title_body(block: str) -> tuple[str, str]:
+    """从一段里切出「# 标题」与「# 正文」两小节。"""
+    parts = re.split(r"#\s*标题", block, maxsplit=1)
+    if len(parts) >= 2:
+        after = re.split(r"#\s*正文", parts[1], maxsplit=1)
+        title = after[0].strip()
+        body = after[1].strip() if len(after) >= 2 else ""
+        return title, body
+    parts = re.split(r"#\s*正文", block, maxsplit=1)
+    return "", (parts[1].strip() if len(parts) >= 2 else block.strip())
+
+
+def _find_tags(text: str) -> list[str]:
+    return re.findall(r"#[^#\s]+#?", text)
+
+
+def xhs_char_count(text: str) -> float:
+    """小红书官方字数算法：中文 / emoji / 中文标点 = 1，英文数字 = 0.5，空格不计。
+
+    🔴 别用 len()。两套规则不一致会把本来合规的标题误判超长，反过来也会放行
+    真正超长的标题。晨报侧 2026-07-08 踩过：用 .Length（UTF-16）二次裁剪，
+    把已按官方算法卡进 20 字的标题切断了。
+    """
+    total = 0.0
+    for ch in text:
+        if ch.isspace():
+            continue
+        if ch.isascii() and (ch.isalnum() or ch in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"):
+            total += 0.5
+        else:
+            total += 1.0
+    return total
 
 
 def _display_width(text: str) -> int:
@@ -434,28 +507,39 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
     problems: list[str] = []
 
     if channel in ("xhs", "weibo"):
-        copy_path = cdir / "文案.txt"
-        parsed = _parse_copy_file(copy_path)
+        copy_path = dist_dir(article_dir) / SOCIAL_COPY_FILE
+        all_copy = parse_social_copy(article_dir)
+        parsed = all_copy.get(channel)
         if not parsed:
-            print(f"[distribute] ✗ 缺文案：{copy_path}", file=sys.stderr)
+            print(f"[distribute] ✗ {copy_path} 里没解析到「{CHANNELS[channel]['label']}」段",
+                  file=sys.stderr)
+            print("             格式见 references/distribute.md（与晨报社媒文案.txt 一致）",
+                  file=sys.stderr)
             return 2
 
         cons = spec.get("constraints") or {}
         if channel == "xhs":
+            if not parsed["title"]:
+                problems.append("缺「# 标题」小节")
             tmax = cons.get("title_max", 20)
-            if _visible_len(parsed["head"]) > tmax:
-                problems.append(f"标题 {_visible_len(parsed['head'])} 字，超过 {tmax} 字上限")
+            # 🔴 按小红书官方算法计数，不是 len()
+            n = xhs_char_count(parsed["title"])
+            if n > tmax:
+                problems.append(f"标题 {n:g} 字（小红书算法），超过 {tmax} 字上限")
             bmax = cons.get("body_max", 1000)
-            if _visible_len(parsed["body"]) > bmax:
-                problems.append(f"正文 {_visible_len(parsed['body'])} 字，超过 {bmax} 字上限")
+            nb = xhs_char_count(parsed["body"])
+            if nb > bmax:
+                problems.append(f"正文 {nb:g} 字，超过 {bmax} 字上限")
             bad = [t for t in parsed["tags"] if t.endswith("#") and len(t) > 1]
             if bad:
                 problems.append(f"标签用了微博的 #话题# 格式：{' '.join(bad[:3])}（小红书是 #标签）")
+            if not (cdir / "images").is_dir() or not list((cdir / "images").glob("*")):
+                problems.append(f"缺图：{cdir / 'images'} 为空（小红书是图文，没图发不了）")
         else:
             bmax = cons.get("body_max", 140)
-            total = _visible_len(parsed["raw"])
+            total = len(parsed["body"].replace("\n", "").strip())
             if total > bmax:
-                problems.append(f"全文 {total} 字，超过 {bmax} 字（微博会折叠成「展开全文」）")
+                problems.append(f"正文 {total} 字，超过 {bmax} 字（微博会折叠成「展开全文」）")
             bad = [t for t in parsed["tags"] if not t.endswith("#")]
             if bad:
                 problems.append(f"标签缺尾部井号：{' '.join(bad[:3])}（微博是 #话题#）")
@@ -506,39 +590,128 @@ def cmd_dispatch(article_dir: Path, channel: str, confirm: bool = False) -> int:
     mode = CHANNELS[channel]["dispatch_mode"]
     cdir = channel_dir(article_dir, channel)
 
-    if mode == "manual":
-        # 小红书：平台没有开放发布接口，这里**只产手动发布包**。
-        # 不去驱动 UI 自动化冒充「自动发布」——那既不稳定，也会拿账号安全冒险。
-        print(f"[distribute] {CHANNELS[channel]['label']}：手动发布包已就绪")
-        print(f"             目录：{cdir}")
-        print(f"             文案：{cdir / '文案.txt'}（首段=标题，其余=正文）")
-        imgs = cdir / "images"
-        if imgs.is_dir():
-            print(f"             图片：{imgs}（{len(list(imgs.glob('*')))} 张，按文件名顺序上传）")
-        print("             小红书无开放发布接口，这一步只能人工完成。")
-        if confirm:
-            _write_json(cdir / RECEIPT_FILE, {
-                "channel": channel, "mode": "manual",
-                "dispatched_at": _now(),
-                "note": "作者确认已手动发布",
-            })
-            set_status(article_dir, channel, "dispatched")
-            print("             ✓ 已登记为「作者确认发布」")
-        else:
-            print("             确认发布后跑 `--confirm` 登记凭证。")
-        return 0
-
     if not confirm:
         print(f"[distribute] dry-run：{CHANNELS[channel]['label']}（{mode}）")
         print(f"             产物目录：{cdir}")
-        print("             这是**对外发布**动作，确认无误后加 --confirm 真正执行。")
+        if mode == "assisted":
+            print("             真跑会打开 Chrome 并把内容填进发布框，**不会替你点发布**。")
+        print("             确认无误后加 --confirm 执行。")
         return 0
 
-    # ---- 真派发：骨架阶段各 adapter 尚未接线 ----
-    # 这里刻意不写「假装成功」的桩：宁可明确未实现，也不能让状态机记下一次没发生过的发布。
+    if mode == "assisted":
+        return _dispatch_assisted(article_dir, channel)
+
     print(f"[distribute] ✗ {CHANNELS[channel]['label']} 的自动派发尚未接线。", file=sys.stderr)
     print(f"             mode={mode}；接线步骤见 references/distribute.md §渠道适配器", file=sys.stderr)
     return 3
+
+
+def _dispatch_assisted(article_dir: Path, channel: str) -> int:
+    """CDP 辅助发布：打开真实 Chrome，把内容填进发布框，**最后一步留给作者点**。
+
+    刻意不自动点「发布」——填错了还能改，发出去就收不回来了。这也是社区
+    小红书自动化脚本的共识做法。
+    """
+    cfg = channel_config(channel)
+    script = resolve_post_script(channel, cfg)
+    if not script:
+        print(f"[distribute] ✗ 找不到 {channel} 的发布脚本。", file=sys.stderr)
+        print(f"             在 profile 的 distribute.channels.{channel}.post_script 里配置绝对路径。",
+              file=sys.stderr)
+        return 2
+
+    parsed = (parse_social_copy(article_dir) or {}).get(channel)
+    if not parsed:
+        print(f"[distribute] ✗ 读不到 {channel} 段文案", file=sys.stderr)
+        return 2
+
+    images = _dispatch_images(article_dir, cfg)
+    if channel == "xhs" and not images:
+        print("[distribute] ✗ 小红书是图文，至少要一张图", file=sys.stderr)
+        return 2
+
+    bun = _find_bun()
+    if not bun:
+        print("[distribute] ✗ 找不到 bun（发布脚本是 TypeScript，需要 bun 运行）", file=sys.stderr)
+        return 2
+
+    if channel == "xhs":
+        argv = [bun, str(script), "--title", parsed["title"], "--content", parsed["body"]]
+    else:
+        # weibo-post.ts 的文案是位置参数，图片才用 --image
+        argv = [bun, str(script), parsed["body"]]
+    for img in images:
+        argv += ["--image", str(img)]
+
+    print(f"[distribute] {CHANNELS[channel]['label']}：打开 Chrome 填入…")
+    print(f"             脚本：{script}")
+    print(f"             文案 {len(parsed['body'])} 字 + {len(images)} 图")
+    try:
+        rc = subprocess.call(argv)
+    except OSError as e:
+        print(f"[distribute] ✗ 启动发布脚本失败：{e}", file=sys.stderr)
+        return 2
+
+    if rc != 0:
+        print(f"[distribute] ✗ 填充失败（exit {rc}）", file=sys.stderr)
+        print("             首次使用需先在弹出的 Chrome 里手动登录一次；", file=sys.stderr)
+        print("             或 Chrome 正被占用，关掉后重跑。", file=sys.stderr)
+        return 2
+
+    _write_json(channel_dir(article_dir, channel) / RECEIPT_FILE, {
+        "channel": channel,
+        "mode": "assisted",
+        "script": str(script),
+        "filled_at": _now(),
+        "images": [str(i) for i in images],
+        "note": "内容已填入发布框；正式发布由作者在浏览器中点击完成",
+    })
+    set_status(article_dir, channel, "dispatched")
+    print(f"[distribute] ✓ 已填好 → 去弹出的 Chrome 检查内容后点「{'发布' if channel == 'xhs' else '发送'}」")
+    return 0
+
+
+def resolve_post_script(channel: str, cfg: dict) -> Path | None:
+    """解析该渠道的发布脚本路径。
+
+    profile 显式配置优先；微博没配时在 baoyu 插件缓存里递归找 weibo-post.ts
+    —— 那个目录名带版本 hash，插件一升级就变，写死必然失效。
+    """
+    explicit = str(cfg.get("post_script") or "").strip()
+    if explicit:
+        p = Path(explicit).expanduser()
+        return p if p.is_file() else None
+
+    if channel == "weibo":
+        cache = Path.home() / ".claude" / "plugins" / "cache" / "baoyu-skills"
+        if cache.is_dir():
+            found = sorted(cache.rglob("weibo-post.ts"))
+            if found:
+                return found[-1]
+    return None
+
+
+def _find_bun() -> str:
+    exe = shutil.which("bun")
+    if exe:
+        return exe
+    cand = Path.home() / ".bun" / "bin" / "bun.exe"
+    return str(cand) if cand.is_file() else ""
+
+
+def _dispatch_images(article_dir: Path, cfg: dict) -> list[Path]:
+    """发布用图：小红书轮播图优先，没有就回落文章素材。
+
+    微博与小红书共用同一批图（微博最多 4 张，自动排九宫格）。
+    """
+    imgs_dir = channel_dir(article_dir, "xhs") / "images"
+    imgs = sorted(p for p in imgs_dir.glob("*")
+                  if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")) if imgs_dir.is_dir() else []
+    if not imgs:
+        assets = article_dir / "素材"
+        if assets.is_dir():
+            imgs = [assets / n for n in list_source_images(article_dir)]
+    return imgs[:int(cfg.get("image_max", 18))]
 
 
 # ===== 【第 8 节】status =====
