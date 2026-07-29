@@ -128,9 +128,29 @@ python "$SKILL/scripts/distribute.py" dispatch <渠道>    # 默认 dry-run，�
 |---|---|---|
 | 小红书 | ✅ 已接线 | 复用自建的 `xiaohongshu-post.ts`（晨报一直在用） |
 | 微博 | ✅ 已接线 | 复用 `baoyu-post-to-weibo` 的 `weibo-post.ts` |
-| 播客 | ⬜ 待接线 | feed 已支持混播；还差本机生成链路与 `focus_prompt` |
+| 播客 | ✅ 已接线 | `scripts/podcast_episode.py`：本机生成 → 推送 → 重建 feed |
 
 未接线的渠道 `dispatch --confirm` 明确 exit 3，**不写假装成功的桩**——状态机记下一次没发生过的发布，比不发布更糟。
+
+## 播客单集怎么做
+
+分两步，因为生成要 10-20 分钟，适合丢后台：
+
+```bash
+python "$SKILL/scripts/podcast_episode.py" generate --dir .   # 本机跑，产 audio.mp3 + sidecar
+python "$SKILL/scripts/podcast_episode.py" publish  --dir . --confirm
+#   等价于 pipeline.py distribute dispatch podcast --confirm
+```
+
+- **nlm 版本差异**：0.9.x 的 CLI 与 0.6.x 不同（`nlm audio create` 而非 `nlm create audio`，且各命令支持 `--json`，不必再从纯文本 regex 抠 ID）。0.9.x 仍兼容旧的 verb-first 写法。
+- 🔴 **先传 sidecar 再传 mp3**。反过来的话，两次传输之间若正好触发 feed 重建，mp3 会被当成「无 sidecar 且文件名非纯日期」而静默跳过。
+- 生成完会自动删掉 NotebookLM 里的 notebook，避免后台无限堆积（`--keep-notebook` 可保留排障）。
+
+## 与 finalize 的衔接
+
+`pipeline.py finalize <永久链接>` 收尾后会**自动起一份分发计划**并打印下一步。
+
+只跑 `plan`（几秒、纯本地），不在 finalize 里连发布带生音频一起做——浏览器填充要作者在场逐个确认，音频要 10-20 分钟，两样都塞进去会把一条几秒的收尾命令变成漫长的阻塞等待。分发失败也不回滚已完成的归档与官网同步。
 
 ## 铁律
 

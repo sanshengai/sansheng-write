@@ -601,6 +601,11 @@ def cmd_dispatch(article_dir: Path, channel: str, confirm: bool = False) -> int:
     if mode == "assisted":
         return _dispatch_assisted(article_dir, channel)
 
+    if mode == "rss":
+        # 播客：音频已由 podcast_episode.py generate 在本机产好，这里只负责上线。
+        import podcast_episode
+        return podcast_episode.cmd_publish(article_dir, confirm=True)
+
     print(f"[distribute] ✗ {CHANNELS[channel]['label']} 的自动派发尚未接线。", file=sys.stderr)
     print(f"             mode={mode}；接线步骤见 references/distribute.md §渠道适配器", file=sys.stderr)
     return 3

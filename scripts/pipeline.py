@@ -2482,6 +2482,36 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
         raise SystemExit(2)
     _write_moments_copy(cwd, wechat_url)
     print("✅ 发布后闭环完成：归档已验、官网已处理、朋友圈文案已生成。")
+    _handoff_to_distribute(cwd)
+
+
+def _handoff_to_distribute(cwd: Path) -> None:
+    """finalize 之后自动起分发计划，并把下一步说清楚。
+
+    只跑 plan（几秒，纯本地）——不在这里连发布带生音频一起做：
+    浏览器填充要作者在场逐个确认，音频生成要 10-20 分钟，两样都塞进
+    finalize 会把一条几秒的收尾命令变成一次漫长的阻塞等待。
+    分发失败也不该回滚已经完成的归档与官网同步，所以这里不抛异常。
+    """
+    try:
+        import distribute
+    except ImportError:
+        return
+    if not distribute.enabled_channels():
+        return
+    try:
+        print()
+        distribute.cmd_plan(cwd)
+        print()
+        print("下一步（一稿多投）：")
+        print("  1. 按 references/distribute.md 的口径填 dist/社媒文案.txt")
+        print("  2. python pipeline.py distribute verify xhs / verify weibo")
+        print("  3. distribute dispatch xhs --confirm   → 开浏览器填好，你点「发布」")
+        print("     distribute dispatch weibo --confirm → 同上，你点「发送」")
+        print("  4. python scripts/podcast_episode.py generate --dir .   → 音频（10-20 分钟，可后台）")
+        print("     python pipeline.py distribute dispatch podcast --confirm → 上线小宇宙")
+    except Exception as e:                                  # noqa: BLE001
+        print(f"⚠ 分发计划生成失败（不影响已完成的发布收尾）：{str(e)[:200]}")
 
 
 def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
