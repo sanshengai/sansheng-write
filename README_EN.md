@@ -5,8 +5,8 @@
 [中文](./README.md) | **English**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/sandypoli-boop/sansheng-write?style=flat)](../../stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/sandypoli-boop/sansheng-write)](../../commits/main)
+[![Stars](https://img.shields.io/github/stars/sanshengai/sansheng-write?style=flat)](../../stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/sanshengai/sansheng-write)](../../commits/main)
 
 > **Note on language.** This skill writes **Chinese** long-form articles. Its rules target
 > Chinese clichés, and its typesetting targets WeChat Official Account's HTML restrictions.
@@ -177,11 +177,11 @@ prints the checklist and exits instead of blocking.
 
 ```bash
 # via Claude Code plugin marketplace
-claude plugin marketplace add sandypoli-boop/sansheng-write
+claude plugin marketplace add sanshengai/sansheng-write
 claude plugin install sansheng-write
 
 # or clone + symlink
-git clone https://github.com/sandypoli-boop/sansheng-write.git
+git clone https://github.com/sanshengai/sansheng-write.git
 ln -s "$(pwd)/sansheng-write" ~/.claude/skills/sansheng-write
 ```
 

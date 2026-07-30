@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 修复
+
+- 安装命令、插件元数据、徽章与历史版本链接已统一到当前公开仓地址，避免继续跳转到失效地址。
+
 ## [0.10.0] -- 2026-07-29
 
 ### 新增
@@ -443,6 +447,6 @@
 - **不含任何真实文章作为测试夹具**。所有 golden 都是合成的（`tests/golden/_synthetic_*/`）
 - **不捆绑任何第三方源码**。`jimp`（MIT）等运行依赖由你 `npm install` / `pip install`
 
-[0.1.2]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.2
-[0.1.1]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.1
-[0.1.0]: https://github.com/sandypoli-boop/sansheng-write/releases/tag/v0.1.0
+[0.1.2]: https://github.com/sanshengai/sansheng-write/tree/v0.1.2
+[0.1.1]: https://github.com/sanshengai/sansheng-write/tree/v0.1.1
+[0.1.0]: https://github.com/sanshengai/sansheng-write/tree/v0.1.0

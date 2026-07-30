@@ -5,8 +5,8 @@
 **中文** | [English](./README_EN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/sandypoli-boop/sansheng-write?style=flat)](../../stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/sandypoli-boop/sansheng-write)](../../commits/main)
+[![Stars](https://img.shields.io/github/stars/sanshengai/sansheng-write?style=flat)](../../stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/sanshengai/sansheng-write)](../../commits/main)
 
 ---
 
@@ -194,11 +194,11 @@ python scripts/setup.py        # 交互式：问你要哪些，只收集那些�
 
 ```bash
 # 方式一：Claude Code 插件市场
-claude plugin marketplace add sandypoli-boop/sansheng-write
+claude plugin marketplace add sanshengai/sansheng-write
 claude plugin install sansheng-write
 
 # 方式二：clone + 软链
-git clone https://github.com/sandypoli-boop/sansheng-write.git
+git clone https://github.com/sanshengai/sansheng-write.git
 ln -s "$(pwd)/sansheng-write" ~/.claude/skills/sansheng-write
 ```
 
@@ -208,7 +208,7 @@ GitHub 直连不畅时，给 clone 地址前面加一层公共镜像即可（下
 
 ```bash
 # 加速 clone（把 gh-proxy.com 换成 ghfast.top 即备用镜像）
-git clone https://gh-proxy.com/https://github.com/sandypoli-boop/sansheng-write.git
+git clone https://gh-proxy.com/https://github.com/sanshengai/sansheng-write.git
 ```
 
 插件市场方式暂无稳定国内镜像；网络不畅时用上面的加速 clone + 软链。
