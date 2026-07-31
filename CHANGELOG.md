@@ -4,6 +4,17 @@
 
 ## [未发布]
 
+## [0.11.0] -- 2026-07-30
+
+### 新增
+
+- **NotebookLM 登录态失效自动拉起浏览器授权**：`podcast_episode.py` 在生成前预检与轮询期间检测到认证过期时，不再只提示「请运行 `nlm login`」，而是自动执行 `nlm login` 弹 Chrome 授权，恢复后继续原流程；无人值守可用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示。
+- **播客音频上官网「听全文」**：`release-runtime.md` 固化规则 -- `publish --confirm` 推小宇宙后，`dist/podcast/audio.mp3` 随文章目录提交，官网文章页主题曲卡下出现「🎧 听全文 · 播客版」播放器（全站单例播放器天然互斥），文章列表出现「🎧 有音频」标记；配套网站侧 `prepare-songs.py` / `import-articles.mjs` / 文章页模板改动（在 Cowork 主仓）。
+
+### 修复
+
+- `podcast_episode.py` 在 Windows GBK 控制台打印「✓」时 `UnicodeEncodeError` 崩在收尾（音频已生成却写不出 sidecar）；标准输出统一重配为 UTF-8 容错模式。
+
 ## [0.10.1] -- 2026-07-30
 
 ### 修复

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -48,6 +49,15 @@ def log(msg: str) -> None:
     print(f"[podcast {datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
+# Windows GBK 控制台吃不下 ✓/✗ 等符号，统一把标准输出重配为 UTF-8 容错模式
+# （2026-07-30 实测：生成成功后打印「✓」直接 UnicodeEncodeError 崩在收尾）
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
 def cfg() -> dict:
     return distribute_channel("podcast")
 
@@ -57,6 +67,27 @@ def _nlm_bin() -> str:
     if explicit:
         return explicit
     return shutil.which("nlm") or str(Path.home() / ".local" / "bin" / "nlm")
+
+
+def _try_auto_login() -> bool:
+    """登录态失效时自动弹浏览器授权（2026-07-30 sandy 拍板固化的规则）：
+    检测到过期不再只提示「请运行 nlm login」，而是直接替作者拉起 `nlm login`
+    （启动 Chrome 走 CDP，作者在旁时点一下即完成）。无人值守环境可用
+    SANSHENG_NLM_NO_AUTOLOGIN=1 关回纯提示模式。登录成功后做一次只读探针确认。"""
+    if os.environ.get("SANSHENG_NLM_NO_AUTOLOGIN") == "1":
+        return False
+    log("  检测到登录态失效，自动弹出浏览器登录（nlm login）…")
+    try:
+        subprocess.run([_nlm_bin(), "login"], timeout=420, check=False)
+    except Exception as e:                                     # noqa: BLE001
+        log(f"  自动登录拉起失败：{str(e)[:200]}")
+        return False
+    try:
+        run_nlm("notebook", "list", "--json", want_json=True, timeout=60)
+        log("  ✓ 登录态已恢复，继续原流程")
+        return True
+    except Exception:                                          # noqa: BLE001
+        return False
 
 
 def run_nlm(*args: str, timeout: float = 600, want_json: bool = False):
@@ -158,9 +189,12 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     except Exception as e:                                  # noqa: BLE001
         msg = str(e)
         if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
-            log("✗ NotebookLM 登录态已失效，请先运行 `nlm login`")
-            log("  这一步只恢复真实浏览器授权；音频生成、下载、转码和发布仍由脚本完成")
-            return 3
+            if _try_auto_login():
+                pass  # 登录态已恢复，继续往下走
+            else:
+                log("✗ NotebookLM 登录态已失效，请先运行 `nlm login`")
+                log("  这一步只恢复真实浏览器授权；音频生成、下载、转码和发布仍由脚本完成")
+                return 3
         log(f"✗ NotebookLM 连接预检失败：{msg[:240]}")
         return 1
 
@@ -216,6 +250,8 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
             except Exception as e:                   # noqa: BLE001
                 msg = str(e)
                 if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
+                    if _try_auto_login():
+                        continue  # 登录态已恢复，继续轮询
                     log("✗ 生成期间 NotebookLM 登录态失效，请运行 `nlm login` 后续接")
                     log(f"  notebook 保留供排障：https://notebooklm.google.com/notebook/{nb}")
                     keep_notebook = True

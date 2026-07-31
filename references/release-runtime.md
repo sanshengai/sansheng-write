@@ -177,7 +177,8 @@ python "$SKILL/scripts/pipeline.py" finalize \
 
 固定顺序：登记永久链接 → 归档作品库 → 验证归档 → 执行已配置官网同步 → 生成 `_moments-copy.md`。官网命令未配置时记录 skipped；配置后执行失败会阻断朋友圈文案生成。
 
-- 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。NotebookLM 登录失效只提示 `nlm login`，不得误说成“音频只能手动生成”。
+- 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。**NotebookLM 登录失效时 `podcast_episode.py` 会自动拉起 `nlm login` 弹浏览器授权（2026-07-30 起），探测恢复后继续原流程**；只有自动登录失败才提示人工 `nlm login`（无人值守环境用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示）。不得误说成“音频只能手动生成”。
+- **播客音频同时上官网「听全文」（2026-07-30 拍板规则）**：`publish --confirm` 推小宇宙后，把 `dist/podcast/audio.mp3` 随文章目录一起 commit；官网构建时 `prepare-songs.py` 自动把它复制为 `public/song-assets/{code}/podcast.mp3`，文章页主题曲卡下出现「🎧 听全文 · 播客版」播放器（全站单例播放器，天然互斥暂停），文章列表标题旁出现「🎧 有音频」标记。部署走 `publish-to-website.sh {code}`（`-ArticleCodesCsv` 放行 song-assets）。设计口径：主题曲=配乐读、播客=代替读，两卡并存不做选择 UI；列表只放标记不放播放按钮。
 - 朋友圈状态先放 commentary；final 只逐字输出 `_moments-copy.md`，首字符为 emoji，前后不得混入解释。
 
 ## 失败处理
