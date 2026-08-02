@@ -2110,6 +2110,11 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
         "record_id": str(uuid.uuid4()),
         "stage": stage,
         "producer": tool,
+        "producer_chain": [
+            str(value)
+            for value in (prompt_meta.get("producer_chain") or [])
+            if str(value).strip()
+        ],
         "tool": tool,
         "output": output,
         "output_sha256": sha256_file(cwd / Path(output)) if output and (cwd / Path(output)).exists() else "",

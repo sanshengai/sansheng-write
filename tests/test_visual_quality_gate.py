@@ -391,6 +391,7 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
         (
             "---\n"
             "style: claymation\n"
+            'producer_chain: ["sansheng-write.visual-planner", "baoyu-infographic"]\n'
             "visual_profile: warm-light-clay\n"
             f"visual_profile_sha256: {recipe['sha256']}\n"
             'palette_background: "#F5F0E6"\n'
@@ -416,6 +417,10 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
     record = json.loads((article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert record["host_agent"] == "codex"
     assert record["orchestrator_skill"] == "sansheng-write"
+    assert record["producer_chain"] == [
+        "sansheng-write.visual-planner",
+        "baoyu-infographic",
+    ]
     assert record["extend_sha256"] == "abc123"
     assert record["visual_profile"] == "warm-light-clay"
     assert record["visual_profile_sha256"] == recipe["sha256"]

@@ -4,6 +4,10 @@
 
 ## [未发布]
 
+### 修复
+
+- `pipeline.py log` 现在把 canonical prompt 中的 `producer_chain` 写入生成证据，手动调用受委托渲染器后也能通过独立视觉 QA，不再把真实的 Baoyu 编排链误判为缺失。
+
 ## [0.11.1] -- 2026-07-30
 
 ### 文档
