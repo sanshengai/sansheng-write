@@ -221,9 +221,13 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert "text_match" in cover["required_checks"]
     assert "no_unexpected_text" in cover["required_checks"]
     assert "composition_contract_match" in cover["required_checks"]
+    assert "typography_contract_match" not in cover["required_checks"]
     assert info["target_style"] == "claymation"
     assert info["style_contract"]["visual_profile"] == "warm-light-clay"
+    assert info["style_contract"]["required_visual_traits"]
+    assert info["style_contract"]["forbidden_visual_traits"]
     assert "style_contract_match" in info["required_checks"]
+    assert "typography_contract_match" in info["required_checks"]
     qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
 
     assert errors == []

@@ -35,6 +35,12 @@ Baoyu 的理由：
 - 封面：`montage-evidence` 的深炭品牌构图。
 - 信息图与 Hero：`warm-light-clay` 粘土配方（全站唯一正文风格）。
 
+`warm-light-clay` 的“黏土”同时约束物体和文字：白名单中文必须是立体挤出的圆润厚实
+黏土字，并与场景使用同一哑光材质；不得退化为平面商务黑体、手写马克笔、毛笔/书法字，
+也不得把每一段文字都塞进硬矩形框。编译器会拒绝冲突短语，独立视觉 QA 还会逐条核对
+材质、字形、嵌入方式与排版层级；`required_visual_traits` 或
+`forbidden_visual_traits` 为空时禁止发布。
+
 这些配方集中在 profile 的 `visual.profiles`，编译后写入 prompt frontmatter 和摘要。上游
 Baoyu Skill 可以独立更新；若它的建议与品牌合同冲突，以品牌合同收口，但仍须保留并实际
 执行其内容分析、结构化和 prompt 设计步骤。只有人工审阅后的配方变更才同步进本合同，

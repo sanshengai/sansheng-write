@@ -53,7 +53,8 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
                 f"palette_background: \"{recipe['background']}\"\n"
                 f"palette_accent: \"{recipe['accent']}\"\n"
                 f"---\n"
-                "Warm beige background, light palette, matte clay, diffuse light.\n"
+                "Warm beige background, light palette, matte clay, diffuse light. "
+                "Use extruded clay letters embedded in the clay scene.\n"
             )
         elif style == "morandi-journal":
             prompt_text = (
@@ -397,7 +398,8 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
             'palette_background: "#F5F0E6"\n'
             'palette_accent: "#2F6F8F"\n'
             "---\n"
-            "Warm beige background, light palette, matte clay, diffuse light.\n"
+            "Warm beige background, light palette, matte clay, diffuse light. "
+            "Use extruded clay letters embedded in the clay scene.\n"
         ),
         encoding="utf-8",
     )

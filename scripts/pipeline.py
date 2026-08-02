@@ -358,6 +358,15 @@ def _visual_prompt_errors(prompt_text: str, recipe: dict, label: str) -> list[st
                 forbidden_hits.add(str(term))
     if forbidden_hits:
         errors.append(f"{label} 命中浅色视觉配方禁用色/材质：{sorted(forbidden_hits)}")
+    conflicting_phrases = sorted(
+        {
+            str(phrase)
+            for phrase in recipe.get("forbidden_prompt_phrases") or []
+            if str(phrase).strip() and str(phrase).lower() in body_lower
+        }
+    )
+    if conflicting_phrases:
+        errors.append(f"{label} 命中视觉风格冲突短语：{conflicting_phrases}")
     return errors
 
 

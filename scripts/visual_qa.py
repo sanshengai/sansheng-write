@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover - direct script execution
 QA_REQUEST_FILE = "_visual-qa-request.json"
 QA_FILE = "_visual-qa.json"
 QA_MARKDOWN_FILE = "_visual-qa.md"
-REQUIRED_CHECKS = (
+BASE_REQUIRED_CHECKS = (
     "text_match",
     "crop_safe",
     "semantic_hierarchy",
@@ -38,7 +38,8 @@ REQUIRED_CHECKS = (
     "style_contract_match",
     "brand_palette_match",
 )
-COVER_REQUIRED_CHECKS = (*REQUIRED_CHECKS, "composition_contract_match")
+REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "typography_contract_match")
+COVER_REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "composition_contract_match")
 
 
 def _normalized_text(value: object) -> str:
@@ -238,6 +239,10 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
     body_recipe = visual_profile(profile_name) or {}
     if not cover_recipe or not body_recipe:
         return {}, ["profile 缺封面或正文视觉配方，无法建立目标风格合同"]
+    if not body_recipe.get("required_visual_traits"):
+        return {}, [f"视觉配方 {profile_name or '(空)'} 缺 required_visual_traits，禁止空合同验收"]
+    if not body_recipe.get("forbidden_visual_traits"):
+        return {}, [f"视觉配方 {profile_name or '(空)'} 缺 forbidden_visual_traits，禁止空合同验收"]
 
     def summarize(recipe: dict, *, layout: str = "") -> dict[str, Any]:
         bound = dict(recipe)

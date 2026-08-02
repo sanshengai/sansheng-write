@@ -242,6 +242,10 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
+    assert "extruded clay letters" in info
+    assert "embedded in the clay scene" in info
+    assert "handwritten editorial marker" not in info
+    assert "brush-pen character" not in info
     assert 'template_id:' not in info
     assert "reviewed editorial composition contract" in info
     assert "定稿哈希绑定任务单" not in info
@@ -259,6 +263,23 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     ]
     assert all(task["promptFiles"][0].startswith("prompts/final/") for task in batch["tasks"])
     assert batch["producer"] == PRODUCER
+
+
+def test_visual_prompt_rejects_clay_style_conflict_phrase(tmp_path):
+    from scripts.profile_config import visual_profile
+    from scripts.visual_workflow import compile_visual_plan
+
+    article = _article(tmp_path)
+    _, compile_errors = compile_visual_plan(article)
+    assert compile_errors == []
+    prompt = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
+    prompt += "\nThis is not cartoonish.\n"
+    recipe = visual_profile("warm-light-clay")
+    recipe["sha256"] = pipeline._visual_recipe("warm-light-clay")["sha256"]
+
+    errors = pipeline._visual_prompt_errors(prompt, recipe, "hero")
+
+    assert any("视觉风格冲突短语" in error for error in errors)
 
 
 def test_morandi_route_is_retired(tmp_path):

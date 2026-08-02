@@ -128,6 +128,28 @@ def test_infographic_prompt_demands_character_accuracy():
     assert "CHARACTER ACCURACY IS CRITICAL" in prompt
 
 
+def test_clay_typography_is_dimensional_and_scene_integrated():
+    contract = visual_workflow._clay_typography()
+    assert "extruded clay letters" in contract
+    assert "dimensional rounded clay text" in contract
+    assert "embedded in the clay scene" in contract
+    assert "flat printed business typography" in contract
+    assert "hard rectangular box" in contract
+
+
+def test_visual_reviewer_has_a_separate_typography_gate():
+    text = visual_qa_codex.CHECK_DEFINITIONS["typography_contract_match"]
+    assert "立体" in text
+    assert "平面印刷黑体" in text
+    assert "硬矩形框" in text
+
+
+def test_visual_evidence_must_copy_every_trait_verbatim():
+    text = _prompt()
+    assert "逐条覆盖 required_visual_traits" in text
+    assert "trait 字段原样复制" in text
+
+
 # ---------- ④ 后处理留痕 ----------
 
 def _write_log(article: Path, output: str, sha: str) -> None:

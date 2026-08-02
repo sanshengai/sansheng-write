@@ -76,6 +76,8 @@ visual:
         - ["light palette", "bright palette", "浅色调", "明亮"]
         - ["matte clay", "soft clay", "哑光黏土", "软黏土"]
         - ["diffuse light", "soft lighting", "柔和漫射", "低对比"]
+        - ["extruded clay letters", "dimensional rounded clay text", "立体黏土字"]
+        - ["embedded in the clay scene", "integrated into the clay scene", "嵌入黏土场景"]
       forbidden_prompt_terms:
         - "charcoal background"
         - "dark background"
@@ -89,6 +91,24 @@ visual:
         - "neon"
         - "high contrast"
         - "deep background"
+      forbidden_prompt_phrases:
+        - "handwritten editorial marker"
+        - "brush-pen character"
+        - "not playful toy art"
+        - "not cartoonish"
+        - "serious business publication"
+      required_visual_traits:
+        - "warm-ivory miniature editorial scene made from matte soft clay"
+        - "all visible Chinese title and labels use extruded dimensional rounded chunky clay letters"
+        - "visible text is physically embedded into the clay scene with the same material language as nearby objects"
+        - "subtle hand-sculpted or fingerprint texture with diffuse low-contrast light and soft shadows"
+        - "clear title greater than section greater than detail hierarchy with generous crop-safe spacing"
+      forbidden_visual_traits:
+        - "flat printed geometric or corporate sans-serif headings and labels"
+        - "handwritten marker, brush-pen, calligraphy or chalk lettering"
+        - "every text item enclosed by a hard rectangular box, ribbon or card"
+        - "glossy plastic, metallic, chrome, glass, neon or photorealistic surfaces"
+        - "dark background or a second design hue outside jade-green and warm neutrals"
       thresholds:
         mean_luma_min: 178
         dark_pixel_luma: 80

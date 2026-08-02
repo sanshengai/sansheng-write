@@ -401,6 +401,21 @@ def _clay_palette(recipe: dict) -> str:
     )
 
 
+def _clay_typography() -> str:
+    """Baoyu claymation 的文字材质合同，Hero 与信息图只维护这一份。"""
+    return (
+        "CLAY TYPOGRAPHY CONTRACT — all allowlisted Chinese text must be sculpted as "
+        "extruded clay letters: dimensional, rounded, chunky and softly irregular, with "
+        "complete standard Simplified-Chinese glyphs. The dimensional rounded clay text "
+        "must be physically embedded in the clay scene and integrated into the clay scene "
+        "with the same matte material language as nearby objects. Preserve a clear title > "
+        "section > detail hierarchy through scale and spacing. Never render flat printed "
+        "business typography, handwriting, brush lettering, calligraphy or chalk text. "
+        "Do not place every label inside a hard rectangular box, ribbon or card; use open "
+        "space, clay bases and object grouping instead."
+    )
+
+
 def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     expected = [str(item.get("title") or "").strip()]
     pictorial_facts = "\n".join(
@@ -433,19 +448,20 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
         "No photographs, stock illustration, torn-paper scrapbook, watercolor scene "
         "panels, flat vector icons, strict corporate grid, pure-white background or neon."
     )
+    typography = _clay_typography() if style == "claymation" else ""
     return (
         _frontmatter(fields)
         + "\n\n"
         + f"Create a square article Hero in {style} style. {palette}\n"
+        + (f"{typography}\n" if typography else "")
+        +
         "Show one unmistakable visual hierarchy.\n\n"
         "## VISIBLE TEXT ALLOWLIST\n"
         f"- {expected[0]}\n"
         "Render this title EXACTLY ONCE, in one top title area only. Do not repeat it in a "
         "bottom banner, card, ribbon or caption. No data labels, fact sentences, extra words, "
-        "logos, watermarks or invented interface. Render the title with an unmistakably "
-        "handwritten editorial marker or brush-pen character, while keeping every Chinese "
-        "glyph complete and highly legible; do not use a rigid geometric sans-serif display "
-        "font.\n\n"
+        "logos, watermarks or invented interface. Keep every Chinese glyph complete and "
+        "highly legible.\n\n"
         "## PICTORIAL BRIEF\n"
         "Build one clean metaphor from the approved title and the following source facts. "
         "Use facts only as textless objects, spaces and causal relations; never render any "
@@ -503,11 +519,14 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         "torn-paper scrapbook, watercolor scene panels, digital corporate dashboard, "
         "metal, chrome or neon."
     )
+    typography = _clay_typography() if style == "claymation" else ""
     return (
         _frontmatter(fields)
         + "\n\n"
         + f"Create a high-information Chinese infographic in {style} style using the "
         f"reviewed editorial composition contract. {palette}\n"
+        + (f"{typography}\n" if typography else "")
+        +
         f"BAOYU LAYOUT CONTRACT — {layout_type}: {layout_contract}. "
         "This is structural guidance only and must never become visible text.\n"
         # 🔴 layout 是中文的排布说明，必须显式声明「只描述构图、不得当作可见文字」。

@@ -93,6 +93,11 @@ CHECK_DEFINITIONS = {
         "**例外**：黏土人物的肤色、木头/纸张等自然材质的柔和土色是配方明确允许的，"
         "不要因为人偶是肉色、台阶是木色就判 false —— 要盯的是「有没有第二个色相被拿来做设计」。"
     ),
+    "typography_contract_match": (
+        "正文图的全部白名单文字必须是立体、圆润、厚实、略带手工不规则感的黏土字，"
+        "并与周围物体共用同一哑光黏土材质、真实嵌入场景。若是平面印刷黑体、商务无衬线体、"
+        "手写马克笔、毛笔、书法、粉笔字，或每一段文字都被硬矩形框/条幅/卡片包住，判 false。"
+    ),
     "composition_contract_match": "构图符合 style_contract.layout 描述的版面分区。",
 }
 
@@ -255,8 +260,8 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         "## 输出",
         "- `observed_text`：**原样转写**你在图上读到的所有文字，按上面的纪律来。",
         "  不要照抄 expected_text，要写你眼睛实际看到的。两者对不上正是我们要发现的问题。",
-        "- `visual_evidence`：对每条 required_visual_traits 说出你看到的具体对象、数量、位置。",
-        "  只回布尔值不给观察证据的复核视为无效。",
+        "- `visual_evidence`：必须逐条覆盖 required_visual_traits；每项的 trait 字段原样复制合同文本，",
+        "  再说出你看到的具体对象、数量、位置。不得改写、合并或遗漏；只回布尔值视为无效。",
         "- `checks`：逐项 true/false。",
         "",
         RESPONSE_SCHEMA_NOTE,
@@ -346,15 +351,15 @@ def _review_one(
         if required_traits:
             echoed = {_loose(str(item.get("trait", ""))) for item in evidence}
             echoed.discard("")
-            if not any(
-                any(e in _loose(t) or _loose(t) in e for e in echoed)
-                for t in required_traits
-            ):
+            missing_traits = [
+                trait for trait in required_traits if _loose(trait) not in echoed
+            ]
+            if missing_traits:
                 return {
                     "path": rel,
                     "_error": (
-                        "复核结论没有复述任何 required_visual_traits，"
-                        "判定提示词未送达复核进程（信道故障，不是图的问题）"
+                        "复核结论没有逐条原样复述 required_visual_traits："
+                        f"{missing_traits}；判定提示词未完整送达或复核未按合同执行"
                     ),
                 }
 
