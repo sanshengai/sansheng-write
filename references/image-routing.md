@@ -17,14 +17,16 @@
 | renderer | 按 canonical prompt 生成像素 | 当前适配 `baoyu-image-gen`，可按配置替换 |
 
 renderer 不得修改 `expected_text`、比例、style 或 visual profile，不得在日志中冒充 producer。
-封面和信息图的 producer chain 还必须分别包含 `baoyu-cover-image` 与 `baoyu-infographic`；
-前者完成五维封面设计，后者完成命名布局×风格、内容结构化与 prompt 合成。
+封面、Hero 和信息图的 producer chain 还必须分别包含 `baoyu-cover-image`、
+`baoyu-article-illustrator` 与 `baoyu-infographic`；三者分别完成五维封面设计、
+正文插图的 Type × Style × Palette 分析，以及命名布局×风格、内容结构化与 prompt 合成。
 仅复制一段风格描述、随后调用 `baoyu-image-gen`，不算完整执行 Baoyu 工作流。
 图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
 `layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 
 `visual-planner` 是编排器，不是 Baoyu Skill 的替身。进入封面或信息图阶段时，Agent
-必须实际调用已安装的 `baoyu-cover-image` / `baoyu-infographic`，读取对应 `SKILL.md`
+必须实际调用已安装的 `baoyu-cover-image` / `baoyu-article-illustrator` /
+`baoyu-infographic`，读取对应 `SKILL.md`
 与当前生效的 `EXTEND.md`，完成它们各自的内容分析、结构化、布局×风格选择和 prompt
 合成；然后再由本流程把结果收口为 canonical prompt。Skill 不可用时必须停下修复接线，
 禁止自己仿写 `analysis.md`、`structured-content.md` 或只在 receipt 里补一个 producer 名称。
@@ -37,7 +39,8 @@ Baoyu 的理由：
 
 `warm-light-clay` 的“黏土”同时约束物体和文字：白名单中文必须是立体挤出的圆润厚实
 黏土字，并与场景使用同一哑光材质；不得退化为平面商务黑体、手写马克笔、毛笔/书法字，
-也不得把每一段文字都塞进硬矩形框。编译器会拒绝冲突短语，独立视觉 QA 还会逐条核对
+标题与至少一半标签必须无底板、以自由立体字直接嵌入场景，不得让大多数文字都落进
+底板、方框、条幅或卡片。编译器会拒绝冲突短语，独立视觉 QA 还会逐条核对
 材质、字形、嵌入方式与排版层级；`required_visual_traits` 或
 `forbidden_visual_traits` 为空时禁止发布。
 

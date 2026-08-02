@@ -331,6 +331,9 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         if stage == "cover" and "baoyu-cover-image" not in producer_chain:
             errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
             continue
+        if stage == "hero" and "baoyu-article-illustrator" not in producer_chain:
+            errors.append(f"{rel} 缺 baoyu-article-illustrator producer chain")
+            continue
         if stage == "infographic" and "baoyu-infographic" not in producer_chain:
             errors.append(f"{rel} 缺 baoyu-infographic producer chain")
             continue

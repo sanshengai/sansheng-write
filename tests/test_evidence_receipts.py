@@ -57,6 +57,8 @@ def _visual_bundle(root: Path) -> Path:
                 *(
                     ["baoyu-cover-image"]
                     if stage == "cover"
+                    else ["baoyu-article-illustrator"]
+                    if stage == "hero"
                     else ["baoyu-infographic"]
                     if stage == "infographic"
                     else []
@@ -218,9 +220,13 @@ def test_visual_receipt_includes_hero_when_present(tmp_path):
         fp.write(json.dumps({
             "schema_version": 2,
             "record_id": "rec-hero",
-            "stage": "hero",
-            "producer": "sansheng-write.visual-planner",
-            "tool": "sansheng-write.visual-planner",
+                "stage": "hero",
+                "producer": "sansheng-write.visual-planner",
+                "producer_chain": [
+                    "sansheng-write.visual-planner",
+                    "baoyu-article-illustrator",
+                ],
+                "tool": "sansheng-write.visual-planner",
             "renderer": "gen_img",
             "model": "test-model",
             "output": "素材/hero.png",

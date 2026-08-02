@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover - direct script execution
 VISUAL_PLAN_FILE = "visual-plan.json"
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
 BAOYU_COVER_PRODUCER = "baoyu-cover-image"
+BAOYU_ARTICLE_PRODUCER = "baoyu-article-illustrator"
 BAOYU_INFOGRAPHIC_PRODUCER = "baoyu-infographic"
 # 🔴 全站信息图统一粘土风，不再按题材做风格路由（2026-07-29 作者拍板）。
 # 旧机制让 infographic_subject 这个主观判断去决定视觉：填 ai-product 走 claymation、
@@ -196,6 +197,11 @@ def _frontmatter(fields: dict) -> str:
     for key, value in fields.items():
         if isinstance(value, (int, float)):
             lines.append(f"{key}: {value}")
+        elif isinstance(value, list):
+            # JSON flow sequences are valid YAML.  Keep provenance chains as
+            # arrays instead of stringifying the Python repr; otherwise the
+            # logger iterates the string one character at a time.
+            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
         else:
             lines.append(f"{key}: {_quoted(value)}")
     lines.append("---")
@@ -271,6 +277,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
+        "producer_chain": [VISUAL_PRODUCER, BAOYU_COVER_PRODUCER],
         "stage": "cover",
         "style": "montage-evidence",
         "visual_profile": recipe["name"],
@@ -411,8 +418,10 @@ def _clay_typography() -> str:
         "with the same matte material language as nearby objects. Preserve a clear title > "
         "section > detail hierarchy through scale and spacing. Never render flat printed "
         "business typography, handwriting, brush lettering, calligraphy or chalk text. "
-        "Do not place every label inside a hard rectangular box, ribbon or card; use open "
-        "space, clay bases and object grouping instead."
+        "The title and at least half of all labels must be freestanding clay letters with "
+        "NO backing plate, box, ribbon, banner or card behind them. Never enclose all or "
+        "most text items; use open space, direct placement on the scene and object grouping "
+        "instead."
     )
 
 
@@ -424,6 +433,7 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
+        "producer_chain": [VISUAL_PRODUCER, BAOYU_ARTICLE_PRODUCER],
         "stage": "hero",
         "style": style,
         "aspect_ratio": "1:1",
@@ -481,6 +491,7 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
+        "producer_chain": [VISUAL_PRODUCER, BAOYU_INFOGRAPHIC_PRODUCER],
         "stage": "infographic",
         "id": str(item.get("id") or ""),
         "position": str(item.get("position") or ""),
@@ -660,6 +671,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         producer_chain = [VISUAL_PRODUCER]
         if stage == "cover":
             producer_chain.append(BAOYU_COVER_PRODUCER)
+        elif stage == "hero":
+            producer_chain.append(BAOYU_ARTICLE_PRODUCER)
         elif stage == "infographic":
             producer_chain.append(BAOYU_INFOGRAPHIC_PRODUCER)
         tasks.append(

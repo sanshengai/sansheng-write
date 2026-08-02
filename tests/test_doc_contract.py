@@ -39,6 +39,7 @@ def test_release_runtime_is_short_single_source_with_all_hard_commands():
 def test_active_release_docs_bind_internal_planner_to_baoyu_semantic_producers():
     combined = "\n".join(_text(path) for path in ACTIVE_RELEASE_DOCS)
     assert "baoyu-cover-image" in combined
+    assert "baoyu-article-illustrator" in combined
     assert "baoyu-infographic" in combined
     routing = _text(ROOT / "references/image-routing.md")
     assert "sansheng-write.visual-planner" in routing

@@ -200,6 +200,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
         encoding="utf-8"
     )
     assert f'producer: "{PRODUCER}"' in cover
+    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-cover-image"]' in cover
     assert 'aspect_ratio: "2.35:1"' in cover
     assert "Canvas base: deep charcoal" in cover
     assert "slightly larger left zone" in cover
@@ -239,6 +240,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
     assert 'visual_profile: "warm-light-clay"' in info
+    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-infographic"]' in info
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
@@ -360,6 +362,7 @@ def test_hero_prompt_keeps_text_guards(tmp_path):
     hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
 
     assert "VISIBLE TEXT ALLOWLIST" in hero
+    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-article-illustrator"]' in hero
     assert "Use facts only as textless objects" in hero
     assert "Render this title EXACTLY ONCE" in hero
     assert "独立复核" not in hero

@@ -186,6 +186,12 @@ def build_visual_manifest(
         if stage == "cover" and "baoyu-cover-image" not in producer_chain:
             errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
         if (
+            stage == "hero"
+            and producer == VISUAL_PRODUCER
+            and "baoyu-article-illustrator" not in producer_chain
+        ):
+            errors.append(f"{rel} 缺 baoyu-article-illustrator producer chain")
+        if (
             stage == "infographic"
             and producer == VISUAL_PRODUCER
             and "baoyu-infographic" not in producer_chain

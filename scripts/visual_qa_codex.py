@@ -96,7 +96,7 @@ CHECK_DEFINITIONS = {
     "typography_contract_match": (
         "正文图的全部白名单文字必须是立体、圆润、厚实、略带手工不规则感的黏土字，"
         "并与周围物体共用同一哑光黏土材质、真实嵌入场景。若是平面印刷黑体、商务无衬线体、"
-        "手写马克笔、毛笔、书法、粉笔字，或每一段文字都被硬矩形框/条幅/卡片包住，判 false。"
+        "手写马克笔、毛笔、书法、粉笔字，或大多数文字都有底板/方框/条幅/卡片包住，判 false。"
     ),
     "composition_contract_match": "构图符合 style_contract.layout 描述的版面分区。",
 }

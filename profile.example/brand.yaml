@@ -106,7 +106,7 @@ visual:
       forbidden_visual_traits:
         - "flat printed geometric or corporate sans-serif headings and labels"
         - "handwritten marker, brush-pen, calligraphy or chalk lettering"
-        - "every text item enclosed by a hard rectangular box, ribbon or card"
+        - "all or most text items enclosed by backing plates, boxes, ribbons or cards"
         - "glossy plastic, metallic, chrome, glass, neon or photorealistic surfaces"
         - "dark background or a second design hue outside jade-green and warm neutrals"
       thresholds:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import html as html_lib
+from html.parser import HTMLParser
 import json
 import os
 import re
@@ -67,15 +68,18 @@ def _body_digest(html: str) -> str:
 
 def _semantic_body_digest(html: str) -> str:
     """Bind visible text while allowing WeChat's documented HTML sanitization."""
-    text = re.sub(r"<!--.*?-->", "", str(html or ""), flags=re.S)
-    text = re.sub(
-        r"<(?:br|/p|/section|/div|/h[1-6]|/li|/tr|/td|/th)\b[^>]*>",
-        "\n",
-        text,
-        flags=re.I,
-    )
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html_lib.unescape(text).replace("\u00a0", " ")
+    class _VisibleTextParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.parts: list[str] = []
+
+        def handle_data(self, data: str) -> None:
+            self.parts.append(data)
+
+    parser = _VisibleTextParser()
+    parser.feed(str(html or ""))
+    parser.close()
+    text = html_lib.unescape("".join(parser.parts)).replace("\u00a0", " ")
     normalized = "".join(text.split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 

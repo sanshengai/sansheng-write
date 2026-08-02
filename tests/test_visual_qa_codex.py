@@ -134,14 +134,15 @@ def test_clay_typography_is_dimensional_and_scene_integrated():
     assert "dimensional rounded clay text" in contract
     assert "embedded in the clay scene" in contract
     assert "flat printed business typography" in contract
-    assert "hard rectangular box" in contract
+    assert "at least half of all labels" in contract
+    assert "NO backing plate" in contract
 
 
 def test_visual_reviewer_has_a_separate_typography_gate():
     text = visual_qa_codex.CHECK_DEFINITIONS["typography_contract_match"]
     assert "立体" in text
     assert "平面印刷黑体" in text
-    assert "硬矩形框" in text
+    assert "大多数文字都有底板" in text
 
 
 def test_visual_evidence_must_copy_every_trait_verbatim():

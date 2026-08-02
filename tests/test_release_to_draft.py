@@ -166,6 +166,22 @@ def test_readback_accepts_publisher_digest_truncation_and_wechat_html_cleanup(
     assert checks["body_digest"] is True
 
 
+def test_semantic_body_digest_ignores_markup_inside_sanitized_title_attribute():
+    from scripts.release_to_draft import _semantic_body_digest
+
+    local = (
+        '<p><a href="https://example.com" '
+        'title="<strong>打开企业沉浮</strong>">'
+        '<strong>打开企业沉浮</strong></a></p>'
+    )
+    wechat = (
+        '<p><a href="https://example.com" title="打开企业沉浮">'
+        '<strong>打开企业沉浮</strong></a></p>'
+    )
+
+    assert _semantic_body_digest(local) == _semantic_body_digest(wechat)
+
+
 def test_remote_mismatch_blocks_publish_receipt_but_preserves_attempt(tmp_path):
     from scripts.release_to_draft import release_to_draft
 

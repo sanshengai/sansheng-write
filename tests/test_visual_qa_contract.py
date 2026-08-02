@@ -99,6 +99,8 @@ def _article(root: Path) -> Path:
                     *(
                         ["baoyu-cover-image"]
                         if stage == "cover"
+                        else ["baoyu-article-illustrator"]
+                        if stage == "hero"
                         else ["baoyu-infographic"]
                         if stage == "infographic"
                         else []
