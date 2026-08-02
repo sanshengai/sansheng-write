@@ -17,6 +17,8 @@
 1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 renderer。
 2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。
 3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。
+   该签名配方只由 `scripts/visual_contracts.py` 定义；Baoyu 负责内容分析和布局，无权覆盖
+   色板、材质、字形与明暗阈值，私有 profile 也不得覆盖。
 4. 真人真事优先真实授权图片，禁止生成相似人物肖像。
 5. 精确数字图走本地确定性代码；精确拓扑可走 `baoyu-diagram`。
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
@@ -32,8 +34,9 @@
 12. `text_match`、`no_unexpected_text`、`style_contract_match` 不得从发布硬门移除；
     `required_text` 每条恰好出现一次。Hero 与最终 HTML 实际引用的所有生成图必须送审。
 13. 同一发布任务中不得修改 QA 规则迁就现图；编译后 QA 代码发生变化时凭证失效。
-14. 封面与信息图必须分别留下 `baoyu-cover-image` / `baoyu-infographic` producer chain；
-    只调用 `baoyu-image-gen` renderer 不等于执行了完整 Baoyu 视觉工作流。
+14. Hero 与信息图必须分别留下 `baoyu-article-illustrator` / `baoyu-infographic`
+    producer chain；封面只走本仓 planner。只调用 `baoyu-image-gen` renderer 不等于执行了
+    完整 Baoyu 视觉工作流。
 
 ## 排版
 
@@ -55,6 +58,7 @@
 3. 作品库是单一真源；`articles.md`、dashboard、推荐卡不得手改。
 4. archive 的元数据、词表或金句来源标记未通过时不得写盘。
 5. 官网同步只执行 profile 明确配置的命令；朋友圈只生成文案，不自动发布。
+6. 只要已有文章的朋友圈文案时走秒级快路，不启动 finalize、归档、官网、搜索或生图。
 
 ## 失败语义
 

@@ -10,6 +10,9 @@ import podcast_episode as podcast  # noqa: E402
 
 
 def test_auth_expired_fails_fast_before_creating_notebook(tmp_path, monkeypatch):
+    # Unit tests must never launch the real browser-based NotebookLM login flow.
+    # This case verifies the explicit unattended/fail-fast branch only.
+    monkeypatch.setenv("SANSHENG_NLM_NO_AUTOLOGIN", "1")
     article = tmp_path / "1-test"
     article.mkdir()
     (article / "定稿.md").write_text("# 标题\n\n正文", encoding="utf-8")

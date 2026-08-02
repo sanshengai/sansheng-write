@@ -225,6 +225,7 @@ def test_verify_archive_rejects_invalid_registry_even_when_record_exists(tmp_pat
 
 def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
     monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
     monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
@@ -268,15 +269,39 @@ def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatc
     assert first == (
         "🔥 教程 | 自动收尾\n\n"
         "🧭 正式发布后自动归档、同步官网并生成朋友圈文案。\n\n"
-        "📖 https://mp.weixin.qq.com/s/abc\n\n"
-        "👉 去官网看完整方法\n\n"
-        "🔗 https://example.com\n"
+        "👉 去官网看完整方法 · https://example.com\n"
     )
+    assert "mp.weixin.qq.com" not in first
+    assert len([line for line in first.splitlines() if line]) == 3
     assert first.startswith("🔥")
     assert "# 朋友圈文案" not in first
     assert not any(char in first for char in "\u200b\u200c\u200d\ufeff\u00a0")
     assert all(line == line.strip() for line in first.splitlines())
     assert (tmp_path / "_moments-copy.md").read_text(encoding="utf-8") == first
+
+
+def test_moments_copy_fast_path_has_no_finalize_side_effects(tmp_path, monkeypatch):
+    (tmp_path / "article-meta.yaml").write_text(
+        'title: "一篇现成文章"\ndigest: "只生成文案，不启动发布链。"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "brand",
+        lambda: {"writing": {"moments_cta": "打开上方文章卡片"}},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "cmd_finalize",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("不得进入 finalize")),
+    )
+
+    pipeline.cmd_moments_copy(tmp_path)
+
+    text = (tmp_path / "_moments-copy.md").read_text(encoding="utf-8")
+    assert text.count("\n\n") == 2
+    assert "一篇现成文章" in text
+    assert not (tmp_path / pipeline.FINALIZE_STATE_FILE).exists()
 
 
 def test_handoff_auto_podcast_runs_generate_then_publish(tmp_path, monkeypatch):
@@ -319,6 +344,7 @@ def test_handoff_auto_podcast_failure_is_not_reported_as_success(tmp_path, monke
 
 def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
     monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
     monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
@@ -332,6 +358,70 @@ def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
 
     assert exc.value.code == 2
     assert calls == ["publish", "archive", "verify"]
+
+
+def test_finalize_resumes_after_website_failure_without_repeating_archive(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
+    monkeypatch.setattr(
+        pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True
+    )
+    monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+    website_results = iter([False, True])
+    monkeypatch.setattr(
+        pipeline,
+        "_run_website_sync",
+        lambda *a, **k: calls.append("website") or next(website_results),
+    )
+    monkeypatch.setattr(
+        pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
+    )
+    monkeypatch.setattr(
+        pipeline, "_handoff_to_distribute", lambda *a, **k: calls.append("distribute") or True
+    )
+
+    url = "https://mp.weixin.qq.com/s/abc"
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_finalize(url, tmp_path)
+    assert exc.value.code == 2
+
+    pipeline.cmd_finalize(url, tmp_path)
+    assert calls == [
+        "publish", "archive", "verify", "website",
+        "website", "moments", "distribute",
+    ]
+
+
+def test_website_receipt_preserves_failed_and_successful_attempts(tmp_path, monkeypatch):
+    website = tmp_path / "website"
+    website.mkdir()
+    monkeypatch.setattr(
+        pipeline,
+        "brand",
+        lambda: {
+            "publish": {
+                "website_command": "run-site {code}",
+                "website_cwd": str(website),
+            }
+        },
+    )
+    monkeypatch.setattr(pipeline, "_archived_code", lambda cwd: "AIT-01")
+
+    class Result:
+        def __init__(self, returncode):
+            self.returncode = returncode
+            self.stdout = "ok" if returncode == 0 else ""
+            self.stderr = "bad" if returncode else ""
+
+    results = iter([Result(1), Result(0)])
+    runner = lambda *a, **k: next(results)
+    assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is False
+    assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is True
+
+    receipt = json.loads((tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+    assert receipt["schema_version"] == 2
+    assert [attempt["status"] for attempt in receipt["attempts"]] == ["failed", "done"]
 
 
 def test_cmd_archive_rejects_missing_golden_marker_before_writing(tmp_path, monkeypatch):

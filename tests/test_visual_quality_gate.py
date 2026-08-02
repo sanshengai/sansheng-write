@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from scripts import pipeline
+from scripts import pipeline, visual_workflow
 
 
 def _png(path: Path, w: int, h: int) -> None:
@@ -50,11 +50,13 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
                 f"style: {style}\n"
                 f"visual_profile: {recipe['name']}\n"
                 f"visual_profile_sha256: {recipe['sha256']}\n"
+                f"visual_contract_owner: {recipe['contract_owner']}\n"
+                f"visual_contract_revision: {recipe['contract_revision']}\n"
                 f"palette_background: \"{recipe['background']}\"\n"
                 f"palette_accent: \"{recipe['accent']}\"\n"
                 f"---\n"
-                "Warm beige background, light palette, matte clay, diffuse light. "
-                "Use extruded clay letters embedded in the clay scene.\n"
+                f"{visual_workflow._clay_palette(recipe)}\n"
+                f"{visual_workflow._clay_typography()}\n"
             )
         elif style == "morandi-journal":
             prompt_text = (
@@ -86,6 +88,8 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
             "model": "test-model",
             "visual_profile": recipe.get("name", ""),
             "visual_profile_sha256": recipe.get("sha256", ""),
+            "visual_contract_owner": recipe.get("contract_owner", ""),
+            "visual_contract_revision": recipe.get("contract_revision", ""),
             "cmd": f"sansheng-write.visual-planner --style {style} 素材/prompts/final/{prompt_name}",
         })
     (tmp_path / "素材" / "infographic" / "final-set.json").write_text(
@@ -361,8 +365,10 @@ def test_visual_contract_command_prints_canonical_prompt_block(tmp_path, capsys)
     recipe = pipeline._visual_recipe("warm-light-clay")
     assert "visual_profile: warm-light-clay" in output
     assert f"visual_profile_sha256: {recipe['sha256']}" in output
-    assert 'palette_background: "#F5F0E6"' in output
-    assert 'palette_accent: "#2F6F8F"' in output
+    assert "visual_contract_owner: sansheng-write" in output
+    assert "visual_contract_revision: warm-light-clay/2" in output
+    assert f'palette_background: "{recipe["background"]}"' in output
+    assert f'palette_accent: "{recipe["accent"]}"' in output
 
 
 def test_visual_contract_command_rejects_unknown_explicit_profile(tmp_path):
@@ -395,11 +401,13 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
             'producer_chain: ["sansheng-write.visual-planner", "baoyu-infographic"]\n'
             "visual_profile: warm-light-clay\n"
             f"visual_profile_sha256: {recipe['sha256']}\n"
-            'palette_background: "#F5F0E6"\n'
-            'palette_accent: "#2F6F8F"\n'
+            f"visual_contract_owner: {recipe['contract_owner']}\n"
+            f"visual_contract_revision: {recipe['contract_revision']}\n"
+            f'palette_background: "{recipe["background"]}"\n'
+            f'palette_accent: "{recipe["accent"]}"\n'
             "---\n"
-            "Warm beige background, light palette, matte clay, diffuse light. "
-            "Use extruded clay letters embedded in the clay scene.\n"
+            f"{visual_workflow._clay_palette(recipe)}\n"
+            f"{visual_workflow._clay_typography()}\n"
         ),
         encoding="utf-8",
     )
@@ -426,6 +434,8 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
     assert record["extend_sha256"] == "abc123"
     assert record["visual_profile"] == "warm-light-clay"
     assert record["visual_profile_sha256"] == recipe["sha256"]
+    assert record["visual_contract_owner"] == "sansheng-write"
+    assert record["visual_contract_revision"] == "warm-light-clay/2"
 
 
 def test_reference_declares_single_clay_style_and_refined_cover_cap():

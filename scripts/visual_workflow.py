@@ -392,27 +392,38 @@ def _clay_palette(recipe: dict) -> str:
     第二个色相去区分两边 —— 它不是没看见禁令，是没有别的手段可用。
     所以这里改成**正面清单 + 明确给出区分两组的替代手段**（同色深浅、形状、材质）。
     """
-    background = (recipe or {}).get("background") or "#F5F0E6"
-    accent = (recipe or {}).get("accent") or "#0E926F"
-    neutrals = ", ".join((recipe or {}).get("neutrals") or ["#FBF8F2", "#D8D2C7", "#5A554F"])
+    background = (recipe or {}).get("background") or "#F7F2E9"
+    accent = (recipe or {}).get("accent") or "#79AA95"
+    accent_shadow = (recipe or {}).get("accent_shadow") or "#5F8775"
+    neutrals = ", ".join(
+        (recipe or {}).get("neutrals") or ["#FCFAF5", "#DDD7CC", "#8A8178"]
+    )
     # 🔴 下面这句必须原样包含配方 required_prompt_groups 要求的词：
     # `warm ivory` / `bright light palette` / `soft clay` / `diffuse light`。
     # pipeline.py 的 visual_route 门是**逐字子串比对**，写同义表述（如
     # "bright diffuse studio light"）过不了 —— 而且因为 prompt_sha256 是硬校验，
     # 改一个字就得整批重渲，代价不小。改这段前先跑 tests/test_visual_route.py。
     return (
-        "Warm ivory background with a bright light palette. "
-        "STRICT PALETTE — use these colours and nothing else: warm ivory; "
-        "a single muted jade-green accent; soft warm stone-gray neutrals; "
+        f"Warm ivory background {background} with a high-key pastel palette. "
+        f"STRICT PALETTE — use these colours and nothing else: warm ivory {background}; "
+        f"one pale pastel jade accent {accent}; pale warm neutrals {neutrals}; "
         "plus soft natural clay skin and wood tones for figures and props. "
-        "Matte soft clay material, diffuse light, low contrast, soft shadows.\n"
+        "Matte soft clay material, diffuse light, very low contrast, feather-soft shadows.\n"
+        f"TONE OWNERSHIP — this is the sansheng-write signature palette, revision "
+        f"{(recipe or {}).get('contract_revision') or 'warm-light-clay/2'}. Baoyu may "
+        "choose content structure and layout, but must not replace, deepen or restyle this "
+        "palette. Keep at least 72% of the canvas warm ivory or pale neutral. Pastel jade "
+        "is an accent only, never a dominant field. Large titles and paths must stay pale "
+        f"or mid-tone; the darker jade {accent_shadow} is permitted only for tiny details "
+        "and contact shadows, never for large headings, arrows, panels or continuous paths.\n"
         "Never introduce a SECOND HUE. When two groups, sides or outcomes must be told "
-        "apart, distinguish them with light versus dark tints of the SAME accent green, "
+        "apart, distinguish them with two LIGHT tints of the SAME accent green, "
         "or with shape, size, texture and position — never by giving one side a different "
         "colour. This applies to label bars, arrows, containers, highlights and props alike.\n"
         "Forbidden anywhere in the image: orange, terracotta, brick red, mustard yellow, "
-        "navy, steel blue, purple, dark or black background, metallic, chrome, neon, "
-        "high-contrast or photorealistic surfaces."
+        "navy, steel blue, purple, forest green, dark green, deep jade, saturated green, "
+        "dark or black background, metallic, chrome, neon, high-contrast or "
+        "photorealistic surfaces."
     )
 
 
@@ -452,6 +463,8 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
             {
                 "visual_profile": recipe["name"],
                 "visual_profile_sha256": recipe["sha256"],
+                "visual_contract_owner": recipe.get("contract_owner", ""),
+                "visual_contract_revision": recipe.get("contract_revision", ""),
                 "palette_background": recipe["background"],
                 "palette_accent": recipe["accent"],
             }
@@ -517,6 +530,8 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
             {
                 "visual_profile": recipe["name"],
                 "visual_profile_sha256": recipe["sha256"],
+                "visual_contract_owner": recipe.get("contract_owner", ""),
+                "visual_contract_revision": recipe.get("contract_revision", ""),
                 "palette_background": recipe["background"],
                 "palette_accent": recipe["accent"],
             }

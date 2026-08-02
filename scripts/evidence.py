@@ -273,6 +273,8 @@ def build_visual_manifest(
             "generation_record_id": str(rec.get("record_id") or ""),
             "visual_profile": str(rec.get("visual_profile") or ""),
             "visual_profile_sha256": str(rec.get("visual_profile_sha256") or ""),
+            "visual_contract_owner": str(rec.get("visual_contract_owner") or ""),
+            "visual_contract_revision": str(rec.get("visual_contract_revision") or ""),
             "host_agent": str(rec.get("host_agent") or ""),
             "orchestrator_skill": str(rec.get("orchestrator_skill") or ""),
             "extend_sha256": str(rec.get("extend_sha256") or ""),

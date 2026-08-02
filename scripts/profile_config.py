@@ -31,6 +31,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .visual_contracts import signature_visual_profile
+except ImportError:  # pragma: no cover - direct script execution
+    from visual_contracts import signature_visual_profile
+
+try:
     import yaml
 except ImportError:  # pragma: no cover - 依赖缺失时给出可操作提示
     yaml = None
@@ -152,14 +157,18 @@ def colors() -> dict:
 
 
 def visual_profile(name: str = "") -> dict:
-    """返回已解析的视觉配方；``brand-primary`` 会绑定到当前主题主色。
+    """返回已解析的视觉配方。
 
-    配方本身放在 profile 的 ``visual.profiles``，而不是散落在 prompt 文案里。
-    调用方可对返回值做稳定摘要，把“用了哪一套浅色黏土参数”写进 canonical
-    prompt 和生成日志。未知配方返回空字典，由流水线给出可操作错误。
+    ``warm-light-clay`` 是产品签名视觉，由本仓 ``visual_contracts.py`` 固化，
+    私有 profile 不得覆盖；否则账号主题色会静默改变黏土图的色调。其余配方仍可
+    由 profile 提供。调用方会对返回值做稳定摘要并写进 canonical prompt 与日志。
     """
     visual = brand().get("visual") or {}
     selected = str(name or visual.get("default_profile") or "").strip()
+    signature = signature_visual_profile(selected)
+    if signature:
+        signature["name"] = selected
+        return signature
     profiles = visual.get("profiles") or {}
     raw = profiles.get(selected)
     if not selected or not isinstance(raw, dict):

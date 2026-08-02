@@ -14,6 +14,8 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 > 🔴 **默认 = 全自动一路到草稿箱**：新文章按 autopilot.md；作者已给确认定稿时直接按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
 
+> ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
+
 ## 🟢 启动前必读（元指令，先于任何阶段）
 
 进任一阶段**第一件事按序读两份共享上下文**，读完不再问已知信息（主题色/账号名/创作者背景），只追问本任务才变的参数（风格/受众/字数）：
@@ -52,6 +54,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 | 生成音乐 / BGM / 主题曲（MiniMax `music-2.6-free`） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
+| 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
 | 转图文 / 拆图文 | xhs-storyboard.md |
 | 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭**；未在 profile 启用时本行不适用，不要主动提及） | distribute.md |
 | 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md + agent-contracts.md |

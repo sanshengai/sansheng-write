@@ -41,6 +41,7 @@ import re
 import subprocess
 import sys
 import argparse
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,6 +91,8 @@ from profile_config import brand  # noqa: E402
 
 # ── 常量 ──────────────────────────────────────────────────────
 STATE_FILE = ".state.json"
+FINALIZE_STATE_FILE = "_finalize-state.json"
+FINALIZE_STATE_SCHEMA = 1
 SKILL_DIR = Path(__file__).resolve().parent.parent   # 本 skill 根目录
 # (HISTORY_FILE 常量已随 cmd_history 死代码一并移除 2026-06-20；history.yaml 已被 works.yaml 取代，
 #  仅 migrate_to_works.py 一次性迁移工具读它、且自带独立路径)
@@ -314,6 +317,8 @@ def _visual_prompt_errors(prompt_text: str, recipe: dict, label: str) -> list[st
     expected = {
         "visual_profile": recipe.get("name"),
         "visual_profile_sha256": recipe.get("sha256"),
+        "visual_contract_owner": recipe.get("contract_owner"),
+        "visual_contract_revision": recipe.get("contract_revision"),
         "palette_background": recipe.get("background"),
         "palette_accent": recipe.get("accent"),
     }
@@ -581,14 +586,20 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
             errors.extend(_visual_prompt_errors(prompt_text, recipe, prompt_rel))
             logged_profile = str(rec.get("visual_profile") or "")
             logged_profile_sha = str(rec.get("visual_profile_sha256") or "")
+            logged_owner = str(rec.get("visual_contract_owner") or "")
+            logged_revision = str(rec.get("visual_contract_revision") or "")
             if (
                 logged_profile != str(recipe.get("name") or "")
                 or logged_profile_sha != str(recipe.get("sha256") or "")
+                or logged_owner != str(recipe.get("contract_owner") or "")
+                or logged_revision != str(recipe.get("contract_revision") or "")
             ):
                 errors.append(
                     f"{rel} gen-log 视觉配方={logged_profile or '(空)'} / "
-                    f"{logged_profile_sha[:12] or '(空)'}，应为 "
-                    f"{recipe.get('name')} / {recipe.get('sha256', '')[:12]}"
+                    f"{logged_profile_sha[:12] or '(空)'} / "
+                    f"{logged_owner or '(空)'} / {logged_revision or '(空)'}，应为 "
+                    f"{recipe.get('name')} / {recipe.get('sha256', '')[:12]} / "
+                    f"{recipe.get('contract_owner')} / {recipe.get('contract_revision')}"
                 )
             errors.extend(_visual_tone_errors(output_path, recipe, rel))
 
@@ -626,6 +637,10 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
                         str(hero_rec.get("visual_profile") or "") != str(recipe.get("name") or "")
                         or str(hero_rec.get("visual_profile_sha256") or "")
                         != str(recipe.get("sha256") or "")
+                        or str(hero_rec.get("visual_contract_owner") or "")
+                        != str(recipe.get("contract_owner") or "")
+                        or str(hero_rec.get("visual_contract_revision") or "")
+                        != str(recipe.get("contract_revision") or "")
                     ):
                         errors.append(
                             f"{hero_rel} gen-log 视觉配方未绑定 "
@@ -898,7 +913,10 @@ def _archive_metadata(cwd: Path, state: dict, *, require_url: bool = False,
     if not str(digest).strip():
         errors.append("digest 缺失")
 
-    url = state.get("stages", {}).get("publish", {}).get("wechat_url", "")
+    url = (
+        override.get("wechat_url")
+        or state.get("stages", {}).get("publish", {}).get("wechat_url", "")
+    )
     if require_url and not url:
         errors.append("publish.wechat_url 为空（草稿态不归档）")
     elif url and not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", str(url)):
@@ -927,6 +945,42 @@ def _log_archive_event(cwd: Path, event: str, verdict: str, detail: str,
         )
     except Exception:
         pass
+
+
+def _archive_source_errors(cwd: Path) -> list[str]:
+    """Check folder identity and golden-line source before archive writes anything."""
+    from profile_config import golden_lines_file
+
+    errors: list[str] = []
+    seq_text = cwd.name.split("-", 1)[0]
+    if not seq_text.isdigit():
+        errors.append("无法从文件夹名解析 seq（应形如 47-选题名）")
+
+    golden = golden_lines_file()
+    marker = f"*({cwd.name})*"
+    if not golden.exists():
+        errors.append(
+            f"金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）"
+        )
+    elif marker not in golden.read_text(encoding="utf-8"):
+        errors.append(
+            f"金句库缺本篇来源标记 {marker}（文件：{golden}）；"
+            f"请先追加：- <本篇金句> {marker}"
+        )
+    return errors
+
+
+def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
+    """Fail before touching state/registries when the close-out cannot finish."""
+    state = load_state(cwd)
+    _, _, errors = _archive_metadata(
+        cwd,
+        state,
+        require_url=True,
+        override={"wechat_url": wechat_url},
+    )
+    errors.extend(_archive_source_errors(cwd))
+    return errors
 
 
 def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tuple:
@@ -2134,6 +2188,8 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
         "style": style,
         "visual_profile": str(prompt_meta.get("visual_profile") or ""),
         "visual_profile_sha256": str(prompt_meta.get("visual_profile_sha256") or ""),
+        "visual_contract_owner": str(prompt_meta.get("visual_contract_owner") or ""),
+        "visual_contract_revision": str(prompt_meta.get("visual_contract_revision") or ""),
         "host_agent": host_agent or os.environ.get("SANSHENG_HOST_AGENT", ""),
         "orchestrator_skill": "sansheng-write",
         "extend_sha256": extend_sha256,
@@ -2172,6 +2228,8 @@ def cmd_visual_contract(cwd: Path) -> None:
     print("# 复制到每个信息图与 Hero canonical prompt 的 frontmatter")
     print(f"visual_profile: {recipe['name']}")
     print(f"visual_profile_sha256: {recipe['sha256']}")
+    print(f"visual_contract_owner: {recipe.get('contract_owner', '')}")
+    print(f"visual_contract_revision: {recipe.get('contract_revision', '')}")
     print(f'palette_background: "{recipe["background"]}"')
     print(f'palette_accent: "{recipe["accent"]}"')
     print("\n# Prompt 正文同时保留：暖米黄/浅色调/哑光软黏土/柔和漫射光。")
@@ -2233,7 +2291,7 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
     import render_articles_md as RAM
     import render_works_dashboard as RWD
     import generate_recommend_html as GRH
-    from profile_config import brand, data_dir, golden_lines_file
+    from profile_config import brand, data_dir
 
     state = load_state(cwd)
 
@@ -2243,35 +2301,24 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
             k, v = kv.split("=", 1)
             override[k.strip()] = v.strip()
 
-    seq_str = cwd.name.split("-")[0]
-    seq = int(seq_str) if seq_str.isdigit() else None
-    if seq is None:
-        print("❌ 无法从文件夹名解析 seq（应形如 47-选题名）")
-        return False
-
     meta, fields, meta_errors = _archive_metadata(
         cwd, state, require_url=True, override=override
     )
-    if meta_errors:
-        _log_archive_event(cwd, "registry_write", "fail",
-                           f"metadata_errors={len(meta_errors)}", error_count=len(meta_errors))
-        print("❌ 归档元数据未通过（作品库未写入）：")
-        for error in meta_errors:
+    preflight_errors = [*meta_errors, *_archive_source_errors(cwd)]
+    if preflight_errors:
+        _log_archive_event(
+            cwd,
+            "preflight",
+            "fail",
+            f"preflight_errors={len(preflight_errors)}",
+            error_count=len(preflight_errors),
+        )
+        print("❌ 归档前置检查未通过（作品库未写入）：")
+        for error in preflight_errors:
             print(f"   • {error}")
         return False
 
-    # 金句沉淀属于 archive verify 的硬契约，必须在作品库写盘前拦截；
-    # 否则会出现“库与视图已更新，但闭环仍失败”的半成功状态。
-    golden = golden_lines_file()
-    marker = f"*({cwd.name})*"
-    if not golden.exists() or marker not in golden.read_text(encoding="utf-8"):
-        _log_archive_event(cwd, "registry_write", "fail", "golden_marker_missing", error_count=1)
-        print("❌ 金句沉淀未通过（作品库未写入）：")
-        if not golden.exists():
-            print(f"   • 金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）")
-        else:
-            print(f"   • 缺本篇来源标记 {marker}（文件：{golden}）")
-        return False
+    seq = int(cwd.name.split("-", 1)[0])
 
     category = fields["category"]
     outward = fields["outward_category"]
@@ -2363,6 +2410,52 @@ def _archived_code(cwd: Path) -> str:
         return ""
 
 
+def _append_website_sync_attempt(receipt_path: Path, attempt: dict) -> None:
+    """Preserve website retry history instead of overwriting the last failure."""
+    previous: dict = {}
+    if receipt_path.is_file():
+        try:
+            previous = json.loads(receipt_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            previous = {}
+    attempts = list(previous.get("attempts") or [])
+    if not attempts and previous.get("created_at"):
+        attempts.append(
+            {key: value for key, value in previous.items() if key != "attempts"}
+        )
+    attempts.append(attempt)
+    payload = {
+        "schema_version": 2,
+        "status": attempt.get("status", "failed"),
+        "latest": attempt,
+        "attempts": attempts[-20:],
+    }
+    receipt_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _resolve_website_command(command: str) -> tuple[str, str]:
+    """Resolve Git Bash explicitly on Windows; return (command, error)."""
+    if os.name != "nt" or not re.match(r"^\s*bash(?:\.exe)?(?:\s|$)", command, re.I):
+        return command, ""
+    candidates = [
+        shutil.which("bash"),
+        str(Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe"),
+        str(Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Git/usr/bin/bash.exe"),
+        str(Path(os.getenv("LOCALAPPDATA", "")) / "Programs/Git/bin/bash.exe"),
+    ]
+    bash = next((Path(value) for value in candidates if value and Path(value).is_file()), None)
+    if bash is None:
+        return "", (
+            "website_command 需要 bash，但当前进程 PATH 与常见 Git for Windows 目录均未找到；"
+            "请安装 Git Bash，或把 profile.publish.website_command 改成 PowerShell 命令"
+        )
+    rest = re.sub(r"^\s*bash(?:\.exe)?", "", command, count=1, flags=re.I)
+    return f'"{bash}"{rest}', ""
+
+
 def _run_website_sync(
     cwd: Path,
     wechat_url: str,
@@ -2378,25 +2471,28 @@ def _run_website_sync(
     )
     receipt_path = cwd / "_website-sync-receipt.json"
     if not template:
-        receipt_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "status": "skipped",
-                    "reason": "profile.publish.website_command 未配置",
-                    "created_at": _now_iso(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "skipped",
+                "reason": "profile.publish.website_command 未配置",
+                "created_at": _now_iso(),
+            },
         )
         print("⏭ 官网同步未配置，已记录 skipped（不影响公开 Skill 使用）")
         return True
 
     website_cwd = Path(configured_cwd).expanduser() if configured_cwd else cwd
     if not website_cwd.is_dir():
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "website_cwd_not_found",
+                "cwd": str(website_cwd),
+                "created_at": _now_iso(),
+            },
+        )
         print(f"❌ 官网同步工作目录不存在：{website_cwd}")
         return False
     values = {
@@ -2407,21 +2503,57 @@ def _run_website_sync(
     try:
         command = template.format(**values)
     except (KeyError, ValueError) as exc:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "website_command_template_error",
+                "detail": str(exc)[:300],
+                "created_at": _now_iso(),
+            },
+        )
         print(f"❌ website_command 模板字段错误：{exc}")
         return False
-    completed = runner(
-        command,
-        cwd=str(website_cwd),
-        shell=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=900,
-        check=False,
-    )
+    command, resolution_error = _resolve_website_command(command)
+    if resolution_error:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "website_command_unavailable",
+                "detail": resolution_error,
+                "created_at": _now_iso(),
+            },
+        )
+        print(f"❌ 官网同步前置检查失败：{resolution_error}")
+        return False
+    try:
+        completed = runner(
+            command,
+            cwd=str(website_cwd),
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=900,
+            check=False,
+        )
+    except Exception as exc:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "website_command_exception",
+                "detail": str(exc)[:500],
+                "command_sha256": stable_digest({"command": command}),
+                "cwd": str(website_cwd),
+                "created_at": _now_iso(),
+            },
+        )
+        print(f"❌ 官网同步命令异常：{str(exc)[:500]}")
+        return False
     receipt = {
-        "schema_version": 1,
         "status": "done" if completed.returncode == 0 else "failed",
         "created_at": _now_iso(),
         "code": values["code"],
@@ -2432,10 +2564,7 @@ def _run_website_sync(
         "stdout_sha256": stable_digest({"stdout": completed.stdout or ""}),
         "stderr_sha256": stable_digest({"stderr": completed.stderr or ""}),
     }
-    receipt_path.write_text(
-        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _append_website_sync_attempt(receipt_path, receipt)
     if completed.returncode != 0:
         print(
             f"❌ 官网同步失败（exit={completed.returncode}）："
@@ -2447,7 +2576,7 @@ def _run_website_sync(
 
 
 def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
-    """Generate deterministic copy; actual Moments posting remains manual."""
+    """Generate the 3-paragraph Moments handoff; never repeat the WeChat URL."""
     meta = {}
     meta_path = cwd / "article-meta.yaml"
     if meta_path.is_file() and _yaml is not None:
@@ -2457,15 +2586,10 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     digest = str(meta.get("digest") or meta.get("description") or "").strip()
     cta = str((profile.get("writing") or {}).get("moments_cta") or "").strip()
     site = str((profile.get("identity") or {}).get("site") or "").strip()
-    lines = [
-        f"🔥 {title}",
-        f"🧭 {digest}",
-        f"📖 {wechat_url}",
-    ]
-    if cta:
-        lines.append(f"👉 {cta}")
-    if site and site not in cta:
-        lines.append(f"🔗 {site}")
+    tail = cta or site or "打开上方文章卡片阅读全文"
+    if site and site not in tail:
+        tail = f"{tail} · {site}"
+    lines = [f"🔥 {title}", f"🧭 {digest}", f"👉 {tail}"]
     # 朋友圈交付是纯文本协议：首句直接起始、段落之间一个空行，去除
     # 普通空白及常见不可见字符，避免 Markdown/富文本复制后出现首行缩进。
     clean_lines = [
@@ -2483,23 +2607,140 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     return text
 
 
+def cmd_moments_copy(cwd: Path) -> None:
+    """Milliseconds-only handoff for an existing article; no finalize side effects."""
+    _write_moments_copy(cwd, "")
+
+
+def _finalize_input_digest(cwd: Path, wechat_url: str) -> str:
+    watched = [
+        "article-meta.yaml",
+        "定稿.md",
+        "定稿.html",
+        PUBLISH_RECEIPT_FILE,
+    ]
+    files = {
+        rel: sha256_file(cwd / rel) if (cwd / rel).is_file() else ""
+        for rel in watched
+    }
+    return stable_digest(
+        {
+            "contract_revision": FINALIZE_STATE_SCHEMA,
+            "wechat_url": wechat_url,
+            "files": files,
+        }
+    )
+
+
+def _load_or_reset_finalize_state(cwd: Path, wechat_url: str) -> dict:
+    path = cwd / FINALIZE_STATE_FILE
+    digest = _finalize_input_digest(cwd, wechat_url)
+    previous: dict = {}
+    if path.is_file():
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            previous = {}
+    if previous.get("input_digest") == digest:
+        return previous
+
+    history = list(previous.get("history") or [])
+    if previous.get("input_digest"):
+        history.append(
+            {
+                "input_digest": previous.get("input_digest"),
+                "updated_at": previous.get("updated_at"),
+                "steps": previous.get("steps") or {},
+            }
+        )
+    state = {
+        "schema_version": FINALIZE_STATE_SCHEMA,
+        "input_digest": digest,
+        "wechat_url": wechat_url,
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "steps": {},
+        "history": history[-10:],
+    }
+    path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return state
+
+
+def _finalize_step_done(state: dict, step: str) -> bool:
+    return (state.get("steps") or {}).get(step, {}).get("status") == "done"
+
+
+def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
+    state.setdefault("steps", {})[step] = {
+        "status": "done",
+        "completed_at": _now_iso(),
+    }
+    state["updated_at"] = _now_iso()
+    (cwd / FINALIZE_STATE_FILE).write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
-    """正式发布后一键收尾：登记链接 → 归档 → 验证 → 官网 → 朋友圈文案。"""
+    """Resumable close-out: link → archive → verify → website → Moments."""
     if not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", wechat_url or ""):
         print(f"❌ 不是合法公众号永久链接：{wechat_url!r}")
         raise SystemExit(2)
-    cmd_done("publish", cwd, [f"wechat_url={wechat_url}"], legacy=legacy)
-    if not cmd_archive(cwd, []):
+
+    preflight_errors = _finalize_preflight_errors(cwd, wechat_url)
+    if preflight_errors:
+        print("❌ finalize 前置检查未通过（尚未修改发布状态或作品库）：")
+        for error in preflight_errors:
+            print(f"   • {error}")
         raise SystemExit(2)
-    cmd_verify("archive", cwd, legacy=legacy)
-    if not _run_website_sync(cwd, wechat_url):
-        raise SystemExit(2)
-    _write_moments_copy(cwd, wechat_url)
+
+    state = _load_or_reset_finalize_state(cwd, wechat_url)
+
+    if _finalize_step_done(state, "publish_link"):
+        print("⏭ finalize 续跑：发布链接已登记，跳过。")
+    else:
+        cmd_done("publish", cwd, [f"wechat_url={wechat_url}"], legacy=legacy)
+        _mark_finalize_step(cwd, state, "publish_link")
+
+    if _finalize_step_done(state, "archive"):
+        print("⏭ finalize 续跑：作品库已归档，跳过。")
+    else:
+        if not cmd_archive(cwd, []):
+            raise SystemExit(2)
+        _mark_finalize_step(cwd, state, "archive")
+
+    if _finalize_step_done(state, "archive_verify"):
+        print("⏭ finalize 续跑：归档已验证，跳过。")
+    else:
+        cmd_verify("archive", cwd, legacy=legacy)
+        _mark_finalize_step(cwd, state, "archive_verify")
+
+    if _finalize_step_done(state, "website_sync"):
+        print("⏭ finalize 续跑：官网已同步，跳过。")
+    else:
+        if not _run_website_sync(cwd, wechat_url):
+            raise SystemExit(2)
+        _mark_finalize_step(cwd, state, "website_sync")
+
+    if _finalize_step_done(state, "moments_copy"):
+        print("⏭ finalize 续跑：朋友圈文案已生成，跳过。")
+    else:
+        _write_moments_copy(cwd, wechat_url)
+        _mark_finalize_step(cwd, state, "moments_copy")
+
     print("✅ 发布后闭环完成：归档已验、官网已处理、朋友圈文案已生成。")
-    if not _handoff_to_distribute(cwd):
+    if _finalize_step_done(state, "distribution"):
+        print("⏭ finalize 续跑：分发计划已处理，跳过。")
+    elif not _handoff_to_distribute(cwd):
         # 核心收尾已经完成，不回滚；但显式启用的自动分发没完成就不能返回 0，
         # 否则上层会把「plan 已生成」误报成「播客已上线」。
         raise SystemExit(3)
+    else:
+        _mark_finalize_step(cwd, state, "distribution")
 
 
 def _handoff_to_distribute(cwd: Path) -> bool:
@@ -2874,6 +3115,12 @@ def main():
         description="微信公众号写作流水线管理器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--dir",
+        default="",
+        metavar="ARTICLE_DIR",
+        help="显式指定文章目录；适合 Windows/自动化调用，避免因当前目录错误读不到 state",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init",   help="初始化 .state.json")
@@ -2957,6 +3204,11 @@ def main():
     p_f.add_argument("--legacy", action="store_true",
                      help="仅供没有新流程 draft_media_id/receipt 的历史文章迁移")
 
+    sub.add_parser(
+        "moments-copy",
+        help="只生成朋友圈文案；不查网、不归档、不部署、不调用 finalize",
+    )
+
     p_adopt = sub.add_parser(
         "adopt-final",
         help="把作者确认的现成定稿绑定为 release job，不重跑写作前半程",
@@ -3037,11 +3289,26 @@ def main():
     p_dist.add_argument("rest", nargs=argparse.REMAINDER,
                         help="转发给 distribute.py 的参数")
 
+    # 同时接受 `--dir X finalize ...` 与 `finalize ... --dir X`，降低 Windows
+    # 终端/自动化调用时“站错目录却读到缺 state”的概率。
+    for command_parser in sub.choices.values():
+        command_parser.add_argument(
+            "--dir",
+            dest="command_dir",
+            default="",
+            metavar="ARTICLE_DIR",
+            help=argparse.SUPPRESS,
+        )
+
     args = parser.parse_args()
-    cwd = Path.cwd()
+    selected_dir = getattr(args, "command_dir", "") or args.dir
+    cwd = Path(selected_dir).expanduser().resolve() if selected_dir else Path.cwd()
+    if not cwd.is_dir():
+        parser.error(f"文章目录不存在：{cwd}")
 
     if args.cmd == "distribute":
         import distribute
+        os.chdir(cwd)
         sys.exit(distribute.main(args.rest or ["status"]))
     elif args.cmd == "init":
         cmd_init(cwd)
@@ -3084,6 +3351,8 @@ def main():
             sys.exit(1)
     elif args.cmd == "finalize":
         cmd_finalize(args.wechat_url, cwd, legacy=getattr(args, "legacy", False))
+    elif args.cmd == "moments-copy":
+        cmd_moments_copy(cwd)
     elif args.cmd == "adopt-final":
         cmd_adopt_final(cwd, args.final, args.meta)
     elif args.cmd == "verify-release-job":

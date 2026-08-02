@@ -265,6 +265,8 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
         return {
             "visual_profile": bound.get("name"),
             "visual_profile_sha256": digest,
+            "visual_contract_owner": bound.get("contract_owner") or "",
+            "visual_contract_revision": bound.get("contract_revision") or "",
             "layout": layout or bound.get("layout") or "",
             "palette": {
                 "background": bound.get("background"),

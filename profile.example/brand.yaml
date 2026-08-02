@@ -36,8 +36,8 @@ colors:
 
 # ============================================================================
 #  视觉配方 -- 生图 Prompt 与最终图片的机器合同
-#  accent: brand-primary 会在运行时解析为当前主题 colors.primary。
-#  调整这些值会改变 visual_profile_sha256，旧 prompt 将被明确判为配方漂移。
+#  montage-evidence 等可配置配方仍会绑定品牌色；warm-light-clay 是产品签名视觉，
+#  固定在 scripts/visual_contracts.py，私有 profile 无权覆盖。
 # ============================================================================
 visual:
   default_profile: "warm-light-clay"
@@ -64,56 +64,8 @@ visual:
         - "neon, chrome, glassmorphism or glossy reflections"
         - "brand text, account name, issue number or signature"
 
-    warm-light-clay:
-      style: "claymation"
-      background: "#F5F0E6"
-      accent: "brand-primary"
-      neutrals: ["#FBF8F2", "#D8D2C7", "#5A554F"]
-      material: "matte soft clay, no metallic or photorealistic surface"
-      lighting: "bright diffuse studio light, low contrast, soft shadows"
-      required_prompt_groups:
-        - ["warm beige", "warm ivory", "暖米黄"]
-        - ["light palette", "bright palette", "浅色调", "明亮"]
-        - ["matte clay", "soft clay", "哑光黏土", "软黏土"]
-        - ["diffuse light", "soft lighting", "柔和漫射", "低对比"]
-        - ["extruded clay letters", "dimensional rounded clay text", "立体黏土字"]
-        - ["embedded in the clay scene", "integrated into the clay scene", "嵌入黏土场景"]
-      forbidden_prompt_terms:
-        - "charcoal background"
-        - "dark background"
-        - "black background"
-        - "navy"
-        - "steel blue"
-        - "brick red"
-        - "mustard yellow"
-        - "metallic"
-        - "chrome"
-        - "neon"
-        - "high contrast"
-        - "deep background"
-      forbidden_prompt_phrases:
-        - "handwritten editorial marker"
-        - "brush-pen character"
-        - "not playful toy art"
-        - "not cartoonish"
-        - "serious business publication"
-      required_visual_traits:
-        - "warm-ivory miniature editorial scene made from matte soft clay"
-        - "all visible Chinese title and labels use extruded dimensional rounded chunky clay letters"
-        - "visible text is physically embedded into the clay scene with the same material language as nearby objects"
-        - "subtle hand-sculpted or fingerprint texture with diffuse low-contrast light and soft shadows"
-        - "clear title greater than section greater than detail hierarchy with generous crop-safe spacing"
-      forbidden_visual_traits:
-        - "flat printed geometric or corporate sans-serif headings and labels"
-        - "handwritten marker, brush-pen, calligraphy or chalk lettering"
-        - "all or most text items enclosed by backing plates, boxes, ribbons or cards"
-        - "glossy plastic, metallic, chrome, glass, neon or photorealistic surfaces"
-        - "dark background or a second design hue outside jade-green and warm neutrals"
-      thresholds:
-        mean_luma_min: 178
-        dark_pixel_luma: 80
-        dark_pixel_ratio_max: 0.18
-        mean_saturation_max: 0.30
+    # warm-light-clay 不在 profile 中：它是公开 Skill 的签名视觉，固定在
+    # scripts/visual_contracts.py，避免私有主题色或 Baoyu 更新静默改掉品牌画风。
 
     morandi-journal:
       style: "morandi-journal"

@@ -320,7 +320,11 @@ def test_clay_compiler_embeds_full_style_contract(tmp_path):
     )
     assert 'visual_profile: "warm-light-clay"' in prompt
     assert "visual_profile_sha256:" in prompt
-    assert "#F5F0E6" in prompt
+    assert "#F7F2E9" in prompt
+    assert 'visual_contract_owner: "sansheng-write"' in prompt
+    assert 'visual_contract_revision: "warm-light-clay/2"' in prompt
+    assert "Baoyu may choose content structure and layout" in prompt
+    assert "never for large headings" in prompt
     assert "claymation" in prompt
     assert "VISIBLE TEXT ALLOWLIST" in prompt
     assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in prompt

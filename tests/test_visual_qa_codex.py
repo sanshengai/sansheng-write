@@ -108,7 +108,7 @@ def test_clay_palette_keeps_recipe_keywords_verbatim():
     )
     # 与 pipeline.py::_visual_route_errors 同口径：它比对的是 body.lower()。
     body = palette.lower()
-    for phrase in ("warm ivory", "bright light palette", "soft clay", "diffuse light"):
+    for phrase in ("warm ivory", "high-key pastel palette", "pale pastel jade", "soft clay", "diffuse light"):
         assert phrase in body, phrase
 
 
@@ -143,6 +143,13 @@ def test_visual_reviewer_has_a_separate_typography_gate():
     assert "立体" in text
     assert "平面印刷黑体" in text
     assert "大多数文字都有底板" in text
+
+
+def test_palette_gate_rejects_dark_green_even_when_hue_is_allowed():
+    text = visual_qa_codex.CHECK_DEFINITIONS["brand_palette_match"]
+    assert "大标题" in text
+    assert "深绿" in text
+    assert "最深色只允许" in text
 
 
 def test_visual_evidence_must_copy_every_trait_verbatim():

@@ -63,10 +63,11 @@ Baoyu 的理由：
 材质、字形、嵌入方式与排版层级；`required_visual_traits` 或
 `forbidden_visual_traits` 为空时禁止发布。
 
-这些配方集中在 profile 的 `visual.profiles`，编译后写入 prompt frontmatter 和摘要。上游
-Baoyu Skill 可以独立更新；若它的建议与品牌合同冲突，以品牌合同收口，但仍须保留并实际
-执行其内容分析、结构化和 prompt 设计步骤。只有人工审阅后的配方变更才同步进本合同，
-避免插件升级静默改变成图。
+`warm-light-clay` 不再放在可覆盖的私有 profile：它由本仓
+`scripts/visual_contracts.py` 作为签名视觉固定，编译后把 owner、revision、摘要和色值写入
+prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与布局选择，但无权改色板、
+材质、字形或明暗阈值；与签名合同冲突时由本合同收口。这样既保留 Baoyu 的结构能力，
+又不会因插件更新或账号主题色变化而静默换画风。
 
 ## 固定视觉集合
 
@@ -91,8 +92,8 @@ Baoyu Skill 可以独立更新；若它的建议与品牌合同冲突，以品�
 `morandi-journal` 配方仍封存在 profile 的 `visual.profiles` 里，只是不再被路由到；
 将来要切回去，改 `visual_workflow.py` 的 `INFOGRAPHIC_STYLE` 一处即可。
 
-配方的色值、材质、灯光、必备特征和禁用特征只从 profile 的 `visual.profiles` 读取，
-编译时写入 prompt 摘要，避免文档与代码各存一份。
+正文配方的色值、材质、灯光、必备特征和禁用特征只从
+`scripts/visual_contracts.py` 读取；profile 只保留身份、排版主题与非签名视觉配置。
 
 ## 🔴 layout 不许写中文散文
 
