@@ -12,6 +12,11 @@ from pathlib import Path
 import yaml
 
 try:
+    from . import baoyu_contract
+except ImportError:  # pragma: no cover - direct script execution
+    import baoyu_contract
+
+try:
     from .evidence import stable_digest
     from .profile_config import visual_profile
 except ImportError:  # pragma: no cover - direct script execution
@@ -277,7 +282,10 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
-        "producer_chain": [VISUAL_PRODUCER, BAOYU_COVER_PRODUCER],
+        # 🔴 封面不接 baoyu-cover-image（2026-08-02 复核定案）：
+        # montage-evidence 是自建签名视觉（英文 ghost 叠加），只反哺方法论、不走外部配方。
+        # 声明一个明确不使用的依赖只会让 producer_chain 再次退化成空标签。
+        "producer_chain": [VISUAL_PRODUCER],
         "stage": "cover",
         "style": "montage-evidence",
         "visual_profile": recipe["name"],
@@ -328,7 +336,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "30%-34% of headline cap height inside the pill; tags never compete with the headline.\n"
         "- Keep the background purely pictorial: abstract lines and low-contrast shapes only. "
         "Do not render ghost words, watermark text, letters or numbers behind the Chinese block.\n"
-        # 🔴 品牌胶囊（2026-07-28 sandy 拍板）。她认可的两张封面里，底部这条
+        # 🔴 品牌胶囊（2026-07-28 定案）。已认可的两张封面里，底部这条
         # 主题色标签胶囊是**辨识度的主要来源**——但满色 100% 不透明太抢眼，
         # 会跟 L1 争视觉焦点。故降到 ~80% 并加一点哑光磨砂。
         # ⚠️ 「磨砂」≠「毛玻璃」：下面 STRICT FORBIDDEN 里的 glassmorphism /
@@ -583,6 +591,18 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     errors.extend(validate_visual_plan(plan))
     recipe, recipe_errors = _recipe(meta)
     errors.extend(recipe_errors)
+
+    # 🔴 Baoyu 依赖硬门（2026-08-02）：本仓的信息图版式语言必须整体取自
+    # baoyu-infographic 的 Layout Gallery，且枚举从磁盘实时解析、不在此硬编码。
+    # 这样 producer_chain 才不再是自说自话的字符串——Baoyu 缺失、换版本、
+    # 或本地版式语言偏离枚举，都会在编译期硬失败。
+    errors.extend(baoyu_contract.validate_layout_types(sorted(INFOGRAPHIC_LAYOUTS)))
+    try:
+        baoyu_anchors = baoyu_contract.build_anchors()
+    except baoyu_contract.BaoyuContractError as exc:
+        errors.append(str(exc))
+        baoyu_anchors = {}
+
     if errors:
         return None, errors
 
@@ -669,9 +689,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
             "hero" if task_id == "hero" else "infographic"
         )
         producer_chain = [VISUAL_PRODUCER]
-        if stage == "cover":
-            producer_chain.append(BAOYU_COVER_PRODUCER)
-        elif stage == "hero":
+        # 封面走自建 montage-evidence，不接 baoyu-cover-image（见上方说明）。
+        if stage == "hero":
             producer_chain.append(BAOYU_ARTICLE_PRODUCER)
         elif stage == "infographic":
             producer_chain.append(BAOYU_INFOGRAPHIC_PRODUCER)
@@ -689,9 +708,12 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         "producer": VISUAL_PRODUCER,
         "producer_chain": [
             VISUAL_PRODUCER,
-            BAOYU_COVER_PRODUCER,
+            BAOYU_ARTICLE_PRODUCER,
             BAOYU_INFOGRAPHIC_PRODUCER,
         ],
+        # Baoyu 依赖的字节级锚点：校验侧会重新解析磁盘上的 Baoyu 文档并比对，
+        # 不一致即拒绝发布（producer_chain 字符串本身证明不了任何事）。
+        **baoyu_anchors,
         "plan_digest": stable_digest(plan),
         "jobs": 1,
         "tasks": tasks,
@@ -704,8 +726,9 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
         "producer_chain": batch["producer_chain"],
+        **baoyu_anchors,
         "cover_workflow": {
-            "producer": BAOYU_COVER_PRODUCER,
+            "producer": VISUAL_PRODUCER,
             "type": "conceptual",
             "palette": "dark",
             "rendering": "flat-vector",

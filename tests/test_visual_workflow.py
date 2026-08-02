@@ -200,7 +200,11 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
         encoding="utf-8"
     )
     assert f'producer: "{PRODUCER}"' in cover
-    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-cover-image"]' in cover
+    # 🔴 封面走自建 montage-evidence 签名视觉，刻意不接 baoyu-cover-image
+    # （2026-08-02 复核定案）：声明一个明确不使用的依赖，只会让
+    # producer_chain 退化成不可验证的空标签。
+    assert 'producer_chain: ["sansheng-write.visual-planner"]' in cover
+    assert "baoyu-cover-image" not in cover
     assert 'aspect_ratio: "2.35:1"' in cover
     assert "Canvas base: deep charcoal" in cover
     assert "slightly larger left zone" in cover

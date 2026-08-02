@@ -40,6 +40,21 @@ BASE_REQUIRED_CHECKS = (
 )
 REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "typography_contract_match")
 COVER_REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "composition_contract_match")
+# 🔴 2026-08-02 新增：既有检查项全部落在「风格层」（字形、底板、配色、裁切），
+# 拦得住错字与禁用风格，拦不住「画成了另一种东西」。实证：一整批把 layout 写成
+# 场景剧本而生成的单场景插画（人物 + 家具，无并列结构、无信息承载）**全部通过了 QA**，
+# 因为它们粘土风对、配色对、文字也对。故为信息图单独加一道形态门。
+INFOGRAPHIC_REQUIRED_CHECKS = (*REQUIRED_CHECKS, "infographic_form_match")
+
+INFOGRAPHIC_FORM_RUBRIC = (
+    "infographic_form_match：判断这张图是不是「信息图」而非「插图/场景插画」。"
+    "判为 true 需同时满足："
+    "① 存在与 layout_type 对应的可识别信息结构（有序阶段 / 并列分区 / 中心辐射 / 路径里程碑等），"
+    "而不是单一场景的写实描绘；"
+    "② 标签文字位于独立的标题槽与标签槽中，承担信息承载功能，而非画面里的装饰性字样；"
+    "③ 画面元素服务于结构表达，场景内物件保持 textless，不靠人物表演来叙事。"
+    "只要读者需要「看故事」才能理解，而不是「扫结构」就能取走信息，即判 false 并说明缺哪一项。"
+)
 
 
 def _normalized_text(value: object) -> str:
@@ -281,8 +296,9 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
         },
         "infographic": {
             "target_style": style,
-            "required_checks": list(REQUIRED_CHECKS),
+            "required_checks": list(INFOGRAPHIC_REQUIRED_CHECKS),
             "style_contract": summarize(body_recipe),
+            "form_rubric": INFOGRAPHIC_FORM_RUBRIC,
         },
     }
     return contracts, []
@@ -328,9 +344,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             continue
         producer_chain = list(asset.get("producer_chain") or [])
         stage = str(asset.get("stage") or "")
-        if stage == "cover" and "baoyu-cover-image" not in producer_chain:
-            errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
-            continue
+        # 封面走自建 montage-evidence，不接 baoyu-cover-image（2026-08-02 拍板）。
         if stage == "hero" and "baoyu-article-illustrator" not in producer_chain:
             errors.append(f"{rel} 缺 baoyu-article-illustrator producer chain")
             continue
@@ -379,7 +393,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             "stage_specific_checks": {
                 "cover": list(COVER_REQUIRED_CHECKS),
                 "hero": list(REQUIRED_CHECKS),
-                "infographic": list(REQUIRED_CHECKS),
+                "infographic": list(INFOGRAPHIC_REQUIRED_CHECKS),
             },
             "all_checks_must_pass": True,
             "expected_text_must_be_observed": True,

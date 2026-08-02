@@ -178,8 +178,13 @@ def test_semantic_body_digest_ignores_markup_inside_sanitized_title_attribute():
         '<p><a href="https://example.com" title="打开企业沉浮">'
         '<strong>打开企业沉浮</strong></a></p>'
     )
+    changed_visible_text = (
+        '<p><a href="https://example.com" title="打开企业沉浮">'
+        '<strong>打开另一个栏目</strong></a></p>'
+    )
 
     assert _semantic_body_digest(local) == _semantic_body_digest(wechat)
+    assert _semantic_body_digest(local) != _semantic_body_digest(changed_visible_text)
 
 
 def test_remote_mismatch_blocks_publish_receipt_but_preserves_attempt(tmp_path):

@@ -6,6 +6,7 @@ from PIL import Image
 import pytest
 
 from scripts import pipeline
+from scripts.baoyu_contract import build_anchors
 from scripts.evidence import (
     seal_visual_receipt,
     stable_digest,
@@ -111,6 +112,17 @@ def _visual_bundle(root: Path) -> Path:
         encoding="utf-8",
     )
     scripts_dir = Path(__file__).parents[1] / "scripts"
+    # Baoyu 依赖锚点：正式流程由 compile-visuals 写入 render-batch.json，
+    # 发布期重新解析磁盘上的 Baoyu 文档比对。测试里用 conftest 注入的 fixture 生成。
+    (root / "素材/render-batch.json").write_text(
+        json.dumps(
+            {"schema_version": 1, **build_anchors(), "tasks": []},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (root / "素材/visual-compile-receipt.json").write_text(
         json.dumps(
             {

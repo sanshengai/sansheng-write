@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable
 
@@ -66,20 +67,38 @@ def _body_digest(html: str) -> str:
     return hashlib.sha256(normalize_wechat_html(html).encode("utf-8")).hexdigest()
 
 
-def _semantic_body_digest(html: str) -> str:
-    """Bind visible text while allowing WeChat's documented HTML sanitization."""
-    class _VisibleTextParser(HTMLParser):
-        def __init__(self) -> None:
-            super().__init__(convert_charrefs=True)
-            self.parts: list[str] = []
+class _VisibleTextParser(HTMLParser):
+    """Collect text nodes without confusing markup inside quoted attributes."""
 
-        def handle_data(self, data: str) -> None:
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._hidden_depth = 0
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag.lower() in {"script", "style", "noscript"}:
+            self._hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style", "noscript"} and self._hidden_depth:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden_depth:
             self.parts.append(data)
 
+
+def _semantic_body_digest(html: str) -> str:
+    """Bind visible text while allowing WeChat's documented HTML sanitization."""
     parser = _VisibleTextParser()
     parser.feed(str(html or ""))
     parser.close()
-    text = html_lib.unescape("".join(parser.parts)).replace("\u00a0", " ")
+    text = "".join(parser.parts)
+    text = html_lib.unescape(text).replace("\u00a0", " ")
     normalized = "".join(text.split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 

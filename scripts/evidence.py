@@ -16,6 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from . import baoyu_contract
+except ImportError:  # pragma: no cover - direct script execution
+    import baoyu_contract
+
 
 VISUAL_RECEIPT_FILE = "_visual-receipt.json"
 PUBLISH_RECEIPT_FILE = "_publish-receipt.json"
@@ -123,6 +128,18 @@ def _renderer(rec: dict) -> str:
     return ""
 
 
+def _verify_baoyu_anchors(cwd: Path) -> list[str]:
+    """比对 render-batch.json 里记录的 Baoyu 锚点与当前磁盘状态。"""
+    batch_path = cwd / "素材" / "render-batch.json"
+    if not batch_path.is_file():
+        return ["缺 素材/render-batch.json，无法校验 Baoyu 依赖锚点"]
+    try:
+        batch = json.loads(batch_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"render-batch.json 无法读取：{exc}"]
+    return baoyu_contract.verify_anchors(batch if isinstance(batch, dict) else {})
+
+
 def build_visual_manifest(
     cwd: Path, *, strict: bool = True, allow_postprocessed: bool = False
 ) -> tuple[dict, list[str]]:
@@ -137,6 +154,12 @@ def build_visual_manifest(
     errors: list[str] = []
     assets: list[dict] = []
     specs: list[tuple[str, str, set[str]]] = []
+
+    # 🔴 Baoyu 依赖锚点校验（2026-08-02）：重新解析磁盘上的 Baoyu 文档，
+    # 与编译期写进 render-batch.json 的 sha256 比对。producer_chain 里的字符串
+    # 是本仓自己写的、证明不了任何事，真正的证据是这组字节锚点。
+    errors.extend(_verify_baoyu_anchors(cwd))
+
     cover = cwd / "素材" / "cover.png"
     if cover.exists():
         specs.append(("cover", "素材/cover.png", {VISUAL_PRODUCER}))
@@ -183,8 +206,8 @@ def build_visual_manifest(
             errors.append(
                 f"{rel} producer={producer or '(空)'}；应为 {sorted(allowed_producers)}"
             )
-        if stage == "cover" and "baoyu-cover-image" not in producer_chain:
-            errors.append(f"{rel} 缺 baoyu-cover-image producer chain")
+        # 封面走自建 montage-evidence 签名视觉，不接 baoyu-cover-image
+        # （2026-08-02 复核定案）；此处刻意不校验封面的 baoyu 链。
         if (
             stage == "hero"
             and producer == VISUAL_PRODUCER

@@ -49,12 +49,15 @@ def _article(root: Path) -> Path:
             {
                 "schema_version": 1,
                 "renderers": [
+                    # 显式 provider 会绕开 baoyu-image-gen，新契约要求写明理由
+                    # （2026-08-02）：否则 _load_policy 直接拒绝该项。
                     {
                         "id": "primary",
                         "provider": "broken",
                         "model": "model-a",
                         "quality": "2k",
                         "imageSize": "1K",
+                        "override_baoyu_reason": "test fixture: 验证降级链",
                     },
                     {
                         "id": "fallback",
@@ -62,6 +65,7 @@ def _article(root: Path) -> Path:
                         "model": "model-b",
                         "quality": "2k",
                         "imageSize": "1K",
+                        "override_baoyu_reason": "test fixture: 验证降级链",
                     },
                 ],
             }
@@ -242,6 +246,7 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
                     {
                         "id": "native-google",
                         "provider": "sansheng-google",
+                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
                         "model": "gemini-3.1-flash-image",
                         "quality": "1k",
                         "imageSize": "1K",
@@ -298,6 +303,7 @@ def test_partial_native_success_is_logged_for_resume(tmp_path):
                     {
                         "id": "native-google",
                         "provider": "sansheng-google",
+                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
                         "model": "gemini-3.1-flash-image",
                         "quality": "1k",
                         "imageSize": "1K",
@@ -359,6 +365,7 @@ def test_native_google_route_preflight_fails_before_any_render_call(tmp_path):
                     {
                         "id": "native-google",
                         "provider": "sansheng-google",
+                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
                         "model": "gemini-3-pro-image",
                         "quality": "1k",
                         "imageSize": "1K",

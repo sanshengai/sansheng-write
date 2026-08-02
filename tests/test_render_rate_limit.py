@@ -106,20 +106,38 @@ def _policy() -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def test_默认策略走生成式渲染器():
-    """🔴 默认曾是确定性模板渲染器，而那些模板的插画元素是随某一篇文章的题材
-    做出来的（房子、人群、社区节点）。任何新题材照默认建 policy，都会继承
-    那套与内容无关的视觉语汇 —— 事故就是这么来的。"""
+def test_默认策略不得预置绕开baoyu的provider():
+    """🔴 2026-08-02 事故：模板早先预置 provider=sansheng-google，照抄一份就把
+    渲染器从 baoyu-image-gen 静默换成 gen_img.py，封面从 1584×672 降到 1024×436，
+    而所有发布门照常放行。模板的默认项必须**不带 provider**，即走 Baoyu 默认链。"""
     renderers = _policy()["renderers"]
     assert renderers, "默认策略不得为空"
-    assert renderers[0]["provider"] == "sansheng-google"
-    assert all(r["provider"] != "sansheng-template-safe" for r in renderers)
+    assert "provider" not in renderers[0], (
+        "模板首项不得预置 provider —— 带 provider 即绕开 baoyu-image-gen，"
+        "而模板是最容易被照抄的地方"
+    )
+    assert all(
+        r.get("provider") != "sansheng-template-safe" for r in renderers
+    ), "确定性模板渲染器会把与内容无关的视觉语汇带进新题材"
+
+
+def test_模板里带provider的示例项必须写明绕过理由():
+    """显式 provider 属于对 Baoyu 契约的例外，_load_policy 要求附 override_baoyu_reason；
+    模板里若留了这类示例，也必须自带理由字段，否则照抄即报错、误导使用者。"""
+    for r in _policy()["renderers"]:
+        if r.get("provider"):
+            assert str(r.get("override_baoyu_reason") or "").strip(), (
+                f"{r.get('id')} 带 provider 却无 override_baoyu_reason"
+            )
 
 
 def test_默认模型ID不得带preview后缀():
     """🔴 preview ID 下线后，降级链会先撞一次 404 再发真请求，
     整批请求数翻倍 —— 这是自造 429 的头号原因。"""
     for r in _policy()["renderers"]:
-        assert not r["model"].endswith("-preview"), (
-            f"{r['model']} 带 -preview；模型转正后该 ID 会 404，每张图白打一发空枪"
+        model = r.get("model")
+        if not model:
+            continue
+        assert not model.endswith("-preview"), (
+            f"{model} 带 -preview；模型转正后该 ID 会 404，每张图白打一发空枪"
         )

@@ -224,7 +224,7 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
             }
         ]
 
-    allowed = {"id", "provider", "model", "quality", "imageSize"}
+    allowed = {"id", "provider", "model", "quality", "imageSize", "override_baoyu_reason"}
     normalized: list[dict[str, Any]] = []
     errors: list[str] = []
     for index, item in enumerate(renderers):
@@ -243,6 +243,17 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 "当前合同要求由生成模型原生出字，请改为 sansheng-google 或外部生成式 renderer"
             )
             continue
+        # 🔴 2026-08-02：不带 provider 才走 baoyu-image-gen（本文件 _load_policy 的 else 分支）。
+        # 任何显式 provider 都会绕开 Baoyu 视觉链，属于对既定契约的例外，必须写明理由。
+        # 实证：照模板复制一份 policy（模板曾预置 sansheng-google）就会静默换掉渲染器，
+        # 并把封面从 1584×672 降到 1024×436，而所有发布门都照常放行。
+        if provider and not str(item.get("override_baoyu_reason") or "").strip():
+            errors.append(
+                f"renderers[{index}] 显式配置 provider={provider}，会绕开 baoyu-image-gen 视觉链；"
+                "若确需如此，请在该项补 override_baoyu_reason 写明理由（会记入发布证据），"
+                "否则请删除 provider 字段回到 Baoyu 默认链路"
+            )
+            continue
         normalized.append(
             {
                 "id": renderer_id,
@@ -250,6 +261,10 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 "model": item.get("model") or None,
                 "quality": item.get("quality") or "2k",
                 "imageSize": item.get("imageSize") or "1K",
+                "override_baoyu_reason": str(
+                    item.get("override_baoyu_reason") or ""
+                ).strip()
+                or None,
             }
         )
     return normalized, errors

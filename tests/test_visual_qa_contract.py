@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from scripts.baoyu_contract import build_anchors
 from scripts.evidence import seal_visual_receipt, stable_digest
 
 
@@ -130,6 +131,14 @@ def _article(root: Path) -> Path:
         encoding="utf-8",
     )
     scripts_dir = Path(__file__).parents[1] / "scripts"
+    # Baoyu 依赖锚点：正式流程由 compile-visuals 写入，发布/QA 期重新解析比对。
+    (root / "素材/render-batch.json").write_text(
+        json.dumps(
+            {"schema_version": 1, **build_anchors(), "tasks": []},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     (root / "素材/visual-compile-receipt.json").write_text(
         json.dumps(
             {

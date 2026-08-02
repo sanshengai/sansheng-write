@@ -1,22 +1,15 @@
 {
-  "_comment_1": "默认走生成式渲染器：首选 Banana Pro，失败降级 Banana flash。两条都由 gen_img.py 按 key 前缀自动分流 AI Studio / Vertex Express 端点。",
-  "_comment_2": "🔴 模型 ID 不要带 -preview。这些模型转正后 -preview 的 ID 会下线返回 404，而降级链会先撞一次 404 再发真请求 —— 等于每张图多打一发空枪，一批 6 张变 12 次调用，突发速率翻倍后触发每分钟配额（429）。典型症状：一批总有两三张失败，重跑又换成另外几张失败。",
-  "_comment_3": "图片内中文必须由生成模型与画面一起原生生成；不要配置 sansheng-template-safe 或 sansheng-google-text-safe。错字交给独立视觉 QA 拦截，再用单图候选/重渲处理。",
+  "_comment_1": "🔴 多数文章不需要这个文件。删掉它就是正确配置 —— 文件不存在时自动走 baoyu-image-gen（Baoyu 视觉链的默认渲染器）。本文件的语义是「覆盖默认」，不是「确认默认」；凭空建一份就是在改行为。",
+  "_comment_2": "🔴 2026-08-02 实证：本模板早先预置 provider=sansheng-google，照抄一份就把渲染器从 baoyu-image-gen 静默换成 gen_img.py，并把封面从 1584×672 降到 1024×436，而所有发布门照常放行。现已收紧：任何显式 provider 都必须附 override_baoyu_reason，否则编译期直接拒绝。",
+  "_comment_3": "只想调 Baoyu 自身参数（模型 / 尺寸）时，填 model / quality / imageSize 即可，不要填 provider。",
+  "_comment_4": "模型 ID 不要带 -preview：转正后 preview ID 会 404，而降级链会先撞一次 404 再发真请求 —— 每张图多打一发空枪，突发速率翻倍后触发每分钟配额（429）。典型症状：一批总有两三张失败，重跑又换成另外几张失败。",
+  "_comment_5": "图片内中文必须由生成模型与画面一起原生生成；不要配置 sansheng-template-safe 或 sansheng-google-text-safe。错字交给独立视觉 QA 拦截，再用单图候选 / 重渲处理。",
   "schema_version": 1,
   "renderers": [
     {
-      "id": "banana-pro",
-      "provider": "sansheng-google",
-      "model": "gemini-3-pro-image",
+      "id": "baoyu-default",
       "quality": "2k",
-      "imageSize": "2K"
-    },
-    {
-      "id": "banana-flash",
-      "provider": "sansheng-google",
-      "model": "gemini-3.1-flash-image",
-      "quality": "2k",
-      "imageSize": "2K"
+      "imageSize": "1K"
     }
   ]
 }
