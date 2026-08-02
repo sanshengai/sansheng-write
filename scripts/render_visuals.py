@@ -136,19 +136,31 @@ def _candidate_renderer_dirs() -> list[Path]:
     if explicit:
         return [Path(explicit).expanduser()]
     home = Path.home()
+    direct_candidates = [
+        home / ".codex/skills/baoyu-image-gen",
+        home / ".claude/skills/baoyu-image-gen",
+        home / ".gemini/config/skills/baoyu-image-gen",
+        home / "Cowork/skills/baoyu-image-gen",
+    ]
     patterns = [
         ".codex/plugins/cache/baoyu-skills/**/skills/baoyu-image-gen",
         ".claude/plugins/cache/baoyu-skills/**/skills/baoyu-image-gen",
         ".agents/skills/baoyu-image-gen",
     ]
-    candidates: list[Path] = []
+    candidates: list[Path] = list(direct_candidates)
     for pattern in patterns:
         candidates.extend(home.glob(pattern))
-    return sorted(
-        {path.resolve() for path in candidates if (path / "scripts/main.ts").is_file()},
-        key=lambda path: (path.stat().st_mtime, str(path)),
-        reverse=True,
-    )
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for path in candidates:
+        if not (path / "scripts/main.ts").is_file():
+            continue
+        real = path.resolve()
+        if real in seen:
+            continue
+        seen.add(real)
+        resolved.append(real)
+    return resolved
 
 
 def resolve_renderer_command() -> tuple[list[str] | None, str, list[str]]:

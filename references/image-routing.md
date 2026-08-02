@@ -23,13 +23,22 @@ renderer 不得修改 `expected_text`、比例、style 或 visual profile，不�
 图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
 `layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 
-`visual-planner` 内置的是经过筛选的稳定视觉合同，不在运行时跨 Skill 临时读取规则：
+`visual-planner` 是编排器，不是 Baoyu Skill 的替身。进入封面或信息图阶段时，Agent
+必须实际调用已安装的 `baoyu-cover-image` / `baoyu-infographic`，读取对应 `SKILL.md`
+与当前生效的 `EXTEND.md`，完成它们各自的内容分析、结构化、布局×风格选择和 prompt
+合成；然后再由本流程把结果收口为 canonical prompt。Skill 不可用时必须停下修复接线，
+禁止自己仿写 `analysis.md`、`structured-content.md` 或只在 receipt 里补一个 producer 名称。
+
+本流程内置的是经人工筛选的品牌视觉合同，用来约束 Baoyu 输出的最终边界，而不是跳过
+Baoyu 的理由：
 
 - 封面：`montage-evidence` 的深炭品牌构图。
 - 信息图与 Hero：`warm-light-clay` 粘土配方（全站唯一正文风格）。
 
 这些配方集中在 profile 的 `visual.profiles`，编译后写入 prompt frontmatter 和摘要。上游
-baoyu Skill 可以独立更新；只有人工审阅后的配方变更才同步进本合同，避免插件升级静默改变成图。
+Baoyu Skill 可以独立更新；若它的建议与品牌合同冲突，以品牌合同收口，但仍须保留并实际
+执行其内容分析、结构化和 prompt 设计步骤。只有人工审阅后的配方变更才同步进本合同，
+避免插件升级静默改变成图。
 
 ## 固定视觉集合
 

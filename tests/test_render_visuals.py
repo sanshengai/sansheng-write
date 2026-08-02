@@ -130,6 +130,26 @@ def test_probe_requires_baoyu_batch_capabilities(tmp_path):
     assert "--batchfile" in probe["capabilities"]
 
 
+def test_renderer_discovery_prefers_shared_skill_entry(tmp_path, monkeypatch):
+    from scripts import render_visuals
+
+    shared = tmp_path / ".codex/skills/baoyu-image-gen"
+    (shared / "scripts").mkdir(parents=True)
+    (shared / "scripts/main.ts").write_text("// shared renderer\n", encoding="utf-8")
+    stale = (
+        tmp_path
+        / ".codex/plugins/cache/baoyu-skills/old/skills/baoyu-image-gen"
+    )
+    (stale / "scripts").mkdir(parents=True)
+    (stale / "scripts/main.ts").write_text("// stale cache\n", encoding="utf-8")
+    monkeypatch.setattr(render_visuals.Path, "home", lambda: tmp_path)
+
+    candidates = render_visuals._candidate_renderer_dirs()
+
+    assert candidates[0] == shared.resolve()
+    assert stale.resolve() in candidates
+
+
 def test_fallback_keeps_canonical_prompt_and_aspect_unchanged(tmp_path):
     from scripts.render_visuals import render_visuals
 
