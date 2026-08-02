@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [0.11.2] -- 2026-08-02
+
 ### 修复
 
 - Hero 现在显式经过 `baoyu-article-illustrator`；canonical prompt 的
