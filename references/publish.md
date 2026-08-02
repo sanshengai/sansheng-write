@@ -40,8 +40,9 @@ python "$SKILL/scripts/pipeline.py" finalize \
 1. 永久链接写入 publish state。
 2. 作品库归档及派生视图刷新。
 3. archive 验证。
-4. 执行 profile 中已配置的官网同步命令。
-5. 生成 `_moments-copy.md`；实际朋友圈发布仍由作者完成。
+4. 处理已启用的自动播客：生成音频、发布 RSS 并取得 receipt。
+5. 执行 profile 中已配置的官网同步命令；此时播客源文件已经存在，网站版本包必须一并收录。
+6. 生成 `_moments-copy.md`；实际朋友圈发布仍由作者完成。
 
 ## 朋友圈极速路径
 

@@ -240,7 +240,7 @@ def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
     )
 
     pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
-    assert calls == ["publish", "archive", "verify", "website", "moments", "distribute"]
+    assert calls == ["publish", "archive", "verify", "distribute", "website", "moments"]
 
 
 def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatch):
@@ -304,6 +304,28 @@ def test_moments_copy_fast_path_has_no_finalize_side_effects(tmp_path, monkeypat
     assert not (tmp_path / pipeline.FINALIZE_STATE_FILE).exists()
 
 
+def test_moments_cta_does_not_repeat_site_when_bare_host_is_present(tmp_path, monkeypatch):
+    (tmp_path / "article-meta.yaml").write_text(
+        'title: "一篇现成文章"\ndigest: "直接生成朋友圈文案。"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "brand",
+        lambda: {
+            "writing": {
+                "moments_cta": "查看完整内容 → 示例品牌 · example.com"
+            },
+            "identity": {"site": "https://example.com"},
+        },
+    )
+
+    text = pipeline._write_moments_copy(tmp_path, "")
+
+    assert text.endswith("👉 查看完整内容 → 示例品牌 · example.com\n")
+    assert "https://example.com" not in text
+
+
 def test_handoff_auto_podcast_runs_generate_then_publish(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
@@ -348,6 +370,9 @@ def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
     monkeypatch.setattr(pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True)
     monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+    monkeypatch.setattr(
+        pipeline, "_handoff_to_distribute", lambda *a, **k: calls.append("distribute") or True
+    )
     monkeypatch.setattr(pipeline, "_run_website_sync", lambda *a, **k: False)
     monkeypatch.setattr(
         pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
@@ -357,7 +382,7 @@ def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
         pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
 
     assert exc.value.code == 2
-    assert calls == ["publish", "archive", "verify"]
+    assert calls == ["publish", "archive", "verify", "distribute"]
 
 
 def test_finalize_resumes_after_website_failure_without_repeating_archive(tmp_path, monkeypatch):
@@ -388,9 +413,34 @@ def test_finalize_resumes_after_website_failure_without_repeating_archive(tmp_pa
 
     pipeline.cmd_finalize(url, tmp_path)
     assert calls == [
-        "publish", "archive", "verify", "website",
-        "website", "moments", "distribute",
+        "publish", "archive", "verify", "distribute", "website",
+        "website", "moments",
     ]
+
+
+def test_distribution_failure_blocks_website_and_moments(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
+    monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
+    monkeypatch.setattr(
+        pipeline, "cmd_archive", lambda *a, **k: calls.append("archive") or True
+    )
+    monkeypatch.setattr(pipeline, "cmd_verify", lambda *a, **k: calls.append("verify"))
+    monkeypatch.setattr(
+        pipeline, "_handoff_to_distribute", lambda *a, **k: calls.append("distribute") or False
+    )
+    monkeypatch.setattr(
+        pipeline, "_run_website_sync", lambda *a, **k: calls.append("website") or True
+    )
+    monkeypatch.setattr(
+        pipeline, "_write_moments_copy", lambda *a, **k: calls.append("moments")
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
+
+    assert exc.value.code == 3
+    assert calls == ["publish", "archive", "verify", "distribute"]
 
 
 def test_website_receipt_preserves_failed_and_successful_attempts(tmp_path, monkeypatch):

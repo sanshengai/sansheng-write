@@ -45,6 +45,7 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Windows 控制台 GBK 兜底：强制 stdout/stderr UTF-8，避免 emoji 触发 UnicodeEncodeError
 # （否则 Windows 上每次都要手动 PYTHONUTF8=1，这里内置根治）
@@ -2587,7 +2588,8 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     cta = str((profile.get("writing") or {}).get("moments_cta") or "").strip()
     site = str((profile.get("identity") or {}).get("site") or "").strip()
     tail = cta or site or "打开上方文章卡片阅读全文"
-    if site and site not in tail:
+    site_host = urlparse(site).netloc.lower().removeprefix("www.") if site else ""
+    if site and site not in tail and (not site_host or site_host not in tail.lower()):
         tail = f"{tail} · {site}"
     lines = [f"🔥 {title}", f"🧭 {digest}", f"👉 {tail}"]
     # 朋友圈交付是纯文本协议：首句直接起始、段落之间一个空行，去除
@@ -2686,7 +2688,7 @@ def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
 
 
 def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
-    """Resumable close-out: link → archive → verify → website → Moments."""
+    """Resumable close-out: link → archive → podcast → website → Moments."""
     if not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", wechat_url or ""):
         print(f"❌ 不是合法公众号永久链接：{wechat_url!r}")
         raise SystemExit(2)
@@ -2719,6 +2721,30 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
         cmd_verify("archive", cwd, legacy=legacy)
         _mark_finalize_step(cwd, state, "archive_verify")
 
+    # 自动播客必须在官网同步之前完成。网站 import/prepare-songs 只会把已经
+    # 存在于文章目录的 dist/podcast/audio.mp3 带进版本包；旧顺序先部署网站、
+    # 最后才生成播客，必然让首发页面只剩主题曲。
+    distribution_was_done = _finalize_step_done(state, "distribution")
+    website_was_done = _finalize_step_done(state, "website_sync")
+    if distribution_was_done:
+        print("⏭ finalize 续跑：分发计划已处理，跳过。")
+    elif not _handoff_to_distribute(cwd):
+        # 显式启用的自动播客没完成就不能先部署一个缺音频的网站版本，
+        # 也不能把「plan 已生成」误报成「播客已上线」。
+        raise SystemExit(3)
+    else:
+        _mark_finalize_step(cwd, state, "distribution")
+        # 兼容 v0.12.1 曾经留下的“官网已同步、播客后生成”断点：播客刚落盘时
+        # 让 website_sync 失效并重跑，不能沿用那个缺音频的旧成功标记。
+        if website_was_done and (cwd / "dist" / "podcast" / "audio.mp3").is_file():
+            state.setdefault("steps", {}).pop("website_sync", None)
+            state["updated_at"] = _now_iso()
+            (cwd / FINALIZE_STATE_FILE).write_text(
+                json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print("↻ 检测到播客晚于旧官网步骤生成，官网同步将重新执行。")
+
     if _finalize_step_done(state, "website_sync"):
         print("⏭ finalize 续跑：官网已同步，跳过。")
     else:
@@ -2732,15 +2758,7 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
         _write_moments_copy(cwd, wechat_url)
         _mark_finalize_step(cwd, state, "moments_copy")
 
-    print("✅ 发布后闭环完成：归档已验、官网已处理、朋友圈文案已生成。")
-    if _finalize_step_done(state, "distribution"):
-        print("⏭ finalize 续跑：分发计划已处理，跳过。")
-    elif not _handoff_to_distribute(cwd):
-        # 核心收尾已经完成，不回滚；但显式启用的自动分发没完成就不能返回 0，
-        # 否则上层会把「plan 已生成」误报成「播客已上线」。
-        raise SystemExit(3)
-    else:
-        _mark_finalize_step(cwd, state, "distribution")
+    print("✅ 发布后闭环完成：归档已验、播客已处理、官网已同步、朋友圈文案已生成。")
 
 
 def _handoff_to_distribute(cwd: Path) -> bool:
