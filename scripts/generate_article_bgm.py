@@ -160,6 +160,25 @@ def determine_vocal_gender(article_dir: Path) -> str:
         return "female"
 
 
+def _yaml_scalar_without_comment(raw: str) -> str:
+    """解析轻量 YAML 标量，并忽略引号外的行尾注释。"""
+    value = raw.strip()
+    if not value:
+        return ""
+    if value[0] in {'"', "'"}:
+        quote = value[0]
+        escaped = False
+        for index, char in enumerate(value[1:], start=1):
+            if quote == '"' and char == "\\" and not escaped:
+                escaped = True
+                continue
+            if char == quote and not escaped:
+                return value[1:index].strip()
+            escaped = False
+        return value[1:].strip()
+    return re.split(r"\s+#", value, maxsplit=1)[0].strip()
+
+
 def read_article_meta_music(article_dir: Path) -> dict:
     """从 article-meta.yaml 读 music.style/gender/model/song_name（轻量正则，不依赖 yaml 库）。
 
@@ -174,9 +193,10 @@ def read_article_meta_music(article_dir: Path) -> dict:
         return {}
     block, result = m.group(1), {}
     for key in ("style", "gender", "model", "song_name"):
-        km = re.search(rf'^\s+{key}:\s*["\']?(.*?)["\']?\s*$', block, re.MULTILINE)
-        if km and km.group(1).strip():
-            result[key] = km.group(1).strip()
+        km = re.search(rf'^\s+{key}:\s*(.*?)\s*$', block, re.MULTILINE)
+        value = _yaml_scalar_without_comment(km.group(1)) if km else ""
+        if value:
+            result[key] = value
     return result
 
 
@@ -433,6 +453,11 @@ def main():
     parser.add_argument("--model", default=None,
                         help="MiniMax 模型（默认 article-meta.yaml music.model，再兜底 music-2.6-free）")
     parser.add_argument("--output", default=None, help="输出 MP3 文件路径")
+    parser.add_argument(
+        "--skip-cover",
+        action="store_true",
+        help="只生成主题曲与 AUDIO-CARD，不调用 Google 生成 bgm_cover.png",
+    )
     args = parser.parse_args()
 
     # key 解析统一走 minimax_key()（CLI > shell env > 仓根 .env）。修复（复核 F1）：
@@ -519,12 +544,16 @@ def main():
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"  📋 元数据: {output_path.with_suffix('.json').name}")
 
-    generate_music_cover(song_name, imagery, output_path.parent)
+    if args.skip_cover:
+        print("  ⏭️ 已按参数跳过 Google 主题曲封面生成。")
+    else:
+        generate_music_cover(song_name, imagery, output_path.parent)
     insert_audio_card(article_file, style_info["name"], song_name)
 
     print("\n🚀 请手动上传音频至微信素材库（手动上传才能设置音乐封面图）")
     print(f"  📁 音频: {output_path}")
-    print(f"  🖼️ 封面: {output_path.parent / '素材' / 'bgm_cover.png'}")
+    if not args.skip_cover:
+        print(f"  🖼️ 封面: {output_path.parent / '素材' / 'bgm_cover.png'}")
     print("  ℹ️  路径: 微信后台 → 素材管理 → 音频 → 上传；插入时定位到卡片占位处。")
 
 
