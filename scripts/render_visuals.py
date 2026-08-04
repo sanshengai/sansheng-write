@@ -829,6 +829,18 @@ def render_visuals(
             "visual_profile_sha256": str(
                 prompt_meta.get("visual_profile_sha256") or ""
             ),
+            # 🔴 2026-08-03 补：这两个字段 canonical prompt 的 frontmatter 里本来就有
+            # （visual_workflow.py 的 _hero_prompt / _infographic_prompt 都会写），
+            # 但渲染记录一直没落盘，导致 pipeline.py 的 Hero 校验
+            # （要求 profile / sha256 / contract_owner / contract_revision 四项全等）
+            # 永远拿不到后两项 → hero 恒报「gen-log 视觉配方未绑定」，且无法通过重渲自愈。
+            # 数据源仍是 prompt frontmatter，不新增任何推断。
+            "visual_contract_owner": str(
+                prompt_meta.get("visual_contract_owner") or ""
+            ),
+            "visual_contract_revision": str(
+                prompt_meta.get("visual_contract_revision") or ""
+            ),
             "cmd": (
                 "gen_img.py <canonical-prompt> <output> <model> <width> <height>"
                 if actual_renderer == "gen_img"

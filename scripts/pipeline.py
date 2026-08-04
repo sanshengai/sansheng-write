@@ -702,6 +702,27 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
     return errors
 
 
+def _visual_qa_evidence_errors(cwd: Path) -> list:
+    """证据层：QA 记录必须存在、可解析，且最终字节 == 复核时的字节。**一律硬拦。**
+
+    🔴 2026-08-04 与判定层分开的原因：作者授权放行的是**看图判定**（复核员对同一张
+    未改动的图会给出不同结论），不是「可以不跑 QA」，也不是「发出去的字节可以不是
+    复核过的那批」。曾经三者混在同一个返回值里被一起降级，等于把防篡改的根也放行了。
+    """
+    qa_path = cwd / "_visual-qa.json"
+    if not qa_path.exists():
+        return ["缺 _visual-qa.json：生成后必须由独立看图进程验收"]
+    try:
+        payload = json.loads(qa_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"_visual-qa.json 解析失败：{exc}"]
+    try:
+        from visual_qa import final_byte_errors
+    except ImportError:  # pragma: no cover
+        from scripts.visual_qa import final_byte_errors
+    return final_byte_errors(cwd, payload)
+
+
 def _visual_qa_errors(cwd: Path) -> list:
     """发布前视觉 QA 凭证门：只认独立审阅进程产出的结构化合同。"""
     qa_path = cwd / "_visual-qa.json"
@@ -1785,8 +1806,17 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     errors.extend(f"cover_route: {e}" for e in cover_route_errors)
     route_errors = _visual_route_errors(cwd, allow_postprocessed=True)
     errors.extend(f"visual_route: {e}" for e in route_errors)
-    qa_errors = _visual_qa_errors(cwd)
-    errors.extend(qa_errors)
+    # 🔴 证据层硬拦：QA 记录缺失/损坏、或最终字节 ≠ 复核字节 —— 这些不在授权放行范围内。
+    qa_evidence_errors = _visual_qa_evidence_errors(cwd)
+    errors.extend(f"visual_qa: {e}" for e in qa_evidence_errors)
+    qa_errors = _visual_qa_errors(cwd) if not qa_evidence_errors else []
+    # 🔴 2026-08-04 作者授权：视觉**判定**不再进入发布预检的阻断项，降为提示。
+    # 这是三条校验路径里的最后一条（另两条在 evidence.py::verify_visual_receipt）。
+    # 仍然硬拦：上面的证据层、cover_route / visual_route（prompt 与产物的对应关系）、
+    # visual_receipt 的 manifest_digest 字节一致性 —— 保证发出去的就是复核过的字节。
+    # 下方 log_observation 照常按 fail 记账，自省复核仍能看到这批未通过项。
+    if qa_errors:
+        print("  ⚠️ 视觉 QA 未通过项（作者已授权放行，不计入阻断）：%d 条" % len(qa_errors))
     _, receipt_errors = verify_visual_receipt(cwd)
     errors.extend(f"visual_receipt: {e}" for e in receipt_errors)
     try:
@@ -2252,12 +2282,14 @@ def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = ""):
 def cmd_seal(kind: str, cwd: Path):
     if kind != "visual":  # argparse choices 已拦，保留函数级防护
         raise SystemExit(f"未知 seal 类型：{kind}")
+    # 🔴 2026-08-04 作者授权：视觉 QA 不再阻断封存，改为打印 + 写进 receipt 留痕。
+    # 理由见 evidence.py::seal_visual_receipt 的注释（QA 存在生成与判定双重随机，
+    # 八轮重渲无法收敛）。字节一致性由 build_visual_manifest 继续硬拦，不放行。
     qa_errors = _visual_qa_errors(cwd)
     if qa_errors:
-        print("❌ 视觉 QA 记录未通过：")
+        print("⚠️ 视觉 QA 有未通过项（作者已授权放行，将记入 receipt）：")
         for error in qa_errors:
             print(f"   • {error}")
-        raise SystemExit(2)
     receipt, errors = seal_visual_receipt(cwd)
     if errors:
         print("❌ visual receipt 封存失败：")
@@ -2457,6 +2489,40 @@ def _resolve_website_command(command: str) -> tuple[str, str]:
     return f'"{bash}"{rest}', ""
 
 
+def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
+    """列出还没提交的归档产物（官网构建看不见它们）。
+
+    🔴 2026-08-04：官网发布走「从指定 commit 建隔离工作树再构建」，构建器只认
+    commit 里的内容。而 ``archive`` 只把作品库、articles.md、看板、推荐卡**写到
+    工作区**，不提交。结果构建读到一份没有本篇的旧作品库，文章页压根没生成，
+    最后在 ``build-site-release.ps1`` 的产物校验处以「文章页面未进入构建产物：
+    <CODE>」失败 —— 那时已经白跑了一万九千多个文件的 checkout 加一次完整构建，
+    十几分钟。所以这个检查必须前置到几秒内完成。
+
+    不是 git 仓库、git 不可用或路径不在仓内时返回空列表（不拦）。
+    """
+    try:
+        from profile_config import works_file
+        works = Path(works_file())
+    except Exception:                                            # noqa: BLE001
+        return []
+    targets = [works, cwd]
+    for name in ("articles.md", "works-dashboard.html", "recommend_articles.html"):
+        targets.append(works.parent / name)
+    args = ["git", "-C", str(website_cwd), "status", "--porcelain", "--"]
+    args += [str(t) for t in targets]
+    try:
+        probe = subprocess.run(
+            args, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if probe.returncode != 0:
+        return []
+    return [line.strip() for line in (probe.stdout or "").splitlines() if line.strip()]
+
+
 def _run_website_sync(
     cwd: Path,
     wechat_url: str,
@@ -2527,6 +2593,25 @@ def _run_website_sync(
             },
         )
         print(f"❌ 官网同步前置检查失败：{resolution_error}")
+        return False
+    pending = _uncommitted_archive_outputs(cwd, website_cwd)
+    if pending:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "archive_outputs_uncommitted",
+                "pending": pending[:20],
+                "created_at": _now_iso(),
+            },
+        )
+        print("❌ 官网同步前置检查失败：归档产物还没提交，构建会看不见本篇。")
+        for line in pending[:12]:
+            print(f"     {line}")
+        print("   官网发布从 commit 建隔离工作树，只认 commit 里的内容；"
+              "留在工作区的作品库等于没写。")
+        print("   先用显式 pathspec 提交，再重跑 finalize："
+              "git add <上列文件> && git commit -m \"chore(write): <N> 号归档产物入库\"")
         return False
     try:
         completed = runner(
@@ -2604,8 +2689,21 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     ]
     clean_lines = [line for line in clean_lines if line]
     text = "\n\n".join(clean_lines) + "\n"
-    (cwd / "_moments-copy.md").write_text(text, encoding="utf-8")
-    print("✅ 已生成朋友圈文案：_moments-copy.md（仅生成，不自动发朋友圈）")
+    out = cwd / "_moments-copy.md"
+    # 🔴 2026-08-04：本函数产出的是**基线**（title + digest + 引流三行拼接），
+    # 按 publish.md §朋友圈内容协议还要被改写成终稿。finalize 是可续跑的，
+    # 续跑时绝不能把改写后的终稿冲回模板 —— 只在文件不存在、为空、或内容仍是
+    # 模板原样时才写盘。要重新取基线就先删掉该文件再跑。
+    if out.is_file():
+        existing = out.read_text(encoding="utf-8")
+        if existing.strip() and existing != text:
+            print("⏭ _moments-copy.md 已按内容协议改写过，保留现有终稿，不覆盖为模板基线。")
+            return existing
+    out.write_text(text, encoding="utf-8")
+    print(
+        "✅ 已生成朋友圈文案基线：_moments-copy.md"
+        "（模板拼接，非终稿 -- 交付前须按 publish.md §朋友圈内容协议改写并写回；不自动发朋友圈）"
+    )
     return text
 
 
@@ -2688,7 +2786,12 @@ def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
 
 
 def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
-    """Resumable close-out: link → archive → podcast → website → Moments."""
+    """Resumable close-out: link → archive → Moments → podcast → website.
+
+    Moments copy comes right after archive verification on purpose: it only
+    needs title/digest/permanent link, so it must not wait behind the podcast
+    audio (10-30 min) that the website sync legitimately depends on.
+    """
     if not re.match(r"^https://mp\.weixin\.qq\.com/s/[^\s]+$", wechat_url or ""):
         print(f"❌ 不是合法公众号永久链接：{wechat_url!r}")
         raise SystemExit(2)
@@ -2721,6 +2824,16 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
         cmd_verify("archive", cwd, legacy=legacy)
         _mark_finalize_step(cwd, state, "archive_verify")
 
+    # 🔴 2026-08-04 作者要求前移：朋友圈文案只依赖标题、摘要和永久链接，
+    # 到这一步三样都已就位；它不依赖播客音频，也不依赖官网。原先排在整条链
+    # 最后，撞上「官网同步必须等播客音频」那条规则后，作者要等一个 10-30 分钟
+    # 的音频才拿到文案 —— 而首发那几小时恰恰是最需要它发朋友圈的时候。
+    if _finalize_step_done(state, "moments_copy"):
+        print("⏭ finalize 续跑：朋友圈文案已生成，跳过。")
+    else:
+        _write_moments_copy(cwd, wechat_url)
+        _mark_finalize_step(cwd, state, "moments_copy")
+
     # 自动播客必须在官网同步之前完成。网站 import/prepare-songs 只会把已经
     # 存在于文章目录的 dist/podcast/audio.mp3 带进版本包；旧顺序先部署网站、
     # 最后才生成播客，必然让首发页面只剩主题曲。
@@ -2752,13 +2865,7 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
             raise SystemExit(2)
         _mark_finalize_step(cwd, state, "website_sync")
 
-    if _finalize_step_done(state, "moments_copy"):
-        print("⏭ finalize 续跑：朋友圈文案已生成，跳过。")
-    else:
-        _write_moments_copy(cwd, wechat_url)
-        _mark_finalize_step(cwd, state, "moments_copy")
-
-    print("✅ 发布后闭环完成：归档已验、播客已处理、官网已同步、朋友圈文案已生成。")
+    print("✅ 发布后闭环完成：归档已验、朋友圈文案已出、播客已处理、官网已同步。")
 
 
 def _handoff_to_distribute(cwd: Path) -> bool:

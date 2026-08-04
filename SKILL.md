@@ -92,7 +92,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md。关键入口为 `adopt-final`、`compile-visuals`、`render-visuals`、`visual-qa`、`seal visual`、`release-to-draft`、`finalize`。`release-to-draft` 是唯一草稿创建入口；拿到永久链接后 `finalize` 按“归档→验证→官网→朋友圈文案”收尾。archive 校验失败不得写盘；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md。关键入口为 `adopt-final`、`compile-visuals`、`render-visuals`、`visual-qa`、`seal visual`、`release-to-draft`、`finalize`。`release-to-draft` 是唯一草稿创建入口；拿到永久链接后 `finalize` 按“归档→验证→**朋友圈文案**→播客→官网”收尾（文案前移，不等音频）。archive 校验失败不得写盘；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

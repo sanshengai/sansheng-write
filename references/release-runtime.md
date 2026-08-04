@@ -175,7 +175,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
   "https://mp.weixin.qq.com/s/..."
 ```
 
-固定顺序：登记永久链接 → 归档作品库 → 验证归档 → 执行已配置官网同步 → 生成 `_moments-copy.md`。官网命令未配置时记录 skipped；配置后执行失败会阻断朋友圈文案生成。
+固定顺序：登记永久链接 → 归档作品库 → 验证归档 → **生成 `_moments-copy.md`** → 自动播客 → 执行已配置官网同步。官网命令未配置时记录 skipped。🔴 **朋友圈文案前移到归档验证之后**：它只需要标题、摘要和永久链接，不依赖播客音频与官网；压在链尾会让作者等一个 10-30 分钟的音频才拿到文案，而首发那几小时最需要它。**播客或官网失败不得阻断、也不得回滚它。** 内容要求见 publish.md「朋友圈内容协议」。
 
 - 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。**NotebookLM 登录失效时 `podcast_episode.py` 会自动拉起 `nlm login` 弹浏览器授权（2026-07-30 起），探测恢复后继续原流程**；只有自动登录失败才提示人工 `nlm login`（无人值守环境用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示）。不得误说成“音频只能手动生成”。
 - **播客音频同时上官网「听全文」（2026-07-30 拍板规则）**：`finalize` 必须先执行自动播客的 `generate → publish --confirm`，确认 `dist/podcast/audio.mp3` 与 RSS receipt 都存在之后，才能同步官网；不得先部署一个只有主题曲的版本。把该音频随文章目录一起 commit，官网构建时 `prepare-songs.py` 自动复制为 `public/song-assets/{code}/podcast.mp3`，文章页主题曲卡下出现「🎧 听全文 · 播客版」播放器（全站单例播放器，天然互斥暂停），文章列表标题旁出现「🎧 有音频」标记。部署走 `publish-to-website.sh {code}`（`-ArticleCodesCsv` 放行 song-assets）。设计口径：主题曲=配乐读、播客=代替读，两卡并存不做选择 UI；列表只放标记不放播放按钮。

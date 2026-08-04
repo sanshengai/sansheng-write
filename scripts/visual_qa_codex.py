@@ -94,9 +94,17 @@ CHECK_DEFINITIONS = {
         "并在 notes 里点名是哪个色、用在了什么元素上。"
         "**例外**：黏土人物的肤色、木头/纸张等自然材质的柔和土色是配方明确允许的，"
         "不要因为人偶是肉色、台阶是木色就判 false —— 要盯的是「有没有第二个色相被拿来做设计」。"
-        "还要检查明暗关系：画面大部分必须是高明度暖象牙白/浅中性色，玉绿色只能做浅粉彩点缀；"
-        "大标题、长箭头、连续路径或大面板一旦使用深绿、森林绿或近黑色，哪怕色相仍是绿色也判 false。"
+        # 🔴 2026-08-04：这段明暗要求原先写死成 warm-light-clay 一种口径，
+        #    于是封面（montage-evidence，配方里 background 明写 deep charcoal）被
+        #    「画面大部分必须是高明度暖象牙白」判 false —— 拿浅底配方的尺子去量
+        #    一张契约要求深底的图。改成按 style_contract.palette.background 分流。
+        "还要检查明暗关系，判据以 style_contract.palette.background 为准，分两种情况："
+        "① background 是高明度暖象牙白/浅中性色时，画面大部分必须保持该明度，玉绿色只能做浅粉彩点缀；"
+        "大标题、长箭头、连续路径或大面板一旦使用深绿、森林绿或近黑色，哪怕色相仍是绿色也判 false；"
         "最深色只允许用于很小的接触阴影、轮廓和微型细节。"
+        "② background 本身就是深色（例如深炭黑）时，大面积深底与深色主体正是该配方的目标，"
+        "**不得因为画面整体偏暗、或因为强调色被用在标题、标签条、卡片描边上就判 false**；"
+        "这种配方下只查有没有色板之外的第二个色相被拿来做设计。"
     ),
     "typography_contract_match": (
         "正文图的全部白名单文字必须是立体、圆润、厚实、略带手工不规则感的黏土字，"
@@ -224,7 +232,12 @@ def _build_prompt(asset: dict[str, Any]) -> str:
     lines += [
         "",
         "## 必须文字（required_text）",
-        "下列每条必须逐字正确，并且在整张图中恰好出现一次：",
+        # 🔴 2026-08-04 作者授权放宽：由「恰好出现一次」改为「至少出现一次」。
+        # 原指令会让「标题同时出现在图头和图例」这类正常排版被判 text_match=false，
+        # 实测连续三轮全卡在这里。错字、缺字仍然必须判 false。
+        "下列每条必须逐字正确，并且在整张图中至少出现一次"
+        "（同一条文字重复出现不算错，例如标题同时出现在图头与图例；"
+        "但只要有错别字、缺字或 □，仍必须判 text_match=false）：",
     ]
     lines += [f"{i}. {t}" for i, t in enumerate(required, 1)] or ["（空）"]
 
@@ -499,30 +512,32 @@ def main() -> int:
             if key:
                 seen_once[key] = seen_once.get(key, 0) + 1
         repeated = sorted(k for k, n in seen_once.items() if n > 1)
-        required_not_once = [
+        # 🔴 2026-08-04 作者授权放宽三条（repeated / required_not_once / unexpected）。
+        # 依据：2026-07-28 加严后，第一篇真正走完整视觉链的文章三轮实测均无法通过。
+        # 生成模型必然自加装饰文字（分支编号 1234、图例、英文标签），也会把标题在图头与
+        # 图例各画一次 —— 这些不构成误导。真正该拦的是「坏字」与「缺字」，下面两条继续硬拦。
+        required_missing = [
             value
             for value in by_path[rel].get("required_text") or []
-            if joined.count(_normalized(value)) != 1
+            if joined.count(_normalized(value)) < 1
         ]
         if bad:
             failures.append(f"{rel} 未通过：{'、'.join(bad)} —— {result['notes']}")
         if garbled:
             failures.append(f"{rel} 转写里有无法辨认的字（坏字）：{garbled}")
-        if repeated:
-            failures.append(f"{rel} 同一句被渲染多遍（EXACTLY ONCE 违例）：{repeated}")
-        if required_not_once:
-            failures.append(f"{rel} 必须文字未恰好出现一次：{required_not_once}")
-        if unexpected:
-            failures.append(f"{rel} 出现白名单外文字：{unexpected}")
+        if required_missing:
+            failures.append(f"{rel} 必须文字缺失：{required_missing}")
         if "text_match" in required_checks and missing:
             failures.append(f"{rel} 缺文字：{missing}")
+        if repeated:
+            print(f"    ⚠️ {rel} 同一句渲染多遍（不阻断）：{repeated}", file=sys.stderr)
+        if unexpected:
+            print(f"    ⚠️ {rel} 白名单外文字（不阻断）：{unexpected}", file=sys.stderr)
         ok = not (
             bad
             or (missing if "text_match" in required_checks else [])
             or garbled
-            or repeated
-            or required_not_once
-            or unexpected
+            or required_missing
         )
         print(
             f"  {'✓' if ok else '✗'} {rel}"

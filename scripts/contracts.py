@@ -1762,11 +1762,27 @@ def verify_article_meta_lead(article_dir: str) -> dict:
     tag2 = lead.get('tag2') or meta.get('lead_tag2') or ''
 
     missing = []
-    if not line1.strip():
+    if not str(line1).strip():
         missing.append('line1')
-    if not line2.strip():
+    if not str(line2).strip():
         missing.append('line2')
-    if not subtitle.strip():
+    # 🔴 2026-08-03：subtitle 必须是字符串。
+    # title.md「封面三件套」一节写着可以用 YAML 列表渲多个胶囊，但**实现并不支持** --
+    # 传列表会先在这里 subtitle.strip() 抛 AttributeError，绕过后又在
+    # format_layout.py::process_lead 的 lead.replace("{{HERO_SUBTITLE}}", subtitle)
+    # 抛 TypeError，两处都是堆栈退出而不是可读报错。
+    # 这里改成显式拒绝并给出可操作提示；要真支持列表，得先改 process_lead 的模板渲染。
+    if isinstance(subtitle, (list, tuple)):
+        return {
+            'ok': False,
+            'missing': ['subtitle'],
+            'notes': (
+                'lead.subtitle 不能写成 YAML 列表 -- 当前实现（format_layout.py::process_lead）'
+                '只接受字符串。请改成一句话，短标签用 lead.tag1 / lead.tag2 表达。'
+                '（title.md 的「列表渲多个胶囊」写法尚未在实现中落地）'
+            ),
+        }
+    if not str(subtitle).strip():
         missing.append('subtitle')
 
     # 实测踩坑：加固：tag1/tag2 长度审计

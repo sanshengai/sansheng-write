@@ -309,12 +309,22 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     except Exception as exc:
         return None, [f"_visual-qa.json 解析失败：{exc}"]
     try:
-        from .visual_qa import validate_qa_result
+        from .visual_qa import final_byte_errors, validate_qa_result
     except ImportError:  # pragma: no cover - direct script execution
-        from visual_qa import validate_qa_result
+        from visual_qa import final_byte_errors, validate_qa_result
+    # 🔴 字节一致性先单独硬拦：作者授权放行的是**看图判定**，不是「发出去的字节
+    # 可以不是复核过的那批」。两者曾混在同一个 errors 列表里，一起被降级过。
+    byte_errors = final_byte_errors(cwd, qa_payload)
+    if byte_errors:
+        return None, byte_errors
     qa_errors = validate_qa_result(cwd, qa_payload)
-    if qa_errors:
-        return None, qa_errors
+    # 🔴 2026-08-04 作者授权：视觉 QA 不再阻断封存与发布，改为写进 receipt 留痕。
+    # 依据：2026-07-28 加严后，QA 出现两层随机叠加 --（1）生成模型每轮自加不同的装饰
+    # 文字/编号；（2）看图复核员对同一张未改动的图，不同轮次给出不同结论（实测
+    # infographic-05 上一轮 pass、下一轮 crop_safe fail，字节完全未变）。
+    # 八轮重渲均无法收敛。QA 照常运行、照常落盘，结果作为证据保留在 receipt 里，
+    # 由作者在微信草稿箱亲眼验收后决定是否换图。
+    # 🔴 仍然硬拦的是 build_visual_manifest（字节一致性），那一条不放行。
     # add_logo/compression 会合法改变渲染器输出；从 seal 开始由 receipt 接管最终字节。
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
@@ -328,6 +338,9 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         "manifest_digest": stable_digest(manifest),
         "qa_path": "_visual-qa.json",
         "qa_sha256": sha256_file(qa),
+        "qa_status": qa_payload.get("status"),
+        "qa_findings": qa_errors,
+        "qa_waived_by_author": bool(qa_errors),
     }
     (cwd / VISUAL_RECEIPT_FILE).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -357,10 +370,23 @@ def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         try:
             qa_payload = json.loads(qa.read_text(encoding="utf-8"))
             try:
-                from .visual_qa import validate_qa_result
+                from .visual_qa import final_byte_errors, validate_qa_result
             except ImportError:  # pragma: no cover - direct script execution
-                from visual_qa import validate_qa_result
-            errors.extend(validate_qa_result(cwd, qa_payload))
+                from visual_qa import final_byte_errors, validate_qa_result
+            # 🔴 字节一致性单独硬拦，绝不降级（详见 visual_qa.final_byte_errors）。
+            errors.extend(final_byte_errors(cwd, qa_payload))
+            qa_findings = validate_qa_result(cwd, qa_payload)
+            # 🔴 2026-08-04 作者授权：QA 结论不再阻断发布，降为提示。
+            # 这里是 release-to-draft 的三条校验路径（直接 / visual_receipt /
+            # publish_manifest）共用的入口，只在 seal 处放行是不够的。
+            # 仍然硬拦的是上面两条：manifest_digest 字节一致性、_visual-qa.json
+            # 是否被篡改 —— 它们保证"发出去的就是复核过的那批字节"，那才是这道门的本意。
+            if qa_findings:
+                print(
+                    "  ⚠️ 视觉 QA 有未通过项（作者已授权放行，不阻断发布）："
+                    + "；".join(qa_findings[:4])
+                    + ("…" if len(qa_findings) > 4 else "")
+                )
         except Exception as exc:
             errors.append(f"_visual-qa.json 解析失败：{exc}")
     return receipt, errors

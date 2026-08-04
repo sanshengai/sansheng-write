@@ -230,7 +230,13 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
     assert "style_contract_match" in cover["required_checks"]
     assert "text_match" in cover["required_checks"]
-    assert "no_unexpected_text" in cover["required_checks"]
+    # 🔴 2026-08-04 作者授权，验收口径由「零意外文字」改为「必备文字必须齐全正确」：
+    # no_unexpected_text 退出送审清单。生成模型每轮自加不同的装饰文字与编号，
+    # 八轮重渲都无法收敛，而那些多余标签并不误导读者。
+    # 边界（下面两条就是底线，不许再放）：坏字、缺字仍由 text_match 硬拦；
+    # 最终字节与复核字节一致由 visual_qa.final_byte_errors 独立硬拦。
+    assert "no_unexpected_text" not in cover["required_checks"]
+    assert "text_match" in cover["required_checks"]
     assert "composition_contract_match" in cover["required_checks"]
     assert "typography_contract_match" not in cover["required_checks"]
     assert info["target_style"] == "claymation"
@@ -305,10 +311,20 @@ def test_qa_rejects_missing_expected_ocr_text_even_if_model_says_pass(tmp_path):
 
     assert qa is None
     assert any("required_text" in error for error in errors)
-    assert not (article / "_visual-qa.json").exists()
+    # 🔴 2026-08-04 起 QA 结果无论成败都必须落盘：失败时删文件会把「为什么没过」
+    # 的唯一证据一起删掉，作者与下一轮排查都无从对账。
+    result_path = article / "_visual-qa.json"
+    assert result_path.exists()
+    persisted = json.loads(result_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == "fail"
+    assert any("required_text" in item for item in persisted["validation_findings"])
 
 
-def test_qa_rejects_required_text_that_appears_twice(tmp_path):
+def test_required_text_appearing_twice_is_recorded_but_not_blocking(tmp_path):
+    """同一条必备文字重复出现只记录、不阻断（2026-08-04 作者授权）。
+
+    生成模型会把标题在图头与图例各画一次，这不构成误导；真正该拦的是坏字与缺字。
+    """
     from scripts.visual_qa import run_visual_qa, validate_qa_result
 
     article = _article(tmp_path)
@@ -319,7 +335,8 @@ def test_qa_rejects_required_text_that_appears_twice(tmp_path):
 
     validation_errors = validate_qa_result(article, qa, request=request)
 
-    assert any("恰好出现一次" in error for error in validation_errors)
+    assert not any("恰好出现一次" in error for error in validation_errors)
+    assert validation_errors == []
 
 
 def test_qa_accepts_one_expected_line_split_into_adjacent_observed_fragments(tmp_path):

@@ -240,7 +240,9 @@ def test_finalize_runs_publish_archive_verify_in_order(tmp_path, monkeypatch):
     )
 
     pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
-    assert calls == ["publish", "archive", "verify", "distribute", "website", "moments"]
+    # 朋友圈文案排在归档验证之后、播客与官网同步之前：它只需要标题、摘要和
+    # 永久链接，那三样在 verify 之后就已就位，不该排在 10-30 分钟的播客音频后面。
+    assert calls == ["publish", "archive", "verify", "moments", "distribute", "website"]
 
 
 def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatch):
@@ -364,7 +366,12 @@ def test_handoff_auto_podcast_failure_is_not_reported_as_success(tmp_path, monke
     assert pipeline._handoff_to_distribute(tmp_path) is False
 
 
-def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
+def test_website_failure_does_not_roll_back_moments(tmp_path, monkeypatch):
+    """官网同步失败仍以 2 退出，但朋友圈文案已在它之前产出，不得回滚。
+
+    2026-08-04 起朋友圈文案前移到归档验证之后。旧契约是「官网失败阻断文案生成」，
+    那会让作者在首发最需要文案的几小时里，因为一个与文案无关的部署失败而拿不到它。
+    """
     calls = []
     monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
@@ -382,7 +389,7 @@ def test_website_failure_blocks_moments_generation(tmp_path, monkeypatch):
         pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
 
     assert exc.value.code == 2
-    assert calls == ["publish", "archive", "verify", "distribute"]
+    assert calls == ["publish", "archive", "verify", "moments", "distribute"]
 
 
 def test_finalize_resumes_after_website_failure_without_repeating_archive(tmp_path, monkeypatch):
@@ -412,13 +419,15 @@ def test_finalize_resumes_after_website_failure_without_repeating_archive(tmp_pa
     assert exc.value.code == 2
 
     pipeline.cmd_finalize(url, tmp_path)
+    # 续跑只重试失败的官网同步：朋友圈文案与播客都已标记完成，不重复执行。
     assert calls == [
-        "publish", "archive", "verify", "distribute", "website",
-        "website", "moments",
+        "publish", "archive", "verify", "moments", "distribute", "website",
+        "website",
     ]
 
 
-def test_distribution_failure_blocks_website_and_moments(tmp_path, monkeypatch):
+def test_distribution_failure_blocks_website_but_keeps_moments(tmp_path, monkeypatch):
+    """播客失败仍以 3 退出并阻断官网，但不影响已经产出的朋友圈文案。"""
     calls = []
     monkeypatch.setattr(pipeline, "_finalize_preflight_errors", lambda *a, **k: [])
     monkeypatch.setattr(pipeline, "cmd_done", lambda *a, **k: calls.append("publish"))
@@ -440,7 +449,7 @@ def test_distribution_failure_blocks_website_and_moments(tmp_path, monkeypatch):
         pipeline.cmd_finalize("https://mp.weixin.qq.com/s/abc", tmp_path)
 
     assert exc.value.code == 3
-    assert calls == ["publish", "archive", "verify", "distribute"]
+    assert calls == ["publish", "archive", "verify", "moments", "distribute"]
 
 
 def test_website_receipt_preserves_failed_and_successful_attempts(tmp_path, monkeypatch):

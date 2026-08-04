@@ -29,12 +29,21 @@ except ImportError:  # pragma: no cover - direct script execution
 QA_REQUEST_FILE = "_visual-qa-request.json"
 QA_FILE = "_visual-qa.json"
 QA_MARKDOWN_FILE = "_visual-qa.md"
+# 🔴 2026-08-04 作者授权放宽：no_unexpected_text 从「必须通过」降为「记录但不阻断」。
+# 依据：2026-07-28 的三个提交（43d15e5 / e961b7c / abf7686）把这道门加严后，
+# 第一篇真正走完整视觉链的文章实测三轮均无法通过 --
+#   轮1（pro 模型）模型自加 forsale / sold / 00:01
+#   轮2（flash + 数字前置）自加 school / 招聘中 / 空缺
+#   轮3（数字全撤、只留 3-4 字纯中文）仍给 hub-spoke 的四个分支自加编号 1 2 3 4
+# 生成模型必然会加装饰性文字（编号、图标标签），要求「零意外文字」等于要求它不做
+# 它必然会做的事。真正该守的是「我要的字必须齐全正确」= required_text 的 missing 检查，
+# 那一条继续硬拦（见下方 _verify_expectations）。
+# 加严之前那批之所以顺利，是因为它们跑的是旧门（QA 记录里 required_text 为 None）。
 BASE_REQUIRED_CHECKS = (
     "text_match",
     "crop_safe",
     "semantic_hierarchy",
     "style_consistent",
-    "no_unexpected_text",
     "style_contract_match",
     "brand_palette_match",
 )
@@ -410,6 +419,48 @@ def _request_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def final_byte_errors(
+    cwd: Path,
+    qa: dict[str, Any],
+    *,
+    request: dict[str, Any] | None = None,
+) -> list[str]:
+    """只校验「最终图片字节 == 复核时的那批字节」。
+
+    🔴 2026-08-04 从 validate_qa_result 里抽出来的原因：作者授权把**看图判定**
+    降为记录不阻断，但字节一致性是防篡改的根。两者混在同一个 errors 列表里时，
+    「QA 不阻断」会顺带放行「发出去的字节不是复核过的那批」—— 实测已经发生过。
+    调用方**不得**把本函数的返回值降级成 advisory / findings。
+    """
+    cwd = Path(cwd).resolve()
+    if request is None:
+        try:
+            request = json.loads((cwd / QA_REQUEST_FILE).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return [f"缺可用的 {QA_REQUEST_FILE}，无法校验最终图片字节"]
+    expected = {
+        str(asset["path"]): asset
+        for asset in request.get("assets", [])
+        if isinstance(asset, dict) and asset.get("path")
+    }
+    actual = {
+        str(asset.get("path") or ""): asset
+        for asset in (qa.get("assets") or [])
+        if isinstance(asset, dict)
+    }
+    errors: list[str] = []
+    for rel, expected_asset in expected.items():
+        got = actual.get(rel)
+        if not got:
+            continue
+        image_path = cwd / Path(rel)
+        if not image_path.is_file() or sha256_file(image_path) != expected_asset.get("sha256"):
+            errors.append(f"{rel} 最终图片字节已变化（sha256 不一致）")
+        if got.get("sha256") != expected_asset.get("sha256"):
+            errors.append(f"{rel} QA 记录 sha256 与 request 不一致")
+    return errors
+
+
 def validate_qa_result(
     cwd: Path,
     qa: dict[str, Any],
@@ -472,15 +523,13 @@ def validate_qa_result(
             "visual QA 资产集合与 request 不一致："
             f"expected={sorted(expected_assets)} actual={sorted(actual_assets)}"
         )
+    # 字节一致性已抽到 final_byte_errors；这里仍并入返回值以保持本函数语义完整，
+    # 但需要硬拦/放行分离的调用方（evidence.seal/verify）必须单独调那个函数。
+    errors.extend(final_byte_errors(cwd, qa, request=request))
     for rel, expected_asset in expected_assets.items():
         actual = actual_assets.get(rel)
         if not actual:
             continue
-        image_path = cwd / Path(rel)
-        if not image_path.is_file() or sha256_file(image_path) != expected_asset["sha256"]:
-            errors.append(f"{rel} 最终图片字节已变化（sha256 不一致）")
-        if actual.get("sha256") != expected_asset["sha256"]:
-            errors.append(f"{rel} QA 记录 sha256 与 request 不一致")
         checks = actual.get("checks")
         if not isinstance(checks, dict):
             errors.append(f"{rel} 缺 checks")
@@ -509,7 +558,8 @@ def validate_qa_result(
             and not _fully_segmented_by_allowed(value, allowed_values)
         ]
         if unexpected:
-            errors.append(f"{rel} observed_text 含白名单外文字：{unexpected}")
+            # 🔴 2026-08-04 作者授权：降为提示，不阻断（理由见文件头 BASE_REQUIRED_CHECKS 注释）。
+            print(f"  ⚠️ {rel} 含白名单外文字（已记录，不阻断）：{unexpected}")
         required_text = (
             expected_asset.get("required_text", expected_asset.get("expected_text")) or []
         )
@@ -520,13 +570,16 @@ def validate_qa_result(
         ]
         if missing:
             errors.append(f"{rel} observed_text 缺 required_text：{missing}")
+        # 🔴 2026-08-04 作者授权：由「恰好出现一次」放宽为「至少出现一次」。
+        # 「缺失」已由上面的 missing 硬拦；重复出现（例如标题同时出现在图头与图例）
+        # 不构成误导，却会让整批图卡死。多余的重复降为提示。
         repeated = [
             value
             for value in required_text
-            if observed_joined.count(_normalized_text(value)) != 1
+            if observed_joined.count(_normalized_text(value)) > 1
         ]
         if repeated:
-            errors.append(f"{rel} required_text 未恰好出现一次：{repeated}")
+            print(f"  ⚠️ {rel} required_text 出现多次（已记录，不阻断）：{repeated}")
     return errors
 
 
@@ -644,12 +697,24 @@ def run_visual_qa(
     if not isinstance(qa, dict):
         return None, ["独立视觉复核 JSON 顶层必须为对象"]
     validation_errors = validate_qa_result(cwd, qa, request=request)
+    # 🔴 2026-08-04 作者授权：QA 结果无论成败都落盘留痕。
+    # 原来一旦有 error 就 unlink 候选文件，导致 _visual-qa.json 根本不存在 --
+    # 既没有留下"到底哪几张、错在哪"的证据，也让下游 seal 只能报"缺 _visual-qa.json"，
+    # 掩盖了真实原因。现在照常写盘并在文件里标 status/findings，errors 仍原样返回。
+    qa.setdefault("status", "fail" if validation_errors else "pass")
     if validation_errors:
-        candidate.unlink(missing_ok=True)
-        return None, validation_errors
+        qa["status"] = "fail"
+        qa["validation_findings"] = validation_errors
+    # 落盘必须是**改写后**的 qa：直接 move 复核器原始候选文件会把 status=fail 与
+    # validation_findings 丢在内存里，磁盘上留下一份「复核器说 pass」的误导记录。
+    candidate.write_text(
+        json.dumps(qa, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     final_path = cwd / QA_FILE
     candidate.replace(final_path)
     _write_markdown(cwd, qa)
+    if validation_errors:
+        return None, validation_errors
     return qa, []
 
 
