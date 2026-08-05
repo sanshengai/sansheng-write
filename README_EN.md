@@ -27,8 +27,13 @@ topic triage → outline (with opening-strategy routing) → draft → revision 
    → title (5 forged candidates) → typesetting (10 components + contract gates) → images / cover
 ```
 
-Quality is not left to good intentions. It is enforced by **contract gates**:
-non-compliant output exits with code 2 and never reaches publish.
+Quality is not left to good intentions. It is enforced by **contract gates**.
+The Skill's visual planner is the only producer; Baoyu article-illustration and
+infographic skills are verifiable method sources; final pixels must come through
+`baoyu-image-gen`. Cover text, palette, clay illustration method, exactly-once
+required text, and renderer provenance are machine-checked. There is no `force`,
+legacy, preflight-skip, author-waiver, or custom image-command bypass.
+Non-compliant output exits with code 2 and never reaches publish.
 
 ```console
 $ python scripts/format_layout.py final.html --all --check

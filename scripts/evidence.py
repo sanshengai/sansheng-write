@@ -155,9 +155,8 @@ def build_visual_manifest(
     assets: list[dict] = []
     specs: list[tuple[str, str, set[str]]] = []
 
-    # 🔴 Baoyu 依赖锚点校验（2026-08-02）：重新解析磁盘上的 Baoyu 文档，
-    # 与编译期写进 render-batch.json 的 sha256 比对。producer_chain 里的字符串
-    # 是本仓自己写的、证明不了任何事，真正的证据是这组字节锚点。
+    # Baoyu 是方法来源，不是虚构的第二 producer。重新解析方法文档并与编译期
+    # 写入 render-batch.json 的 sha256 比对，避免只靠字符串声明自证。
     errors.extend(_verify_baoyu_anchors(cwd))
 
     cover = cwd / "素材" / "cover.png"
@@ -172,7 +171,7 @@ def build_visual_manifest(
     for path in infos:
         specs.append(
             ("infographic", norm_relpath(str(path.relative_to(cwd))),
-             {VISUAL_PRODUCER, "baoyu-diagram"})
+             {VISUAL_PRODUCER})
         )
 
     hero = cwd / "素材" / "hero.png"
@@ -197,6 +196,7 @@ def build_visual_manifest(
 
         producer = _producer(rec)
         producer_chain = [str(value) for value in rec.get("producer_chain") or []]
+        method_sources = [str(value) for value in rec.get("method_sources") or []]
         renderer = _renderer(rec)
         model = str(rec.get("model") or "").strip()
         provenance_mode = str(rec.get("provenance_mode") or "rendered").strip()
@@ -206,22 +206,29 @@ def build_visual_manifest(
             errors.append(
                 f"{rel} producer={producer or '(空)'}；应为 {sorted(allowed_producers)}"
             )
-        # 封面走自建 montage-evidence 签名视觉，不接 baoyu-cover-image
-        # （2026-08-02 复核定案）；此处刻意不校验封面的 baoyu 链。
+        if producer_chain != [VISUAL_PRODUCER]:
+            errors.append(
+                f"{rel} producer_chain 必须只含真实 producer {VISUAL_PRODUCER}"
+            )
+        # 封面走自建 montage-evidence，不声明 Baoyu 方法来源；Hero / 信息图
+        # 必须声明对应方法来源并由上方字节锚点复验。
         if (
             stage == "hero"
             and producer == VISUAL_PRODUCER
-            and "baoyu-article-illustrator" not in producer_chain
+            and "baoyu-article-illustrator" not in method_sources
         ):
-            errors.append(f"{rel} 缺 baoyu-article-illustrator producer chain")
+            errors.append(f"{rel} 缺 baoyu-article-illustrator method source")
         if (
             stage == "infographic"
             and producer == VISUAL_PRODUCER
-            and "baoyu-infographic" not in producer_chain
+            and "baoyu-infographic" not in method_sources
         ):
-            errors.append(f"{rel} 缺 baoyu-infographic producer chain")
-        if not renderer:
-            errors.append(f"{rel} 缺 renderer，无法区分 baoyu 语义生产者与像素后端")
+            errors.append(f"{rel} 缺 baoyu-infographic method source")
+        if renderer != "baoyu-image-gen":
+            errors.append(
+                f"{rel} renderer={renderer or '(空)'}；最终像素必须经 baoyu-image-gen，"
+                "不允许原生客户端、本地模板或自定义命令旁路"
+            )
         if strict and not model:
             errors.append(f"{rel} 缺 model")
         if provenance_mode not in {"rendered", "adopted-postprocessed"}:
@@ -265,6 +272,7 @@ def build_visual_manifest(
             "prompt_sha256": prompt_sha,
             "producer": producer,
             "producer_chain": producer_chain,
+            "method_sources": method_sources,
             "renderer": renderer,
             "renderer_revision": str(rec.get("renderer_revision") or ""),
             "provider": str(rec.get("provider") or ""),
@@ -312,19 +320,12 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         from .visual_qa import final_byte_errors, validate_qa_result
     except ImportError:  # pragma: no cover - direct script execution
         from visual_qa import final_byte_errors, validate_qa_result
-    # 🔴 字节一致性先单独硬拦：作者授权放行的是**看图判定**，不是「发出去的字节
-    # 可以不是复核过的那批」。两者曾混在同一个 errors 列表里，一起被降级过。
     byte_errors = final_byte_errors(cwd, qa_payload)
     if byte_errors:
         return None, byte_errors
     qa_errors = validate_qa_result(cwd, qa_payload)
-    # 🔴 2026-08-04 作者授权：视觉 QA 不再阻断封存与发布，改为写进 receipt 留痕。
-    # 依据：2026-07-28 加严后，QA 出现两层随机叠加 --（1）生成模型每轮自加不同的装饰
-    # 文字/编号；（2）看图复核员对同一张未改动的图，不同轮次给出不同结论（实测
-    # infographic-05 上一轮 pass、下一轮 crop_safe fail，字节完全未变）。
-    # 八轮重渲均无法收敛。QA 照常运行、照常落盘，结果作为证据保留在 receipt 里，
-    # 由作者在微信草稿箱亲眼验收后决定是否换图。
-    # 🔴 仍然硬拦的是 build_visual_manifest（字节一致性），那一条不放行。
+    if qa_errors:
+        return None, qa_errors
     # add_logo/compression 会合法改变渲染器输出；从 seal 开始由 receipt 接管最终字节。
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
@@ -339,8 +340,7 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         "qa_path": "_visual-qa.json",
         "qa_sha256": sha256_file(qa),
         "qa_status": qa_payload.get("status"),
-        "qa_findings": qa_errors,
-        "qa_waived_by_author": bool(qa_errors),
+        "qa_findings": [],
     }
     (cwd / VISUAL_RECEIPT_FILE).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -373,20 +373,8 @@ def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
                 from .visual_qa import final_byte_errors, validate_qa_result
             except ImportError:  # pragma: no cover - direct script execution
                 from visual_qa import final_byte_errors, validate_qa_result
-            # 🔴 字节一致性单独硬拦，绝不降级（详见 visual_qa.final_byte_errors）。
             errors.extend(final_byte_errors(cwd, qa_payload))
-            qa_findings = validate_qa_result(cwd, qa_payload)
-            # 🔴 2026-08-04 作者授权：QA 结论不再阻断发布，降为提示。
-            # 这里是 release-to-draft 的三条校验路径（直接 / visual_receipt /
-            # publish_manifest）共用的入口，只在 seal 处放行是不够的。
-            # 仍然硬拦的是上面两条：manifest_digest 字节一致性、_visual-qa.json
-            # 是否被篡改 —— 它们保证"发出去的就是复核过的那批字节"，那才是这道门的本意。
-            if qa_findings:
-                print(
-                    "  ⚠️ 视觉 QA 有未通过项（作者已授权放行，不阻断发布）："
-                    + "；".join(qa_findings[:4])
-                    + ("…" if len(qa_findings) > 4 else "")
-                )
+            errors.extend(validate_qa_result(cwd, qa_payload))
         except Exception as exc:
             errors.append(f"_visual-qa.json 解析失败：{exc}")
     return receipt, errors

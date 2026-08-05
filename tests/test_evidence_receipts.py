@@ -27,7 +27,15 @@ def _png(path: Path, size=(1200, 675), color=(220, 210, 190)):
 def _visual_bundle(root: Path) -> Path:
     (root / "素材/prompts/final").mkdir(parents=True)
     (root / "article-meta.yaml").write_text(
+        "title: 视觉合同\n"
         "cover_style: montage-evidence\n"
+        "lead:\n"
+        "  line1: 规则不能丢\n"
+        "  line2: 弱模型也能稳\n"
+        "  accent: 也能稳\n"
+        "  subtitle: 文章导读\n"
+        "  tag1: 硬门\n"
+        "  tag2: 证据链\n"
         "infographic_subject: ai-product\ninfographic_style: claymation\n",
         encoding="utf-8",
     )
@@ -49,24 +57,20 @@ def _visual_bundle(root: Path) -> Path:
         )
         producer = "sansheng-write.visual-planner"
         logs.append({
-            "schema_version": 2,
+            "schema_version": 3,
             "record_id": f"rec-{i}",
             "stage": stage,
             "producer": producer,
-            "producer_chain": [
-                producer,
-                *(
-                    ["baoyu-cover-image"]
-                    if stage == "cover"
-                    else ["baoyu-article-illustrator"]
-                    if stage == "hero"
-                    else ["baoyu-infographic"]
-                    if stage == "infographic"
-                    else []
-                ),
-            ],
+            "producer_chain": [producer],
+            "method_sources": (
+                ["baoyu-article-illustrator"]
+                if stage == "hero"
+                else ["baoyu-infographic"]
+                if stage == "infographic"
+                else []
+            ),
             "tool": producer,
-            "renderer": "imagegen",
+            "renderer": "baoyu-image-gen",
             "model": "test-model",
             "output": f"素材/{name}",
             "output_sha256": sha256_file(output),
@@ -230,16 +234,14 @@ def test_visual_receipt_includes_hero_when_present(tmp_path):
     prompt.write_text("---\nstyle: claymation\n---\n浅色 Hero\n", encoding="utf-8")
     with (article / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
         fp.write(json.dumps({
-            "schema_version": 2,
+            "schema_version": 3,
             "record_id": "rec-hero",
                 "stage": "hero",
                 "producer": "sansheng-write.visual-planner",
-                "producer_chain": [
-                    "sansheng-write.visual-planner",
-                    "baoyu-article-illustrator",
-                ],
+                "producer_chain": ["sansheng-write.visual-planner"],
+                "method_sources": ["baoyu-article-illustrator"],
                 "tool": "sansheng-write.visual-planner",
-            "renderer": "gen_img",
+            "renderer": "baoyu-image-gen",
             "model": "test-model",
             "output": "素材/hero.png",
             "output_sha256": sha256_file(hero),
@@ -375,6 +377,8 @@ def test_stage_timestamps_preserved_and_downstream_invalidated(tmp_path, monkeyp
         "topic_id": "fixture",
         "stages": {stage: {"status": "pending"} for stage in pipeline.STAGE_ORDER},
     }
+    for upstream in pipeline.STAGE_ORDER[:pipeline.STAGE_ORDER.index("layout")]:
+        state["stages"][upstream]["status"] = "done"
     state["stages"]["logo"]["status"] = "done"
     state["stages"]["publish"]["status"] = "done"
     pipeline._record_stage_success(tmp_path, state, "layout")

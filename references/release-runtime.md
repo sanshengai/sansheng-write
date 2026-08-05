@@ -40,9 +40,10 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 python "$SKILL/scripts/pipeline.py" compile-visuals
 ```
 
-编译器生成 canonical prompts 和 `素材/render-batch.json`。业务生产者固定为 `sansheng-write.visual-planner`。
-封面生产链必须记录 `baoyu-cover-image`，信息图生产链必须记录 `baoyu-infographic`；
-只有风格名而没有 producer chain 的任务不得发布。
+编译器生成 canonical prompts 和 `素材/render-batch.json`。业务生产者固定为
+`sansheng-write.visual-planner`，`producer_chain` 只允许这个真实执行者。Hero / 信息图必须
+分别记录 `baoyu-article-illustrator` / `baoyu-infographic` 的 `method_sources` 与 SKILL 字节锚点；
+封面只走本仓 `montage-evidence`。缺方法锚点、伪造 producer chain 或视觉合同不完整都不得发布。
 
 ## 2. 调用外部像素渲染器
 
@@ -61,35 +62,20 @@ python "$SKILL/scripts/pipeline.py" select-visuals \
 候选只保存在 `素材/candidates/`；未执行 `select-visuals` 时视觉 QA 会硬拦。系统绝不把最后一张随机生成图冒充为“最佳图”。
 请求多候选但因 429 等原因只生成出一张时，选择命令必须失败，禁止把残留单图标成“已选择”。
 
-当前适配器只可调用登记的生成式 renderer（例如 `baoyu-image-gen` CLI）。
+当前适配器只可调用 `baoyu-image-gen` CLI。
 外部渲染器只负责像素，不决定版式、风格、文字或比例。图中文字必须由生成模型与画面一起原生生成；不允许本地模板/Pillow 绘制或后期叠字。运行前会探测 batch
-能力；仅按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、比例和输出目标。
-未配置 policy 时使用已安装渲染器的默认 provider。
+能力；仅在 `baoyu-image-gen` 内按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、
+比例和输出目标。未配置 policy 时直接使用 `baoyu-image-gen` 默认 provider。`sansheng-google`
+等本仓原生 provider 会绕开 Baoyu，现已无条件拒绝；不存在“写理由放行”。
 
-**默认走 `provider: sansheng-google`**（模板 `templates/renderer-policy.template.json`
-已按此预置）。该路径由本 Skill 自带的 `gen_img.py` 渲染，按 key 前缀自动分流
-AI Studio / Vertex Express 端点，并记录实际 fallback 后的模型 ID。
-
-运行 `render-visuals` 前会先对本次 Google renderer 做零配额路由预检：Vertex Express 必须是
-`/v1/projects/{project}/locations/global/publishers/google/models/{model}:generateContent`。预检失败会在首张图之前停下；它不会拿一批图片请求去“试”端点。
-
-🔴 **模型 ID 不要带 `-preview`。** 这些模型转正后 preview 的 ID 会下线返回 404，
-而降级链会先撞一次 404 再发真请求 —— 等于每张图多打一发空枪，一批 6 张变 12 次
-调用，突发速率翻倍后触发按分钟计的配额（429）。典型症状是「一批总有两三张失败，
-重跑又换成另外几张失败」。`gen_img.py` 检测到这一支会打印 `[🔴 请改配置]`，
-看到就去改 `renderer-policy.json`，别当噪音。
-
-🔴 **429 不是「模型不可用」，换模型没有用。** 它按分钟配额触发，处置是退避重试
-（`gen_img.py` 内建）+ 降并发（`render_visuals.py` 的 `_DEFAULT_JOBS`）。
-把它和 404 混在同一条降级链里，会拿好模型去撞已经满的配额，还把真因掩盖成
-「模型不行」。
-
-⚠️ `sansheng-template-safe` 与 `sansheng-google-text-safe` 已被运行时拒绝；历史配置必须改成生成式 provider。`expected_text` 越少越好，超过 4 条会显著提高重复与错字概率。
+🔴 **模型 ID 不要带 `-preview`。** 模型转正后 preview ID 可能下线返回 404；
+429 则通常是速率配额，应该退避重试并降低并发，不要混入另一条绕过 Baoyu 的原生链。
+`sansheng-template-safe`、`sansheng-google-text-safe`、`sansheng-google` 均被运行时拒绝。
 
 每张图必须记录：
 
 - `producer=sansheng-write.visual-planner`
-- 实际 renderer（如 `baoyu-image-gen` 或 `gen_img`）
+- 实际 renderer（必须为 `baoyu-image-gen`）
 - 实际 provider、model、renderer revision、attempt
 - prompt/output SHA-256
 
@@ -119,7 +105,7 @@ python "$SKILL/scripts/compress_images.py" 素材
 `compress_images.py` 收图前自动转 PNG 并改写引用；`build_expected_draft` 推送前硬拦；
 `_compare_readback` 回读后兜底。
 
-数据图只允许根据已核实数字用本地确定性图表代码渲染；精确拓扑图可走 `baoyu-diagram`。两者都不得让生成模型编造数值。
+数据图与精确拓扑图只允许根据已核实内容走独立本地确定性代码路径；两者都不得让生成模型编造数值，也不得冒充封面 / Hero / 信息图进入最终图证据集。
 
 ## 4. 独立视觉 QA 与封存
 

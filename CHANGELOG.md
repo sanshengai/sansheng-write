@@ -4,6 +4,21 @@
 
 ## [未发布]
 
+### 破坏性变更
+
+- **生图链改为不可绕过的硬门**：`render-visuals` 只接受 `baoyu-image-gen`，删除原生 Google、本地模板、环境变量自定义命令、`force`、`legacy`、跳过预检和作者豁免等旁路；上游阶段未完成、QA 有任一错误或最终字节与验收不一致时，均不能封印或发布。
+- **封面文字合同统一为五项**：封面只认 `lead.line1 / line2 / accent / tag1 / tag2`，五项缺一不可；`subtitle` 只属于文章元数据，不再进入封面。标题长度、强调词后缀、两个短标签及唯一性在编译前校验。
+
+### 改进
+
+- **配图职责与证据分层**：`sansheng-write.visual-planner` 是唯一真实 producer；`baoyu-article-illustrator` 与 `baoyu-infographic` 作为可复验的方法来源写入 `method_sources`，最终像素后端单独记录为 `baoyu-image-gen`，不再伪造多级 producer chain。
+- **品牌配色写进 canonical prompt**：封面、Hero 和信息图显式绑定视觉 profile 的背景色、强调色与中性色；封面两个标签必须按白名单原样出图。
+- **文字 QA 恢复确定性硬校验**：必备文字必须恰好出现一次，缺字、错字、重复、方框字和意外文字全部失败；QA 结果不能被人工声明覆盖，封印同时校验图片字节与 QA 绑定关系。
+
+### 修复
+
+- 修复封面编译读取 `subtitle`、运行时要求 `tag1/tag2` 的合同错位，以及配图规则只写在文档、没有进入 prompt / receipt / seal 的静默失效问题。
+
 ## [0.14.0] -- 2026-08-04
 
 ### 新增

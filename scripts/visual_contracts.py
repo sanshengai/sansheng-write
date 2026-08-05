@@ -10,6 +10,10 @@ turn the article illustration system into a different palette or material.
 from __future__ import annotations
 
 import copy
+import re
+
+
+COVER_TEXT_CONTRACT_REVISION = "montage-cover-text/1"
 
 
 SIGNATURE_VISUAL_PROFILES = {
@@ -100,3 +104,88 @@ def signature_visual_profile(name: str) -> dict:
     raw = SIGNATURE_VISUAL_PROFILES.get(str(name or "").strip())
     return copy.deepcopy(raw) if raw else {}
 
+
+def visual_text_width(value: object) -> float:
+    """Return the visual width used by the cover/lead contracts.
+
+    CJK glyphs count as one unit, ASCII and other glyphs as half a unit, and
+    whitespace does not consume a slot.  This deliberately matches the lead
+    audit in ``contracts.py`` so the same metadata cannot pass one consumer and
+    fail another.
+    """
+
+    width = 0.0
+    for char in str(value or ""):
+        if char.isspace():
+            continue
+        width += 1.0 if re.match(r"[\u4e00-\u9fff]", char) else 0.5
+    return width
+
+
+def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
+    """Resolve and validate the only supported montage-cover text schema.
+
+    ``lead.subtitle`` is the article lead subtitle.  It is intentionally not a
+    cover tag.  Cover tags come from ``lead.tag1`` and ``lead.tag2`` only.
+    """
+
+    errors: list[str] = []
+    lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
+    if not lead:
+        return {}, ["article-meta.yaml 缺 lead，无法建立封面文字合同"]
+
+    values: dict[str, str] = {}
+    for key in ("line1", "line2", "accent", "tag1", "tag2"):
+        raw = lead.get(key)
+        if raw is not None and not isinstance(raw, str):
+            errors.append(f"lead.{key} 必须是字符串")
+            values[key] = ""
+        else:
+            values[key] = str(raw or "").strip()
+
+    subtitle = lead.get("subtitle")
+    if subtitle is not None and not isinstance(subtitle, str):
+        errors.append(
+            "lead.subtitle 必须是字符串；封面标签只使用 lead.tag1 / lead.tag2"
+        )
+
+    required = {
+        "line1": "封面 L1",
+        "line2": "封面 L2",
+        "accent": "封面 L2 主题色落点",
+        "tag1": "封面胶囊标签 1",
+        "tag2": "封面胶囊标签 2",
+    }
+    for key, label in required.items():
+        if not values[key]:
+            errors.append(f"lead.{key} 不能为空（{label}）")
+
+    if values["line1"] and visual_text_width(values["line1"]) > 8:
+        errors.append("lead.line1 超过 8 个汉字位，封面主标题会被迫缩小")
+    if values["line2"] and visual_text_width(values["line2"]) > 12:
+        errors.append("lead.line2 超过 12 个汉字位，封面副标题无法保持单行")
+
+    accent_width = visual_text_width(values["accent"])
+    if values["accent"] and not (2 <= accent_width <= 5):
+        errors.append("lead.accent 必须为 2--5 个汉字位")
+    if (
+        values["accent"]
+        and values["line2"]
+        and not values["line2"].endswith(values["accent"])
+    ):
+        errors.append("lead.accent 必须是 lead.line2 的结尾子串")
+
+    tags = [values["tag1"], values["tag2"]]
+    for index, tag in enumerate(tags, start=1):
+        if tag and visual_text_width(tag) > 4:
+            errors.append(f"lead.tag{index} 超过 4 个汉字位，封面胶囊会失稳")
+    if all(tags) and tags[0] == tags[1]:
+        errors.append("lead.tag1 与 lead.tag2 不得重复")
+
+    return {
+        "contract_revision": COVER_TEXT_CONTRACT_REVISION,
+        "line1": values["line1"],
+        "line2": values["line2"],
+        "accent_phrase": values["accent"],
+        "tags": tags,
+    }, errors

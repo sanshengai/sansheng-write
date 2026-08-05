@@ -36,6 +36,14 @@ def _article(root: Path) -> Path:
                         "promptFiles": [f"prompts/final/{prompt}"],
                         "image": image,
                         "ar": ar,
+                        "producer_chain": [VISUAL_PRODUCER],
+                        "method_sources": (
+                            ["baoyu-article-illustrator"]
+                            if task_id == "hero"
+                            else ["baoyu-infographic"]
+                            if task_id.startswith("infographic")
+                            else []
+                        ),
                     }
                     for task_id, prompt, image, ar in tasks
                 ],
@@ -49,15 +57,12 @@ def _article(root: Path) -> Path:
             {
                 "schema_version": 1,
                 "renderers": [
-                    # 显式 provider 会绕开 baoyu-image-gen，新契约要求写明理由
-                    # （2026-08-02）：否则 _load_policy 直接拒绝该项。
                     {
                         "id": "primary",
                         "provider": "broken",
                         "model": "model-a",
                         "quality": "2k",
                         "imageSize": "1K",
-                        "override_baoyu_reason": "test fixture: 验证降级链",
                     },
                     {
                         "id": "fallback",
@@ -65,7 +70,6 @@ def _article(root: Path) -> Path:
                         "model": "model-b",
                         "quality": "2k",
                         "imageSize": "1K",
-                        "override_baoyu_reason": "test fixture: 验证降级链",
                     },
                 ],
             }
@@ -123,6 +127,17 @@ raise SystemExit(0 if all(item["success"] for item in results) else 1)
     return [sys.executable, str(script)]
 
 
+def _install_fake_renderer(monkeypatch, root: Path) -> None:
+    from scripts import render_visuals
+
+    command = _fake_renderer(root)
+    monkeypatch.setattr(
+        render_visuals,
+        "resolve_renderer_command",
+        lambda: (command, "test-revision", []),
+    )
+
+
 def test_probe_requires_baoyu_batch_capabilities(tmp_path):
     from scripts.render_visuals import probe_renderer
 
@@ -154,15 +169,29 @@ def test_renderer_discovery_prefers_shared_skill_entry(tmp_path, monkeypatch):
     assert stale.resolve() in candidates
 
 
-def test_fallback_keeps_canonical_prompt_and_aspect_unchanged(tmp_path):
+def test_renderer_command_environment_override_cannot_bypass_baoyu(tmp_path, monkeypatch):
+    from scripts import render_visuals
+
+    baoyu = tmp_path / "baoyu-image-gen"
+    (baoyu / "scripts").mkdir(parents=True)
+    entrypoint = baoyu / "scripts/main.ts"
+    entrypoint.write_text("// baoyu renderer\n", encoding="utf-8")
+    monkeypatch.setenv("SANSHENG_WRITE_IMAGE_COMMAND", "malicious-renderer --accept-all")
+    monkeypatch.setattr(render_visuals, "_candidate_renderer_dirs", lambda: [baoyu])
+    monkeypatch.setattr(render_visuals.shutil, "which", lambda name: "bun.exe" if name == "bun" else None)
+
+    command, _, errors = render_visuals.resolve_renderer_command()
+
+    assert errors == []
+    assert command == ["bun.exe", str(entrypoint)]
+
+
+def test_fallback_keeps_canonical_prompt_and_aspect_unchanged(tmp_path, monkeypatch):
     from scripts.render_visuals import render_visuals
 
     article = _article(tmp_path)
-    receipt, errors = render_visuals(
-        article,
-        renderer_command=_fake_renderer(tmp_path),
-        renderer_revision="test-revision",
-    )
+    _install_fake_renderer(monkeypatch, tmp_path)
+    receipt, errors = render_visuals(article)
 
     assert errors == []
     assert receipt["status"] == "done"
@@ -184,15 +213,12 @@ def test_fallback_keeps_canonical_prompt_and_aspect_unchanged(tmp_path):
     assert {task["provider"] for task in calls[1]["tasks"]} == {"working"}
 
 
-def test_render_log_records_truthful_producer_renderer_and_revision(tmp_path):
+def test_render_log_records_truthful_producer_renderer_and_revision(tmp_path, monkeypatch):
     from scripts.render_visuals import render_visuals
 
     article = _article(tmp_path)
-    _, errors = render_visuals(
-        article,
-        renderer_command=_fake_renderer(tmp_path),
-        renderer_revision="test-revision",
-    )
+    _install_fake_renderer(monkeypatch, tmp_path)
+    _, errors = render_visuals(article)
 
     assert errors == []
     records = [
@@ -215,7 +241,7 @@ def test_render_log_records_truthful_producer_renderer_and_revision(tmp_path):
     assert {image["style"] for image in final_set["images"]} == {"claymation"}
 
 
-def test_no_configured_renderer_success_means_nonzero_contract(tmp_path):
+def test_no_configured_renderer_success_means_nonzero_contract(tmp_path, monkeypatch):
     from scripts.render_visuals import render_visuals
 
     article = _article(tmp_path)
@@ -223,18 +249,15 @@ def test_no_configured_renderer_success_means_nonzero_contract(tmp_path):
     policy["renderers"] = policy["renderers"][:1]
     (article / "renderer-policy.json").write_text(json.dumps(policy), encoding="utf-8")
 
-    receipt, errors = render_visuals(
-        article,
-        renderer_command=_fake_renderer(tmp_path),
-        renderer_revision="test-revision",
-    )
+    _install_fake_renderer(monkeypatch, tmp_path)
+    receipt, errors = render_visuals(article)
 
     assert receipt is None
     assert any("simulated 503" in error for error in errors)
     assert not (article / "素材/render-receipt.json").exists()
 
 
-def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
+def test_native_google_policy_is_rejected_before_any_render_call(tmp_path):
     from scripts.render_visuals import render_visuals
 
     article = _article(tmp_path)
@@ -246,7 +269,6 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
                     {
                         "id": "native-google",
                         "provider": "sansheng-google",
-                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
                         "model": "gemini-3.1-flash-image",
                         "quality": "1k",
                         "imageSize": "1K",
@@ -257,147 +279,19 @@ def test_native_google_policy_bypasses_baoyu_and_records_actual_model(tmp_path):
         encoding="utf-8",
     )
 
-    def fake_native(cwd, tasks, renderer, jobs):
-        results = []
-        for task in tasks:
-            output = cwd / "素材" / task["image"]
-            output.write_bytes(b"\x89PNG\r\n\x1a\n" + task["id"].encode("utf-8"))
-            results.append(
-                {
-                    "id": task["id"],
-                    "provider": "google",
-                    "model": "gemini-2.5-flash-image",
-                    "renderer": "gen_img",
-                    "outputPath": str(output),
-                    "success": True,
-                    "attempts": 1,
-                    "error": None,
-                }
-            )
-        return {"returncode": 0, "results": results}
-
-    receipt, errors = render_visuals(
-        article,
-        native_google_renderer=fake_native,
-        renderer_revision="native-test-revision",
-    )
-
-    assert errors == []
-    assert receipt["status"] == "done"
-    assert {asset["renderer"] for asset in receipt["assets"]} == {"gen_img"}
-    assert {asset["provider"] for asset in receipt["assets"]} == {"google"}
-    assert {asset["model"] for asset in receipt["assets"]} == {
-        "gemini-2.5-flash-image"
-    }
-
-
-def test_partial_native_success_is_logged_for_resume(tmp_path):
-    from scripts.render_visuals import render_visuals
-
-    article = _article(tmp_path)
-    (article / "renderer-policy.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "renderers": [
-                    {
-                        "id": "native-google",
-                        "provider": "sansheng-google",
-                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
-                        "model": "gemini-3.1-flash-image",
-                        "quality": "1k",
-                        "imageSize": "1K",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    def partial_native(cwd, tasks, renderer, jobs):
-        results = []
-        for task in tasks:
-            success = task["id"] != "hero"
-            output = cwd / "素材" / task["image"]
-            if success:
-                output.write_bytes(b"\x89PNG\r\n\x1a\n" + task["id"].encode("utf-8"))
-            results.append(
-                {
-                    "id": task["id"],
-                    "provider": "google",
-                    "model": renderer["model"],
-                    "renderer": "gen_img",
-                    "outputPath": str(output),
-                    "success": success,
-                    "attempts": 1,
-                    "error": None if success else "simulated 429",
-                }
-            )
-        return {"returncode": 1, "results": results}
-
-    receipt, errors = render_visuals(
-        article,
-        native_google_renderer=partial_native,
-        renderer_revision="native-test-revision",
-    )
+    receipt, errors = render_visuals(article)
 
     assert receipt is None
-    assert any("simulated 429" in error for error in errors)
-    records = [
-        json.loads(line)
-        for line in (article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    assert {record["output"] for record in records} == {
-        "素材/cover.png",
-        "素材/infographic-01.png",
-    }
+    assert any("绕过 baoyu-image-gen" in error and "不允许授权例外" in error for error in errors)
 
 
-def test_native_google_route_preflight_fails_before_any_render_call(tmp_path):
-    from scripts.render_visuals import render_visuals
-
-    article = _article(tmp_path)
-    (article / "renderer-policy.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "renderers": [
-                    {
-                        "id": "native-google",
-                        "provider": "sansheng-google",
-                        "override_baoyu_reason": "test fixture: 专测绕过 Baoyu 的原生 Google 路径",
-                        "model": "gemini-3-pro-image",
-                        "quality": "1k",
-                        "imageSize": "1K",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    calls = []
-
-    receipt, errors = render_visuals(
-        article,
-        native_google_renderer=lambda *args: calls.append(args),
-        google_route_preflight=lambda _model: (_ for _ in ()).throw(
-            SystemExit("缺 publishers/google")
-        ),
-    )
-
-    assert receipt is None
-    assert calls == []
-    assert any("端点预检失败" in error and "publishers/google" in error for error in errors)
-
-
-def test_candidates_require_explicit_selection_before_final_receipt(tmp_path):
+def test_candidates_require_explicit_selection_before_final_receipt(tmp_path, monkeypatch):
     from scripts.render_visuals import render_visuals, select_visual_candidates
 
     article = _article(tmp_path)
+    _install_fake_renderer(monkeypatch, tmp_path)
     receipt, errors = render_visuals(
         article,
-        renderer_command=_fake_renderer(tmp_path),
-        renderer_revision="test-revision",
         candidate_count=2,
     )
 
@@ -419,14 +313,13 @@ def test_candidates_require_explicit_selection_before_final_receipt(tmp_path):
     assert (article / "素材/cover.png").is_file()
 
 
-def test_incomplete_candidate_run_cannot_be_marked_selected(tmp_path):
+def test_incomplete_candidate_run_cannot_be_marked_selected(tmp_path, monkeypatch):
     from scripts.render_visuals import render_visuals, select_visual_candidates
 
     article = _article(tmp_path)
+    _install_fake_renderer(monkeypatch, tmp_path)
     receipt, errors = render_visuals(
         article,
-        renderer_command=_fake_renderer(tmp_path),
-        renderer_revision="test-revision",
         candidate_count=2,
     )
     assert errors == []
@@ -469,4 +362,4 @@ def test_template_safe_policy_is_rejected_to_keep_text_model_native(tmp_path):
     receipt, errors = render_visuals(article)
 
     assert receipt is None
-    assert any("本地模板绘制图中文字" in error for error in errors)
+    assert any("绕过 baoyu-image-gen" in error and "不允许授权例外" in error for error in errors)

@@ -19,16 +19,17 @@ except ImportError:  # pragma: no cover - direct script execution
 try:
     from .evidence import stable_digest
     from .profile_config import visual_profile
+    from .visual_contracts import cover_text_contract
 except ImportError:  # pragma: no cover - direct script execution
     from evidence import stable_digest
     from profile_config import visual_profile
+    from visual_contracts import cover_text_contract
 
 
 VISUAL_PLAN_FILE = "visual-plan.json"
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
-BAOYU_COVER_PRODUCER = "baoyu-cover-image"
-BAOYU_ARTICLE_PRODUCER = "baoyu-article-illustrator"
-BAOYU_INFOGRAPHIC_PRODUCER = "baoyu-infographic"
+BAOYU_ARTICLE_METHOD = "baoyu-article-illustrator"
+BAOYU_INFOGRAPHIC_METHOD = "baoyu-infographic"
 # 🔴 全站信息图统一粘土风，不再按题材做风格路由（2026-07-29 作者拍板）。
 # 旧机制让 infographic_subject 这个主观判断去决定视觉：填 ai-product 走 claymation、
 # 填 phenomenon 走 morandi-journal，而三处校验只查「subject 与 style 是否配套」，
@@ -247,27 +248,8 @@ def _recipe(meta: dict) -> tuple[dict, list[str]]:
 
 
 def _cover_text(meta: dict, item: dict) -> dict:
-    lead = meta.get("lead") if isinstance(meta.get("lead"), dict) else {}
-    line1 = str(lead.get("line1") or item.get("title") or "").strip()
-    line2 = str(lead.get("line2") or item.get("subtitle") or "").strip()
-    # subtitle 可写成字符串（单条）或 YAML 列表（2-4 个短标签）。
-    # 用列表而不是「拿分隔符切一个长字符串」，是因为标签自身就可能含 `/`
-    # （如「5h/7d 额度」），切了必错。
-    raw_subtitle = lead.get("subtitle")
-    if isinstance(raw_subtitle, (list, tuple)):
-        tags = [str(v).strip() for v in raw_subtitle if str(v or "").strip()][:4]
-    else:
-        tags = [str(raw_subtitle).strip()] if str(raw_subtitle or "").strip() else []
-    # 主题色落点：meta 显式指定优先。不指定就让模型自己挑 L2 的收尾短语 ——
-    # 能出图，但落点会飘（同一批封面里有的染动词、有的染名词）。
-    # 显式写死才能让「哪几个字是绿的」在标题阶段就拍板，见 references/title.md。
-    accent_phrase = str(lead.get("accent") or "").strip()
-    return {
-        "line1": line1,
-        "line2": line2,
-        "tags": tags,
-        "accent_phrase": accent_phrase,
-    }
+    text, _ = cover_text_contract(meta)
+    return text
 
 
 def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
@@ -286,6 +268,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         # montage-evidence 是自建签名视觉（英文 ghost 叠加），只反哺方法论、不走外部配方。
         # 声明一个明确不使用的依赖只会让 producer_chain 再次退化成空标签。
         "producer_chain": [VISUAL_PRODUCER],
+        "cover_text_contract": text["contract_revision"],
         "stage": "cover",
         "style": "montage-evidence",
         "visual_profile": recipe["name"],
@@ -293,8 +276,10 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "aspect_ratio": "2.35:1",
         "expected_text_sha256": _expected_text_digest(expected),
     }
-    tags = " / ".join(text["tags"]) or "(none)"
+    tags = " / ".join(text["tags"])
+    background = recipe["background"]
     accent = recipe["accent"]
+    neutrals = ", ".join(recipe.get("neutrals") or [])
     accent_hint = (
         f"the exact characters 「{text['accent_phrase']}」"
         if text.get("accent_phrase")
@@ -330,7 +315,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "12%-14% of the canvas height, and its line MUST span 70%-90% of the width "
         "of the left text zone. No other high-contrast text may be set larger than it.\n"
         "- The supporting subtitle is 58%-64% of the headline cap height: semibold white, "
-        f"one line only, with ONLY {accent_hint} rendered in the muted emerald accent. "
+        f"one line only, with ONLY {accent_hint} rendered in the exact accent color {accent}. "
         "Never colour any part of the main headline — it earns dominance through size, not hue.\n"
         f"- Descriptor tags: {tags}. Render them at "
         "30%-34% of headline cap height inside the pill; tags never compete with the headline.\n"
@@ -343,13 +328,13 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         # glossy reflections 依然全图有效，这里要的是**半透明 + 细微颗粒的哑光**，
         # 不是高光条、镜面反射或彩虹边。两者一旦混淆就会渲成廉价的玻璃按钮。
         "- Put all tags in ONE auto-fit pill sitting directly under L2. Fill the pill "
-        "with the muted emerald accent at 78%-85% opacity over the dark canvas, so it "
+        f"with the exact accent color {accent} at 78%-85% opacity over the dark canvas, so it "
         "reads as a soft branded chip rather than a bright solid block. Give it a FLAT "
         "MATTE frosted body: slight translucency plus a very faint grain. No border, no "
         "glow, no drop shadow, no specular highlight, no rim light, no gradient sheen, "
         "no reflection. Frosted here means matte translucency only, NOT glassmorphism.\n"
         "- Separate the tags with thin vertical dividers or a slash. Tag text is pure "
-        "white. Two to four tags maximum; never wrap the pill onto a second line.\n\n"
+        "white. Render exactly the two allowlisted tags; never add, drop, merge or wrap a tag.\n\n"
         "## RIGHT COLLAGE\n"
         "- Use one dominant flat-vector metaphor object derived from the verified facts, "
         "plus exactly three much smaller dark evidence badges and restrained curved dashed "
@@ -359,11 +344,11 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "maps or service nodes to express the argument.\n"
         "- Main object: flat-vector editorial form with thin physical depth, same-hue "
         "halftone, upper-left highlight and soft lower-right contact shadow.\n"
-        "- Badges: very dark charcoal fill, a hairline emerald border, rounded corners; never white cards.\n\n"
+        f"- Badges: very dark charcoal fill, a hairline border in {accent}, rounded corners; never white cards.\n\n"
         "## COLOR & BACKGROUND\n"
-        "- Canvas base: deep charcoal.\n"
-        "- Only visible accent hue: muted emerald; other foreground text is pure white.\n"
-        "- Deep surfaces use only near-black charcoal shades.\n"
+        f"- Canvas base MUST be the exact deep-charcoal color {background}.\n"
+        f"- The only visible accent hue is exactly {accent}; all other foreground text is pure white.\n"
+        f"- Deep surfaces use only these registered near-black neutrals: {neutrals}.\n"
         "- No hard split-color panels; no bright, beige, photographic or scrapbook canvas.\n\n"
         "## STRICT FORBIDDEN\n"
         "- No recognisable faces, detailed hands, photorealistic stock imagery, robots, glowing brains, "
@@ -452,7 +437,8 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
-        "producer_chain": [VISUAL_PRODUCER, BAOYU_ARTICLE_PRODUCER],
+        "producer_chain": [VISUAL_PRODUCER],
+        "method_sources": [BAOYU_ARTICLE_METHOD],
         "stage": "hero",
         "style": style,
         "aspect_ratio": "1:1",
@@ -512,7 +498,8 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
     fields = {
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
-        "producer_chain": [VISUAL_PRODUCER, BAOYU_INFOGRAPHIC_PRODUCER],
+        "producer_chain": [VISUAL_PRODUCER],
+        "method_sources": [BAOYU_INFOGRAPHIC_METHOD],
         "stage": "infographic",
         "id": str(item.get("id") or ""),
         "position": str(item.get("position") or ""),
@@ -604,6 +591,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     meta, meta_errors = _load_meta(cwd)
     errors.extend(meta_errors)
     errors.extend(validate_visual_plan(plan))
+    _, cover_text_errors = cover_text_contract(meta)
+    errors.extend(cover_text_errors)
     recipe, recipe_errors = _recipe(meta)
     errors.extend(recipe_errors)
 
@@ -664,7 +653,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     analysis_lines = [
         "# Visual Plan Analysis",
         "",
-        f"- producer chain: {VISUAL_PRODUCER} → {BAOYU_INFOGRAPHIC_PRODUCER}",
+        f"- producer: {VISUAL_PRODUCER}",
+        f"- method source: {BAOYU_INFOGRAPHIC_METHOD}",
         f"- style: {style}",
         f"- plan_digest: {stable_digest(plan)}",
         "",
@@ -672,7 +662,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     structured_lines = [
         "# Structured Visual Content",
         "",
-        f"- producer chain: {VISUAL_PRODUCER} → {BAOYU_INFOGRAPHIC_PRODUCER}",
+        f"- producer: {VISUAL_PRODUCER}",
+        f"- method source: {BAOYU_INFOGRAPHIC_METHOD}",
         f"- style: {style}",
         "",
     ]
@@ -704,11 +695,12 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
             "hero" if task_id == "hero" else "infographic"
         )
         producer_chain = [VISUAL_PRODUCER]
+        method_sources = []
         # 封面走自建 montage-evidence，不接 baoyu-cover-image（见上方说明）。
         if stage == "hero":
-            producer_chain.append(BAOYU_ARTICLE_PRODUCER)
+            method_sources.append(BAOYU_ARTICLE_METHOD)
         elif stage == "infographic":
-            producer_chain.append(BAOYU_INFOGRAPHIC_PRODUCER)
+            method_sources.append(BAOYU_INFOGRAPHIC_METHOD)
         tasks.append(
             {
                 "id": task_id,
@@ -716,6 +708,7 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
                 "image": image_name,
                 "ar": aspect,
                 "producer_chain": producer_chain,
+                "method_sources": method_sources,
             }
         )
     batch = {
@@ -723,9 +716,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         "producer": VISUAL_PRODUCER,
         "producer_chain": [
             VISUAL_PRODUCER,
-            BAOYU_ARTICLE_PRODUCER,
-            BAOYU_INFOGRAPHIC_PRODUCER,
         ],
+        "method_sources": [BAOYU_ARTICLE_METHOD, BAOYU_INFOGRAPHIC_METHOD],
         # Baoyu 依赖的字节级锚点：校验侧会重新解析磁盘上的 Baoyu 文档并比对，
         # 不一致即拒绝发布（producer_chain 字符串本身证明不了任何事）。
         **baoyu_anchors,
@@ -741,6 +733,7 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         "schema_version": 1,
         "producer": VISUAL_PRODUCER,
         "producer_chain": batch["producer_chain"],
+        "method_sources": batch["method_sources"],
         **baoyu_anchors,
         "cover_workflow": {
             "producer": VISUAL_PRODUCER,
@@ -755,7 +748,8 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         "infographic_workflow": [
             {
                 "id": str(item["id"]),
-                "producer": BAOYU_INFOGRAPHIC_PRODUCER,
+                "producer": VISUAL_PRODUCER,
+                "method_source": BAOYU_INFOGRAPHIC_METHOD,
                 "layout": str(item["layout_type"]),
                 "style": style,
                 "aspect": str(item["aspect_ratio"]),

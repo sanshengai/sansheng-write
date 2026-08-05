@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/7b5d8a8c-7caf-41e3-957e-5c2428859c79
 | 表格品牌化 | 主题色表头、列宽自动计算、手机端横滑 |
 | 继续往下读 / 信息来源 / 关注卡 | 强相关旧文与自有阵地、可复核来源、文末转化 |
 
-质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；baoyu 语义生产者与像素渲染器分别留痕；最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
+质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；本 Skill 的 visual planner 是唯一真实生产者，宝玉文章配图 / 信息图作为可复验的方法来源，最终像素只允许 `baoyu-image-gen`；最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
 
 ```console
 $ python scripts/format_layout.py 定稿.html --all --check
@@ -156,7 +156,7 @@ cp .env.example .env              # 填你自己的 key
 | 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
 | playwright / matplotlib | ③ 可选 | SVG 转 PNG、数据图画不了 | `pip install playwright matplotlib` |
 
-低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出，禁止静默降级。
+低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出。封面文字、品牌色、粘土配图方法、必备文字恰好一次与 renderer 都有机器校验；不提供 `force`、`legacy`、跳过预检、人工豁免或自定义生图命令。
 
 ---
 

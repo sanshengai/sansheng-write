@@ -84,7 +84,7 @@ def _minimal_visual_article(tmp_path: Path, *, subject="ai-product", style="clay
             "output_sha256": hashlib.sha256((tmp_path / rel).read_bytes()).hexdigest(),
             "prompt": f"素材/prompts/final/{prompt_name}",
             "prompt_sha256": hashlib.sha256(prompt_path.read_bytes()).hexdigest(),
-            "renderer": "imagegen",
+            "renderer": "baoyu-image-gen",
             "model": "test-model",
             "visual_profile": recipe.get("name", ""),
             "visual_profile_sha256": recipe.get("sha256", ""),
@@ -142,7 +142,7 @@ def test_final_assets_must_match_meta_latest_log_and_prompt(tmp_path):
             "output_sha256": hashlib.sha256((article / "素材/infographic-03.png").read_bytes()).hexdigest(),
             "prompt": "素材/prompts/final/03.md",
             "prompt_sha256": hashlib.sha256((article / "素材/prompts/final/03.md").read_bytes()).hexdigest(),
-            "renderer": "imagegen",
+            "renderer": "baoyu-image-gen",
             "model": "test-model",
             "cmd": "sansheng-write.visual-planner --style morandi-journal 素材/prompts/final/03.md",
         }, ensure_ascii=False) + "\n")
@@ -279,7 +279,7 @@ def test_cmd_log_blocks_dark_prompt_before_it_enters_evidence_chain(tmp_path):
             article,
             output="素材/infographic-01.png",
             prompt="素材/prompts/final/01.md",
-            renderer="imagegen",
+            renderer="baoyu-image-gen",
             model="test-model",
         )
 
@@ -388,7 +388,7 @@ def test_visual_contract_command_rejects_unknown_explicit_profile(tmp_path):
     assert "无法解析" in str(exc.value)
 
 
-def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
+def test_manual_gen_log_cannot_replace_render_visuals_evidence(tmp_path):
     article = _minimal_visual_article(tmp_path)
     recipe = pipeline._visual_recipe("warm-light-clay")
     hero = article / "素材" / "hero.png"
@@ -398,7 +398,8 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
         (
             "---\n"
             "style: claymation\n"
-            'producer_chain: ["sansheng-write.visual-planner", "baoyu-infographic"]\n'
+            'producer_chain: ["sansheng-write.visual-planner"]\n'
+            'method_sources: ["baoyu-article-illustrator"]\n'
             "visual_profile: warm-light-clay\n"
             f"visual_profile_sha256: {recipe['sha256']}\n"
             f"visual_contract_owner: {recipe['contract_owner']}\n"
@@ -412,30 +413,22 @@ def test_gen_log_records_host_skill_extend_and_visual_profile(tmp_path):
         encoding="utf-8",
     )
 
-    pipeline.cmd_log(
-        "hero",
-        "gen_img",
-        article,
-        output="素材/hero.png",
-        prompt="素材/prompts/final/hero.md",
-        renderer="gen_img",
-        model="test-model",
-        host_agent="codex",
-        extend_sha256="abc123",
-    )
+    before = (article / ".gen-log.jsonl").read_bytes()
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_log(
+            "hero",
+            "sansheng-write.visual-planner",
+            article,
+            output="素材/hero.png",
+            prompt="素材/prompts/final/hero.md",
+            renderer="baoyu-image-gen",
+            model="test-model",
+            host_agent="codex",
+            extend_sha256="abc123",
+        )
 
-    record = json.loads((article / ".gen-log.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    assert record["host_agent"] == "codex"
-    assert record["orchestrator_skill"] == "sansheng-write"
-    assert record["producer_chain"] == [
-        "sansheng-write.visual-planner",
-        "baoyu-infographic",
-    ]
-    assert record["extend_sha256"] == "abc123"
-    assert record["visual_profile"] == "warm-light-clay"
-    assert record["visual_profile_sha256"] == recipe["sha256"]
-    assert record["visual_contract_owner"] == "sansheng-write"
-    assert record["visual_contract_revision"] == "warm-light-clay/2"
+    assert exc.value.code == 2
+    assert (article / ".gen-log.jsonl").read_bytes() == before
 
 
 def test_reference_declares_single_clay_style_and_refined_cover_cap():
@@ -449,8 +442,5 @@ def test_reference_declares_single_clay_style_and_refined_cover_cap():
     assert "禁止把 `largest` / `extra-black`" in cover
 
 
-def test_reviewed_template_compositor_is_an_allowed_pixel_renderer():
-    assert (
-        "deterministic-template-compositor"
-        in pipeline.IMAGE_RENDERER_WHITELIST
-    )
+def test_baoyu_is_the_only_allowed_pixel_renderer():
+    assert pipeline.IMAGE_RENDERER_WHITELIST == {"baoyu-image-gen"}

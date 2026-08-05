@@ -2162,10 +2162,7 @@ def run(args):
             log("❌ 排版前检查失败，请先修复 定稿.md：")
             for e in md_errors:
                 log(f"   • {e}")
-            if not getattr(args, "skip_preflight", False):
-                log("   （如需强制跳过，加 --skip-preflight；旧 --force 别名仍兼容）")
-                sys.exit(2)
-            log("   （--skip-preflight 已跳过，但排版结果可能异常）")
+            sys.exit(2)
 
         # 🔴 2026-05-21 新增：发布前素材门 + lead 块校验
         #    通过 contracts.verify_publish_assets / verify_article_meta_lead 强制
@@ -2176,9 +2173,8 @@ def run(args):
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from contracts import verify_publish_assets, verify_article_meta_lead
             except Exception as e:
-                log(f"⚠️ 无法 import contracts.verify_publish_assets/verify_article_meta_lead：{e}")
-                verify_publish_assets = None
-                verify_article_meta_lead = None
+                log(f"❌ 无法 import contracts.verify_publish_assets/verify_article_meta_lead：{e}")
+                sys.exit(2)
 
         if verify_publish_assets:
             assets_result = verify_publish_assets(cwd)
@@ -2186,10 +2182,7 @@ def run(args):
                 log(f"❌ 发布前素材门未通过（{assets_result['checks_passed']}/{assets_result['checks_total']}）：")
                 for e in assets_result['errors']:
                     log(f"   • {e}")
-                if not getattr(args, "skip_preflight", False):
-                    log("   （--skip-preflight 强制跳过；建议补齐后再排版）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，发布物可能缺关键素材）")
+                sys.exit(2)
             for w in assets_result.get('warnings', []):
                 log(f"⚠️ 素材门提示：{w}")
 
@@ -2211,10 +2204,8 @@ def run(args):
                 from contracts import (verify_anti_ai_blacklist, audit_style_signals,
                                         verify_cjk_punctuation)
             except Exception as e:
-                log(f"⚠️ 无法 import contracts 验证函数：{e}")
-                verify_anti_ai_blacklist = None
-                audit_style_signals = None
-                verify_cjk_punctuation = None
+                log(f"❌ 无法 import contracts 验证函数：{e}")
+                sys.exit(2)
 
         md_path = os.path.join(cwd, "定稿.md")
 
@@ -2225,10 +2216,7 @@ def run(args):
             if not os.path.exists(prep_path) or os.path.getsize(prep_path) == 0:
                 log("❌ A 层前置门：_prep-context.md 不存在或为空")
                 log("   写作前必须先跑：python $SKILL/scripts/prep_writing.py")
-                if not getattr(args, "skip_preflight", False):
-                    log("   （补跑 prep_writing.py 后重排；--skip-preflight 可强制跳过）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，本篇未走 prep 喂料）")
+                sys.exit(2)
             elif os.path.getmtime(prep_path) > os.path.getmtime(md_path):
                 log("⚠️ _prep-context.md 的 mtime 晚于 定稿.md —— "
                     "prep 可能在写作后才补跑（重排版场景可忽略）")
@@ -2243,10 +2231,7 @@ def run(args):
             if not os.path.exists(stutter_path) or os.path.getsize(stutter_path) == 0:
                 log("❌ 冷读外审门：_stutter-list.md 不存在或为空")
                 log("   排版前必须先派冷读 subagent 外审定稿（writing.md §磨·冷读外审）")
-                if not getattr(args, "skip_preflight", False):
-                    log("   （产出 _stutter-list.md 后重排；--skip-preflight 可强制跳过）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，本篇未走冷读外审）")
+                sys.exit(2)
             else:
                 if os.path.getmtime(stutter_path) < os.path.getmtime(md_path):
                     log("⚠️ _stutter-list.md 早于 定稿.md —— 冷读可能基于旧稿，"
@@ -2284,10 +2269,7 @@ def run(args):
             if not os.path.exists(factcheck_path) or os.path.getsize(factcheck_path) == 0:
                 log("❌ 事实复核门：_fact-check.md 不存在或为空")
                 log("   排版前先派事实复核 subagent 核对定稿的数字/日期/价格/版本号/专名（references/fact-check.md）")
-                if not getattr(args, "skip_preflight", False):
-                    log("   （产出 _fact-check.md 后重排；--skip-preflight 可强制跳过）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，本篇未走事实复核）")
+                sys.exit(2)
             else:
                 if os.path.getmtime(factcheck_path) < os.path.getmtime(md_path):
                     log("⚠️ _fact-check.md 早于 定稿.md —— 事实复核可能基于旧稿，改稿后建议重核一轮")
@@ -2312,10 +2294,7 @@ def run(args):
                 log(f"❌ B-主门 AI 腔黑名单未通过（A 档硬命中 {bl['hard_hits']} 处）：")
                 for e in bl['errors']:
                     log(f"   • {e}")
-                if not getattr(args, "skip_preflight", False):
-                    log("   （修掉这些显性 AI 套话后重排；--skip-preflight 可强制跳过）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，定稿仍含显性 AI 腔）")
+                sys.exit(2)
             for w in bl.get('warnings', []):
                 log(f"⚠️ B-主门软提示：{w}")
             # 诚实边界提示：B-主门只覆盖反例库约 60% 的显性套话
@@ -2328,12 +2307,9 @@ def run(args):
                 log(f"❌ 半角标点门未通过（中文间半角标点 {cjk['hits']} 处）：")
                 for e in cjk['errors'][:12]:
                     log(f"   • {e}")
-                if not getattr(args, "skip_preflight", False):
-                    log('   （一键自动修：python "$SKILL/scripts/normalize_cjk_punctuation.py" 定稿.md')
-                    log("     —— 确定性把中文紧邻的半角 ,;:!? 转全角，零误伤代码/URL/时间/.mp4，修完重排）")
-                    log("   （或 --skip-preflight 强制跳过）")
-                    sys.exit(2)
-                log("   （--skip-preflight 已跳过，定稿仍含中文间半角标点）")
+                log('   （一键自动修：python "$SKILL/scripts/normalize_cjk_punctuation.py" 定稿.md')
+                log("     —— 确定性把中文紧邻的半角 ,;:!? 转全角，零误伤代码/URL/时间/.mp4，修完重排）")
+                sys.exit(2)
 
         # B-软门：风格信号软审计
         # 命中 ≥1 → verdict=info 只诊断；命中 0 → verdict=blocked 软阻塞 exit 1
@@ -2343,11 +2319,9 @@ def run(args):
             for w in sig.get('warnings', []):
                 log(f"⚠️ B-软门提示：{w}")
             if sig.get('verdict') == 'blocked':
-                if not getattr(args, "skip_preflight", False):
-                    log("❌ B-软门软阻塞：vocab 0 命中 = 写作没用 prep")
-                    log("   （回去内化 _prep-context.md 重写；--skip-preflight 可跳过但需说明理由）")
-                    sys.exit(1)
-                log("   （--skip-preflight 已跳过 B-软门软阻塞）")
+                log("❌ B-软门软阻塞：vocab 0 命中 = 写作没用 prep")
+                log("   （回去内化 _prep-context.md 重写后再排版）")
+                sys.exit(1)
 
         # 量化体检报告（🔴 2026-06-20 P2）：排版时自动打印 audit_quant_signals
         # 的句长方差 / 副词密度 / 段落节奏等数值报告，从「靠人记得敲命令」改成
@@ -2526,12 +2500,6 @@ def main():
     parser.add_argument("--highlights", action="store_true", help="将 <mark> 转一级主题色、<mark class=2> 转二级主题色(同色相偏浅分主次)、粗斜体(***text***)走一级")
     parser.add_argument("--wechat-compat", action="store_true", dest="wechat_compat",
                         help="微信兼容性微调：图片圆角 8px + <p> 强制 color（--all 时自动执行）")
-    # --skip-preflight 是首选名称（语义清晰）；--force 保留作 deprecated alias 不破坏老命令
-    # 注意：dest 统一为 skip_preflight，下游引用 args.skip_preflight；旧调用 --force 仍 work
-    parser.add_argument("--skip-preflight", "--force", action="store_true",
-                        dest="skip_preflight",
-                        help="跳过 preflight 检查（旧文档迁移用）。--force 是已废弃别名")
-
     # 导读栏自定义参数（也可通过 article-meta.yaml 配置）
     parser.add_argument("--lead-line1", help="导读栏标题第一行", default=None)
     parser.add_argument("--lead-line2", help="导读栏标题第二行", default=None)

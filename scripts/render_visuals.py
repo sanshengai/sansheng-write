@@ -11,15 +11,12 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
-import sys
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 
@@ -45,26 +42,15 @@ REQUIRED_CAPABILITIES = {
 # 🔴 并发数默认 2，不是 4。
 # 图像模型的配额按「每分钟请求数」算，一批通常 6 张（封面 + Hero + 4 张信息图），
 # 4 并发会在几秒内把一分钟的额度打满，症状是「总有两三张 429，重跑又换成另外几张」。
-# gen_img.py 自己是串行设计（注释里写着「多组按输入顺序串行，避免并发打到 429」），
-# 但这里每张图起一个独立进程，那份保护绕不过来——所以要在这一层限流。
-# 配合 gen_img 的 429 退避重试，2 并发实测能把一批 6 张一次跑完。
+# Baoyu 的 batch 会并发请求底层图片 provider，所以在这一层把默认并发锁到 2，
+# 配合其退避重试，避免同一批多图同时触发 429。
 # 需要更快可在 render-batch.json 里显式写 jobs，但先确认账号配额撑得住。
 _DEFAULT_JOBS = 2
 
-NATIVE_GOOGLE_PROVIDER = "sansheng-google"
-NATIVE_GOOGLE_TEXT_SAFE_PROVIDER = "sansheng-google-text-safe"
-NATIVE_TEMPLATE_SAFE_PROVIDER = "sansheng-template-safe"
-# 文字必须由本次模型原生生成在图内；本地/Pillow 模板不再是自动或手动 fallback。
-NATIVE_PROVIDERS = {NATIVE_GOOGLE_PROVIDER}
-BLOCKED_LOCAL_PROVIDERS = {
-    NATIVE_GOOGLE_TEXT_SAFE_PROVIDER,
-    NATIVE_TEMPLATE_SAFE_PROVIDER,
-}
-TARGET_DIMENSIONS = {
-    "2.35:1": (1024, 436),
-    "1:1": (1024, 1024),
-    "9:16": (576, 1024),
-    "16:9": (1024, 576),
+BLOCKED_BYPASS_PROVIDERS = {
+    "sansheng-google",
+    "sansheng-google-text-safe",
+    "sansheng-template-safe",
 }
 
 
@@ -165,11 +151,6 @@ def _candidate_renderer_dirs() -> list[Path]:
 
 def resolve_renderer_command() -> tuple[list[str] | None, str, list[str]]:
     """Resolve an installed baoyu-image-gen without embedding a cache version."""
-    override = os.getenv("SANSHENG_WRITE_IMAGE_COMMAND", "").strip()
-    if override:
-        command = shlex.split(override, posix=os.name != "nt")
-        return (command or None), "configured-command", ([] if command else ["配置命令为空"])
-
     candidates = _candidate_renderer_dirs()
     if not candidates:
         return None, "", [
@@ -224,7 +205,7 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
             }
         ]
 
-    allowed = {"id", "provider", "model", "quality", "imageSize", "override_baoyu_reason"}
+    allowed = {"id", "provider", "model", "quality", "imageSize"}
     normalized: list[dict[str, Any]] = []
     errors: list[str] = []
     for index, item in enumerate(renderers):
@@ -237,21 +218,10 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
             continue
         renderer_id = str(item.get("id") or f"attempt-{index + 1}").strip()
         provider = item.get("provider") or None
-        if provider in BLOCKED_LOCAL_PROVIDERS:
+        if provider in BLOCKED_BYPASS_PROVIDERS:
             errors.append(
-                f"renderers[{index}]={provider} 会用本地模板绘制图中文字；"
-                "当前合同要求由生成模型原生出字，请改为 sansheng-google 或外部生成式 renderer"
-            )
-            continue
-        # 🔴 2026-08-02：不带 provider 才走 baoyu-image-gen（本文件 _load_policy 的 else 分支）。
-        # 任何显式 provider 都会绕开 Baoyu 视觉链，属于对既定契约的例外，必须写明理由。
-        # 实证：照模板复制一份 policy（模板曾预置 sansheng-google）就会静默换掉渲染器，
-        # 并把封面从 1584×672 降到 1024×436，而所有发布门都照常放行。
-        if provider and not str(item.get("override_baoyu_reason") or "").strip():
-            errors.append(
-                f"renderers[{index}] 显式配置 provider={provider}，会绕开 baoyu-image-gen 视觉链；"
-                "若确需如此，请在该项补 override_baoyu_reason 写明理由（会记入发布证据），"
-                "否则请删除 provider 字段回到 Baoyu 默认链路"
+                f"renderers[{index}] 配置 provider={provider} 会绕过 baoyu-image-gen；"
+                "本流程不允许授权例外，请删除 provider 或改用 baoyu-image-gen 自身支持的 provider"
             )
             continue
         normalized.append(
@@ -261,10 +231,6 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 "model": item.get("model") or None,
                 "quality": item.get("quality") or "2k",
                 "imageSize": item.get("imageSize") or "1K",
-                "override_baoyu_reason": str(
-                    item.get("override_baoyu_reason") or ""
-                ).strip()
-                or None,
             }
         )
     return normalized, errors
@@ -313,109 +279,6 @@ def _prompt_meta(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _run_native_google_task(
-    cwd: Path,
-    task: dict[str, Any],
-    renderer: dict[str, Any],
-) -> dict[str, Any]:
-    """Render one canonical prompt through the skill-owned Google/Vertex client."""
-    aspect = str(task.get("ar") or "")
-    dimensions = TARGET_DIMENSIONS.get(aspect)
-    task_id = str(task.get("id") or "")
-    provider = renderer.get("provider")
-    use_local_template = provider == NATIVE_TEMPLATE_SAFE_PROVIDER or (
-        provider == NATIVE_GOOGLE_TEXT_SAFE_PROVIDER and task_id != "cover"
-    )
-    if use_local_template:
-        asset_id = (
-            task_id
-            if task_id in {"cover", "hero"}
-            else task_id.removeprefix("infographic-")
-        )
-        completed = subprocess.run(
-            [
-                sys.executable,
-                str(Path(__file__).with_name("render_text_safe_visual.py")),
-                str(cwd),
-                asset_id,
-            ],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            check=False,
-        )
-        output = cwd / "素材" / str(task.get("image") or "")
-        success = completed.returncode == 0 and output.is_file()
-        return {
-            "id": task_id,
-            "provider": "local",
-            "model": "Pillow-reviewed-template",
-            "renderer": "deterministic-template-compositor",
-            "outputPath": str(output),
-            "success": success,
-            "attempts": 1,
-            "error": None if success else (completed.stderr or completed.stdout)[-1200:],
-        }
-    if not dimensions:
-        return {
-            "id": task_id,
-            "success": False,
-            "error": f"native Google 不支持 aspect={aspect}",
-        }
-    prompt_files = task.get("promptFiles") or []
-    if not prompt_files:
-        return {"id": task_id, "success": False, "error": "缺 promptFiles"}
-    prompt = cwd / "素材" / str(prompt_files[0])
-    output = cwd / "素材" / str(task.get("image") or "")
-    model = str(renderer.get("model") or "").strip()
-    if not model:
-        return {
-            "id": task_id,
-            "success": False,
-            "error": "sansheng-google renderer 必须显式配置 model",
-        }
-    width, height = dimensions
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).with_name("gen_img.py")),
-            str(prompt),
-            str(output),
-            model,
-            str(width),
-            str(height),
-        ],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=600,
-        check=False,
-    )
-    combined = "\n".join(
-        value.strip()
-        for value in (completed.stdout or "", completed.stderr or "")
-        if value.strip()
-    )
-    used_match = re.search(r"\(model=([^)]+)\)", combined)
-    used_model = used_match.group(1).strip() if used_match else model
-    success = completed.returncode == 0 and output.is_file()
-    return {
-        "id": task_id,
-        "provider": "google",
-        "model": used_model,
-        "renderer": "gen_img",
-        "outputPath": str(output),
-        "success": success,
-        "attempts": 1,
-        "error": None if success else (combined[-1200:] or f"exit={completed.returncode}"),
-    }
-
-
 def _candidate_manifest_path(cwd: Path) -> Path:
     return cwd / "素材" / "candidates" / "candidate-set.json"
 
@@ -425,10 +288,6 @@ def _render_visual_candidates(
     *,
     candidate_count: int,
     only: set[str] | None,
-    renderer_command: list[str] | None,
-    renderer_revision: str,
-    native_google_renderer: Callable[[Path, list[dict[str, Any]], dict[str, Any], int], dict[str, Any]],
-    google_route_preflight: Callable[[str], str] | None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """Generate several truthful candidates, but never silently choose one as final."""
     if candidate_count < 2 or candidate_count > 4:
@@ -465,10 +324,6 @@ def _render_visual_candidates(
         receipt, run_errors = render_visuals(
             cwd,
             only=only,
-            renderer_command=renderer_command,
-            renderer_revision=renderer_revision,
-            native_google_renderer=native_google_renderer,
-            google_route_preflight=google_route_preflight,
             candidate_count=1,
         )
         if run_errors or receipt is None:
@@ -636,43 +491,10 @@ def select_visual_candidates(cwd: Path, selections: dict[str, int]) -> tuple[dic
     return receipt, []
 
 
-def _render_native_google(
-    cwd: Path,
-    tasks: list[dict[str, Any]],
-    renderer: dict[str, Any],
-    jobs: int,
-) -> dict[str, Any]:
-    """Run bounded native Google tasks concurrently and return batch-shaped results."""
-    results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=max(1, min(int(jobs or 1), len(tasks)))) as pool:
-        futures = {
-            pool.submit(_run_native_google_task, cwd, task, renderer): str(task["id"])
-            for task in tasks
-        }
-        for future in as_completed(futures):
-            task_id = futures[future]
-            try:
-                results.append(future.result())
-            except Exception as exc:  # pragma: no cover - defensive process boundary
-                results.append(
-                    {"id": task_id, "success": False, "error": str(exc)}
-                )
-    return {
-        "returncode": 0 if all(item.get("success") for item in results) else 1,
-        "results": results,
-    }
-
-
 def render_visuals(
     cwd: Path,
     *,
     only: set[str] | None = None,
-    renderer_command: list[str] | None = None,
-    renderer_revision: str = "",
-    native_google_renderer: Callable[
-        [Path, list[dict[str, Any]], dict[str, Any], int], dict[str, Any]
-    ] = _render_native_google,
-    google_route_preflight: Callable[[str], str] | None = None,
     candidate_count: int = 1,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """Render all compiled tasks and record immutable, truthful provenance."""
@@ -682,10 +504,6 @@ def render_visuals(
             cwd,
             candidate_count=candidate_count,
             only=only,
-            renderer_command=renderer_command,
-            renderer_revision=renderer_revision,
-            native_google_renderer=native_google_renderer,
-            google_route_preflight=google_route_preflight,
         )
     batch, errors = _load_batch(cwd)
     if errors or batch is None:
@@ -694,64 +512,14 @@ def render_visuals(
     if policy_errors:
         return None, policy_errors
 
-    # 404 的根因若是 Vertex 项目路由少了 /publishers/google，首张之前就必须停。
-    # 这只校验本次真实 renderer 的 URL 合同，不发网络请求、不消耗图片配额。
-    google_models = sorted(
-        {
-            str(renderer.get("model") or "").strip()
-            for renderer in policy
-            if renderer.get("provider") == NATIVE_GOOGLE_PROVIDER
-        }
-    )
-    if google_models:
-        if google_route_preflight is None:
-            try:
-                from gen_img import validate_google_route
-            except ImportError:  # pragma: no cover - package execution fallback
-                from scripts.gen_img import validate_google_route
-            google_route_preflight = validate_google_route
-        route_errors: list[str] = []
-        for model in google_models:
-            try:
-                google_route_preflight(model)
-            except SystemExit as exc:
-                route_errors.append(str(exc))
-            except Exception as exc:  # pragma: no cover - defensive boundary
-                route_errors.append(str(exc))
-        if route_errors:
-            return None, [
-                "Google/Vertex 图片端点预检失败（未发送任何出图请求）："
-                + "；".join(route_errors)
-            ]
-
-    command = renderer_command
-    revision = renderer_revision
-    uses_baoyu = any(
-        renderer.get("provider") not in NATIVE_PROVIDERS for renderer in policy
-    )
-    if uses_baoyu:
-        if command is None:
-            command, revision, resolve_errors = resolve_renderer_command()
-            if resolve_errors or command is None:
-                return None, resolve_errors
-        probe = probe_renderer(command)
-        if not probe["ok"]:
-            return None, [probe["error"]]
+    command, revision, resolve_errors = resolve_renderer_command()
+    if resolve_errors or command is None:
+        return None, resolve_errors
+    probe = probe_renderer(command)
+    if not probe["ok"]:
+        return None, [probe["error"]]
     if not revision:
-        native_script = (
-            Path(__file__).with_name("render_text_safe_visual.py")
-            if not uses_baoyu
-            and all(
-                renderer.get("provider") == NATIVE_TEMPLATE_SAFE_PROVIDER
-                for renderer in policy
-            )
-            else Path(__file__).with_name("gen_img.py")
-        )
-        revision = (
-            f"{native_script.name}-sha256:{_sha256(native_script)}"
-            if not uses_baoyu
-            else "configured-command"
-        )
+        return None, ["baoyu-image-gen renderer 缺版本摘要，拒绝生成不可复验的凭证"]
 
     material = cwd / "素材"
     tasks_by_id = {str(task["id"]): task for task in batch["tasks"]}
@@ -805,6 +573,11 @@ def render_visuals(
         prompt_rel = prompt.relative_to(cwd).as_posix()
         prompt_meta = _prompt_meta(prompt)
         actual_renderer = str(result.get("renderer") or "baoyu-image-gen")
+        if actual_renderer != "baoyu-image-gen":
+            raise RuntimeError(
+                f"renderer 返回 {actual_renderer or '(空)'}；最终像素必须经 baoyu-image-gen，"
+                "不允许原生客户端、本地模板或自定义命令旁路"
+            )
         record = {
             "schema_version": 3,
             "record_id": f"render-{task_id}-{_sha256(output)[:12]}",
@@ -812,6 +585,7 @@ def render_visuals(
             "stage": _stage(task_id),
             "producer": VISUAL_PRODUCER,
             "producer_chain": list(task.get("producer_chain") or [VISUAL_PRODUCER]),
+            "method_sources": list(task.get("method_sources") or []),
             "tool": VISUAL_PRODUCER,
             "renderer": actual_renderer,
             "renderer_revision": revision,
@@ -841,15 +615,7 @@ def render_visuals(
             "visual_contract_revision": str(
                 prompt_meta.get("visual_contract_revision") or ""
             ),
-            "cmd": (
-                "gen_img.py <canonical-prompt> <output> <model> <width> <height>"
-                if actual_renderer == "gen_img"
-                else (
-                    "render_text_safe_visual.py <canonical-prompt> <output>"
-                    if actual_renderer == "deterministic-template-compositor"
-                    else "baoyu-image-gen --batchfile <sealed-attempt> --json"
-                )
-            ),
+            "cmd": "baoyu-image-gen --batchfile <sealed-attempt> --json",
         }
         with (cwd / ".gen-log.jsonl").open("a", encoding="utf-8") as fp:
             fp.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -883,37 +649,27 @@ def render_visuals(
             json.dumps(attempt_batch, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        if renderer.get("provider") in NATIVE_PROVIDERS:
-            native_report = native_google_renderer(
-                cwd,
-                attempt_tasks,
-                renderer,
-                int(attempt_batch["jobs"]),
-            )
-            returncode = int(native_report.get("returncode") or 0)
-            results = native_report.get("results") or []
-        else:
-            assert command is not None
-            completed = subprocess.run(
-                [
-                    *command,
-                    "--batchfile",
-                    str(attempt_path),
-                    "--jobs",
-                    str(attempt_batch["jobs"]),
-                    "--json",
-                ],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=1800,
-                check=False,
-            )
-            returncode = completed.returncode
-            payload = _parse_json_output(completed.stdout)
-            results = payload.get("results", []) if payload else []
+        assert command is not None
+        completed = subprocess.run(
+            [
+                *command,
+                "--batchfile",
+                str(attempt_path),
+                "--jobs",
+                str(attempt_batch["jobs"]),
+                "--json",
+            ],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=1800,
+            check=False,
+        )
+        returncode = completed.returncode
+        payload = _parse_json_output(completed.stdout)
+        results = payload.get("results", []) if payload else []
         by_id = {
             str(result.get("id")): result
             for result in results
@@ -1052,6 +808,7 @@ def render_visuals(
         "status": "done",
         "producer": VISUAL_PRODUCER,
         "producer_chain": list(batch.get("producer_chain") or [VISUAL_PRODUCER]),
+        "method_sources": list(batch.get("method_sources") or []),
         "renderer": renderers_used[0] if len(renderers_used) == 1 else "mixed",
         "renderer_revision": revision,
         "batch_sha256": _sha256(material / "render-batch.json"),

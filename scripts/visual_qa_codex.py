@@ -232,12 +232,9 @@ def _build_prompt(asset: dict[str, Any]) -> str:
     lines += [
         "",
         "## 必须文字（required_text）",
-        # 🔴 2026-08-04 作者授权放宽：由「恰好出现一次」改为「至少出现一次」。
-        # 原指令会让「标题同时出现在图头和图例」这类正常排版被判 text_match=false，
-        # 实测连续三轮全卡在这里。错字、缺字仍然必须判 false。
-        "下列每条必须逐字正确，并且在整张图中至少出现一次"
-        "（同一条文字重复出现不算错，例如标题同时出现在图头与图例；"
-        "但只要有错别字、缺字或 □，仍必须判 text_match=false）：",
+        "下列每条必须逐字正确，并且在整张图中恰好出现一次。"
+        "重复、错别字、缺字或 □ 都必须判 text_match=false；"
+        "不要因为标题同时出现在图头与图例而放行：任务单没有授权第二次出现。",
     ]
     lines += [f"{i}. {t}" for i, t in enumerate(required, 1)] or ["（空）"]
 
@@ -512,32 +509,30 @@ def main() -> int:
             if key:
                 seen_once[key] = seen_once.get(key, 0) + 1
         repeated = sorted(k for k, n in seen_once.items() if n > 1)
-        # 🔴 2026-08-04 作者授权放宽三条（repeated / required_not_once / unexpected）。
-        # 依据：2026-07-28 加严后，第一篇真正走完整视觉链的文章三轮实测均无法通过。
-        # 生成模型必然自加装饰文字（分支编号 1234、图例、英文标签），也会把标题在图头与
-        # 图例各画一次 —— 这些不构成误导。真正该拦的是「坏字」与「缺字」，下面两条继续硬拦。
-        required_missing = [
+        required_not_once = [
             value
             for value in by_path[rel].get("required_text") or []
-            if joined.count(_normalized(value)) < 1
+            if joined.count(_normalized(value)) != 1
         ]
         if bad:
             failures.append(f"{rel} 未通过：{'、'.join(bad)} —— {result['notes']}")
         if garbled:
             failures.append(f"{rel} 转写里有无法辨认的字（坏字）：{garbled}")
-        if required_missing:
-            failures.append(f"{rel} 必须文字缺失：{required_missing}")
+        if required_not_once:
+            failures.append(f"{rel} 必须文字没有恰好出现一次：{required_not_once}")
         if "text_match" in required_checks and missing:
             failures.append(f"{rel} 缺文字：{missing}")
-        if repeated:
-            print(f"    ⚠️ {rel} 同一句渲染多遍（不阻断）：{repeated}", file=sys.stderr)
-        if unexpected:
-            print(f"    ⚠️ {rel} 白名单外文字（不阻断）：{unexpected}", file=sys.stderr)
+        if repeated and "text_match" in required_checks:
+            failures.append(f"{rel} 同一句渲染多遍：{repeated}")
+        if unexpected and "no_unexpected_text" in required_checks:
+            failures.append(f"{rel} 白名单外文字：{unexpected}")
         ok = not (
             bad
             or (missing if "text_match" in required_checks else [])
             or garbled
-            or required_missing
+            or required_not_once
+            or (repeated if "text_match" in required_checks else [])
+            or (unexpected if "no_unexpected_text" in required_checks else [])
         )
         print(
             f"  {'✓' if ok else '✗'} {rel}"

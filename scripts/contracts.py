@@ -2084,8 +2084,7 @@ def audit_style_signals(article_path: str, vocab_pool_path: str = None) -> dict:
                 '定稿一个 vocab 温度池词都没命中 —— 几乎可断定写作时没看 '
                 '_prep-context.md 的词汇配方'
             ],
-            'notes': 'vocab 命中 0 词 —— 软阻塞：回去内化 _prep-context.md '
-                     '重写，或 --skip-preflight 跳过并说明理由',
+            'notes': 'vocab 命中 0 词 —— 软阻塞：回去内化 _prep-context.md 后重写',
         }
     if n < 5:
         return {

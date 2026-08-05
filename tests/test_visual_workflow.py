@@ -94,6 +94,7 @@ def _article(tmp_path: Path) -> Path:
         "lead:\n"
         '  line1: "规则不能丢"\n'
         '  line2: "弱模型也能稳"\n'
+        '  accent: "也能稳"\n'
         '  subtitle: "确定性视觉合同"\n'
         '  tag1: "规则内建"\n'
         '  tag2: "独立验收"\n'
@@ -186,6 +187,31 @@ def test_shipped_visual_plan_template_satisfies_current_contract():
     assert validate_visual_plan(plan) == []
 
 
+def test_cover_text_contract_uses_exact_five_fields_and_rejects_drift():
+    from scripts.visual_contracts import cover_text_contract
+
+    meta = {
+        "lead": {
+            "line1": "规则不能丢",
+            "line2": "弱模型也能稳",
+            "accent": "也能稳",
+            "subtitle": "文章导读不进封面",
+            "tag1": "硬门",
+            "tag2": "证据链",
+        }
+    }
+    contract, errors = cover_text_contract(meta)
+    assert errors == []
+    assert contract["tags"] == ["硬门", "证据链"]
+    assert "文章导读不进封面" not in contract["tags"]
+
+    meta["lead"]["accent"] = "弱模型"
+    meta["lead"].pop("tag2")
+    _, errors = cover_text_contract(meta)
+    assert any("line2 的结尾子串" in error for error in errors)
+    assert any("lead.tag2 不能为空" in error for error in errors)
+
+
 def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     from scripts.profile_config import visual_profile
     from scripts.visual_workflow import compile_visual_plan
@@ -206,7 +232,8 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert 'producer_chain: ["sansheng-write.visual-planner"]' in cover
     assert "baoyu-cover-image" not in cover
     assert 'aspect_ratio: "2.35:1"' in cover
-    assert "Canvas base: deep charcoal" in cover
+    assert "Canvas base MUST be the exact deep-charcoal color #0E0E10" in cover
+    assert "only visible accent hue is exactly #2F6F8F" in cover
     assert "slightly larger left zone" in cover
     assert "slightly smaller right zone" in cover
     assert "narrow quiet gutter" in cover
@@ -235,8 +262,9 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "NOT glassmorphism" in cover
     assert "glassmorphism" in cover.split("STRICT FORBIDDEN")[1]
     assert "no specular highlight" in cover
-    assert "Two to four tags maximum" in cover
-    assert "Descriptor tags: 确定性视觉合同" in cover
+    assert "Render exactly the two allowlisted tags" in cover
+    assert "Descriptor tags: 规则内建 / 独立验收" in cover
+    assert "确定性视觉合同" not in cover
     assert "一份任务单" in cover
     assert "一条发布入口" in cover
     assert "TEXTLESS visual evidence only" in cover
@@ -244,7 +272,8 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
     assert 'visual_profile: "warm-light-clay"' in info
-    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-infographic"]' in info
+    assert 'producer_chain: ["sansheng-write.visual-planner"]' in info
+    assert 'method_sources: ["baoyu-infographic"]' in info
     assert "visual_profile_sha256:" in info
     assert "palette_background:" in info
     assert "作者定稿" in info and "任务单" in info
@@ -370,7 +399,8 @@ def test_hero_prompt_keeps_text_guards(tmp_path):
     hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
 
     assert "VISIBLE TEXT ALLOWLIST" in hero
-    assert 'producer_chain: ["sansheng-write.visual-planner", "baoyu-article-illustrator"]' in hero
+    assert 'producer_chain: ["sansheng-write.visual-planner"]' in hero
+    assert 'method_sources: ["baoyu-article-illustrator"]' in hero
     assert "Use facts only as textless objects" in hero
     assert "Render this title EXACTLY ONCE" in hero
     assert "独立复核" not in hero

@@ -9,25 +9,27 @@
 - 作者供图：保留原图，使用 `shot-` 前缀；默认不加 AI 图水印。
 - 概念、结构、流程、抽象关系：进入视觉规划器。
 
-## 两层合同
+## 三层合同
 
 | 层 | 责任 | 唯一事实 |
 |---|---|---|
 | producer | 读定稿、选图位、定版式/风格/比例/文字、编译 prompt | `sansheng-write.visual-planner` |
-| renderer | 按 canonical prompt 生成像素 | 当前适配 `baoyu-image-gen`，可按配置替换 |
+| method source | 提供内容分析、结构化与布局方法；以版本字节和枚举锚定 | Hero=`baoyu-article-illustrator`；信息图=`baoyu-infographic` |
+| renderer | 按 canonical prompt 生成像素 | 固定 `baoyu-image-gen`；只能在其内部选择 provider/model |
 
-renderer 不得修改 `expected_text`、比例、style 或 visual profile，不得在日志中冒充 producer。
+method source 与 renderer 都不得修改 `expected_text`、比例、style 或 visual profile，
+也不得在日志中冒充 producer。
 
-**Hero 与信息图**的 producer chain 必须分别包含 `baoyu-article-illustrator` 与
-`baoyu-infographic`：前者完成正文插图的 Type × Style × Palette 分析，后者完成
-命名布局 × 风格、内容结构化与 prompt 合成。仅复制一段风格描述、随后调用
-`baoyu-image-gen`，不算完整执行 Baoyu 工作流。
+**Hero 与信息图**的 `method_sources` 必须分别包含 `baoyu-article-illustrator` 与
+`baoyu-infographic`。前者的方法用于正文插图的 Type × Style × Palette 分析，后者的方法
+用于命名布局 × 风格、内容结构化与 prompt 合成；真实 `producer_chain` 始终只能记录
+`sansheng-write.visual-planner`，禁止用一串 Skill 名冒充执行证据。
 
 🔴 **封面不接 `baoyu-cover-image`**（2026-08-02 拍板）：`montage-evidence` 是自建
 签名视觉（英文 ghost 叠加），只反哺方法论、不走外部五维配方。声明一个明确不使用的
 依赖，只会让 producer chain 退化成不可验证的空标签。
 
-🔴 **producer chain 是声明，不是证据。** 这几个 Baoyu 能力只有 `SKILL.md` 与
+🔴 **method source 的名字是声明，不是证据。** 这几个 Baoyu 能力只有 `SKILL.md` 与
 `references/`，没有可执行脚本，不存在可记录的"调用事件"——写一串名字进日志证明不了
 任何事（历史上写入方与校验方就是同一处代码，那道门永远通过）。真正的证据是
 `scripts/baoyu_contract.py` 产出的**字节锚点**：
@@ -43,15 +45,12 @@ renderer 不得修改 `expected_text`、比例、style 或 visual profile，不�
 图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
 `layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 
-`visual-planner` 是编排器，不是 Baoyu Skill 的替身。进入封面或信息图阶段时，Agent
-必须实际调用已安装的 `baoyu-cover-image` / `baoyu-article-illustrator` /
-`baoyu-infographic`，读取对应 `SKILL.md`
-与当前生效的 `EXTEND.md`，完成它们各自的内容分析、结构化、布局×风格选择和 prompt
-合成；然后再由本流程把结果收口为 canonical prompt。Skill 不可用时必须停下修复接线，
-禁止自己仿写 `analysis.md`、`structured-content.md` 或只在 receipt 里补一个 producer 名称。
+`visual-planner` 是唯一执行者，它必须按已安装 Baoyu method source 的当前文档完成分析、
+结构化和布局选择，再收口为 canonical prompt。编译器会实时读取并锚定对应 SKILL 字节，
+输出 `analysis.md` / `structured-content.md`，同时把 `method_sources` 与 SHA-256 写入凭证；
+Skill 缺失、版本变化、枚举解析失败或凭证不一致时必须停下，禁止只补名称或手写假 receipt。
 
-本流程内置的是经人工筛选的品牌视觉合同，用来约束 Baoyu 输出的最终边界，而不是跳过
-Baoyu 的理由：
+本流程内置的是经人工筛选的品牌视觉合同，用来约束 Baoyu 方法产物的最终边界：
 
 - 封面：`montage-evidence` 的深炭品牌构图。
 - 信息图与 Hero：`warm-light-clay` 粘土配方（全站唯一正文风格）。
@@ -126,7 +125,7 @@ prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与�
 ## 确定性图表
 
 - 数字柱图、折线、饼图、雷达图：已核实数据 + 本地 `matplotlib`/等价确定性代码。
-- 精确节点与拓扑：`baoyu-diagram`，转 PNG 后进入同一最终 QA。
+- 精确节点与拓扑：走独立本地确定性代码路径，不得冒充封面 / Hero / 信息图，也不得进入其最终图证据集。
 - 生成模型只可做装饰性视觉，不得推断、补齐或改写数字。
 
 ## 生成式渲染的三类文字事故（都已在 prompt 层加约束，但仍要在 QA 复核）
@@ -161,9 +160,9 @@ python "$SKILL/scripts/pipeline.py" seal visual
 `baoyu-image-gen`（Baoyu 视觉链默认渲染器）；它的语义是**覆盖默认**而非**确认默认**，
 凭空建一份就是在改行为。实证（2026-08-02）：照模板复制一份（模板曾预置
 `provider: sansheng-google`）就把渲染器静默换成 `gen_img.py`，封面从 1584×672 降到
-1024×436，而所有发布门照常放行。现已收紧：**任何显式 `provider` 都必须附
-`override_baoyu_reason` 写明绕过理由**（记入发布证据），否则编译期直接拒绝；
-只想调 Baoyu 自身参数时，填 `model` / `quality` / `imageSize`，不要填 `provider`。
+1024×436，而所有发布门照常放行。现已收紧：`sansheng-google` 等本仓原生 provider
+无条件拒绝，不接受理由放行；只允许 `baoyu-image-gen` 自身支持的 provider/model，
+只想调尺寸时填 `quality` / `imageSize` 即可。
 
 ⚠️ **切回 Google 路径时的已知依赖**：`baoyu-image-gen` 的 `providers/google.ts` 需要
 Vertex Express 端点补丁（`base.includes("/publishers/google")` 直接返回，不再拼

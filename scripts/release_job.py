@@ -108,6 +108,12 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
     cover_style = str(meta.get("cover_style") or "montage-evidence")
     if cover_style != "montage-evidence":
         errors.append("release-from-final 当前只接受 cover_style: montage-evidence")
+    try:
+        from .visual_contracts import cover_text_contract
+    except ImportError:  # pragma: no cover - direct script execution
+        from visual_contracts import cover_text_contract
+    _, cover_text_errors = cover_text_contract(meta)
+    errors.extend(f"cover_text: {error}" for error in cover_text_errors)
     return meta, errors
 
 

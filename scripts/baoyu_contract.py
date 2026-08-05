@@ -1,23 +1,20 @@
-"""Baoyu 视觉能力的**可验证**依赖锚点。
+"""Baoyu 视觉方法来源的**可验证**依赖锚点。
 
 背景（2026-08-02 复核结论）
 ---------------------------
-在此之前，`producer_chain` 里的 `baoyu-infographic` / `baoyu-article-illustrator`
-是代码无条件写进去的字符串常量，而校验方又只检查"这个字符串在不在"——
-写入方与校验方是同一处代码，**这道门永远通过**，无法证明真的经过了 Baoyu 方法论。
+Baoyu 的这些 Skill 是给模型读取的方法论文档，不是会产出可签名调用 receipt 的
+可执行服务。把它们无条件写进 `producer_chain` 会混淆真实 producer 与方法来源，
+而且写入方与校验方相同，**这道门永远通过**。
 
-更根本的是：这几个 Baoyu 视觉能力只有 `SKILL.md` + `references/`，没有可执行脚本，
-它们是给模型读的方法论文档，不存在可被记录的"调用事件"。所以靠"记录调用"无解。
-
-本模块换一个可验证对象：**锚定产物特征与文档字节**。
+本模块改为验证真正能验证的对象：**方法文档字节与产物特征**。
 
 - `layout_type` 必须取自 Baoyu `baoyu-infographic` 的 Layout Gallery 枚举（21 种），
   枚举从磁盘上的 SKILL.md **实时解析**，不在本仓硬编码；
 - 同时记录被解析文档的 `sha256`，写进 render batch 与 receipt；
 - 校验侧重新解析并比对 sha256。
 
-于是形成真实依赖：Baoyu 能力缺失 / 被换版本 / layout 写了枚举外的值，
-都会在编译期或发布期硬失败，而不是靠一个自说自话的字符串放行。
+于是形成真实方法依赖：Baoyu 能力缺失 / 被换版本 / layout 写了枚举外的值，
+都会在编译期或发布期硬失败；真实 producer 始终只有 visual planner。
 """
 
 from __future__ import annotations
@@ -32,7 +29,7 @@ ARTICLE_SKILL = "baoyu-article-illustrator"
 
 
 class BaoyuContractError(RuntimeError):
-    """Baoyu 依赖缺失或不可解析——属于硬失败，不允许降级放行。"""
+    """Baoyu 方法来源缺失或不可解析——属于硬失败，不允许降级放行。"""
 
 
 #: 测试与离线环境用：指向一个包含 baoyu-* 子目录的根，优先于真实查找顺序。
@@ -131,7 +128,7 @@ def article_illustrator_digest() -> str:
 
 
 def build_anchors() -> dict[str, str]:
-    """生成写进 render batch / receipt 的 Baoyu 依赖锚点。"""
+    """生成写进 render batch / receipt 的 Baoyu 方法来源锚点。"""
     layouts, infographic_sha = infographic_layout_gallery()
     return {
         "baoyu_infographic_sha256": infographic_sha,
@@ -157,8 +154,7 @@ def verify_anchors(recorded: dict[str, object]) -> list[str]:
         got = str(recorded.get(key) or "").strip()
         if not got:
             errors.append(
-                f"缺 {key}：无法证明视觉链真的经过了 Baoyu 方法论"
-                "（旧版只记 producer_chain 字符串，属于自说自话，已废止）"
+                f"缺 {key}：无法证明视觉任务绑定了当前 Baoyu 方法来源"
             )
         elif got != want:
             errors.append(

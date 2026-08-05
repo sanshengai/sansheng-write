@@ -121,14 +121,9 @@ def test_默认策略不得预置绕开baoyu的provider():
     ), "确定性模板渲染器会把与内容无关的视觉语汇带进新题材"
 
 
-def test_模板里带provider的示例项必须写明绕过理由():
-    """显式 provider 属于对 Baoyu 契约的例外，_load_policy 要求附 override_baoyu_reason；
-    模板里若留了这类示例，也必须自带理由字段，否则照抄即报错、误导使用者。"""
+def test_模板不得保留绕过baoyu的授权字段():
     for r in _policy()["renderers"]:
-        if r.get("provider"):
-            assert str(r.get("override_baoyu_reason") or "").strip(), (
-                f"{r.get('id')} 带 provider 却无 override_baoyu_reason"
-            )
+        assert "override_baoyu_reason" not in r
 
 
 def test_默认模型ID不得带preview后缀():

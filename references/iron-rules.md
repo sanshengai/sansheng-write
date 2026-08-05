@@ -7,7 +7,7 @@
 1. 新文章必须经过 pipeline；不得手改 `.state.json`。
 2. 作者定稿进入机械链时先 `adopt-final`，不得伪造前半程审稿文件。
 3. BGM 是发布硬门；缺 MP3 或 AUDIO-CARD 就没完成，`skip bgm` 被拒绝。
-4. writing、cover、infographic、bgm、layout、publish 不可 skip；历史迁移只有显式 `--force`/`--legacy` 例外。
+4. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
 5. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
 6. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
 7. 控制器是机械链唯一命令写者；模型只交付任务单候选与视觉 QA，不运行、重试或并发启动长命令。
@@ -20,7 +20,7 @@
    该签名配方只由 `scripts/visual_contracts.py` 定义；Baoyu 负责内容分析和布局，无权覆盖
    色板、材质、字形与明暗阈值，私有 profile 也不得覆盖。
 4. 真人真事优先真实授权图片，禁止生成相似人物肖像。
-5. 精确数字图走本地确定性代码；精确拓扑可走 `baoyu-diagram`。
+5. 精确数字图、精确拓扑图走独立本地确定性代码路径，不得冒充封面 / Hero / 信息图，也不得进入其最终图证据集。
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
 7. 最终图后处理后必须独立 `visual-qa` 并 `seal visual`；Markdown 勾选不算证据。
 8. 信息图引用只由 `assemble-release` 写入带 marker 的机器块；正文变化仍会令 release job 失效。
@@ -35,8 +35,11 @@
     `required_text` 每条恰好出现一次。Hero 与最终 HTML 实际引用的所有生成图必须送审。
 13. 同一发布任务中不得修改 QA 规则迁就现图；编译后 QA 代码发生变化时凭证失效。
 14. Hero 与信息图必须分别留下 `baoyu-article-illustrator` / `baoyu-infographic`
-    producer chain；封面只走本仓 planner。只调用 `baoyu-image-gen` renderer 不等于执行了
-    完整 Baoyu 视觉工作流。
+    `method_sources` 与对应 SKILL 字节锚点；真实 `producer_chain` 只能是本仓 planner。
+    封面走本仓 `montage-evidence`；把方法来源伪装成已执行 producer 同样拒绝发布。
+15. 封面文字只认 `lead.line1/line2/accent/tag1/tag2`：五项必填，accent 必须是 L2 结尾，
+    tag1/tag2 恰好两项。`lead.subtitle` 是文章导读，不得冒充封面标签。
+16. renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
 
 ## 排版
 

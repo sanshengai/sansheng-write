@@ -115,7 +115,7 @@ STAGE_LABELS = {
     "outline":     "选题 + 大纲",
     "writing":     "正文写作 + 标题锻造",
     "cover":       "视觉任务单 + 封面（sansheng-write.visual-planner）",
-    "infographic": "Hero + 信息图 ≥ 4 张（visual planner；精确拓扑可用 baoyu-diagram）",
+    "infographic": "Hero + 信息图 ≥ 4 张（visual planner 编译，baoyu-image-gen 渲染）",
     "bgm":         "主题音乐（generate_article_bgm.py · MiniMax 方法A）",
     "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
@@ -144,7 +144,7 @@ STAGE_HINTS = {
     ),
     "infographic": (
         "核验 visual-plan 编译出的信息图 ≥ 4 张（开篇 9:16 + 中间 16:9×N + 结尾 9:16）；\n"
-        "  精确数据图走本地代码，精确拓扑图可走 baoyu-diagram，其余均由 visual planner 编译。\n"
+        "  精确数据图走独立本地代码路径；封面、Hero、信息图均由 visual planner 编译并经 baoyu-image-gen 渲染。\n"
         "  完成后：pipeline.py verify infographic"
     ),
     "bgm": (
@@ -199,14 +199,14 @@ STATUS_ICON = {
 # 在本 skill 流水线内，封面图/信息图/数据图三类必须走受控入口，
 # 禁用通用 generate_image 工具（它只会输出 1:1 方图，AR 无法控制）。
 #
-# v0.6：producer 与 renderer 分层。封面/信息图白名单只认专业语义 producer；
-# gen_img/imagegen 等像素后端必须写 renderer 字段，不能再冒充完整 baoyu 流程。
+# producer / method source / renderer 三层分离。最终文章视觉只认本仓 planner；
+# 宝玉文章配图与信息图是方法来源，像素后端只认 baoyu-image-gen。
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
 IMAGE_TOOL_WHITELIST = {
     # 公众号文章的 cover / hero / infographic 语义合同由本仓 visual planner 编译。
     # baoyu-image-gen 只作为 renderer，不再要求宿主模型跨 Skill 调语义 producer。
     "cover":       {VISUAL_PRODUCER},
-    "infographic": {VISUAL_PRODUCER, "baoyu-diagram"},  # 精确拓扑图保留 diagram 例外
+    "infographic": {VISUAL_PRODUCER},
     "illustrator": {VISUAL_PRODUCER},
     "chart":       {"matplotlib", "pyecharts", "plot_local"},  # 数据图必须本地脚本渲染
 }
@@ -234,11 +234,7 @@ def _infographic_style_error(record: dict) -> str:
             "（craft-handmade 仅历史兼容）"
         )
     return ""
-IMAGE_RENDERER_WHITELIST = {
-    "gen_img", "imagegen", "codex-imagegen", "baoyu-image-gen",
-    "GenerateImage", "image_generate", "deterministic-compositor",
-    "deterministic-template-compositor",
-}
+IMAGE_RENDERER_WHITELIST = {"baoyu-image-gen"}
 
 GEN_LOG_FILE = ".gen-log.jsonl"
 
@@ -543,10 +539,10 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
         if producer not in IMAGE_TOOL_WHITELIST["infographic"]:
             errors.append(
                 f"{rel} producer={producer or '(空)'}；必须经 "
-                f"{VISUAL_PRODUCER}（精确拓扑图例外 baoyu-diagram）"
+                f"{VISUAL_PRODUCER}"
             )
-        if renderer not in IMAGE_RENDERER_WHITELIST:
-            errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
+        if renderer != "baoyu-image-gen":
+            errors.append(f"{rel} renderer={renderer or '(空)'}；最终像素必须经 baoyu-image-gen")
         if not model:
             errors.append(f"{rel} 缺 model，生成记录不可复现")
         cmd = str(rec.get("cmd") or "")
@@ -671,8 +667,8 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
     model = str(rec.get("model") or "").strip()
     if producer != VISUAL_PRODUCER:
         errors.append(f"{rel} producer={producer or '(空)'}；必须经 {VISUAL_PRODUCER}")
-    if renderer not in IMAGE_RENDERER_WHITELIST:
-        errors.append(f"{rel} renderer={renderer or '(空)'} 不在允许像素后端")
+    if renderer != "baoyu-image-gen":
+        errors.append(f"{rel} renderer={renderer or '(空)'}；最终像素必须经 baoyu-image-gen")
     if not model:
         errors.append(f"{rel} 缺 model，生成记录不可复现")
 
@@ -705,9 +701,7 @@ def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list
 def _visual_qa_evidence_errors(cwd: Path) -> list:
     """证据层：QA 记录必须存在、可解析，且最终字节 == 复核时的字节。**一律硬拦。**
 
-    🔴 2026-08-04 与判定层分开的原因：作者授权放行的是**看图判定**（复核员对同一张
-    未改动的图会给出不同结论），不是「可以不跑 QA」，也不是「发出去的字节可以不是
-    复核过的那批」。曾经三者混在同一个返回值里被一起降级，等于把防篡改的根也放行了。
+    字节证据与看图判定分层计算只为精确报错；两层都没有授权旁路。
     """
     qa_path = cwd / "_visual-qa.json"
     if not qa_path.exists():
@@ -1005,11 +999,22 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
     return errors
 
 
+def _upstream_stage_errors(state: dict, stage: str) -> list[str]:
+    """Return hard ordering errors; stages may never complete out of order."""
+
+    errors: list[str] = []
+    for upstream in STAGE_ORDER[:STAGE_ORDER.index(stage)]:
+        status = state.get("stages", {}).get(upstream, {}).get("status", "pending")
+        if status not in {"done", "adopted"}:
+            errors.append(f"上游阶段 {upstream}={status}；{stage} 不得越序完成")
+    return errors
+
+
 def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tuple:
-    """返回 (passed: bool, errors: list[str])。
-    legacy=True 时跳过 2026-04 之后新增的严格断言（供旧文章迁移使用）。
-    """
-    errors = []
+    """返回 (passed: bool, errors: list[str])。"""
+    if legacy:
+        return False, ["--legacy 已停用：任何历史迁移也不得绕过当前合同"]
+    errors = _upstream_stage_errors(state, stage)
 
     if stage == "outline":
         f = cwd / "大纲.md"
@@ -1141,16 +1146,14 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                                 )
                     except Exception:
                         pass
-        # 封面图元数据校验：在正常（非 legacy）路径执行；legacy（旧文章迁移）放宽个别断言。
-        # 2026-05-30 修：原先这三组校验误嵌在 else(legacy) 分支 + 内层 `if not legacy` 恒为假 = 死代码，
-        # 导致正常路径只查了 hero 文件名、AR/分辨率/白名单全不查（虚假绿灯）。
+        # 封面图元数据校验。legacy 已在函数入口拒绝，以下条件只保留调用兼容性。
         if covers:
             meta = _image_metadata(covers[0])
             if not meta:
                 # Pillow 未装或文件损坏——2026-04 起不再静默跳过
                 if not legacy:
                     errors.append(
-                        "无法读取 cover 图像元数据（Pillow 未装？请 `pip install Pillow`，或加 --legacy 跳过）"
+                        "无法读取 cover 图像元数据（Pillow 未装？请 `pip install Pillow`）"
                     )
             else:
                 # 1) AR 比例 2.35:1（允许 2.1 ~ 2.6）
@@ -1243,7 +1246,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                             break
                         elif tool and tool not in IMAGE_TOOL_WHITELIST["infographic"]:
                             errors.append(
-                                f"infographic producer={tool} 不在白名单；必须为 {VISUAL_PRODUCER}（精确拓扑图例外）"
+                                f"infographic producer={tool} 不在白名单；必须为 {VISUAL_PRODUCER}"
                             )
                             break
                         # 新合同把 style 写进结构化日志；旧日志才从命令行回读。
@@ -1428,7 +1431,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
         if not legacy and not draft_id:
             errors.append(
                 "新流程的 publish 必须先有 draft_media_id + publish receipt；"
-                "仅补历史 wechat_url 请显式使用 --legacy"
+                "历史文章也不得跳过 release-to-draft 证据链"
             )
         elif url and not url.startswith("https://mp.weixin.qq.com"):
             errors.append(f"wechat_url 不是微信公众号链接：{url[:80]}")
@@ -1663,6 +1666,9 @@ def _invalidate_downstream(state: dict, stage: str, reason: str) -> None:
 
 
 def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
+    upstream_errors = _upstream_stage_errors(state, stage)
+    if upstream_errors:
+        raise ValueError("；".join(upstream_errors))
     info = state["stages"].setdefault(stage, {})
     now = _now_iso()
     digest = _stage_artifact_digest(cwd, stage)
@@ -1806,17 +1812,10 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     errors.extend(f"cover_route: {e}" for e in cover_route_errors)
     route_errors = _visual_route_errors(cwd, allow_postprocessed=True)
     errors.extend(f"visual_route: {e}" for e in route_errors)
-    # 🔴 证据层硬拦：QA 记录缺失/损坏、或最终字节 ≠ 复核字节 —— 这些不在授权放行范围内。
     qa_evidence_errors = _visual_qa_evidence_errors(cwd)
     errors.extend(f"visual_qa: {e}" for e in qa_evidence_errors)
     qa_errors = _visual_qa_errors(cwd) if not qa_evidence_errors else []
-    # 🔴 2026-08-04 作者授权：视觉**判定**不再进入发布预检的阻断项，降为提示。
-    # 这是三条校验路径里的最后一条（另两条在 evidence.py::verify_visual_receipt）。
-    # 仍然硬拦：上面的证据层、cover_route / visual_route（prompt 与产物的对应关系）、
-    # visual_receipt 的 manifest_digest 字节一致性 —— 保证发出去的就是复核过的字节。
-    # 下方 log_observation 照常按 fail 记账，自省复核仍能看到这批未通过项。
-    if qa_errors:
-        print("  ⚠️ 视觉 QA 未通过项（作者已授权放行，不计入阻断）：%d 条" % len(qa_errors))
+    errors.extend(f"visual_qa: {e}" for e in qa_errors)
     _, receipt_errors = verify_visual_receipt(cwd)
     errors.extend(f"visual_receipt: {e}" for e in receipt_errors)
     try:
@@ -1843,6 +1842,9 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
 
 
 def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
+    if legacy:
+        print("❌ --legacy 已停用：阶段合同不允许绕过")
+        raise SystemExit(2)
     if pre:
         if stage != "publish":
             print("⚠️ --pre 仅 publish 阶段使用（推送前素材齐备门）")
@@ -1870,7 +1872,7 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
     if passed:
         _record_stage_success(cwd, state, stage)
         save_state(cwd, state)
-        print(f"✅ {stage} 验证通过，已标记 done" + ("（legacy 模式）" if legacy else ""))
+        print(f"✅ {stage} 验证通过，已标记 done")
     else:
         state["stages"][stage]["status"] = "failed"
         state["stages"][stage]["last_failed_at"] = _now_iso()
@@ -1983,6 +1985,10 @@ def _auto_normalize_punctuation(cwd: Path):
 
 
 def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: bool = False):
+    if force or legacy:
+        flag = "--force" if force else "--legacy"
+        print(f"❌ {flag} 已停用：done 只能由当前阶段验证成功产生")
+        raise SystemExit(2)
     # 中文标点归一化必须发生在 draft 审批和摘要校验之前；若它改变正文，旧审批应失效。
     if stage == "writing":
         try:
@@ -2022,7 +2028,7 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
             k, v = kv.split("=", 1)
             candidate["stages"][stage][k.strip()] = v.strip()
 
-    # P0：发布前门必须内联执行，--force 也不能绕过。只有本地证据链通过，才把
+    # P0：发布前门必须内联执行，不存在绕过参数。只有本地证据链通过，才把
     # 这批确切 HTML/hero/视觉字节绑定到微信返回的 draft_media_id。
     if (
         stage == "publish"
@@ -2042,7 +2048,7 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
             info["last_failed_at"] = _now_iso()
             info["fail_count"] = int(info.get("fail_count") or 0) + 1
             save_state(cwd, state)
-            print("❌ publish 内联素材门未过；--force 不可绕过：")
+            print("❌ publish 内联素材门未过，不得绕过：")
             for e in pre_errors:
                 print(f"   • {e}")
             raise SystemExit(2)
@@ -2062,42 +2068,20 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
         print(f"⚠️  {stage} 自动检查未全部通过：")
         for e in errors:
             print(f"   • {e}")
-        # publish 是不可 force 的外部提交阶段；其他阶段保留历史迁移逃生口。
-        if stage == "publish":
-            force = False
-        if not force:
-            import sys
-            # 2026-04-23 收紧：isatty() 在 Claude Code Bash / MSYS / CI 里偶尔返回
-            # True 但 stdin 已关闭，input() 直接抛 EOFError 脚本崩溃。
-            # 这里把 input() 放进 try/except，任何读不到输入都当作"否，不强制"。
-            answered_yes = False
-            if stage == "publish":
-                print("  （publish 为不可强制阶段；修复证据链后重试）")
-            elif sys.stdin.isatty():
-                try:
-                    ans = input("  仍然强制标记为 done？(y/N) ").strip().lower()
-                    answered_yes = (ans == "y")
-                except (EOFError, KeyboardInterrupt):
-                    print("  （stdin 不可读，已跳过确认。如需强制标记请加 --force）")
-            else:
-                print("  （非交互模式，已跳过确认。如需强制标记请加 --force）")
-
-            if not answered_yes:
-                # 累计 fail_count（与 cmd_verify 一致，触发"连错 3 次"告警）
-                info = state["stages"][stage]
-                if not (stage == "publish" and info.get("status") == "done"):
-                    info["status"] = "failed"
-                    _invalidate_downstream(state, stage, f"上游 {stage} 完成检查失败")
-                info["last_failed_at"] = _now_iso()
-                prev_count = info.get("fail_count", 0)
-                new_count = prev_count + 1
-                info["fail_count"] = new_count
-                save_state(cwd, state)
-                if new_count >= 3:
-                    print()
-                    print(f"⚠️  此阶段已连续失败 {new_count} 次。"
-                          f"按 autopilot 失败 SOP，应停下回报用户。")
-                raise SystemExit(2)
+        info = state["stages"][stage]
+        if not (stage == "publish" and info.get("status") == "done"):
+            info["status"] = "failed"
+            _invalidate_downstream(state, stage, f"上游 {stage} 完成检查失败")
+        info["last_failed_at"] = _now_iso()
+        prev_count = info.get("fail_count", 0)
+        new_count = prev_count + 1
+        info["fail_count"] = new_count
+        save_state(cwd, state)
+        if new_count >= 3:
+            print()
+            print(f"⚠️  此阶段已连续失败 {new_count} 次。"
+                  f"按 autopilot 失败 SOP，应停下回报用户。")
+        raise SystemExit(2)
     try:
         _record_stage_success(cwd, candidate, stage)
         save_state(cwd, candidate)
@@ -2128,9 +2112,16 @@ def cmd_log(stage: str, tool: str, cwd: Path, output: str = "", cmd: str = "",
     prompt = _norm_relpath(prompt)
     is_final = (
         (stage == "cover" and output == "素材/cover.png")
+        or (stage == "hero" and output == "素材/hero.png")
         or (stage == "infographic" and output.startswith("素材/infographic")
             and output.endswith(".png"))
     )
+    if is_final:
+        print(
+            "❌ 最终文章视觉禁止手工 log-render；必须由 render-visuals 调用 "
+            "baoyu-image-gen 并自动写入不可变证据"
+        )
+        raise SystemExit(2)
     prompt_style = ""
     prompt_meta = {}
     prompt_path = cwd / Path(prompt) if prompt else None
@@ -2282,14 +2273,12 @@ def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = ""):
 def cmd_seal(kind: str, cwd: Path):
     if kind != "visual":  # argparse choices 已拦，保留函数级防护
         raise SystemExit(f"未知 seal 类型：{kind}")
-    # 🔴 2026-08-04 作者授权：视觉 QA 不再阻断封存，改为打印 + 写进 receipt 留痕。
-    # 理由见 evidence.py::seal_visual_receipt 的注释（QA 存在生成与判定双重随机，
-    # 八轮重渲无法收敛）。字节一致性由 build_visual_manifest 继续硬拦，不放行。
     qa_errors = _visual_qa_errors(cwd)
     if qa_errors:
-        print("⚠️ 视觉 QA 有未通过项（作者已授权放行，将记入 receipt）：")
+        print("❌ 视觉 QA 未通过，禁止封存：")
         for error in qa_errors:
             print(f"   • {error}")
+        raise SystemExit(2)
     receipt, errors = seal_visual_receipt(cwd)
     if errors:
         print("❌ visual receipt 封存失败：")
@@ -2785,7 +2774,7 @@ def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
     )
 
 
-def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
+def cmd_finalize(wechat_url: str, cwd: Path) -> None:
     """Resumable close-out: link → archive → Moments → podcast → website.
 
     Moments copy comes right after archive verification on purpose: it only
@@ -2808,7 +2797,7 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
     if _finalize_step_done(state, "publish_link"):
         print("⏭ finalize 续跑：发布链接已登记，跳过。")
     else:
-        cmd_done("publish", cwd, [f"wechat_url={wechat_url}"], legacy=legacy)
+        cmd_done("publish", cwd, [f"wechat_url={wechat_url}"])
         _mark_finalize_step(cwd, state, "publish_link")
 
     if _finalize_step_done(state, "archive"):
@@ -2821,7 +2810,7 @@ def cmd_finalize(wechat_url: str, cwd: Path, *, legacy: bool = False) -> None:
     if _finalize_step_done(state, "archive_verify"):
         print("⏭ finalize 续跑：归档已验证，跳过。")
     else:
-        cmd_verify("archive", cwd, legacy=legacy)
+        cmd_verify("archive", cwd)
         _mark_finalize_step(cwd, state, "archive_verify")
 
     # 🔴 2026-08-04 作者要求前移：朋友圈文案只依赖标题、摘要和永久链接，
@@ -3143,18 +3132,19 @@ NEVER_SKIP_STAGES = {
 
 
 def cmd_skip(stage: str, cwd: Path, force: bool = False):
-    if stage in NEVER_SKIP_STAGES and not force:
+    if force:
+        print("🔴 拒绝 --force：skip 不提供绕过模式")
+        raise SystemExit(2)
+    if stage in NEVER_SKIP_STAGES:
         print(f"🔴 拒绝 skip：`{stage}` 是铁律 stage（详见 references/iron-rules.md）")
         print(f"   - cover/layout/publish 是发布前置硬性产物，不可绕过")
         print(f"   - infographic 是文末知识图（≥4 张：开篇 9:16 + 中间 16:9 ×N + 结尾 9:16），缺了会被 publish verify 拦截")
         print(f"   - writing 是正文，不可能 skip")
-        print(f"   如果是合理场景（如复刻历史文章），加 `--force` 显式确认承担后果")
         sys.exit(2)
     state = load_state(cwd)
     state["stages"][stage]["status"] = "skip"
     save_state(cwd, state)
-    suffix = " (--force 强制跳过铁律)" if force and stage in NEVER_SKIP_STAGES else ""
-    print(f"⏭  {stage} 已跳过{suffix}")
+    print(f"⏭  {stage} 已跳过")
     if stage not in NEVER_SKIP_STAGES:
         print(f"   {stage} 为可选阶段；若因生成失败而 skip，请按 autopilot.md 失败恢复 SOP 先重试，勿用 skip 绕过失败。")
 
@@ -3254,8 +3244,6 @@ def main():
 
     p_v = sub.add_parser("verify", help="验证阶段完成情况（通过则自动标 done）")
     p_v.add_argument("stage", choices=STAGE_ORDER)
-    p_v.add_argument("--legacy", action="store_true",
-                     help="跳过 2026-04 之后新增的严格断言（旧文章迁移用）")
     p_v.add_argument("--pre", action="store_true",
                      help="publish 专用：推送前素材齐备门（cover/hero/≥4 信息图/定稿.html），只判定不标 done")
 
@@ -3263,10 +3251,6 @@ def main():
     p_d.add_argument("stage", choices=STAGE_ORDER)
     p_d.add_argument("extras", nargs="*", metavar="k=v",
                      help="例：title_final=文章标题  wechat_url=https://...")
-    p_d.add_argument("--force", "-f", action="store_true",
-                     help="跳过 verify 确认直接标记 done（旧文章迁移或 CI 场景）")
-    p_d.add_argument("--legacy", action="store_true",
-                     help="verify 时跳过 2026-04 之后新增的严格断言")
 
     p_log = sub.add_parser("log", help="追加一条生图记录到 .gen-log.jsonl")
     # 2026-04-23 扩展：hero / bgm_cover 是独立的组件小图，也要能记录；
@@ -3278,7 +3262,7 @@ def main():
     p_log.add_argument("tool", help=f"语义 producer 名；新视觉产物固定为 {VISUAL_PRODUCER}")
     p_log.add_argument("--output", help="生成的文件相对路径")
     p_log.add_argument("--prompt", help="最终使用的 canonical prompt 相对路径")
-    p_log.add_argument("--renderer", help="像素渲染后端，如 imagegen / gen_img")
+    p_log.add_argument("--renderer", help="像素渲染后端；最终文章视觉只允许 baoyu-image-gen")
     p_log.add_argument("--model", help="实际渲染模型/版本")
     p_log.add_argument("--style", help="可选；默认从 canonical prompt frontmatter 读取")
     p_log.add_argument(
@@ -3326,8 +3310,6 @@ def main():
 
     p_f = sub.add_parser("finalize", help="正式发布收尾：登记永久链接 + 归档 + 验证")
     p_f.add_argument("wechat_url", help="微信永久链接，如 https://mp.weixin.qq.com/s/xxx")
-    p_f.add_argument("--legacy", action="store_true",
-                     help="仅供没有新流程 draft_media_id/receipt 的历史文章迁移")
 
     sub.add_parser(
         "moments-copy",
@@ -3393,8 +3375,6 @@ def main():
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
     p_s.add_argument("stage", choices=STAGE_ORDER)
-    p_s.add_argument("--force", action="store_true",
-                     help="强制跳过铁律 stage（writing/cover/infographic/layout/publish）。仅在复刻历史文章等明确合理场景使用")
 
     p_r = sub.add_parser("reset", help="重置阶段为 pending")
     p_r.add_argument("stage", choices=STAGE_ORDER)
@@ -3475,7 +3455,7 @@ def main():
         if not cmd_archive(cwd, getattr(args, "extras", [])):
             sys.exit(1)
     elif args.cmd == "finalize":
-        cmd_finalize(args.wechat_url, cwd, legacy=getattr(args, "legacy", False))
+        cmd_finalize(args.wechat_url, cwd)
     elif args.cmd == "moments-copy":
         cmd_moments_copy(cwd)
     elif args.cmd == "adopt-final":

@@ -48,7 +48,7 @@ def test_done_failure_returns_nonzero_and_invalidates_downstream(tmp_path):
     assert saved["stages"]["writing"]["status"] == "dirty"
 
 
-def test_wechat_url_cannot_bypass_receipt_without_legacy(tmp_path):
+def test_wechat_url_cannot_bypass_receipt_and_legacy_flag_is_rejected(tmp_path):
     pipeline.save_state(tmp_path, _state())
     url = "wechat_url=https://mp.weixin.qq.com/s/fixture"
     result = _run(tmp_path, "done", "publish", url)
@@ -58,9 +58,15 @@ def test_wechat_url_cannot_bypass_receipt_without_legacy(tmp_path):
     assert not (tmp_path / "_publish-receipt.json").exists()
 
     legacy = _run(tmp_path, "done", "publish", url, "--legacy")
-    assert legacy.returncode == 0, legacy.stdout + legacy.stderr
+    assert legacy.returncode != 0, legacy.stdout + legacy.stderr
     saved = json.loads((tmp_path / ".state.json").read_text(encoding="utf-8"))
-    assert saved["stages"]["publish"]["wechat_url"].endswith("/fixture")
+    assert "wechat_url" not in saved["stages"]["publish"]
+
+
+def test_force_flags_are_rejected_instead_of_bypassing_stage_contracts(tmp_path):
+    pipeline.save_state(tmp_path, _state())
+    assert _run(tmp_path, "done", "cover", "--force").returncode != 0
+    assert _run(tmp_path, "skip", "cover", "--force").returncode != 0
 
 
 def test_publish_preflight_rejects_non_done_upstream(tmp_path):

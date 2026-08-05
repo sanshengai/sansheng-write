@@ -23,6 +23,7 @@ def _article(root: Path) -> Path:
         'lead:\n'
         '  line1: "规则不能丢"\n'
         '  line2: "弱模型也能稳"\n'
+        '  accent: "也能稳"\n'
         '  subtitle: "视觉发布合同"\n'
         '  tag1: "硬门"\n'
         '  tag2: "证据链"\n'
@@ -95,18 +96,14 @@ def _article(root: Path) -> Path:
                 "record_id": f"rec-{index}",
                 "stage": stage,
                 "producer": PRODUCER,
-                "producer_chain": [
-                    PRODUCER,
-                    *(
-                        ["baoyu-cover-image"]
-                        if stage == "cover"
-                        else ["baoyu-article-illustrator"]
-                        if stage == "hero"
-                        else ["baoyu-infographic"]
-                        if stage == "infographic"
-                        else []
-                    ),
-                ],
+                "producer_chain": [PRODUCER],
+                "method_sources": (
+                    ["baoyu-article-illustrator"]
+                    if stage == "hero"
+                    else ["baoyu-infographic"]
+                    if stage == "infographic"
+                    else []
+                ),
                 "tool": PRODUCER,
                 "renderer": "baoyu-image-gen",
                 "renderer_revision": "rev-1",
@@ -230,12 +227,7 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
     assert "style_contract_match" in cover["required_checks"]
     assert "text_match" in cover["required_checks"]
-    # 🔴 2026-08-04 作者授权，验收口径由「零意外文字」改为「必备文字必须齐全正确」：
-    # no_unexpected_text 退出送审清单。生成模型每轮自加不同的装饰文字与编号，
-    # 八轮重渲都无法收敛，而那些多余标签并不误导读者。
-    # 边界（下面两条就是底线，不许再放）：坏字、缺字仍由 text_match 硬拦；
-    # 最终字节与复核字节一致由 visual_qa.final_byte_errors 独立硬拦。
-    assert "no_unexpected_text" not in cover["required_checks"]
+    assert "no_unexpected_text" in cover["required_checks"]
     assert "text_match" in cover["required_checks"]
     assert "composition_contract_match" in cover["required_checks"]
     assert "typography_contract_match" not in cover["required_checks"]
@@ -286,7 +278,7 @@ def test_qa_rejects_deterministic_compositor_without_bound_design_manifest(tmp_p
     request, errors = build_qa_request(article)
 
     assert request is None
-    assert any("违反原生生成合同" in error for error in errors)
+    assert any("最终像素必须经 baoyu-image-gen" in error for error in errors)
 
 
 def test_qa_rejects_checked_box_markdown_without_structured_result(tmp_path):
@@ -320,11 +312,7 @@ def test_qa_rejects_missing_expected_ocr_text_even_if_model_says_pass(tmp_path):
     assert any("required_text" in item for item in persisted["validation_findings"])
 
 
-def test_required_text_appearing_twice_is_recorded_but_not_blocking(tmp_path):
-    """同一条必备文字重复出现只记录、不阻断（2026-08-04 作者授权）。
-
-    生成模型会把标题在图头与图例各画一次，这不构成误导；真正该拦的是坏字与缺字。
-    """
+def test_required_text_appearing_twice_is_blocking(tmp_path):
     from scripts.visual_qa import run_visual_qa, validate_qa_result
 
     article = _article(tmp_path)
@@ -335,8 +323,20 @@ def test_required_text_appearing_twice_is_recorded_but_not_blocking(tmp_path):
 
     validation_errors = validate_qa_result(article, qa, request=request)
 
-    assert not any("恰好出现一次" in error for error in validation_errors)
-    assert validation_errors == []
+    assert any("恰好出现一次" in error for error in validation_errors)
+
+
+def test_unexpected_text_is_a_hard_gate_even_if_reviewer_says_pass(tmp_path):
+    from scripts.visual_qa import run_visual_qa, validate_qa_result
+
+    article = _article(tmp_path)
+    qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
+    assert errors == []
+    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    qa["assets"][0]["observed_text"].append("模型自加编号 123")
+
+    validation_errors = validate_qa_result(article, qa, request=request)
+    assert any("白名单外文字" in error for error in validation_errors)
 
 
 def test_qa_accepts_one_expected_line_split_into_adjacent_observed_fragments(tmp_path):

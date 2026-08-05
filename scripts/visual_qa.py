@@ -29,18 +29,9 @@ except ImportError:  # pragma: no cover - direct script execution
 QA_REQUEST_FILE = "_visual-qa-request.json"
 QA_FILE = "_visual-qa.json"
 QA_MARKDOWN_FILE = "_visual-qa.md"
-# 🔴 2026-08-04 作者授权放宽：no_unexpected_text 从「必须通过」降为「记录但不阻断」。
-# 依据：2026-07-28 的三个提交（43d15e5 / e961b7c / abf7686）把这道门加严后，
-# 第一篇真正走完整视觉链的文章实测三轮均无法通过 --
-#   轮1（pro 模型）模型自加 forsale / sold / 00:01
-#   轮2（flash + 数字前置）自加 school / 招聘中 / 空缺
-#   轮3（数字全撤、只留 3-4 字纯中文）仍给 hub-spoke 的四个分支自加编号 1 2 3 4
-# 生成模型必然会加装饰性文字（编号、图标标签），要求「零意外文字」等于要求它不做
-# 它必然会做的事。真正该守的是「我要的字必须齐全正确」= required_text 的 missing 检查，
-# 那一条继续硬拦（见下方 _verify_expectations）。
-# 加严之前那批之所以顺利，是因为它们跑的是旧门（QA 记录里 required_text 为 None）。
 BASE_REQUIRED_CHECKS = (
     "text_match",
+    "no_unexpected_text",
     "crop_safe",
     "semantic_hierarchy",
     "style_consistent",
@@ -130,6 +121,8 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
         for value in (
             lead.get("line1") or cover.get("title"),
             lead.get("line2") or cover.get("subtitle"),
+            lead.get("tag1"),
+            lead.get("tag2"),
         )
         if str(value or "").strip()
     ]
@@ -164,7 +157,6 @@ def _allowed_text_by_path(cwd: Path, required: dict[str, list[str]]) -> dict[str
     ]
     allowed = {key: list(values) for key, values in required.items()}
     optional_cover = [
-        lead.get("subtitle"),
         str(brand_identity.get("nickname") or "").strip(),
         *logo_text,
     ]
@@ -354,13 +346,16 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             errors.append(f"{rel} 缺 expected_text")
             continue
         producer_chain = list(asset.get("producer_chain") or [])
+        method_sources = list(asset.get("method_sources") or [])
         stage = str(asset.get("stage") or "")
-        # 封面走自建 montage-evidence，不接 baoyu-cover-image（2026-08-02 拍板）。
-        if stage == "hero" and "baoyu-article-illustrator" not in producer_chain:
-            errors.append(f"{rel} 缺 baoyu-article-illustrator producer chain")
+        if producer_chain != ["sansheng-write.visual-planner"]:
+            errors.append(f"{rel} producer_chain 含非真实 producer")
             continue
-        if stage == "infographic" and "baoyu-infographic" not in producer_chain:
-            errors.append(f"{rel} 缺 baoyu-infographic producer chain")
+        if stage == "hero" and "baoyu-article-illustrator" not in method_sources:
+            errors.append(f"{rel} 缺 baoyu-article-illustrator method source")
+            continue
+        if stage == "infographic" and "baoyu-infographic" not in method_sources:
+            errors.append(f"{rel} 缺 baoyu-infographic method source")
             continue
         image_path = cwd / Path(rel)
         try:
@@ -427,10 +422,8 @@ def final_byte_errors(
 ) -> list[str]:
     """只校验「最终图片字节 == 复核时的那批字节」。
 
-    🔴 2026-08-04 从 validate_qa_result 里抽出来的原因：作者授权把**看图判定**
-    降为记录不阻断，但字节一致性是防篡改的根。两者混在同一个 errors 列表里时，
-    「QA 不阻断」会顺带放行「发出去的字节不是复核过的那批」—— 实测已经发生过。
-    调用方**不得**把本函数的返回值降级成 advisory / findings。
+    字节一致性与看图判定分开计算，便于准确报错；二者都是发布硬门。
+    调用方不得把本函数或 validate_qa_result 的返回值降级成 advisory / findings。
     """
     cwd = Path(cwd).resolve()
     if request is None:
@@ -558,8 +551,7 @@ def validate_qa_result(
             and not _fully_segmented_by_allowed(value, allowed_values)
         ]
         if unexpected:
-            # 🔴 2026-08-04 作者授权：降为提示，不阻断（理由见文件头 BASE_REQUIRED_CHECKS 注释）。
-            print(f"  ⚠️ {rel} 含白名单外文字（已记录，不阻断）：{unexpected}")
+            errors.append(f"{rel} 含白名单外文字：{unexpected}")
         required_text = (
             expected_asset.get("required_text", expected_asset.get("expected_text")) or []
         )
@@ -570,16 +562,13 @@ def validate_qa_result(
         ]
         if missing:
             errors.append(f"{rel} observed_text 缺 required_text：{missing}")
-        # 🔴 2026-08-04 作者授权：由「恰好出现一次」放宽为「至少出现一次」。
-        # 「缺失」已由上面的 missing 硬拦；重复出现（例如标题同时出现在图头与图例）
-        # 不构成误导，却会让整批图卡死。多余的重复降为提示。
         repeated = [
             value
             for value in required_text
             if observed_joined.count(_normalized_text(value)) > 1
         ]
         if repeated:
-            print(f"  ⚠️ {rel} required_text 出现多次（已记录，不阻断）：{repeated}")
+            errors.append(f"{rel} required_text 必须恰好出现一次：{repeated}")
     return errors
 
 
@@ -697,10 +686,8 @@ def run_visual_qa(
     if not isinstance(qa, dict):
         return None, ["独立视觉复核 JSON 顶层必须为对象"]
     validation_errors = validate_qa_result(cwd, qa, request=request)
-    # 🔴 2026-08-04 作者授权：QA 结果无论成败都落盘留痕。
-    # 原来一旦有 error 就 unlink 候选文件，导致 _visual-qa.json 根本不存在 --
-    # 既没有留下"到底哪几张、错在哪"的证据，也让下游 seal 只能报"缺 _visual-qa.json"，
-    # 掩盖了真实原因。现在照常写盘并在文件里标 status/findings，errors 仍原样返回。
+    # QA 结果无论成败都落盘留痕，便于定位到底哪张图、哪条规则未通过；
+    # errors 原样返回，失败结果不能进入 seal 或发布。
     qa.setdefault("status", "fail" if validation_errors else "pass")
     if validation_errors:
         qa["status"] = "fail"

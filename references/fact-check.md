@@ -51,4 +51,4 @@
 
 ## 机器门
 
-排版 `format_layout.py` preflight 断言 `_fact-check.md` 存在且非空（缺失 `exit 2`，与冷读外审门同构）；mtime 早于定稿 / 签名缺失只 WARNING，不阻断；`--skip-preflight` 可跳。历史文章无此文件、不再跑 preflight，不受影响。
+排版 `format_layout.py` preflight 断言 `_fact-check.md` 存在且非空（缺失 `exit 2`，与冷读外审门同构）；mtime 早于定稿 / 签名缺失只 WARNING，不阻断；不存在跳过参数。历史文章若重新走排版，也必须补齐当前证据。
