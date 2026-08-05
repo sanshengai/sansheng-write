@@ -85,7 +85,7 @@
 python $SKILL/scripts/prep_writing.py
 ```
 
-它读 `article-meta.yaml` 的风格标签，主动解析并聚合 —— **本篇三件最高原则（seed 原话 + 句间引力四动作 + 终审门）/ 对应 author compact 的 DNA+招式+句式公式 / 反 AI 写作工具箱 self-check / 金句库锚点 / 风格 few-shot 示例 / AI 腔写作禁区（与写后 B-主门同源）** —— 渲染成一份 **`_prep-context.md`** 落在工作目录。
+它读 `article-meta.yaml` 的风格标签，主动解析并聚合 —— **本篇四件最高原则（开篇策略 + seed 原话/知识路径 + 句间引力四动作 + 终审门）/ 对应 author compact 的 DNA+招式+句式公式 / 反 AI 写作工具箱 self-check / 金句库锚点 / 风格 few-shot 示例 / AI 腔写作禁区（与写后 B-主门同源）** —— 渲染成一份 **`_prep-context.md`** 落在工作目录。
 
 > ⚠️ **词汇温度池已移出 prep 注入**：107 词 4 温度带配额表不再注入 -- 配额化选词本身是新的公式化；vocab-pool 文件保留作离线参考，运行时由写后 `audit_style_signals` 软门兜底，写前不再注入。反例库也未做按 tag 召回，只在写后磨稿 grep。
 
@@ -100,14 +100,14 @@ python $SKILL/scripts/prep_writing.py
 每次进入正文写作前必须执行：
 
 0. **🔴 内化人味种子（`article-meta.yaml` 的 `seed` 字段）：** 这是本篇的起点和锚（采集见 [outline.md 步骤 1.5](outline.md)）。**正文从这个种子长出来，不是从通用指令长出来**；它是作者的真实开头／亲历细节／反常识角度／口语原话，磨稿不许把它磨成书面套话。种子为空 = 本篇先天缺人味，照写但心里有数（别假装有味道）。
-1. **内化 `_prep-context.md`：** prep_writing.py 已聚合「本篇三件最高原则（seed 原话 + 句间引力四动作 + 终审门）+ 对应 author compact 的 DNA/招式/句式公式 + 反 AI 写作工具箱 self-check + 金句库 2-3 个仿写锚点 + 风格 few-shot 示例 + AI 腔写作禁区」，写作时以这一份为配方，不再逐个翻源文件（vocab 温度池已不注入，见上节 ⚠️ 注）
+1. **内化 `_prep-context.md`：** prep_writing.py 已聚合「本篇四件最高原则（开篇策略 + seed 原话/知识路径 + 句间引力四动作 + 终审门）+ 对应 author compact 的 DNA/招式/句式公式 + 反 AI 写作工具箱 self-check + 金句库 2-3 个仿写锚点 + 风格 few-shot 示例 + AI 腔写作禁区」，写作时以这一份为配方，不再逐个翻源文件（vocab 温度池已不注入，见上节 ⚠️ 注）
 2. **匹配开篇模式：** 从下方开篇技法库选最匹配的模式
 <!-- 写作前准备·风格标签确认（compact 已由 prep_writing.py 注入 _prep-context.md）-->
 3. **确认风格标签 + 激活 compact 招式：**
    - **3a.** 从大纲顶部 / `article-meta.yaml` 读取 `[目标风格：X]`
    - **3b.** compact 的 DNA / 5-8 招式 / 5 行文骨架 / 10 句式公式 / 5 反例 tag 已在 `_prep-context.md` 内 —— 内化它，不是参考，是必须复现的执行约束
    - **3c.** 写每个 H2 时激活 ≥1 招式，**全篇不重复同招**；定稿后能指认本节用了哪招（不能 → 该 H2 没真正进入风格路由，重写）
-   - **3d.** 磨稿时对照 `_prep-context.md` 第四节「AI 腔写作禁区」逐条自查；语义类反例（So What/类比缺位等）见 anti-ai-filter.md §三 + SKILL.md「写作核心六条」
+   - **3d.** 磨稿时对照 `_prep-context.md` 第四节「AI 腔写作禁区」逐条自查；材料承重/来源边界/So What 等语义问题见 material-integrity.md + anti-ai-filter.md §三 + SKILL.md「写作核心七条」
 4. **识别输入场景：** 根据创作者提供的素材类型选择处理方式：
 
 | 输入类型 | 处理方式 |
@@ -386,7 +386,7 @@ python $SKILL/scripts/prep_writing.py
 **语气是探索性的：** "X 看起来是一回事，但如果你……等等，这意味着 Y。" 读者跟着你一起走到结论，不是被告知结论。
 
 <!-- v5: M3 白描技法 -- 引用 craft-techniques.md，不重复写 -->
-**白描子模式（按需调用，详见 [craft-techniques.md](craft-techniques.md) §白描技法）：** 极简白描路线——名词+动词双拍极简对仗（禁形容词副词）/ 闲笔荡开 / 冷收一句 / 反常精确数字。可作所有路由的"减法子模式"按需调用。
+**白描子模式（按需调用，详见 [craft-techniques.md](craft-techniques.md) §白描技法）：** 极简白描路线——名词+动词双拍极简对仗（少形容词副词）/ 有来源且有功能的闲笔 / 冷收一句 / 可信动作或物件。可作所有路由的"减法子模式"按需调用。
 
 **加粗与重点标识--初稿即执行，不留到磨稿：**
 
@@ -520,13 +520,13 @@ python $SKILL/scripts/prep_writing.py
 > |---|---|---|---|
 > | **L1 硬规则**（机器门·要求零命中） | 禁用词黑名单 / 导游腔元话语 / 半角标点 / 加粗上限 / 整句加粗 | 步骤 2 机器扫 + 步骤 3 加粗巡检 | `pipeline.py verify writing` + 排版 preflight B-主门（命中 exit 2） |
 > | **L2 风格一致** | AI 句式四型 / 统计指纹 / 反例命中 / 声纹 | 步骤 4 anti-ai-filter + §七反例对照库 tag 召回 + playbook | `audit_quant_signals`（永不阻塞·纯报告）+ 反例 grep 召回 |
-> | **L3 内容质量** | So What 兑现 / Prove It 支撑 / 事实真伪 / 加粗串读骨架 | 步骤 3 骨架测试 + anti-ai §8 + [fact-check.md](fact-check.md) | `_fact-check.md`（排版 preflight 断言存在非空）+ So What/Prove It 逐条过 |
+> | **L3 内容质量** | 材料承重 / 来源边界 / 逐段新增 / So What / Prove It / 事实真伪 | 步骤 3 骨架测试 + [material-integrity.md](material-integrity.md) + anti-ai §8 + fact-check | `_fact-check.md`（排版 preflight 断言存在非空）+ 材料账本与语义逐条过 |
 > | **L4 活人感**（终审·凌驾一切） | 读出声想不想读下一句 / 换模型语义差分 / 意愿层打滑 | 步骤 1 读出声 + 步骤 6 冷读外审 | `_stutter-list.md`（带签名，排版 preflight 断言存在） |
 >
 > **位阶**：L4 读出声终审**凌驾** L1-L3 一切量化项——任一层修改若伤语流/承接，回退该修改、以 L4 为准（同 [anti-ai-filter.md](anti-ai-filter.md) 顶部重定向第 3 条）。与卡兹克四层的差异：我们的 **L4 含「换模型冷读」这层它没有的语义差分**，且事实核查在 L3（它的 writer 层无事实门）。draft 闸交付时这四层汇总成一张《质检报告》随定稿给作者（见 [autopilot.md](autopilot.md) draft 闸交付清单）。
 
 1. **🔴 读出声（终审，凌驾下面一切量化项）**：整篇读一遍（或 1.25 倍速 TTS 听）。你会这样跟一个聪明朋友说吗？不会 → 重写。再随机翻一段：读完第一句想读第二句吗？读完这段想读下一段吗？不想 → 多半是首句没张力或句间不承接（见上方 §句间引力），先治这个。
-2. **机器扫一遍（🔴 机器能查的不占人工注意力）**：跑 `pipeline.py verify writing`（含 verify_pos_ratio / verify_bold_density / verify_h2_subtitle_align）+ `contracts.audit_quant_signals('定稿.md')` 量化体检报告（句长/段落节奏/副词/感叹号，仅参考永不阻塞）；AI 套话黑名单与导游腔元话语由排版 preflight 的 B-主门自动硬拦。报告里的**真问题**逐处处理，每改一处回到第 1 步重读 -- 伤语流即回退该修改。人工不再逐段数指标。
+2. **机器扫一遍（🔴 机器能查的不占人工注意力）**：跑 `pipeline.py verify writing`（含 verify_pos_ratio / verify_bold_density / verify_h2_subtitle_align）+ `contracts.audit_quant_signals('定稿.md')` 量化体检报告（句长/段落节奏/副词/感叹号 + 长前置分句/长句多「的」/重复段首/短单句段连发/比喻扎堆，仅参考永不阻塞）；AI 套话黑名单与导游腔元话语由排版 preflight 的 B-主门自动硬拦。报告里的**真问题**逐处处理，每改一处回到第 1 步重读 -- 伤语流即回退该修改。人工不再逐段数指标。
 3. **加粗巡检（下限已降级软警告，重点查上限防刷屏）**：
    - **首段质量看张力+承接，不看加粗量**：前 3 段不强制凑加粗（下限是软警告）；看首句有没有钩子张力、前两句有没有互相承接。首段平 → 改首句，别靠加粗救。
    - **上限检查（重点）**：中后段有没有每段都 2+ 处加粗？有没有整句加粗（单个 `**…**` 块 ≥15 中文字符即违规／排版 exit 2）？有没有连续 3 段每段都有加粗？全篇加粗总数有没有超过分档上限？`***粗斜体***` 有没有超标？（任一超标 → 删掉最不值钱的那些，留最锋利的短语）

@@ -1648,3 +1648,26 @@ def test_audit_quant_signals_missing_file():
     from scripts.contracts import audit_quant_signals
     r = audit_quant_signals("Z:/不存在/定稿.md")
     assert r["verdict"] == "no_article"
+
+
+def test_audit_quant_signals_new_style_hints_are_soft(tmp_path):
+    from scripts.contracts import audit_quant_signals
+    long_de = "这是一个把昨天仍在争论的产品路线、今天刚公布的用户反馈和团队内部几轮复盘全部叠在一起的判断，真正的问题还在后面。"
+    body = (
+        f"{long_de}\n\n{long_de}\n\n"
+        "同一个开头，第一段。\n\n"
+        "同一个开头，第二段。\n\n"
+        "同一个开头，短。\n\n"
+        "很快。\n\n就停。\n\n再来。\n\n"
+        "它像一把伞，也仿佛一堵墙，如同一条突然拐弯的路。"
+    )
+    p = tmp_path / "定稿.md"
+    p.write_text(body, encoding="utf-8")
+    r = audit_quant_signals(str(p))
+    assert r["verdict"] == "info"
+    assert r["metrics"]["long_fronted_clauses"] >= 2
+    assert r["metrics"]["long_sents_many_de"] >= 2
+    assert r["metrics"]["repeated_para_openers"]["同一个开"] == 3
+    assert r["metrics"]["max_short_single_para_run"] >= 3
+    assert r["metrics"]["max_metaphors_per_250_chars"] >= 3
+    assert all("阻塞" not in note for note in r["notes"])

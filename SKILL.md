@@ -39,6 +39,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 | 展开正文 / 继续写 / 改稿（写前先跑 `prep_writing.py` 聚合 `_prep-context.md` 再走 7 步准备） | writing.md + style-routes.md 对应章 + profile/corpus/authors/{X}.compact.md |
 | 给几版开头盲选 / 挑开头 / 换开头（2-3 版钩子 A/B/C 盲选不给理由，**autopilot 唯一法定停顿点**） | writing.md §开头候选盲选 |
 | 内容增强 / 素材不够尖（4 套策略，**大纲后写作前**） | content-enhance.md |
+| 材料够不够 / 来源边界 / 现实写作能写到哪一步 | material-integrity.md |
 | 想标题（内联出 5 候选+排序） | title.md |
 | 写作技法 / 开篇结尾 / 金句 | craft-techniques.md |
 | 文体专属（教程/方法论清单/技术解读，仅这三类加载；文体三选一的**选定**在 outline Step 3） | writing-genres.md |
@@ -65,17 +66,18 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 **子命令快捷入口：** `写 选题`/`写 大纲`→outline ｜ `写 正文`/`写 展开`→writing ｜ `写 开头候选`/`盲选开头`/`挑开头`→writing §开头候选盲选 ｜ `写 标题`→title ｜ `写 音乐`/`写 BGM`→music ｜ `写 排版`→layout ｜ `写 发布`→publish ｜ `写 图文`/`转图文`→xhs-storyboard ｜ `写 分发`/`一稿多投`/`发微博`/`转播客`→distribute ｜ `写 状态`/`写 进度`→`pipeline.py status` ｜ `全流程`/`走一遍流程`→autopilot ｜ `复核 skill`/`skill 自省`/`skill 复盘`/`skill 进化`→skill-review
 
-## ✍️ 写作核心六条（语义层正向规则 — 六个章节指针的**目录**，唯一 single-source）
+## ✍️ 写作核心七条（语义层正向规则 — 七个章节指针的**目录**，唯一 single-source）
 
-> 🔴 本节只是指针目录、**非可单独执行的「够用版」**--摘要在场模型会跳过正文（已知失败模式）。写作期真正内化 `_prep-context.md`（`prep_writing.py` 渲染，§〇 三原则置顶），磨稿期按每条指针**进对应章节逐条打卡**，别只看目录。
-> 🟡 诚实边界：六条只有「写前喂料 + 写后自觉」、无机器写后校验；`exit 2` 硬门只拦正则/计数抓得到的表层指纹（套话黑名单、半角标点、整句加粗计数），语义人味正则无法强制、同模型自审照不出，唯靠换模型语义差分（semantic-review.md），别当已机器落地。
+> 🔴 本节只是指针目录、**非可单独执行的「够用版」**--摘要在场模型会跳过正文（已知失败模式）。写作期真正内化 `_prep-context.md`（`prep_writing.py` 渲染，§〇 四原则置顶），磨稿期按每条指针**进对应章节逐条打卡**，别只看目录。
+> 🟡 诚实边界：七条主要靠「写前喂料 + 写后语义审查」；`exit 2` 硬门只拦正则/计数抓得到的表层指纹。`audit_quant_signals` 对部分句式风险只发软提示，不能证明材料真实或因果成立；语义层靠异模型评审 + 事实复核，别当已机器全自动落地。
 
-1. **So What 兑现**（论点替读者问"所以呢"并答）→ anti-ai-filter.md §8.1
-2. **类比落地**（抽象判断配日常类比）→ anti-ai-filter.md
-3. **反常细节锚**（关键场景给反常到不像编的具体细节）→ anti-ai-filter.md §2.3.5
-4. **把自己写笨**（不立权威，自嘲换信任）→ anti-ai-filter.md §6.1
-5. **段落具体领头（BLOT）**（每段第一句给具体的人/事/画面/数字）→ writing.md §密度法则 9
-6. **句间引力**（上句尾留钩子、下句头接住；顶真 + 旧信息在前新信息在后）→ **单一来源** writing.md §句间引力
+1. **材料先承重**（每个核心 H2 映射真实材料，材料不足就补/缩/停）→ material-integrity.md
+2. **来源不过界**（事实、自述、转述、推断、未知分开；顺序≠因果≠动机）→ material-integrity.md + fact-check.md
+3. **逐段有新增**（事实/动作/例子/区分/后果至少推进一项）→ material-integrity.md + anti-ai-filter.md §3.1
+4. **So What 按需兑现**（后果没显现才追问，已经成立就停）→ anti-ai-filter.md §8.1
+5. **作者声来自知识路径**（为什么知道、什么改变判断、哪里不确定，不强塞「我」）→ outline.md §1.5
+6. **可信细节会停笔**（有来源的动作/物件/原话胜过精确幻觉，情绪成立就删解释尾巴）→ anti-ai-filter.md §2.3.5
+7. **句间引力**（上句尾留钩子、下句头接住；顶真 + 旧信息在前新信息在后）→ **单一来源** writing.md §句间引力
 
 ## 特殊约定（每轮解析对话都用）
 

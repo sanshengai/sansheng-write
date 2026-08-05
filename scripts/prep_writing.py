@@ -19,7 +19,7 @@ profile.example/，这是正常路径）：
     python <skill>/scripts/prep_writing.py --dir <文章目录>
 
 聚合渲染到工作目录的 _prep-context.md（🔴 2026-06-10 P0-2 执行层改造）：
-    0. 本篇三件最高原则（seed 原话逐字渲染 + 句间引力四动作 + 终审门）——
+    0. 本篇四件最高原则（seed 原话/知识路径 + 句间引力四动作 + 终审门）——
        6/7 改造的三个新原则此前只在 writing.md 文档层，从未进过本文件，
        等于从未进过模型动笔时的 working memory。现在固定置顶。
     1. 对应 author compact（按 article-meta.yaml 的 style 字段解析）
@@ -307,14 +307,15 @@ def select_gold_sample(author: str) -> "tuple[str, str] | None":
 
 
 def render_top_principles(meta: dict) -> str:
-    """渲染『本篇三件最高原则』置顶块（🔴 2026-06-10 P0-2）。
+    """渲染『本篇四件最高原则』置顶块（🔴 2026-06-10 P0-2）。
 
     为什么置顶：_prep-context.md 是 skill 明文指定「写作时真正要内化的这一份」，
     是唯一可靠进 working memory 的通道。种子/句间引力/终审门写在 writing.md
     里两次被实证不生效——必须渲染在模型动笔前读的第一屏。
     """
     seed = str(meta.get("seed") or "").strip()
-    # 第一人称原话判据：seed 里至少有一句带「我」的句子，才算采到人味种子
+    # 「我」只能说明这是作者原话，不能作为人味的必要条件。没有「我」的 seed
+    # 可能是一条真实知识路径：为什么知道、哪个证据改变了判断、哪里仍不确定。
     has_first_person = any("我" in s for s in seed.replace("\n", "。").split("。") if s.strip())
 
     lines = ["## 〇、本篇四件最高原则（先读这个，其余一切服从它）", ""]
@@ -331,7 +332,7 @@ def render_top_principles(meta: dict) -> str:
         _opening_hint = {
             "直入": "🔴 **资讯 / 时效类直入**：第一句直接说「发生了什么 / 它是什么」，不设故事钩子、不做概念铺垫、不先讲个人经历。",
             "成果前置": "🔴 **成果 / 实作类成果前置**：第一句亮成果（「我做了个 X」+ 能干什么），第一屏内给入口（网址 / 下载）+ 一个真实产出示例；「为什么做 / 制作背景 / 焦虑数据」降级到成果之后当动机、不当钩子。",
-            "可钩子": "深度启发类：可用故事钩子（真实亲历优先，虚构慎用），走开头候选盲选。",
+            "可钩子": "深度启发类：可用故事钩子；现实写作只用真实亲历或可追溯公开案例，虚构/混合写作必须显式标明。",
         }.get(opening, f"开篇策略：{opening}")
         lines.append("### 0. 本篇开篇策略（按 outline 步骤 3.5 分流，已定）")
         lines.append("")
@@ -364,8 +365,9 @@ def render_top_principles(meta: dict) -> str:
     elif seed:
         lines.append("> " + seed.replace("\n", "\n> "))
         lines.append("")
-        lines.append("⚠️ **本篇种子不含第一人称原话**（没有一句带「我」的句子）——这是策划简报，不是人味种子。"
-                     "建议回 outline 步骤 1.5 让作者说一句真话再动笔；硬写则心里有数：声音是空的。")
+        lines.append("这是本篇的**知识路径 / 判断种子**：允许改写句式，但事实关系与不确定性不得走样；"
+                     "不要为了显得有人味擅自补成「我见过 / 我发现 / 有读者问我」。若它只写风格方向、"
+                     "没有说明为什么知道 / 什么改变了判断 / 哪里仍不确定，回 outline 步骤 1.5 重采。")
     else:
         lines.append("⚠️ **本篇无人味种子**（article-meta.yaml 的 seed 为空）。"
                      "建议回 outline 步骤 1.5 采集；硬写 = 纯通用生成，别假装有味道。")
@@ -488,7 +490,7 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     parts.append("---")
     parts.append("")
 
-    # 0. 本篇三件最高原则（🔴 2026-06-10 P0-2：置顶，先于一切招式）
+    # 0. 本篇四件最高原则（🔴 2026-06-10 P0-2：置顶，先于一切招式）
     parts.append(render_top_principles(meta))
     parts.append("")
     parts.append("---")
@@ -498,8 +500,8 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     parts.append("## 一、作者执行手册（compact）")
     parts.append("")
     parts.append("> 🟢 **写作时第一步**：翻到下文 §段落实例库 抄节奏，**不要先用 DNA/招式/句式公式生造句子**（那会写成营销号配方+知识分子腔的拼贴）。")
-    parts.append("> 🟢 **compact 上半部（DNA/招式/句式公式）= 磨稿对照表**（🔴 2026-06-10 降级）：磨稿期回头打勾用，**不是写作期执行约束**——写作期只用 §〇 三原则 + 下文整篇范文 + §段落实例库。")
-    parts.append("> 🟢 **写的时候只管把话顺着说完**（句间承接，见 §〇 三原则）。**初稿全文完成后**再对照 §朴实简洁的小动作 统一扫一遍——")
+    parts.append("> 🟢 **compact 上半部（DNA/招式/句式公式）= 磨稿对照表**（🔴 2026-06-10 降级）：磨稿期回头打勾用，**不是写作期执行约束**——写作期只用 §〇 四原则 + 下文整篇范文 + §段落实例库。")
+    parts.append("> 🟢 **写的时候只管把话顺着说完**（句间承接，见 §〇 四原则）。**初稿全文完成后**再对照 §朴实简洁的小动作 统一扫一遍——")
     parts.append("> 🔴 **禁止边写边逐段打钩**：那会让每句话的首要目标变成「过本段检查」而不是「接住上一句」，正是「句子各自合规、连起来生涩」的来源。")
     parts.append("")
     if author:

@@ -83,3 +83,13 @@ def test_fact_sheet_skips_valid_non_contract_json(tmp_path):
     assert missing is None
     assert "有效事实" in text
     assert "跳过 检索结果-merged.json" in text
+def test_render_top_principles_accepts_knowledge_path_without_first_person():
+    from scripts.prep_writing import render_top_principles
+
+    rendered = render_top_principles({
+        "seed": "先看产品日志，随后一条反例改变了判断；目前仍不确定长期留存。"
+    })
+
+    assert "知识路径 / 判断种子" in rendered
+    assert "本篇种子不含第一人称原话" not in rendered
+    assert "我见过 / 我发现 / 有读者问我" in rendered

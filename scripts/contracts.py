@@ -1930,7 +1930,7 @@ def verify_anti_ai_blacklist(article_path: str) -> dict:
 
     🔴 诚实边界（必须随方案一起声明，不可省略）：
     黑名单源自反例对照库 50 对里「有显性字符串特征」的约 30 对。剩下约 40%
-    是语义类反例（So What 缺失 / 类比缺位 / 反常细节缺失），正则零能力。
+    是语义类反例（材料悬空 / So What 缺失 / 细节越界），正则零能力。
     **B-主门 verdict=ok ≠ AI 味已清除，只 = 显性 AI 套话已清。** 语义层靠
     anti-ai-filter.md 磨稿 + SKILL.md 内嵌正向规则 + Claude 自觉。
 
@@ -2352,7 +2352,8 @@ def verify_h2_subtitle_align(article_dir: str) -> dict:
 
 # ============================================================================
 # 量化体检报告：audit_quant_signals（2026-06-10 P1-6 落地）
-# anti-ai-filter.md §1-§3 的数值阈值（句长方差/段落节奏/副词密度/单句段/感叹号）
+# anti-ai-filter.md §1-§3 的数值阈值（句长方差/段落节奏/副词密度/单句段/感叹号，
+# 以及长前置分句/长句多「的」/重复段首/短单句段连发/比喻扎堆）
 # 从写作上下文物理移除后，唯一的栖身处。**永不阻塞**（verdict 恒 'info'）：
 # 数字是磨稿后的体检单，不是写作期 KPI——为数字改句子而伤语流，正是 6/7 诊断
 # 确认的 Goodhart 病根。任何按本报告做的修改，以读出声终审为准、伤语流即回退。
@@ -2419,6 +2420,53 @@ def audit_quant_signals(article_path: str) -> dict:
         metrics['one_liner_paras'] = sum(1 for x in plens if x <= 15)
         if adj >= len(plens) // 2:
             notes.append(f'相邻段落长度接近的有 {adj} 对——段落节奏偏匀速，按内容判断要不要拆/并')
+
+    # 下列都是启发式表面信号，只做 soft note。它们无法判断语义、材料真实性或文体需要。
+    long_fronted = 0
+    many_de = 0
+    for sent in sents:
+        first_comma = min((sent.find(mark) for mark in ('，', ',') if mark in sent), default=-1)
+        if first_comma >= 35:
+            long_fronted += 1
+        if len(sent) >= 45 and sent.count('的') >= 4:
+            many_de += 1
+    metrics['long_fronted_clauses'] = long_fronted
+    metrics['long_sents_many_de'] = many_de
+    if long_fronted >= 2:
+        notes.append(f'长前置分句 {long_fronted} 处（首个逗号前 ≥35 字）——主干可能来得太晚，只在读出声确实费劲时前移')
+    if many_de >= 2:
+        notes.append(f'长句中「的」≥4 次的有 {many_de} 句——可能套层过多，按语义拆解，不做禁词替换')
+
+    from collections import Counter
+    openers = [re.sub(r'^[^一-鿿A-Za-z0-9]+', '', para)[:4] for para in paras]
+    repeated = {k: v for k, v in Counter(x for x in openers if len(x) == 4).items() if v >= 3}
+    metrics['repeated_para_openers'] = repeated
+    if repeated:
+        shown = '、'.join(f'「{k}」×{v}' for k, v in sorted(repeated.items()))
+        notes.append(f'段首四字重复：{shown}——检查是否机械起拍；确为结构性排比可保留')
+
+    short_single = []
+    for para in paras:
+        terminal_count = len(re.findall(r'[。！？!?；;]', para))
+        short_single.append(len(para) <= 25 and terminal_count <= 1)
+    run = best_short_run = 0
+    for is_short in short_single:
+        run = run + 1 if is_short else 0
+        best_short_run = max(best_short_run, run)
+    metrics['max_short_single_para_run'] = best_short_run
+    if best_short_run >= 3:
+        notes.append(f'连续 {best_short_run} 个短单句段——可能像节拍器；若是有意加速或冷锤可保留')
+
+    metaphor_positions = [m.start() for m in re.finditer(r'像(?:是|一|个|把|条|块)?|仿佛|如同|好比|宛如', plain)]
+    metaphor_cluster = 0
+    left = 0
+    for right, pos in enumerate(metaphor_positions):
+        while pos - metaphor_positions[left] > 250:
+            left += 1
+        metaphor_cluster = max(metaphor_cluster, right - left + 1)
+    metrics['max_metaphors_per_250_chars'] = metaphor_cluster
+    if metaphor_cluster >= 3:
+        notes.append(f'约 250 字内最多出现 {metaphor_cluster} 个比喻信号——检查是否争抢解释权；承重比喻可保留')
 
     n_chars = max(len(plain), 1)
     adv_hits = sum(plain.count(w) for w in _ADVERB_HINTS)
