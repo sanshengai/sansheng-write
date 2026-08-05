@@ -63,7 +63,10 @@ python "$SKILL/scripts/pipeline.py" select-visuals \
 请求多候选但因 429 等原因只生成出一张时，选择命令必须失败，禁止把残留单图标成“已选择”。
 
 当前适配器只可调用 `baoyu-image-gen` CLI。
-外部渲染器只负责像素，不决定版式、风格、文字或比例。图中文字必须由生成模型与画面一起原生生成；不允许本地模板/Pillow 绘制或后期叠字。运行前会探测 batch
+外部渲染器只负责像素，不决定版式、风格、文字或比例。图中全部内容文字必须由生成模型与
+画面在同一次请求里原生生成，并共享对应的粘土材质、灯光与色板；不允许 SVG / HTML /
+Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后期叠字，也不允许
+模型另写 SVG 再转 PNG。错字只走同一 canonical prompt 的单张重渲，不拆分文字层。运行前会探测 batch
 能力；仅在 `baoyu-image-gen` 内按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、
 比例和输出目标。未配置 policy 时直接使用 `baoyu-image-gen` 默认 provider。`sansheng-google`
 等本仓原生 provider 会绕开 Baoyu，现已无条件拒绝；不存在“写理由放行”。

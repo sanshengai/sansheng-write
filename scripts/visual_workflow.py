@@ -293,6 +293,10 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     return (
         _frontmatter(fields)
         + "\n\nCreate a polished dark editorial montage for a WeChat article cover.\n\n"
+        + _native_raster_contract(
+            "the cover's dark editorial typography, lighting and registered palette"
+        )
+        + "\n\n"
         "## LAYOUT\n"
         "- One unified deep-charcoal canvas, exact 2.35:1 landscape.\n"
         "- Put the text in a slightly larger left zone, the evidence collage in a slightly "
@@ -429,6 +433,19 @@ def _clay_typography() -> str:
     )
 
 
+def _native_raster_contract(material: str) -> str:
+    """Keep visible copy inside the same generative raster pass as the scene."""
+    return (
+        "ONE-PASS NATIVE RASTER CONTRACT — generate one complete flattened bitmap in a "
+        "single image-model render. Render every allowlisted content glyph natively inside "
+        f"that same render and integrate it with {material}. Never output, request or rely "
+        "on SVG, HTML, Canvas, CSS, vector text, blank text placeholders, masks or a later "
+        "typography/compositing pass. Never plan for Pillow, Jimp, Sharp, ImageMagick or any "
+        "other post-render text overlay. If any glyph is wrong, rerender this same canonical "
+        "prompt; do not separate the words from the picture."
+    )
+
+
 def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
     expected = [str(item.get("title") or "").strip()]
     pictorial_facts = "\n".join(
@@ -471,6 +488,10 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
         + "\n\n"
         + f"Create a square article Hero in {style} style. {palette}\n"
         + (f"{typography}\n" if typography else "")
+        + _native_raster_contract(
+            "the same dimensional matte-clay material, lighting and registered palette as the scene"
+        )
+        + "\n"
         +
         "Show one unmistakable visual hierarchy.\n\n"
         "## VISIBLE TEXT ALLOWLIST\n"
@@ -547,6 +568,10 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         + f"Create a high-information Chinese infographic in {style} style using the "
         f"reviewed editorial composition contract. {palette}\n"
         + (f"{typography}\n" if typography else "")
+        + _native_raster_contract(
+            "the same dimensional matte-clay material, lighting and registered palette as the scene"
+        )
+        + "\n"
         +
         f"BAOYU LAYOUT CONTRACT — {layout_type}: {layout_contract}. "
         "This is structural guidance only and must never become visible text.\n"

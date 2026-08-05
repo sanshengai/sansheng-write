@@ -53,9 +53,24 @@ BLOCKED_BYPASS_PROVIDERS = {
     "sansheng-template-safe",
 }
 
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _validate_native_raster_output(path: Path) -> None:
+    """Reject vector/text payloads masquerading as a generated final image."""
+    if path.suffix.casefold() != ".png":
+        raise RuntimeError(
+            f"最终生成图必须是 baoyu-image-gen 一次性输出的 PNG：{path.name}"
+        )
+    if path.read_bytes()[: len(PNG_SIGNATURE)] != PNG_SIGNATURE:
+        raise RuntimeError(
+            f"renderer 输出不是 PNG 像素文件：{path.name}；禁止把 SVG/HTML/Canvas "
+            "或后期文字叠加产物冒充正式生成图"
+        )
 
 
 def _now() -> str:
@@ -569,6 +584,7 @@ def render_visuals(
             raise RuntimeError(f"renderer 报告成功但输出不存在：{output.relative_to(cwd)}")
         if not prompt.is_file():
             raise RuntimeError(f"canonical prompt 不存在：{prompt.relative_to(cwd)}")
+        _validate_native_raster_output(output)
         output_rel = output.relative_to(cwd).as_posix()
         prompt_rel = prompt.relative_to(cwd).as_posix()
         prompt_meta = _prompt_meta(prompt)

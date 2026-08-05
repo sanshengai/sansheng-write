@@ -94,7 +94,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md。关键入口为 `adopt-final`、`compile-visuals`、`render-visuals`、`visual-qa`、`seal visual`、`release-to-draft`、`finalize`。封面只认 `lead.line1 / line2 / accent / tag1 / tag2` 五项文字合同；Hero / 信息图分别绑定宝玉文章配图 / 信息图的方法来源，最终像素统一经 `baoyu-image-gen`。缺字段、越字数、配色漂移、必备文字非恰好一次、意外文字、QA 失败、上游未完成或 renderer 非法均硬失败，禁止 `force`、`legacy`、跳过预检、作者豁免、自定义命令与原生客户端旁路。`release-to-draft` 是唯一草稿创建入口；拿到永久链接后 `finalize` 按“归档→验证→**朋友圈文案**→播客→官网”收尾（文案前移，不等音频）。archive 校验失败不得写盘；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md。关键入口为 `adopt-final`、`compile-visuals`、`render-visuals`、`visual-qa`、`seal visual`、`release-to-draft`、`finalize`。封面只认 `lead.line1 / line2 / accent / tag1 / tag2` 五项文字合同；Hero / 信息图分别绑定宝玉文章配图 / 信息图的方法来源，最终像素统一经 `baoyu-image-gen`。全部内容文字必须在同一次生图请求中与画面原生生成；禁止无字底图 + SVG / HTML / Canvas / 本地字体后期补字，也禁止模型另写 SVG 再转 PNG。缺字段、越字数、配色漂移、必备文字非恰好一次、意外文字、QA 失败、上游未完成或 renderer 非法均硬失败，禁止 `force`、`legacy`、跳过预检、作者豁免、自定义命令与原生客户端旁路。`release-to-draft` 是唯一草稿创建入口；拿到永久链接后 `finalize` 按“归档→验证→**朋友圈文案**→播客→官网”收尾（文案前移，不等音频）。archive 校验失败不得写盘；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

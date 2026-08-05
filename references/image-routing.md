@@ -42,7 +42,10 @@ method source 与 renderer 都不得修改 `expected_text`、比例、style 或 
 
 于是 Baoyu 能力缺失、被换版本、或本地版式语言偏离枚举，都会在编译期或发布期硬失败。
 测试与离线环境可用 `SANSHENG_WRITE_BAOYU_SKILL_ROOT` 指向 fixture 根，生产环境不要设置。
-图中文字必须由本次生成模型与画面一起原生生成；禁止用本地模板、Pillow 或后期文字叠加来替代。
+图中全部内容文字必须由本次生成模型与画面在**同一次请求**里原生生成，并继承同一材质、
+灯光与色板。禁止先生成无字底图，再用 SVG / HTML / Canvas / CSS / Pillow / Jimp / Sharp /
+ImageMagick 或其他后期步骤补字；也禁止让模型另写 SVG 再转 PNG。偶发错字只允许沿用同一
+canonical prompt 单张重渲并重新 QA，不能成为拆分文字层或改走确定性字体的理由。
 `layout` 是构图合同而非模板 ID：它约束层级和关系，但不把题材锁死在过去某篇文章的插画元素里。
 
 `visual-planner` 是唯一执行者，它必须按已安装 Baoyu method source 的当前文档完成分析、
@@ -126,6 +129,8 @@ prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与�
 
 - 数字柱图、折线、饼图、雷达图：已核实数据 + 本地 `matplotlib`/等价确定性代码。
 - 精确节点与拓扑：走独立本地确定性代码路径，不得冒充封面 / Hero / 信息图，也不得进入其最终图证据集。
+- `scripts/svg_to_png.py` 只服务上述精确图表 / 拓扑，不得输出 `cover.png`、`hero.png` 或
+  `infographic-*.png`，更不得为生成式图片后期补写标题和标签。
 - 生成模型只可做装饰性视觉，不得推断、补齐或改写数字。
 
 ## 生成式渲染的三类文字事故（都已在 prompt 层加约束，但仍要在 QA 复核）
@@ -141,7 +146,8 @@ prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与�
    视觉 QA 逐张看。
 
 ⚠️ 选渲染器前先读 [release-runtime.md](release-runtime.md) 的渲染器一节：
-当前只允许生成式 renderer；错字或构图不合格时走独立 QA + 单张重渲，不降级成本地模板。
+当前只允许生成式 renderer；100+ 篇生产历史表明当前中文原生生图路径具备可用稳定性，
+错字或构图不合格时仍走独立 QA + 同 prompt 单张重渲，不降级成 SVG 或本地模板。
 
 ## 执行
 

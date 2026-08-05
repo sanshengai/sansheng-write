@@ -222,6 +222,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert errors == []
     assert result["producer"] == PRODUCER
     cover = (article / "素材/prompts/final/cover.md").read_text(encoding="utf-8")
+    hero = (article / "素材/prompts/final/hero.md").read_text(encoding="utf-8")
     info = (article / "素材/prompts/final/infographic-01.md").read_text(
         encoding="utf-8"
     )
@@ -268,6 +269,12 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "一份任务单" in cover
     assert "一条发布入口" in cover
     assert "TEXTLESS visual evidence only" in cover
+    for prompt in (cover, hero, info):
+        assert "ONE-PASS NATIVE RASTER CONTRACT" in prompt
+        assert "Never output, request or rely on SVG, HTML, Canvas" in prompt
+        assert "do not separate the words from the picture" in prompt
+    assert "same dimensional matte-clay material" in hero
+    assert "same dimensional matte-clay material" in info
     assert "bright editorial evidence montage" not in cover
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
@@ -298,6 +305,24 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     ]
     assert all(task["promptFiles"][0].startswith("prompts/final/") for task in batch["tasks"])
     assert batch["producer"] == PRODUCER
+
+
+def test_svg_converter_rejects_formal_generated_visual_slots(tmp_path, monkeypatch):
+    from scripts import svg_to_png
+
+    source = tmp_path / "diagram.svg"
+    source.write_text(
+        '<svg viewBox="0 0 10 10"><text x="1" y="5">补字</text></svg>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["svg_to_png.py", str(source), "--output", str(tmp_path / "infographic-01.png")],
+    )
+
+    assert svg_to_png.main() == 2
+    assert not (tmp_path / "infographic-01.png").exists()
 
 
 def test_visual_prompt_rejects_clay_style_conflict_phrase(tmp_path):

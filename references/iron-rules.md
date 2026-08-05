@@ -27,8 +27,9 @@
 9. `style_consistent` 不能代替目标风格验收；QA 必须通过 `style_contract_match`、
    `brand_palette_match`，封面另过 `composition_contract_match`。
 10. 所有正文视觉均须由登记的生成式 renderer 原生生成；图中文字必须随画面一起生成，
-    禁止以 `template_id`、Pillow、本地模板或后期叠字替代。生成失败只能按 policy
-    切换另一生成式 renderer，不能降级为确定性模板。
+    禁止以 `template_id`、SVG、HTML、Canvas、Pillow、本地模板或任何后期叠字替代，
+    也禁止让模型另写 SVG 再转 PNG。生成失败只能按 policy 切换另一生成式 renderer，
+    不能降级为确定性模板或拆分文字层。
 11. 看图模型不是视觉发布的唯一授权者；没有实际对象、数量、位置和版式观察的
     布尔式 QA 不得放行。
 12. `text_match`、`no_unexpected_text`、`style_contract_match` 不得从发布硬门移除；
@@ -40,6 +41,8 @@
 15. 封面文字只认 `lead.line1/line2/accent/tag1/tag2`：五项必填，accent 必须是 L2 结尾，
     tag1/tag2 恰好两项。`lead.subtitle` 是文章导读，不得冒充封面标签。
 16. renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
+17. `cover.png`、`hero.png`、`infographic-*.png` 必须是 `baoyu-image-gen` 直接返回的 PNG
+    像素文件；SVG 转换器只服务独立精确图表，不得占用这些正式生成图槽位。
 
 ## 排版
 

@@ -4,6 +4,9 @@
 ==========================================================================
 专门为 baoyu-diagram 输出的 SVG 文件转成 PNG，再嵌入微信公众号。
 
+只用于精确图表、拓扑图等独立确定性视觉；不得用于 cover / hero / infographic
+生成图，也不得拿来为这些图片后期补字。它们的全部内容文字必须由生图模型一次性生成。
+
 为什么用 Playwright 而不是 cairosvg / rsvg-convert / inkscape：
 - cairosvg 在 Windows 上需要 GTK+ runtime，依赖重
 - rsvg-convert / inkscape 不在默认 PATH 上
@@ -33,6 +36,16 @@ import sys as _sys
 import os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 import profile_config as _pc
+
+
+_GENERATED_VISUAL_NAME = re.compile(
+    r"^(?:cover|hero|infographic-?\d+)\.(?:png|jpe?g)$", re.IGNORECASE
+)
+
+
+def _is_reserved_generated_visual_output(path: Path) -> bool:
+    """Return True for formal generated-image slots that SVG must never fill."""
+    return bool(_GENERATED_VISUAL_NAME.fullmatch(path.name))
 
 
 def _hex_norm(c: str) -> str:
@@ -213,6 +226,16 @@ def main():
         if args.output and len(svg_paths) > 1:
             print(f"⚠️  多文件模式忽略 --output，按 .svg 同名替换", file=sys.stderr)
         jobs = [(sp, sp.with_suffix(".png")) for sp in svg_paths]
+
+    blocked = [png_path for _, png_path in jobs if _is_reserved_generated_visual_output(png_path)]
+    if blocked:
+        names = ", ".join(path.name for path in blocked)
+        print(
+            f"❌ 禁止用 SVG/HTML/Canvas 生成或补写正式封面、Hero、信息图：{names}。"
+            "请让 baoyu-image-gen 在同一次生成中完成画面与全部内容文字。",
+            file=sys.stderr,
+        )
+        return 2
 
     for _, png_path in jobs:
         png_path.parent.mkdir(parents=True, exist_ok=True)

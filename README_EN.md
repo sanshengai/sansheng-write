@@ -30,9 +30,11 @@ topic triage → outline (with opening-strategy routing) → draft → revision 
 Quality is not left to good intentions. It is enforced by **contract gates**.
 The Skill's visual planner is the only producer; Baoyu article-illustration and
 infographic skills are verifiable method sources; final pixels must come through
-`baoyu-image-gen`. Cover text, palette, clay illustration method, exactly-once
-required text, and renderer provenance are machine-checked. There is no `force`,
-legacy, preflight-skip, author-waiver, or custom image-command bypass.
+`baoyu-image-gen`. Every content glyph on a cover or illustration must be rendered
+natively with the scene in one image-model pass; SVG or local-font text overlays are
+forbidden. Cover text, palette, clay illustration method, exactly-once required text,
+and renderer provenance are machine-checked. There is no `force`, legacy,
+preflight-skip, author-waiver, or custom image-command bypass.
 Non-compliant output exits with code 2 and never reaches publish.
 
 ```console
@@ -138,7 +140,7 @@ cp .env.example .env              # your own keys
 | Configured image provider | ③ | `render-visuals` exits non-zero | configure provider/model through `baoyu-image-gen`; this Skill still owns the visual rules |
 | `MINIMAX_API_KEY` | ③ | The BGM release gate fails | MiniMax China API key |
 | WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP |
-| playwright / matplotlib | ③ optional | No SVG→PNG, no data charts | `pip install playwright matplotlib` |
+| playwright / matplotlib | ③ optional | No SVG→PNG for separate deterministic diagrams and no data charts; never used to add text to covers/Hero/infographics | `pip install playwright matplotlib` |
 
 ---
 
@@ -302,7 +304,7 @@ That is a different thing from packaging up someone's style manual, which this r
 | [jimp](https://github.com/jimp-dev/jimp) | MIT | logo watermark on images |
 | [PyYAML](https://pyyaml.org/) | MIT | config and works registry |
 | [Pillow](https://python-pillow.org/) | MIT-CMU | image resize / compression |
-| [Playwright](https://playwright.dev/) | Apache-2.0 | SVG→PNG (optional) |
+| [Playwright](https://playwright.dev/) | Apache-2.0 | SVG→PNG for separate deterministic diagrams only (optional; never for text overlays) |
 | [matplotlib](https://matplotlib.org/) | PSF-based (BSD-compatible) | data charts (optional) |
 | baoyu-skills | MIT | markdown→HTML / infographics / publishing |
 

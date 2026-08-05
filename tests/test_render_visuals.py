@@ -2,7 +2,28 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 VISUAL_PRODUCER = "sansheng-write.visual-planner"
+
+
+def test_native_raster_guard_rejects_svg_payload_saved_as_png(tmp_path):
+    from scripts.render_visuals import _validate_native_raster_output
+
+    disguised = tmp_path / "cover.png"
+    disguised.write_text('<svg><text>后期补字</text></svg>', encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="禁止把 SVG/HTML/Canvas"):
+        _validate_native_raster_output(disguised)
+
+
+def test_native_raster_guard_accepts_png_signature(tmp_path):
+    from scripts.render_visuals import PNG_SIGNATURE, _validate_native_raster_output
+
+    rendered = tmp_path / "cover.png"
+    rendered.write_bytes(PNG_SIGNATURE + b"generated-pixels")
+
+    _validate_native_raster_output(rendered)
 
 
 def _article(root: Path) -> Path:
