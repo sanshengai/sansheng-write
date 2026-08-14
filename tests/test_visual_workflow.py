@@ -270,9 +270,17 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "一条发布入口" in cover
     assert "TEXTLESS visual evidence only" in cover
     for prompt in (cover, hero, info):
-        assert "ONE-PASS NATIVE RASTER CONTRACT" in prompt
-        assert "Never output, request or rely on SVG, HTML, Canvas" in prompt
-        assert "do not separate the words from the picture" in prompt
+        # 钉「文字长在画面里」这个语义，不钉具体措辞。
+        # 🔴 2026-08-15：原来这里断言的是一段 450 字符的 ONE-PASS 祈使句
+        # （"不要输出 SVG/HTML/Canvas，不要用 Pillow/Jimp/Sharp 后期贴字"）。
+        # 那段话是写给工具链看的：图像模型的 API 只返回 inlineData 位图，
+        # 既不可能返回 SVG 也不会去调 Pillow。真正的防线是出图后的字节校验
+        # render_visuals._validate_native_raster_output()，由
+        # tests/test_render_visuals.py::test_native_raster_guard_rejects_svg_payload
+        # 钉住。prompt 里再喊一遍是无效负载，还占模型注意力 —— 实测有一张
+        # 把 prompt 里的技术规格直接渲进了画面。
+        assert "part of the picture itself" in prompt
+        assert "sculpted from" in prompt
     assert "same dimensional matte-clay material" in hero
     assert "same dimensional matte-clay material" in info
     assert "bright editorial evidence montage" not in cover
@@ -377,11 +385,19 @@ def test_clay_compiler_embeds_full_style_contract(tmp_path):
     assert "#F7F2E9" in prompt
     assert 'visual_contract_owner: "sansheng-write"' in prompt
     assert 'visual_contract_revision: "warm-light-clay/2"' in prompt
-    assert "Baoyu may choose content structure and layout" in prompt
-    assert "never for large headings" in prompt
+    # 🔴 2026-08-15：撤掉 TONE OWNERSHIP 的归属声明（"Baoyu may choose…"）——
+    # 模型不知道 Baoyu 是谁，那是写给工具链的话。配色的约束力靠下面这条正面
+    # 描述 + visual_contracts.py 的像素级 QA，不靠对模型宣示所有权。
+    assert "Baoyu may choose" not in prompt
+    assert "large titles and paths stay pale or mid-tone" in prompt
     assert "claymation" in prompt
     assert "VISIBLE TEXT ALLOWLIST" in prompt
-    assert "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER" in prompt
+    # 钉行为不钉措辞：facts 的**内容**绝不能出现在给渲染器的 prompt 里。
+    # 原来钉的是一句 230 字符的解释（"SOURCE FACTS ARE NOT PROVIDED TO THE
+    # RENDERER because…"）—— 那是在向模型解释为什么不给它 facts，模型并不需要
+    # 知道。删掉解释、直接断言事实本身，是更强的断言。
+    for fact in ("定稿哈希绑定任务单",):
+        assert fact not in prompt, f"facts 内容泄漏进 prompt：{fact}"
 
 
 def test_long_chinese_layout_is_rejected(tmp_path):

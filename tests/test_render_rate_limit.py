@@ -78,25 +78,30 @@ def test_中文排布说明必须显式标为不可渲染():
     """🔴 实测事故：整句中文排布说明被模型当标题画进了图里。
     只把它放进 prompt 而不声明用途，等于和下面的白名单指令自相矛盾。"""
     text = _prompt()
-    assert "COMPOSITION GUIDANCE" in text
-    guidance_at = text.index("COMPOSITION GUIDANCE")
+    # 钉「排布说明有明确用途标记、且标记在前」，不钉具体标记词。
+    # 2026-08-15 起标记从 "COMPOSITION GUIDANCE — Never render this guidance…"
+    # 改成祈使句 "SCENE — build this arrangement out of clay:" —— 与其反复叮嘱
+    # 模型别画，不如直接告诉它照着搭；实测同样不会被渲成文字，还省 130 字符注意力。
+    assert "SCENE" in text
+    guidance_at = text.index("SCENE")
     layout_at = text.index("四级台阶横向递进")
-    assert guidance_at < layout_at, "排布说明必须落在不可渲染声明之后"
-    assert "Never render this guidance" in text
+    assert guidance_at < layout_at, "排布说明必须落在用途标记之后"
 
 
 def test_必须明令每条文字只出现一次():
     """实测事故：四个并列的里程碑标签被同时画成徽章和台阶脚注，每条重复两遍。"""
     text = _prompt()
-    assert "EXACTLY ONCE" in text
-    assert "never repeat" in text.lower()
+    # 钉语义不钉措辞：必须说清「每条只出现在一个地方」。
+    assert "exactly one place" in text
 
 
 def test_必须明令禁画真实logo():
     """实测事故：讲两家产品对比的图里，模型把某家的真实 logo 画了出来。"""
     text = _prompt()
     assert "logo" in text.lower()
-    assert "Never draw any real company or product logo" in text
+    # 合规类约束**故意保留否定式**：其余禁令都改成了正面描述（模型对否定式不敏感），
+    # 但画出真商标是法律风险不是审美问题，宁可写了无效，不可漏写。
+    assert "never a real company or product logo" in text
 
 
 # ── 默认渲染策略 ─────────────────────────────────────────────────────

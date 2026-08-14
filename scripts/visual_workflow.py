@@ -613,57 +613,69 @@ def _clay_palette(recipe: dict) -> str:
     # pipeline.py 的 visual_route 门是**逐字子串比对**，写同义表述（如
     # "bright diffuse studio light"）过不了 —— 而且因为 prompt_sha256 是硬校验，
     # 改一个字就得整批重渲，代价不小。改这段前先跑 tests/test_visual_route.py。
+    # 🔴 2026-08-15 精简：色值从 prompt 里撤掉，只留描述词。
+    #    实测抓到一次「模型把 #F7F2E9 / #79AA95 这串色号连同调色板说明一起渲进了
+    #    画面底部」—— hex 字符串对图像模型是纯噪声，它认得的是 warm ivory 这类词，
+    #    而看到一串字符就有概率把它当成要写的文字。色值仍由 visual_contracts.py
+    #    持有并用于像素级 QA，那才是它该待的地方。
+    #    TONE OWNERSHIP 那段（「Baoyu 可以选结构但不许改配色」）同样撤掉：
+    #    模型不知道 Baoyu 是谁，那是写给工具链的归属声明。
+    # 🔴 visual_route 的逐字比对**大小写敏感**：必需短语是小写的 `warm ivory` /
+    #    `diffuse light`，写成句首大写的 "Warm ivory" / "Diffuse light" 就过不了门。
+    #    精简时改句式很容易把词推到句首 —— 本次实测就这么破了两组，
+    #    由 tests/test_prompt_required_phrases.py 当场抓到。别把它们放句首。
     return (
-        f"Warm ivory background {background} with a high-key pastel palette. "
-        f"STRICT PALETTE — use these colours and nothing else: warm ivory {background}; "
-        f"one pale pastel jade accent {accent}; pale warm neutrals {neutrals}; "
-        "plus soft natural clay skin and wood tones for figures and props. "
-        "Matte soft clay material, diffuse light, very low contrast, feather-soft shadows.\n"
-        f"TONE OWNERSHIP — this is the sansheng-write signature palette, revision "
-        f"{(recipe or {}).get('contract_revision') or 'warm-light-clay/2'}. Baoyu may "
-        "choose content structure and layout, but must not replace, deepen or restyle this "
-        "palette. Keep at least 72% of the canvas warm ivory or pale neutral. Pastel jade "
-        "is an accent only, never a dominant field. Large titles and paths must stay pale "
-        f"or mid-tone; the darker jade {accent_shadow} is permitted only for tiny details "
-        "and contact shadows, never for large headings, arrows, panels or continuous paths.\n"
-        "Never introduce a SECOND HUE. When two groups, sides or outcomes must be told "
-        "apart, distinguish them with two LIGHT tints of the SAME accent green, "
-        "or with shape, size, texture and position — never by giving one side a different "
-        "colour. This applies to label bars, arrows, containers, highlights and props alike.\n"
-        "Forbidden anywhere in the image: orange, terracotta, brick red, mustard yellow, "
-        "navy, steel blue, purple, forest green, dark green, deep jade, saturated green, "
-        "dark or black background, metallic, chrome, neon, high-contrast or "
-        "photorealistic surfaces."
+        "A warm ivory background with a high-key pastel palette: matte soft clay "
+        "everywhere, one pale pastel jade accent, pale warm neutrals, plus soft natural "
+        "clay skin and wood tones for figures and props. Lit by diffuse light, very low "
+        "contrast, feather-soft shadows.\n"
+        "Warm ivory and pale neutrals cover most of the canvas; the jade stays an accent "
+        "on small surfaces, and large titles and paths stay pale or mid-tone.\n"
+        "Keep to that single jade hue. When two groups, sides or outcomes must be told "
+        "apart, use two light tints of the same jade, or shape, size, texture and "
+        "position — the same rule for label bars, arrows, containers and props."
     )
 
 
 def _clay_typography() -> str:
     """Baoyu claymation 的文字材质合同，Hero 与信息图只维护这一份。"""
+    # 🔴 2026-08-15 精简：600 → 330 字符，4 条否定式清零。
+    #    原文用 sculpted / extruded / dimensional / rounded / chunky / physically
+    #    embedded / integrated into the clay scene 七个词说同一件事，又用四句
+    #    "Never …" 去禁印刷体、手写体、书法、粉笔字和底板 —— 而扩散模型对否定式
+    #    基本不敏感（实测连写三轮 no backing plate，照样加底板；改成正面描述
+    #    「像标题那样独立立体的黏土字」当轮即对）。
+    #    必需短语 extruded clay letters / embedded in the clay scene 原样保留，
+    #    visual_route 的逐字门照过（tests/test_visual_route.py 钉住）。
+    # 🔴 精简时必须原样保住 visual_contracts.required_prompt_groups 里的
+    #    "extruded clay letters" / "dimensional rounded clay text" /
+    #    "embedded in the clay scene" 三个**精确串** —— visual_route 是逐字子串比对，
+    #    写成 "dimensional, rounded, chunky" 就过不了门（本次实测被测试当场抓到）。
     return (
-        "CLAY TYPOGRAPHY CONTRACT — all allowlisted Chinese text must be sculpted as "
-        "extruded clay letters: dimensional, rounded, chunky and softly irregular, with "
-        "complete standard Simplified-Chinese glyphs. The dimensional rounded clay text "
-        "must be physically embedded in the clay scene and integrated into the clay scene "
-        "with the same matte material language as nearby objects. Preserve a clear title > "
-        "section > detail hierarchy through scale and spacing. Never render flat printed "
-        "business typography, handwriting, brush lettering, calligraphy or chalk text. "
-        "The title and at least half of all labels must be freestanding clay letters with "
-        "NO backing plate, box, ribbon, banner or card behind them. Never enclose all or "
-        "most text items; use open space, direct placement on the scene and object grouping "
-        "instead."
+        "CLAY TYPOGRAPHY — every allowlisted line is sculpted as extruded clay letters. "
+        "The dimensional rounded clay text is chunky and softly irregular, with complete "
+        "standard Simplified-Chinese glyphs, embedded in the clay scene with the same "
+        "matte material as nearby objects. The title and most labels stand free on the "
+        "scene with open background around them. Title largest, section labels smaller."
     )
 
 
 def _native_raster_contract(material: str) -> str:
-    """Keep visible copy inside the same generative raster pass as the scene."""
+    """把可见文字留在与画面同一次栅格渲染里。
+
+    🔴 2026-08-15 精简：原文有 450 字符，内容是「不要输出 SVG / HTML / Canvas /
+    CSS / 向量文字，不要用 Pillow / Jimp / Sharp / ImageMagick 后期贴字」。
+    这段话是**写给工具链看的，不是写给图像模型看的** —— 图像模型的 API 只返回
+    inlineData 位图，它既不可能返回 SVG，也不会去调 Pillow。真正的防线在
+    `render_visuals._validate_native_raster_output()`：出图后按字节校验 PNG 签名，
+    伪装成 PNG 的 SVG 当场拒收。prompt 里再喊一遍纯属无效负载，还占着模型的注意力
+    （实测有一张把 prompt 里的技术规格直接渲进了画面）。
+
+    只留一句对模型真正有意义的：文字要和画面同材质、长在同一张图里。
+    """
     return (
-        "ONE-PASS NATIVE RASTER CONTRACT — generate one complete flattened bitmap in a "
-        "single image-model render. Render every allowlisted content glyph natively inside "
-        f"that same render and integrate it with {material}. Never output, request or rely "
-        "on SVG, HTML, Canvas, CSS, vector text, blank text placeholders, masks or a later "
-        "typography/compositing pass. Never plan for Pillow, Jimp, Sharp, ImageMagick or any "
-        "other post-render text overlay. If any glyph is wrong, rerender this same canonical "
-        "prompt; do not separate the words from the picture."
+        "The visible Chinese glyphs are part of the picture itself, sculpted from "
+        f"{material}, lit by the same light and sitting in the same space as the objects."
     )
 
 
@@ -793,41 +805,35 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
             "the same dimensional matte-clay material, lighting and registered palette as the scene"
         )
         + "\n"
-        +
-        f"BAOYU LAYOUT CONTRACT — {layout_type}: {layout_contract}. "
-        "This is structural guidance only and must never become visible text.\n"
-        # 🔴 layout 是中文的排布说明，必须显式声明「只描述构图、不得当作可见文字」。
-        # 早期版本把它直接嵌在这句里（`... template X (中文排布说明)`），模型会把这句
-        # 中文当成标题画进图里——实测出现过整句排布说明被渲成图上大标题，
-        # 而下一段才说「白名单外任何可见文字都禁止」，两条指令互相打架。
-        "COMPOSITION GUIDANCE — describes arrangement only. Never render this guidance, "
-        "or any word from it, as visible text in the image: "
-        f"{item.get('layout')}\n"
-        "The graphic must communicate the silent facts below, not merely decorate them. "
+        # 🔴 2026-08-15 精简（对照实验后）：这一段原本有 1200 字符、18 条否定式。
+        #    ① BAOYU LAYOUT CONTRACT 那行是结构术语（linear-progression 之类），
+        #       模型看了没用，而 SCENE 段已经把同一件事讲成了画面。删。
+        #    ② "COMPOSITION GUIDANCE — Never render this guidance…" 这个 130 字符
+        #       的前缀，是在告诉模型「下面这段别画」。与其反复叮嘱别画，不如直接
+        #       改成祈使句「照这个搭出来」—— 实测同样不会被渲成文字，还省下注意力。
+        #       （layout 里的中文仍由 LAYOUT_CJK_MAX=24 拦，那条门没动。）
+        #    ③ 字形段的七条 "Never …" 合并成两句正面表述。
+        #    ④ CONTENT BOUNDARY 段是在向模型解释「为什么不给你 facts」——
+        #       模型不需要知道这件事。删。
+        + f"SCENE — build this arrangement out of clay: {item.get('layout')}\n"
         # 🔴 中文字形是这条链上最脆弱的一环：糊字既不报错、又会被看图模型「脑补」成
         # 通顺句子而漏检（实测 hero 图渲成「重置不是祸利，是昀家公司付溻针」，
         # 复核仍判 text_match 通过）。所以这里要求宁可放大、减量，也不许把字画歪。
-        "Render every allowlisted line exactly once in readable Simplified Chinese. "
         "CHARACTER ACCURACY IS CRITICAL: every Chinese character must be a complete, "
-        "correct, standard Simplified glyph. Never approximate a character, never invent "
-        "or merge strokes, never output a character that does not exist. If a line cannot "
-        "be rendered accurately at the planned size, render it LARGER and simpler rather "
-        "than distorting the glyphs — losing decoration is acceptable, a broken character "
-        "is not. "
-        "Each allowlisted line must appear EXACTLY ONCE — never repeat a line as both a "
-        "badge and a caption, and never echo it on a nearby surface. "
-        "Do not invent numbers, labels, logos, watermarks, product UI or additional text. "
-        "Never draw any real company or product logo, even in the illustration style. "
-        "Keep all labels inside crop-safe margins and make the title > sections > details "
-        "hierarchy obvious at thumbnail size.\n\n"
+        "correct, standard Simplified glyph. Render text large enough that every stroke "
+        "stays intact — size beats decoration. "
+        "Each allowlisted line appears in exactly one place on the canvas, inside "
+        "crop-safe margins, with the title > sections > details hierarchy obvious at "
+        "thumbnail size. "
+        # 🔴 这一条**故意保留否定式**。其余禁令都改成了正面描述（模型对否定式不敏感），
+        #    但画出真实公司 logo 是合规风险不是审美问题：代价是 60 个字符，
+        #    风险是一张带真商标的图发出去。宁可写了无效，不可漏写。
+        "Any emblem on a prop is a generic invented shape, never a real company or "
+        "product logo.\n\n"
         "## VISIBLE TEXT ALLOWLIST — EXHAUSTIVE\n"
         f"- {title}\n"
         f"{labels}\n"
-        "Every other visible letter, word or number is forbidden.\n\n"
-        "## CONTENT BOUNDARY\n"
-        "Use the allowlisted title and labels themselves to determine the visual structure. "
-        "SOURCE FACTS ARE NOT PROVIDED TO THE RENDERER because they must never become "
-        "accidental visible labels or numbers.\n"
+        "These lines are the only text anywhere in the image.\n"
     )
 
 

@@ -114,9 +114,13 @@ def test_clay_palette_keeps_recipe_keywords_verbatim():
 
 def test_clay_palette_offers_an_alternative_to_a_second_hue():
     palette = visual_workflow._clay_palette({})
-    assert "SECOND HUE" in palette
-    # 光禁止不够 —— 必须给出替代手段，否则对照类题材模型无路可走。
-    assert "tints of the SAME accent green" in palette
+    # 钉行为不钉措辞：必须**给出替代手段**，而不是必须出现某句禁令。
+    # 2026-08-15 起禁令式表述已改成正面描述（扩散模型对否定式基本不敏感），
+    # 原来断言字面串 "SECOND HUE" 的写法会把「改进措辞」误判成「破坏契约」，
+    # 正是 prompt 只增不减、一路膨胀到 5000 字符的机制之一。
+    assert "same jade" in palette, "必须约束在单一色相内"
+    for alternative in ("tints", "shape", "size", "texture", "position"):
+        assert alternative in palette, f"缺少区分两组的替代手段：{alternative}"
 
 
 def test_infographic_prompt_demands_character_accuracy():
@@ -133,9 +137,14 @@ def test_clay_typography_is_dimensional_and_scene_integrated():
     assert "extruded clay letters" in contract
     assert "dimensional rounded clay text" in contract
     assert "embedded in the clay scene" in contract
-    assert "flat printed business typography" in contract
-    assert "at least half of all labels" in contract
-    assert "NO backing plate" in contract
+    # 钉正面契约：字必须是「立体黏土实体」。原来钉的是禁令串
+    # "flat printed business typography"，2026-08-15 起改成正面表述
+    # （模型对否定式不敏感）—— 钉措辞会把改进误判成破坏。
+    assert "sculpted as extruded clay letters" in contract
+    # 语义不变（大部分标签不要底板），措辞由 "at least half of all labels …
+    # with NO backing plate, box, ribbon, banner or card" 改成正面的
+    # "stand free … with open background around them"。
+    assert "most labels stand free" in contract
 
 
 def test_visual_reviewer_has_a_separate_typography_gate():
