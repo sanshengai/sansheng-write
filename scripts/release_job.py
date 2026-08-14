@@ -161,6 +161,16 @@ def adopt_final(
         else _new_state(cwd, pipeline.STAGE_ORDER)
     )
     state["mode"] = "release-from-final"
+    # 🔴 2026-08-14 第 89 篇实跑修正：这里原本把**所有**阶段无差别重置成 pending。
+    #    走完整流程的文章在 adopt-final 之前，cover / infographic / bgm / layout /
+    #    logo 往往已经 verify 通过（且视觉字节已 seal），一律清空等于逼作者把
+    #    五个阶段重验一遍 —— 那一次实测就白跑了一轮。
+    #    adopt-final 的语义是「接管作者定稿」，它有理由重置 outline/writing
+    #    （那正是它要接管的部分），但没有理由推翻已经独立验证过的下游产物。
+    #    保留策略：下游阶段若已 done 且其产物摘要未变，则原样保留；否则回 pending。
+    previous_stages = dict(state.get("stages") or {})
+    _CARRY_OVER = ("cover", "infographic", "bgm", "layout", "logo")
+
     state["stages"] = {
         stage: {"status": "pending"} for stage in pipeline.STAGE_ORDER
     }
@@ -173,6 +183,12 @@ def adopt_final(
         "source_mode": "author-provided-final",
         "title_final": str(meta.get("title") or ""),
     }
+    for stage in _CARRY_OVER:
+        prior = previous_stages.get(stage) or {}
+        if prior.get("status") == "done":
+            carried = dict(prior)
+            carried["carried_over_by"] = "adopt-final"
+            state["stages"][stage] = carried
 
     approval = cwd / "_draft-approval.md"
     # 🔴 2026-08-14 第 89 篇实跑教训：这里的覆写会把作者拍板时说的话、当时定下的

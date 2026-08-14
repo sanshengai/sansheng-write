@@ -189,14 +189,21 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     except Exception as e:                                  # noqa: BLE001
         msg = str(e)
         if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
+            # 🔴 2026-08-14 第 89 篇实跑修的假失败：这里原本自动登录成功后走
+            #    `pass`，**没有 return/continue**，于是直接掉进下面那行
+            #    「连接预检失败」并 return 1 —— 浏览器授权明明成功了（拿到 38 个
+            #    cookie），流程却报错退出，还提示作者「请运行 nlm login」。
+            #    实测：独立跑 `nlm notebook list` 是通的，重跑 finalize 即成功。
+            #    登录成功就必须继续往下走，不能再落进失败分支。
             if _try_auto_login():
-                pass  # 登录态已恢复，继续往下走
+                log("  ✓ 凭证已刷新，继续生成流程")
             else:
                 log("✗ NotebookLM 登录态已失效，请先运行 `nlm login`")
                 log("  这一步只恢复真实浏览器授权；音频生成、下载、转码和发布仍由脚本完成")
                 return 3
-        log(f"✗ NotebookLM 连接预检失败：{msg[:240]}")
-        return 1
+        else:
+            log(f"✗ NotebookLM 连接预检失败：{msg[:240]}")
+            return 1
 
     # 1. notebook
     nb = _extract_id(

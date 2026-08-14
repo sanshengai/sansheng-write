@@ -1563,13 +1563,33 @@ def _cross_check(cwd: Path, state: dict) -> list:
             )
 
     # 4. stages 顺序逻辑（不强制阻断，只提醒）
+    # 🔴 2026-08-14：release-from-final 模式下 outline 被标 adopted（不是 done），
+    #    于是它后面每个 done 阶段都会刷一条「可能是手动 skip 残留」——
+    #    89 号实跑一次刷了 8 行，全是误报，我还专门去查了一遍才确认无事。
+    #    这种模式下的顺序本来就与常规不同，不该套用同一句猜测性文案。
     stages = state.get("stages", {})
+    is_release_from_final = state.get("mode") == "release-from-final"
     prev_done = True
     for s in STAGE_ORDER:
-        status = stages.get(s, {}).get("status", "pending")
+        entry = stages.get(s, {})
+        status = entry.get("status", "pending")
         if status == "done" and not prev_done:
-            warnings.append(f"{s}=done 但前序阶段未完成（顺序异常，可能是手动 skip 残留）")
-        if status not in ("done", "skip"):
+            if is_release_from_final:
+                # 该模式下 outline=adopted 是正常状态，不提示；
+                # 只有真正被 skip 的前序才值得说一句。
+                skipped = [
+                    x for x in STAGE_ORDER[: STAGE_ORDER.index(s)]
+                    if stages.get(x, {}).get("status") == "skip"
+                ]
+                if skipped:
+                    warnings.append(
+                        f"{s}=done，但前序 {skipped} 是 skip 状态（release-from-final 模式）"
+                    )
+            else:
+                warnings.append(
+                    f"{s}=done 但前序阶段未完成（顺序异常，可能是手动 skip 残留）"
+                )
+        if status not in ("done", "skip", "adopted"):
             prev_done = False
 
     # 5. publish=done 但 wechat_url 缺失
@@ -3428,7 +3448,11 @@ def main():
     p_v.add_argument("--pre", action="store_true",
                      help="publish 专用：推送前素材齐备门（cover/hero/≥4 信息图/定稿.html），只判定不标 done")
 
-    p_d = sub.add_parser("done", help="标记阶段完成，可附加元数据 k=v")
+    p_d = sub.add_parser(
+        "done",
+        help="标记阶段完成，附加元数据用 k=v 位置参数（不是 --key 选项）。"
+             "例：done writing \"title_final=精选 | 标题\"",
+    )
     p_d.add_argument("stage", choices=STAGE_ORDER)
     p_d.add_argument("extras", nargs="*", metavar="k=v",
                      help="例：title_final=文章标题  wechat_url=https://...")
