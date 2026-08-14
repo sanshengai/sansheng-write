@@ -218,6 +218,52 @@ _LAYOUT_CONCRETE_SUBJECT = re.compile(
 )
 
 
+# 自带文字属性的物件：现实里它们表面就写着字，模型照着画就会渲出计划外的文字。
+_LAYOUT_TEXTUAL_PROP = re.compile(
+    r"\b(calendar|newspaper|magazine|book|books|page|pages|document|documents|"
+    r"sign|signs|signboard|signpost|billboard|poster|posters|banner|banners|"
+    r"screen|screens|monitor|display|dashboard|scoreboard|whiteboard|blackboard|"
+    r"chalkboard|noticeboard|menu|menus|ticket|tickets|receipt|receipts|"
+    r"invoice|certificate|diploma|notebook|ledger|chart|charts|graph|graphs|"
+    r"spreadsheet|scroll|manuscript|nameplate|plaque|passport|invitation)\b",
+    # 🔴 刻意**不收** label / tag / note / letter / form / map / badge：
+    #    在 layout 里 "one group label beside the left column" 说的是**我们自己的
+    #    标签文字**（计划内、白名单里的那几条），不是「一件写着字的道具」。
+    #    第一版把 label 收进来，当场误伤了两份合规 fixture —— 词表宁可窄一点，
+    #    真漏了还有 visual-qa 兜底；误伤会逼作者改掉本来正确的写法。
+    re.IGNORECASE,
+)
+
+
+def _layout_textual_prop_errors(label: str, layout: str) -> list[str]:
+    """layout 提到自带文字的物件 → 模型往那件东西上写计划外的字。
+
+    🔴 2026-08-16 实证。同一条生产管线、同一份 allowlist、同样的具体物象要求，
+    layout 里只要留着 "like a calendar strip"，条幅上就反复渲出「月三月月日」
+    「1月 2月 3月 23 24 25 26」这类日期字 —— 6 次里翻车 3 次，且每次都翻在
+    那个日历上。把这一个词换成 "a tall smooth clay column"，其余一字不改。
+
+    机理和抽象几何那条相反但同源：抽象几何是「没东西可画所以拿文字填」，
+    自带文字的物件是「这东西现实里本来就写着字，所以照着写」。两条都指向
+    同一件事 —— 画面里每一块地方都得有明确的、非文字的内容。
+
+    日历、报纸、招牌、屏幕、书页、图表这类物件在信息图里很自然会被想到，
+    正因为自然才更要拦：它是最容易不知不觉写进 layout 的一类词。
+    """
+    if not layout:
+        return []
+    hit = _LAYOUT_TEXTUAL_PROP.search(layout)
+    if not hit:
+        return []
+    return [
+        f"{label}.layout 出现自带文字的物件「{hit.group(0)}」—— 这类东西现实里表面就写着字，"
+        f"模型会照着往上写，渲出计划外的文字（实测 like a calendar strip 让条幅上反复"
+        f"出现「月三月月日」这类日期字，6 次翻 3 次且每次都翻在日历上）。"
+        f"换成不带文字的实体：条幅→光面黏土立柱、报纸→卷起的纸卷、招牌→空白木牌、"
+        f"屏幕→纯色方块。要的是形状和位置，不是那件东西的文字属性"
+    ]
+
+
 def _layout_concrete_subject_errors(label: str, layout: str) -> list[str]:
     """layout 只写抽象几何、没给可画的实体 → 模型拿文字填满画面。
 
@@ -377,6 +423,8 @@ def validate_visual_plan(plan: dict) -> list[str]:
         errors.extend(_layout_node_label_errors(label, _layout_raw))
         # 三个因子里贡献最大的一条（2026-08-15 对照实验：+42 个百分点）
         errors.extend(_layout_concrete_subject_errors(label, _layout_raw))
+        # 与上一条同源：物象要具体，但不能是自带文字的物件（2026-08-16 实证）
+        errors.extend(_layout_textual_prop_errors(label, _layout_raw))
         if not _nonempty_list(item.get("facts")):
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")

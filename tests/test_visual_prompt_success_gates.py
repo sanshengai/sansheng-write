@@ -75,10 +75,12 @@ ABSTRACT_01 = ("One vertical spine, largest block at top shrinking downward. "
                "top, one group label beside the left column, one group label "
                "beside the right column. Individual blocks carry no text at all.")
 
-CONCRETE_01 = ("A tall clay ribbon runs down the centre of the frame like a "
-               "calendar strip. Standing in a column to its left are five small "
-               "rounded clay robots, each holding up a tiny pennant. Standing to "
-               "its right are three more of the same robots.")
+# 🔴 原本这里写的是 "…like a calendar strip"，实测 6 次翻 3 次且每次都翻在
+#    那个日历上（见下方 CALENDAR_01 与 test_textual_prop_is_blocked）。
+CONCRETE_01 = ("A tall smooth clay column stands down the centre of the frame. "
+               "Standing in a column to its left are five small rounded clay "
+               "robots, each holding up a tiny pennant. Standing to its right "
+               "are three more of the same robots.")
 
 ABSTRACT_04 = ("A central hub with spokes radiating to two clusters. Text "
                "appears in exactly three places.")
@@ -183,3 +185,56 @@ def test_gate_matches_measured_pass_rates(title, labels, expect_blocked):
     """闸门的判定必须和实测首过率对得上：实测 100% 的放行，≤50% 的拦下。"""
     blocked = bool(vw._text_overlap_errors("x", title, labels))
     assert blocked is expect_blocked
+
+
+# ── 自带文字的物件（2026-08-16 实证）────────────────────────────────────
+CALENDAR_01 = ("A tall clay ribbon runs down the centre of the frame like a "
+               "calendar strip. Five small clay robots stand to its left, three "
+               "to its right, each holding a tiny pennant.")
+
+PLAIN_01 = ("A tall smooth clay column stands down the centre of the frame. "
+            "Five small clay robots stand to its left, three to its right, "
+            "each holding a tiny pennant.")
+
+
+def test_textual_prop_is_blocked():
+    """实测：留着 calendar strip，6 次里翻车 3 次且每次都翻在那个日历上。"""
+    errs = vw._layout_textual_prop_errors("infographic-01", CALENDAR_01)
+    assert errs
+    assert "calendar" in errs[0]
+
+
+def test_plain_prop_passes():
+    """唯一变量换掉之后必须放行。"""
+    assert vw._layout_textual_prop_errors("infographic-01", PLAIN_01) == []
+
+
+@pytest.mark.parametrize("word", [
+    "newspaper", "signboard", "billboard", "poster", "screen", "dashboard",
+    "whiteboard", "menu", "ticket", "receipt", "chart", "notebook",
+])
+def test_common_textual_props_are_all_covered(word):
+    """这些词在信息图 layout 里都很自然会被想到 —— 正因为自然才要拦。"""
+    layout = f"Three small clay houses next to a {word} on a low platform."
+    assert vw._layout_textual_prop_errors("x", layout), f"漏拦：{word}"
+
+
+def test_textual_prop_gate_is_wired_into_validate():
+    """钉调用点，不只钉函数。"""
+    bad = vw.validate_visual_plan(
+        _plan(CALENDAR_01, "一个月，八次更新", ["中国五个", "美国三个"]))
+    assert any("自带文字" in e for e in bad), f"校验入口必须拦下：{bad}"
+
+    good = vw.validate_visual_plan(
+        _plan(PLAIN_01, "一个月，八次更新", ["中国五个", "美国三个"]))
+    assert good == [], f"换掉之后不该被拦：{good}"
+
+
+def test_concrete_and_textual_gates_are_independent():
+    """两条闸门管的是不同的事，别互相顶替。"""
+    # 有具体物象、但那物象自带文字 → 只该被 textual 那条拦
+    assert vw._layout_concrete_subject_errors("x", CALENDAR_01) == []
+    assert vw._layout_textual_prop_errors("x", CALENDAR_01)
+    # 抽象几何、不含文字物件 → 只该被 concrete 那条拦
+    assert vw._layout_concrete_subject_errors("x", ABSTRACT_01)
+    assert vw._layout_textual_prop_errors("x", ABSTRACT_01) == []

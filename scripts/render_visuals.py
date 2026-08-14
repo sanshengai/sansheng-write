@@ -60,6 +60,60 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def prompt_body(text: str) -> str:
+    """canonical prompt 里真正该发给图像模型的那部分（剥掉 YAML frontmatter）。"""
+    return text.split("---", 2)[-1].lstrip() if text.startswith("---") else text
+
+
+def renderer_prompt_file(prompt_path: Path, material: Path, stem: str) -> Path:
+    """把只含正文的那份写到 .render-body/，交给渲染器。
+
+    🔴 2026-08-16 实测修复，这一轮改造里单项收益最大的一处。
+
+    canonical prompt 是带 YAML frontmatter 的 .md，头部约 340 字符：producer、
+    schema_version、method_sources、**两个 64 位 sha256**、**两个 hex 色号**。
+    而 baoyu-image-gen 的 readPromptFromFiles() 是 `readFile(f, "utf8")` 整个
+    文件塞进去 —— **那段纯元数据原样发给了图像模型**。
+
+    12 张对照（同内容、同 allowlist、同 SCENE、同模型，唯一变量是带不带它）：
+        带 frontmatter    8/12 = 67%
+        剥掉 frontmatter 11/12 = 92%
+    典型翻车形态就是模型把哈希串、色号那类字符串当成「要写的字」，在画面上补出
+    乱码汉字或整条色卡（早前实测抓到过一张底部渲出 #F7F2E9 / #79AA95 的色卡带）。
+
+    canonical 文件本身**一个字节都不动**：溯源、prompt_sha256、_prompt_meta()
+    全部照旧读它。这里只是给渲染器另存一份剥好的正文。
+    """
+    body_dir = material / ".render-body"
+    body_dir.mkdir(parents=True, exist_ok=True)
+    body_path = body_dir / f"{stem}.md"
+    body_path.write_text(
+        prompt_body(prompt_path.read_text(encoding="utf-8")), encoding="utf-8")
+    return body_path
+
+
+def build_attempt_task(original: dict, renderer: dict, task_id: str,
+                       material: Path) -> dict:
+    """一条 attempt task：套用本轮 renderer，并把 promptFiles 换成剥好的正文。"""
+    rendered = dict(original)
+    rendered["promptFiles"] = [
+        renderer_prompt_file(material / str(p), material, f"{task_id}-{index}")
+        .relative_to(material).as_posix()
+        for index, p in enumerate(original.get("promptFiles") or [])
+    ]
+    rendered.update({
+        key: value
+        for key, value in {
+            "provider": renderer.get("provider"),
+            "model": renderer.get("model"),
+            "quality": renderer.get("quality"),
+            "imageSize": renderer.get("imageSize"),
+        }.items()
+        if value is not None
+    })
+    return rendered
+
+
 def _validate_native_raster_output(path: Path) -> None:
     """Reject vector/text payloads masquerading as a generated final image."""
     if path.suffix.casefold() != ".png":
@@ -641,20 +695,8 @@ def render_visuals(
     for attempt_number, renderer in enumerate(policy, start=1):
         attempt_tasks = []
         for task_id in pending:
-            original = tasks_by_id[task_id]
-            rendered = dict(original)
-            rendered.update(
-                {
-                    key: value
-                    for key, value in {
-                        "provider": renderer["provider"],
-                        "model": renderer["model"],
-                        "quality": renderer["quality"],
-                        "imageSize": renderer["imageSize"],
-                    }.items()
-                    if value is not None
-                }
-            )
+            rendered = build_attempt_task(
+                tasks_by_id[task_id], renderer, task_id, material)
             attempt_tasks.append(rendered)
         attempt_batch = {
             "tasks": attempt_tasks,
