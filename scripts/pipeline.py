@@ -2938,6 +2938,174 @@ def _handoff_to_distribute(cwd: Path) -> bool:
     return True
 
 
+def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
+    """收集所有「纯静态、不依赖昂贵操作」的检查结果。
+
+    返回 [(级别, 检查名, 说明)]，级别 ∈ {"fail", "warn", "ok"}。
+
+    🔴 2026-08-14 第 89 篇实跑后新增。那一篇的实测账本：
+    verify_publish 反复 8 轮、verify_layout 6 轮、format_layout 4 轮。
+    逐条复盘发现，卡住我的东西全是**纯静态检查**，却被放在链条末端：
+
+      缺 _draft-qc.md      → approve draft 才报（本可在进闸门前）
+      缺 _opening-choice.md → done writing 才报（本可在盲选完成时）
+      开篇标识不足          → **排版阶段**才报（本可写完正文就扫）
+      文末缺 DEEP READ/SOURCES → **排版阶段**才报
+      金句库缺来源标记      → **finalize** 才报（迟了整整五个阶段）
+      part_subtitles 不对齐 → 排版前置断言才报
+
+    每迟报一个阶段，就意味着「回头改 → 重跑中间所有步骤」。
+    本函数把它们集中到一个不花任何配额的命令里，写完正文跑一次即可。
+    """
+    results: list[tuple[str, str, str]] = []
+    draft = cwd / "定稿.md"
+
+    def add(level: str, name: str, detail: str) -> None:
+        results.append((level, name, detail))
+
+    # --- 1. 闸门锚点文件 ---
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from profile_config import workflow_checkpoints
+        cps = set(workflow_checkpoints())
+    except Exception:
+        cps = set()
+
+    if "blueprint" in cps:
+        add("ok" if (cwd / "_blueprint-approval.md").exists() else "fail",
+            "blueprint 锚点",
+            "_blueprint-approval.md 存在" if (cwd / "_blueprint-approval.md").exists()
+            else "缺 _blueprint-approval.md（蓝图闸启用时必需）")
+    if "draft" in cps:
+        for fname, why in (
+            ("_draft-approval.md", "定稿闸审批锚点"),
+            ("_draft-qc.md", "定稿闸质检报告（approve draft 会强制要求）"),
+            ("_opening-choice.md", "开头盲选记录（done writing 会检查）"),
+        ):
+            exists = (cwd / fname).exists()
+            add("ok" if exists else "fail", fname,
+                "存在" if exists else f"缺失 —— {why}")
+
+    # --- 2. 外审产物 ---
+    for fname, why in (
+        ("_fact-check.md", "事实复核（独立上下文 subagent）"),
+        ("_stutter-list.md", "语义冷读（独立上下文 subagent）"),
+    ):
+        exists = (cwd / fname).exists()
+        add("ok" if exists else "warn", fname,
+            "存在" if exists else f"缺失 —— {why}")
+
+    if not draft.exists():
+        add("fail", "定稿.md", "不存在，后续检查跳过")
+        return results
+
+    text = draft.read_text(encoding="utf-8")
+
+    # --- 3. H2 与 part_subtitles 对齐 ---
+    try:
+        from contracts import verify_h2_subtitle_align as _align_check
+        align = _align_check(str(cwd))
+        add("ok" if align.get("verdict") != "fail" else "fail",
+            "H2/part_subtitles 对齐",
+            align.get("notes", ""))
+    except Exception as exc:
+        add("warn", "H2/part_subtitles 对齐", f"检查异常：{exc}")
+
+    # --- 4. 加粗密度（软超只提示）---
+    try:
+        from contracts import verify_bold_density
+        bd = verify_bold_density(text)
+        verdict = bd.get("verdict")
+        level = "fail" if verdict in (
+            "bold_over", "integral_bold_violation", "both_violations"
+        ) else ("warn" if verdict == "soft_over" else "ok")
+        add(level, "加粗密度", bd.get("notes", ""))
+    except Exception as exc:
+        add("warn", "加粗密度", f"检查异常：{exc}")
+
+    # --- 5. 开篇重点标识（排版阶段的硬门，此处前移）---
+    body = re.sub(r"^---.*?---", "", text, count=1, flags=re.DOTALL)
+    opening = re.split(r"^## ", body, maxsplit=1, flags=re.MULTILINE)[0]
+    paragraphs = [p.strip() for p in opening.split("\n\n") if p.strip()]
+    naked = [
+        p[:30] for p in paragraphs
+        if len(re.sub(r"[^一-鿿]", "", p)) >= 40
+        and "**" not in p and "<mark" not in p
+        and not p.startswith(("#", "!", "<", "|", ">"))
+    ]
+    add("fail" if naked else "ok", "开篇重点标识",
+        f"{len(naked)} 个实质段零标识 → {naked[:2]}" if naked
+        else "开篇区实质段均有词组级标识")
+
+    # --- 6. 文末模块 ---
+    try:
+        import yaml as _y
+        meta = _y.safe_load((cwd / "article-meta.yaml").read_text(encoding="utf-8")) or {}
+    except Exception:
+        meta = {}
+    endmatter = (meta or {}).get("endmatter") or {}
+    if endmatter.get("deep_read"):
+        has = "SANSHENG-DEEP-READ" in text
+        add("ok" if has else "fail", "文末 DEEP READ",
+            "已使用模板标记" if has
+            else "endmatter.deep_read=true 但缺 SANSHENG-DEEP-READ 标记")
+    sources_mode = endmatter.get("sources", "auto")
+    if sources_mode is True or (
+        sources_mode == "auto" and (cwd / "_fact-check.md").exists()
+    ):
+        has = "SANSHENG-SOURCES" in text
+        add("ok" if has else "fail", "文末 SOURCES",
+            "已使用模板标记" if has
+            else "正文有外部依据但缺 SANSHENG-SOURCES 标记")
+
+    # --- 7. 金句库来源标记（finalize 的前置，迟报五个阶段）---
+    try:
+        from profile_config import golden_lines_file
+        gl = Path(golden_lines_file())
+        if gl.exists():
+            marker = f"*({cwd.name})*"
+            has = marker in gl.read_text(encoding="utf-8")
+            add("ok" if has else "fail", "金句库来源标记",
+                f"已登记 {marker}" if has
+                else f"缺 {marker} —— finalize 会拦，现在补最省事")
+    except Exception as exc:
+        add("warn", "金句库来源标记", f"检查异常：{exc}")
+
+    # --- 8. 视觉任务单（若已写）---
+    plan_path = cwd / "visual-plan.json"
+    if plan_path.exists():
+        try:
+            from visual_workflow import validate_visual_plan
+            errs = validate_visual_plan(json.loads(plan_path.read_text(encoding="utf-8")))
+            add("ok" if not errs else "fail", "visual-plan.json",
+                "通过" if not errs else f"{len(errs)} 条问题，首条：{errs[0][:110]}")
+        except Exception as exc:
+            add("warn", "visual-plan.json", f"检查异常：{exc}")
+
+    return results
+
+
+def cmd_preflight(cwd: Path) -> None:
+    """把所有静态检查跑一遍，尽早暴露问题。"""
+    results = _preflight_checks(cwd)
+    fails = [r for r in results if r[0] == "fail"]
+    warns = [r for r in results if r[0] == "warn"]
+
+    icon = {"ok": "✅", "warn": "⚠️ ", "fail": "❌"}
+    print(f"\n🔎 静态预检：{cwd.name}\n" + "─" * 58)
+    for level, name, detail in results:
+        print(f"  {icon[level]} {name}")
+        if level != "ok" and detail:
+            print(f"      {detail}")
+    print("─" * 58)
+
+    if fails:
+        print(f"❌ {len(fails)} 项需要修复，{len(warns)} 项提示")
+        print("   这些都是纯静态问题，现在改比等排版/发布阶段被打回省得多。")
+        raise SystemExit(2)
+    print(f"✅ 静态检查全过（{len(warns)} 项提示）")
+
+
 def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
     """把作者确认的现成定稿接入 release-only 状态机。"""
     from release_job import adopt_final
@@ -3249,6 +3417,11 @@ def main():
     sub.add_parser("init",   help="初始化 .state.json")
     sub.add_parser("status", help="查看当前进度 + 下一步建议")
     sub.add_parser("next",   help="打印下一阶段操作说明")
+    sub.add_parser(
+        "preflight",
+        help="一次跑完所有静态检查（不依赖生图/排版/网络），把晚发现前移。"
+             "写完正文就该跑一次，别等排版或 finalize 才被打回",
+    )
 
     p_v = sub.add_parser("verify", help="验证阶段完成情况（通过则自动标 done）")
     p_v.add_argument("stage", choices=STAGE_ORDER)
@@ -3429,6 +3602,8 @@ def main():
         cmd_status(cwd)
     elif args.cmd == "next":
         cmd_next(cwd)
+    elif args.cmd == "preflight":
+        cmd_preflight(cwd)
     elif args.cmd == "verify":
         cmd_verify(args.stage, cwd, legacy=getattr(args, "legacy", False),
                    pre=getattr(args, "pre", False))

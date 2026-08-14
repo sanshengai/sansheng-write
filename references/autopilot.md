@@ -41,6 +41,13 @@ python "$SKILL/scripts/pipeline.py" status
 3. **正文**
    - 运行 `prep_writing.py`，按 `writing.md` 与选定风格手册写 `定稿.md`。
    - 生成标题候选并确定最终标题。
+   - 🔎 **写完立刻跑 `pipeline.py preflight`**，把静态问题一次清完再往下走。
+     它不花配额、几秒返回，覆盖：闸门锚点文件、H2/`part_subtitles` 对齐、
+     加粗密度、开篇重点标识、文末 DEEP READ / SOURCES、金句库来源标记、
+     `visual-plan.json` 合法性。
+     （89 号实跑教训：这些检查此前散落在排版与 finalize 阶段，
+     开篇标识迟 3 个阶段才报、金句库来源标记迟 5 个阶段，
+     导致 `verify_layout` 反复 6 轮、`verify_publish` 反复 8 轮。）
 4. **磨稿与双复核**
    - 运行反 AI 磨稿。
    - 事实复核与语义冷读使用独立上下文，产出结构化记录。

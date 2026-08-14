@@ -502,12 +502,27 @@ def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
     if not path or not path.exists():
         return {}, [f"缺 {name or gate + ' approval anchor'}"]
     text = path.read_text(encoding="utf-8")
-    if re.search(r"(?:不通过|未通过|拒绝|驳回|不同意|尚未确认|待确认)", text):
+    # 🔴 2026-08-14 第 89 篇实跑修正：否决词此前**扫全文**，把「记录里提到拒绝」
+    #    和「审批结论是拒绝」混为一谈 —— 我在审读记录里如实写了「未采纳冷读的
+    #    某条建议（会违反品牌铁律）」，其中「拒绝」二字命中，整份审批被判 rejected，
+    #    闸门当场拦死。**审读记录写得越认真越容易被罚**，这是反向激励。
+    #    改为只在「审批结论 / 大纲 / 作者免检授权」那一行判定，正文照常记录。
+    _CONCLUSION_LINE = r"(?m)^(?:[-*#\s]*)?(?:审批结论|大纲|作者免检授权)\s*[：:]\s*(.+)$"
+    conclusions = [m.strip() for m in re.findall(_CONCLUSION_LINE, text)]
+    joined = " ".join(conclusions)
+
+    if conclusions and re.search(r"(?:不通过|未通过|拒绝|驳回|不同意|尚未确认|待确认)", joined):
         decision = "rejected"
     elif re.search(r"(?m)^(?:[-*]\s*)?(?:审批结论|作者免检授权)\s*[：:]\s*(?:免检|跳过)", text):
         decision = "waived"
     elif re.search(r"(?m)^(?:[-*]\s*)?(?:审批结论|大纲)\s*[：:]\s*通过(?:[，,。；;\s]|$)", text):
         decision = "approved"
+    elif not conclusions and re.search(
+        r"(?:不通过|未通过|拒绝|驳回|不同意|尚未确认|待确认)", text
+    ):
+        # 没有结论行时保守处理：全文出现否决词仍判 rejected，
+        # 避免「忘写结论行 + 正文写着不通过」被误放行。
+        decision = "rejected"
     else:
         decision = "unknown"
     return {
