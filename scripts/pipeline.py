@@ -2460,6 +2460,44 @@ def _archived_code(cwd: Path) -> str:
         return ""
 
 
+# 构建工具的进度行（git checkout / npm / rsync 都会刷成千上万行），它们在
+# capture_output 下不会被 \r 覆盖，而是原样堆进 stdout。
+_PROGRESS_NOISE = re.compile(
+    r"^\s*(?:Updating files:|Receiving objects:|Resolving deltas:|"
+    r"remote: (?:Counting|Compressing|Total)|\[?=+>?\s*\]?\s*\d+%|"
+    r"\d+(?:\.\d+)?%\s*$)"
+)
+
+
+def _diagnostic_tail(*streams: str, lines: int = 25, limit: int = 2000) -> str:
+    """取**尾部**若干条有效行 —— 报错在末尾，不在开头。
+
+    🔴 2026-08-14 第 89 篇实跑教训：原实现是
+    ``(stderr or stdout).strip()[:500]``，从**开头**截 500 字。而
+    ``git worktree add`` 会先刷几百行 ``Updating files: NN%``，于是屏幕上
+    永远只有进度条，真正的失败原因（世界史 canonical 门禁）一次都没露过面。
+    实测为了看到那一行，多跑了两轮共二十多分钟。
+
+    截头还是截尾不是风格问题：命令行工具的诊断信息**总在末尾**。
+    """
+    body = ""
+    for stream in streams:
+        if (stream or "").strip():
+            body = stream
+            break
+    if not body.strip():
+        return "（命令没有任何输出）"
+    kept = [
+        line.rstrip()
+        for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if line.strip() and not _PROGRESS_NOISE.match(line)
+    ]
+    if not kept:
+        kept = [line.rstrip() for line in body.split("\n") if line.strip()]
+    text = "\n".join(f"   {line}" for line in kept[-lines:])
+    return text[-limit:] if len(text) > limit else text
+
+
 def _append_website_sync_attempt(receipt_path: Path, attempt: dict) -> None:
     """Preserve website retry history instead of overwriting the last failure."""
     previous: dict = {}
@@ -2667,12 +2705,15 @@ def _run_website_sync(
         "stdout_sha256": stable_digest({"stdout": completed.stdout or ""}),
         "stderr_sha256": stable_digest({"stderr": completed.stderr or ""}),
     }
+    if completed.returncode != 0:
+        # 失败时把可读的尾部一并落盘。只存 sha256 等于把唯一一份诊断信息扔了：
+        # 命令是 capture_output 跑的，输出不在任何终端里，重跑一次要十几分钟。
+        receipt["tail"] = _diagnostic_tail(completed.stderr, completed.stdout)
     _append_website_sync_attempt(receipt_path, receipt)
     if completed.returncode != 0:
-        print(
-            f"❌ 官网同步失败（exit={completed.returncode}）："
-            f"{(completed.stderr or completed.stdout or '').strip()[:500]}"
-        )
+        print(f"❌ 官网同步失败（exit={completed.returncode}）：")
+        print(receipt["tail"])
+        print(f"   完整回执：{receipt_path}")
         return False
     print(f"✅ 官网同步完成：code={values['code'] or '(无编号)'}")
     return True
