@@ -2724,6 +2724,47 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     return text
 
 
+# 收尾链的顺序（后面的步骤依赖前面的产物，别单独手跑中间某步就当收尾完了）
+FINALIZE_STEPS: tuple[tuple[str, str], ...] = (
+    ("publish_link", "登记永久链接"),
+    ("archive", "归档进作品库"),
+    ("archive_verify", "校验归档"),
+    ("moments_copy", "生成朋友圈文案"),
+    ("distribution", "分发（播客等）"),
+    ("website_sync", "同步官网并推配图/音频"),
+)
+
+
+def _report_finalize_abort(state: dict, failed_step: str) -> None:
+    """中断时把**后面还没跑的步骤**点名喊出来。
+
+    🔴 2026-08-14 第 89 篇实跑教训：finalize 在 distribution（播客）上
+    SystemExit(3) 退出，屏幕上只有一行播客的报错。人看到播客失败就以为
+    「补跑一次播客即可」，手动补跑后收工 —— 而 website_sync 排在它后面，
+    从头到尾没执行过。结果是文章正文被别的部署顺带带上了线、配图和音频
+    却从没上传，线上整页破图，且**零报警**。
+
+    失败本身不是问题，问题是失败时没说清「这条链还剩什么没做」。
+    """
+    names = [key for key, _ in FINALIZE_STEPS]
+    if failed_step not in names:
+        return
+    done = state.get("steps") or {}
+    remaining = [
+        (key, label) for key, label in FINALIZE_STEPS[names.index(failed_step) + 1:]
+        if (done.get(key) or {}).get("status") != "done"
+    ]
+    print(f"\n🔴 finalize 在「{failed_step}」中断，收尾链**没有走完**。")
+    if remaining:
+        print("   后面这些步骤一次都没执行：")
+        for key, label in remaining:
+            print(f"     · {key} -- {label}")
+        print("   修好中断原因后请**重跑 finalize**（可续跑，已完成的步骤会跳过）；")
+        print("   只手动补跑失败的那一步不会把后面的步骤带起来。")
+    else:
+        print("   后续步骤此前已完成，只需修好本步。")
+
+
 def cmd_moments_copy(cwd: Path) -> None:
     """Milliseconds-only handoff for an existing article; no finalize side effects."""
     _write_moments_copy(cwd, "")
@@ -2861,6 +2902,7 @@ def cmd_finalize(wechat_url: str, cwd: Path) -> None:
     elif not _handoff_to_distribute(cwd):
         # 显式启用的自动播客没完成就不能先部署一个缺音频的网站版本，
         # 也不能把「plan 已生成」误报成「播客已上线」。
+        _report_finalize_abort(state, "distribution")
         raise SystemExit(3)
     else:
         _mark_finalize_step(cwd, state, "distribution")
