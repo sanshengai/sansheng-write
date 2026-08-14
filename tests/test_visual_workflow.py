@@ -269,7 +269,12 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "一份任务单" in cover
     assert "一条发布入口" in cover
     assert "TEXTLESS visual evidence only" in cover
-    for prompt in (cover, hero, info):
+    # cover / hero 仍由 _native_raster_contract 提供这句；infographic 在
+    # 2026-08-16 第二轮精简里把它并进了排版段（讲的本是同一件事），
+    # 所以两边措辞不同、语义一致 —— 分开断言，别用一个循环硬套。
+    assert "sculpted as extruded clay letters" in info
+    assert "same matte material and light as the objects" in info
+    for prompt in (cover, hero):
         # 钉「文字长在画面里」这个语义，不钉具体措辞。
         # 🔴 2026-08-15：原来这里断言的是一段 450 字符的 ONE-PASS 祈使句
         # （"不要输出 SVG/HTML/Canvas，不要用 Pillow/Jimp/Sharp 后期贴字"）。
@@ -282,7 +287,6 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
         assert "part of the picture itself" in prompt
         assert "sculpted from" in prompt
     assert "same dimensional matte-clay material" in hero
-    assert "same dimensional matte-clay material" in info
     assert "bright editorial evidence montage" not in cover
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
@@ -297,7 +301,11 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "handwritten editorial marker" not in info
     assert "brush-pen character" not in info
     assert 'template_id:' not in info
-    assert "reviewed editorial composition contract" in info
+    # 2026-08-16 第二轮精简删掉了「using the reviewed editorial composition
+    # contract」——那是流程话术，对图像模型没有意义。钉它真正需要的东西：
+    # 是一张中文信息图、走 claymation 风格。
+    assert "high-information Chinese infographic" in info
+    assert "claymation" in info
     assert "定稿哈希绑定任务单" not in info
     batch = json.loads(
         (article / "素材/render-batch.json").read_text(encoding="utf-8")
@@ -389,7 +397,7 @@ def test_clay_compiler_embeds_full_style_contract(tmp_path):
     # 模型不知道 Baoyu 是谁，那是写给工具链的话。配色的约束力靠下面这条正面
     # 描述 + visual_contracts.py 的像素级 QA，不靠对模型宣示所有权。
     assert "Baoyu may choose" not in prompt
-    assert "large titles and paths stay pale or mid-tone" in prompt
+    assert "large titles stay pale or mid-tone" in prompt
     assert "claymation" in prompt
     assert "VISIBLE TEXT ALLOWLIST" in prompt
     # 钉行为不钉措辞：facts 的**内容**绝不能出现在给渲染器的 prompt 里。

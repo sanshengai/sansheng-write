@@ -119,7 +119,7 @@ def test_clay_palette_offers_an_alternative_to_a_second_hue():
     # 原来断言字面串 "SECOND HUE" 的写法会把「改进措辞」误判成「破坏契约」，
     # 正是 prompt 只增不减、一路膨胀到 5000 字符的机制之一。
     assert "same jade" in palette, "必须约束在单一色相内"
-    for alternative in ("tints", "shape", "size", "texture", "position"):
+    for alternative in ("tints", "shape", "size", "position"):
         assert alternative in palette, f"缺少区分两组的替代手段：{alternative}"
 
 
@@ -129,7 +129,9 @@ def test_infographic_prompt_demands_character_accuracy():
         "claymation",
         {"name": "warm-light-clay", "sha256": "x", "background": "#F5F0E6", "accent": "#0E926F"},
     )
-    assert "CHARACTER ACCURACY IS CRITICAL" in prompt
+    # 钉语义不钉标语：必须要求字形完整 + 宁可放大也不糊字。
+    assert "complete, correct Simplified glyph" in prompt
+    assert "every stroke stays intact" in prompt
 
 
 def test_clay_typography_is_dimensional_and_scene_integrated():
@@ -144,7 +146,7 @@ def test_clay_typography_is_dimensional_and_scene_integrated():
     # 语义不变（大部分标签不要底板），措辞由 "at least half of all labels …
     # with NO backing plate, box, ribbon, banner or card" 改成正面的
     # "stand free … with open background around them"。
-    assert "most labels stand free" in contract
+    assert "standing free with open background" in contract
 
 
 def test_visual_reviewer_has_a_separate_typography_gate():

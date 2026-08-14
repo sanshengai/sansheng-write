@@ -626,14 +626,11 @@ def _clay_palette(recipe: dict) -> str:
     #    由 tests/test_prompt_required_phrases.py 当场抓到。别把它们放句首。
     return (
         "A warm ivory background with a high-key pastel palette: matte soft clay "
-        "everywhere, one pale pastel jade accent, pale warm neutrals, plus soft natural "
-        "clay skin and wood tones for figures and props. Lit by diffuse light, very low "
-        "contrast, feather-soft shadows.\n"
-        "Warm ivory and pale neutrals cover most of the canvas; the jade stays an accent "
-        "on small surfaces, and large titles and paths stay pale or mid-tone.\n"
-        "Keep to that single jade hue. When two groups, sides or outcomes must be told "
-        "apart, use two light tints of the same jade, or shape, size, texture and "
-        "position — the same rule for label bars, arrows, containers and props."
+        "everywhere, one pale pastel jade accent, pale warm neutrals, and soft clay skin "
+        "and wood tones for figures. Lit by diffuse light, very low contrast, "
+        "feather-soft shadows. Warm ivory covers most of the canvas; the jade stays an "
+        "accent and large titles stay pale or mid-tone. Tell two groups apart with two "
+        "tints of that same jade, or with shape, size and position."
     )
 
 
@@ -652,11 +649,10 @@ def _clay_typography() -> str:
     #    "embedded in the clay scene" 三个**精确串** —— visual_route 是逐字子串比对，
     #    写成 "dimensional, rounded, chunky" 就过不了门（本次实测被测试当场抓到）。
     return (
-        "CLAY TYPOGRAPHY — every allowlisted line is sculpted as extruded clay letters. "
-        "The dimensional rounded clay text is chunky and softly irregular, with complete "
-        "standard Simplified-Chinese glyphs, embedded in the clay scene with the same "
-        "matte material as nearby objects. The title and most labels stand free on the "
-        "scene with open background around them. Title largest, section labels smaller."
+        "Text is sculpted as extruded clay letters: the dimensional rounded clay text is "
+        "chunky and softly irregular, with complete standard Simplified-Chinese glyphs, "
+        "embedded in the clay scene with the same matte material and light as the objects. "
+        "Title largest, labels smaller, standing free with open background around them."
     )
 
 
@@ -798,13 +794,14 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
     return (
         _frontmatter(fields)
         + "\n\n"
-        + f"Create a high-information Chinese infographic in {style} style using the "
-        f"reviewed editorial composition contract. {palette}\n"
+        # 🔴 2026-08-16 第二轮精简（G 组生产验收后）。
+        #    第一轮把 4855 压到 2224，验收实测首过率 67%；而同内容、同 allowlist、
+        #    同 SCENE 的 1112 字符手写版是 92%。唯一变量就是长度 —— 说明还得再压。
+        #    这里去掉「using the reviewed editorial composition contract」这类
+        #    对模型无意义的流程话术，并把 native-raster 那句并进排版段（它讲的
+        #    本来就是同一件事：字与画同材质、长在一张图里）。
+        + f"A high-information Chinese infographic in {style} style. {palette}\n"
         + (f"{typography}\n" if typography else "")
-        + _native_raster_contract(
-            "the same dimensional matte-clay material, lighting and registered palette as the scene"
-        )
-        + "\n"
         # 🔴 2026-08-15 精简（对照实验后）：这一段原本有 1200 字符、18 条否定式。
         #    ① BAOYU LAYOUT CONTRACT 那行是结构术语（linear-progression 之类），
         #       模型看了没用，而 SCENE 段已经把同一件事讲成了画面。删。
@@ -819,12 +816,9 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
         # 🔴 中文字形是这条链上最脆弱的一环：糊字既不报错、又会被看图模型「脑补」成
         # 通顺句子而漏检（实测 hero 图渲成「重置不是祸利，是昀家公司付溻针」，
         # 复核仍判 text_match 通过）。所以这里要求宁可放大、减量，也不许把字画歪。
-        "CHARACTER ACCURACY IS CRITICAL: every Chinese character must be a complete, "
-        "correct, standard Simplified glyph. Render text large enough that every stroke "
-        "stays intact — size beats decoration. "
-        "Each allowlisted line appears in exactly one place on the canvas, inside "
-        "crop-safe margins, with the title > sections > details hierarchy obvious at "
-        "thumbnail size. "
+        "Every Chinese character must be a complete, correct Simplified glyph; render "
+        "text large enough that every stroke stays intact. Each line below appears in "
+        "exactly one place, inside crop-safe margins. "
         # 🔴 这一条**故意保留否定式**。其余禁令都改成了正面描述（模型对否定式不敏感），
         #    但画出真实公司 logo 是合规风险不是审美问题：代价是 60 个字符，
         #    风险是一张带真商标的图发出去。宁可写了无效，不可漏写。

@@ -70,9 +70,10 @@ def test_forbidden_terms_stay_out_of_prompt():
 
 
 # ── 防再膨胀 ──────────────────────────────────────────────────────────────
-# 2026-08-15 精简后实测 2150 字符 / 1 条否定式 / 0 个色号。
-# 阈值留了余量，但不该再回到四位数后段。
-_MAX_CHARS = 2600
+# 2026-08-16 第二轮精简后实测 1444 字符 / 1 条否定式 / 0 个色号。
+# 🔴 阈值收到 1700 是有实测依据的，不是洁癖：同内容同 allowlist 同 SCENE，
+#    1112 字符版首过率 92%，2224 字符版只有 67% —— 长度本身就是变量。
+_MAX_CHARS = 1700
 _MAX_NEGATIONS = 4
 _NEG = re.compile(
     r"\b(never|not|without|avoid|forbidden|must not|do not|don't|nothing else)\b",
