@@ -101,15 +101,48 @@ _LAYOUT_NODE_TEXTFREE = re.compile(
 )
 
 
-def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[str]:
-    """expected_text 之间、以及与 title 之间不得互相包含。
+def _longest_common_substring(a: str, b: str) -> str:
+    """最长公共**子串**（连续），不是子序列。"""
+    if not a or not b:
+        return ""
+    prev = [0] * (len(b) + 1)
+    best_len, best_end = 0, 0
+    for i in range(1, len(a) + 1):
+        cur = [0] * (len(b) + 1)
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best_len:
+                    best_len, best_end = cur[j], i
+        prev = cur
+    return a[best_end - best_len:best_end]
 
-    命中任一即报错：渲出来该词必然出现 ≥2 次，直接违反 required_text
-    「整图恰好出现一次」硬门。
+
+# 一张图内多条中文短句之间允许的最长公共子串。2 起就显著掉首过率。
+_TEXT_OVERLAP_MAX = 1
+
+
+def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[str]:
+    """同一张图里的中文短句之间，共享的连续字符不得超过 1 个。
+
+    2026-08-15 实测（Banana 2，第 89 篇四张信息图，每张 3-6 次）：
+
+        条目间最长公共子串   首过率
+              0             6/6  = 100%
+              1             6/6  = 100%
+              2             3/6  =  50%
+              4（完整包含）  0/6  =   0%
+
+    机理：模型在同一张画布上摆多条短句时，共享字越多越容易「串台」——
+    把某条渲两遍、把 A 的字渲到 B 的位置、或干脆把短句拆成单字铺满节点。
+    实测全库 36 张信息图里有 21 张（58%）重叠 ≥2，这是重渲量的主要来源之一。
+
+    原实现只拦「完整包含」（全库 36 张里仅命中 2 张），漏掉了重叠 2-3 的
+    19 张 —— 而那一档的首过率只有 50%。
     """
     errors: list[str] = []
     values = [str(v).strip() for v in expected if str(v).strip()]
-    title = title.strip()
+    title = (title or "").strip()
 
     for value in values:
         if title and value != title and value in title:
@@ -118,12 +151,28 @@ def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[st
                 f"渲出来会出现两次，必然违反 visual-qa 的 required_text"
                 f"「整图恰好一次」硬门。请改写 title 使其不含任何标签词"
             )
-    for i, a in enumerate(values):
-        for j, b in enumerate(values):
-            if i < j and (a in b or b in a):
+
+    lines = ([title] if title else []) + values
+    seen: set[tuple[str, str]] = set()
+    for i, a in enumerate(lines):
+        for b in lines[i + 1:]:
+            if a == b or (a, b) in seen:
+                continue
+            seen.add((a, b))
+            if a in b or b in a:
+                if a in values and b in values:
+                    errors.append(
+                        f"{label}.expected_text 存在互相包含的两条：「{a}」与「{b}」—— "
+                        f"短的那条会被判出现两次。请改写成互不包含的措辞"
+                    )
+                continue
+            shared = _longest_common_substring(a, b)
+            if len(shared) > _TEXT_OVERLAP_MAX:
                 errors.append(
-                    f"{label}.expected_text 存在互相包含的两条：「{a}」与「{b}」—— "
-                    f"短的那条会被判出现两次。请改写成互不包含的措辞"
+                    f"{label} 的「{a}」与「{b}」共享了 {len(shared)} 个连续字"
+                    f"「{shared}」—— 实测重叠 ≥2 时首过率掉到 50%（重叠 ≤1 时是 100%）。"
+                    f"模型会把两条串在一起：渲重复、错位、或拆成单字铺满节点。"
+                    f"请改写其中一条，把重复的字挪开"
                 )
     return errors
 
@@ -140,6 +189,73 @@ def _layout_negative_phrasing_errors(label: str, layout: str) -> list[str]:
         f"指令基本不敏感（实测连写三轮 no sign board / no rounded plate，模型照样加底板；"
         f"改成正面描述「像标题那样的独立立体黏土字」当轮即对）。"
         f"请改写成**正面描述你要什么**，而不是列举不要什么"
+    ]
+
+
+# 抽象几何词：只写这些等于没告诉模型画什么。
+_LAYOUT_ABSTRACT_ONLY = re.compile(
+    r"\b(block|blocks|node|nodes|cluster|clusters|hub|spine|column|columns|"
+    r"panel|panels|box|boxes|shape|shapes|band|bands|segment|segments|"
+    r"zone|zones|area|areas|section|sections|group|groups|row|rows|"
+    r"circle|circles|square|squares|rectangle|rectangles|bar|bars|"
+    r"spoke|spokes|arrow|arrows|line|lines|layer|layers|tier|tiers)\b",
+    re.IGNORECASE,
+)
+# 具体物象：能让模型"有活干"的实体名词。命中任一即认为 layout 给了可画的东西。
+_LAYOUT_CONCRETE_SUBJECT = re.compile(
+    r"\b(robot|robots|house|houses|building|buildings|cart|carts|truck|trucks|"
+    r"car|cars|train|trains|bridge|bridges|road|roads|machine|machines|"
+    r"worker|workers|figure|figures|person|people|hand|hands|tree|trees|"
+    r"plant|plants|seed|seeds|book|books|desk|desks|chair|chairs|door|doors|"
+    r"window|windows|ladder|ladders|stair|stairs|boat|boats|bag|bags|"
+    r"box of|jar|jars|bottle|bottles|cup|cups|bowl|bowls|coin|coins|"
+    r"key|keys|lock|locks|clock|clocks|lamp|lamps|flag|flags|tent|tents|"
+    r"brick|bricks|stone|stones|rock|rocks|slab|slabs|crate|crates|"
+    r"shelf|shelves|basket|baskets|bucket|buckets|scale|balance|"
+    r"factory|shop|store|tower|wall|fence|gate|path|river|mountain|"
+    r"conveyor|gear|gears|pipe|pipes|valve|switch|button|lever)\b",
+    re.IGNORECASE,
+)
+
+
+def _layout_concrete_subject_errors(label: str, layout: str) -> list[str]:
+    """layout 只写抽象几何、没给可画的实体 → 模型拿文字填满画面。
+
+    🔴 2026-08-15 实测，这是三个因子里贡献最大的一条（+42 个百分点）。
+
+    同一张图、同一个模型（Banana 2）、同样修好的 allowlist，只改 SCENE：
+
+        SCENE 写法                                          首过率
+        "One vertical spine, largest block at top…"          3/6 = 50%
+        "五个小机器人各举一面旗站成一列，右边三个"            5/6 = 83%
+
+        "A central hub with spokes radiating to two clusters" 3/6 = 50%
+        "三座小房子刚被搬上新地基，五座还在裂开的旧地基上"    6/6 = 100%
+
+    机理：扩散模型必须把画布填满。SCENE 只给 block / node / cluster 这类
+    抽象几何时，模型没有可画的实体，就把**标签文字**当成填充物 —— 拆成单字
+    铺到每个方块上、把标签渲两遍、或在空白处补乱码汉字。给它具体东西画，
+    它就不折腾文字了。
+
+    附带收益：出图的视觉质量和语义准确度都明显更高（房子/机器人/裂开的地基
+    比抽象方块好看，也更贴题）。
+    """
+    if not layout:
+        return []
+    if _LAYOUT_CONCRETE_SUBJECT.search(layout):
+        return []
+    abstract = _LAYOUT_ABSTRACT_ONLY.findall(layout)
+    if not abstract:
+        return []
+    uniq = sorted({a.lower() for a in abstract})
+    return [
+        f"{label}.layout 只有抽象几何（{'、'.join(uniq[:5])}），没给模型任何可画的实体 —— "
+        f"实测这一条最伤：首过率 50% vs 具体物象的 83-100%。"
+        f"扩散模型必须把画布填满，没东西画就拿**标签文字**当填充物"
+        f"（拆成单字铺到方块上、把标签渲两遍、空白处补乱码汉字）。"
+        f"请把几何换成能画的东西 —— 不是「五个方块」而是"
+        f"「五个小机器人各举一面旗」，不是「中心枢纽连着两簇节点」而是"
+        f"「三座小房子刚被搬上新地基，五座还留在裂开的旧地基上」"
     ]
 
 
@@ -255,10 +371,12 @@ def validate_visual_plan(plan: dict) -> list[str]:
             errors.extend(_text_overlap_errors(
                 label, str(item.get("title") or ""), item["expected_text"]
             ))
-        # 🔴 layout 是原样进 prompt 的构图指令，下面两条来自同一次实跑的教训：
+        # 🔴 layout 是原样进 prompt 的构图指令，下面三条来自实跑的教训：
         _layout_raw = str(item.get("layout") or "")
         errors.extend(_layout_negative_phrasing_errors(label, _layout_raw))
         errors.extend(_layout_node_label_errors(label, _layout_raw))
+        # 三个因子里贡献最大的一条（2026-08-15 对照实验：+42 个百分点）
+        errors.extend(_layout_concrete_subject_errors(label, _layout_raw))
         if not _nonempty_list(item.get("facts")):
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")

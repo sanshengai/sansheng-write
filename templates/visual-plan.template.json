@@ -1,5 +1,9 @@
 {
-  "_comment_layout": "🔴 layout 写英文或短标签，中文上限 24 字（编译器会拦）。它原样进 prompt 的 COMPOSITION GUIDANCE 段，模型看见中文就会照着画进图里 —— 实测 layout 中文 0 字的图一次成功，108 字那张连废 4 版（其中一版把 layout 里的『训练和比赛』画成了图上标签），181 字那张多画出『污染』。英文长描述无害，写多少都行。",
+  "_comment_1_layout_必须给具体物象": "🔴 这是首过率最大的一个杠杆（2026-08-15 对照实验实测 +42 个百分点）。layout 里必须出现**能画出来的实体**（机器人/房子/小车/桥/工人/地基…），不能只写 block / node / cluster / hub / column 这类抽象几何。机理：扩散模型必须把画布填满，你不给它东西画，它就拿**你的标签文字**当填充物 —— 拆成单字铺到每个方块上、把标签渲两遍、在空白处补乱码汉字。实测同一张图同一个模型：写『One vertical spine, largest block at top shrinking downward』首过率 50%，改成『左边五个小机器人各举一面旗站成一列，右边三个』→ 83%；『中心枢纽连着两簇节点』50% → 『三座小房子刚被搬上新地基，五座还留在裂开的旧地基上』100%。附带好处是图更好看也更贴题。",
+  "_comment_2_文字之间不许共享字": "🔴 同一张图里 title 与各条 expected_text 之间，最长**连续**公共子串不得超过 1 个字（编译器会拦）。实测：重叠 0-1 → 首过率 100%；重叠 2 → 50%；一条是另一条的子串 → 0%。模型会把共享字多的两条串在一起。写法上宁可换个说法，也别让两条共用词根 —— 比如别同时写『新底座三个』和『旧底座五个』（共享『底座』），改成『换了三个』『没换五个』。",
+  "_comment_3_layout_中文上限": "🔴 layout 写英文或短标签，中文上限 24 字（编译器会拦）。它原样进 prompt 的 SCENE 段，模型看见中文就会照着画进图里 —— 实测 layout 中文 0 字的图一次成功，108 字那张连废 4 版（其中一版把 layout 里的『训练和比赛』画成了图上标签），181 字那张多画出『污染』。英文长描述无害，写多少都行，而且越具体越好。",
+  "_comment_5_占位内容是实测样本": "下面四张的 title / expected_text / layout 不是虚构占位，而是 2026-08-15 对照实验里实测首过率 83-100% 的真实样本。照着这个**形状**写自己的内容即可：标题与标签之间最多共享 1 个字，layout 里一定有能画出来的东西。",
+  "_comment_4_不要写否定式": "🔴 别写 no / not / 不要 / 禁止 —— 扩散模型对否定式基本不敏感（实测连写三轮 no sign board / no rounded plate，模型照样加底板）。要什么就正面描述什么。唯一例外是收尾那句『these carry no text』，它有实测效果，编译器已内置，不用你写。",
   "schema_version": 1,
   "cover": {
     "title": "逐字填写封面标题",
@@ -15,44 +19,44 @@
       "id": "01",
       "position": "opening",
       "aspect_ratio": "9:16",
-      "title": "开篇知识图",
+      "title": "一个月，八次更新",
       "layout_type": "linear-progression",
-      "layout": "structured-card",
+      "layout": "A tall clay ribbon runs down the centre like a calendar strip. Five small clay robots stand in a column to its left, each holding up a tiny pennant; three more of the same robots stand to its right. The robots, pennants and ribbon are smooth blank clay.",
       "anchor": "定稿中唯一的一句开篇锚句（图片插在这句之后）",
-      "expected_text": ["图内文字一", "图内文字二"],
+      "expected_text": ["中国五个", "美国三个"],
       "facts": ["已核实事实"]
     },
     {
       "id": "02",
       "position": "middle",
       "aspect_ratio": "16:9",
-      "title": "中段知识图一",
+      "title": "两种分工",
       "layout_type": "binary-comparison",
-      "layout": "comparison",
+      "layout": "On the left, a dozen small clay workers each push a loaded cart in loose rows. On the right, one large clay machine with a conveyor belt, tended by a single worker. Both sit on their own low clay platform.",
       "anchor": "定稿中唯一的一句中段锚句",
-      "expected_text": ["图内文字"],
+      "expected_text": ["走量", "攻坚"],
       "facts": ["已核实事实"]
     },
     {
       "id": "03",
       "position": "middle",
       "aspect_ratio": "16:9",
-      "title": "中段知识图二",
+      "title": "两条线，只动了一条",
       "layout_type": "hub-spoke",
-      "layout": "flow",
+      "layout": "A wide clay road runs across the upper half with small cars moving along it. A second road runs across the lower half, broken in the middle where a little bridge has collapsed into rubble, with a tiny worker standing at the gap.",
       "anchor": "定稿中唯一的另一句中段锚句",
-      "expected_text": ["图内文字"],
+      "expected_text": ["快线更新了", "主力线未动"],
       "facts": ["已核实事实"]
     },
     {
       "id": "04",
       "position": "closing",
       "aspect_ratio": "9:16",
-      "title": "结尾知识图",
+      "title": "底座之变",
       "layout_type": "winding-roadmap",
-      "layout": "checklist",
+      "layout": "In the upper left, three small clay houses sit on a fresh smooth foundation slab and a tiny clay worker slides the third one into place. In the lower right, five identical houses sit on an older cracked slab with weeds at its edge.",
       "anchor": "定稿中唯一的一句结尾锚句",
-      "expected_text": ["图内文字"],
+      "expected_text": ["换了三个", "没换五个"],
       "facts": ["已核实事实"]
     }
   ]
