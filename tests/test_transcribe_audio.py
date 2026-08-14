@@ -1,11 +1,11 @@
 """transcribe_audio 纯函数契约（不联网、不起 ffmpeg）。
 
 钉住三件事：
-  ① 输出路径推导 —— 默认 `<同名>.转写.md` 落在音频旁（素材/ 里的音频转写稿
+  ① 输出路径推导 -- 默认 `<同名>.转写.md` 落在音频旁（素材/ 里的音频转写稿
      留在 素材/，才能被「素材自动读取」一并读到）；
-  ② 端点分流 —— 与 gen_img.py 同一约定：AIza→AI Studio、AQ.→Vertex 项目级；
+  ② 端点分流 -- 与 gen_img.py 同一约定：AIza→AI Studio、AQ.→Vertex 项目级；
      断言用字面 URL 而非模块常量，防「拿被测变量当尺子」空转；
-  ③ 引擎选择 —— 显式指定时原样透传，不被 auto 探测覆盖。
+  ③ 引擎选择 -- 显式指定时原样透传，不被 auto 探测覆盖。
 """
 import sys
 from pathlib import Path

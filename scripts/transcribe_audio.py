@@ -18,7 +18,7 @@
   python transcribe_audio.py 录音.mp3 --out 思考.md   # 指定输出
   python transcribe_audio.py 录音.mp3 --engine whisper --force
 
-集成位置：SKILL.md「素材自动读取」——素材目录出现音频先转写再读；细则 references/transcribe.md。
+集成位置：SKILL.md「素材自动读取」 -- 素材目录出现音频先转写再读；细则 references/transcribe.md。
 """
 
 import argparse
@@ -71,7 +71,7 @@ PROMPT = (
     "2) 按语义分自然段；\n"
     "3) 中英夹杂处保留英文原词，产品名/专有名词照录；\n"
     "4) 忠实原话，允许少量清理无意义语气词（嗯、啊），但不改写、不概括句意；\n"
-    "5) 听不清或吃不准的词标〔听不清〕，绝不靠猜补写内容——静音段就是没有内容。"
+    "5) 听不清或吃不准的词标〔听不清〕，绝不靠猜补写内容 -- 静音段就是没有内容。"
 )
 
 _RETRY_MAX_ATTEMPTS = 4
@@ -79,7 +79,7 @@ _RETRY_BASE_SECONDS = 4
 
 
 def _redact(text: str) -> str:
-    """key 拼在 URL query 里，异常串会带出来——外发前一律脱敏。"""
+    """key 拼在 URL query 里，异常串会带出来 -- 外发前一律脱敏。"""
     return re.sub(r"(key=)[^&\s)\"']+", r"\1***", str(text))
 
 
