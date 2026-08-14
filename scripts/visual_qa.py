@@ -61,8 +61,20 @@ def _normalized_text(value: object) -> str:
     return "".join(str(value or "").split()).casefold()
 
 
+# 模板自身渲染的分隔符：封面底栏把 tag1 与 tag2 排成「选型 / 盘点」，中间那个斜杠
+# 是版式的一部分，不是模型编造的文字。OCR 有时把两个胶囊读成一项（"选型 / 盘点"），
+# 有时读成两项（"选型"、"盘点"）—— 后者能过、前者被判「白名单外文字」，
+# 同一张合规封面的成败取决于转写员当次怎么断句。2026-08-14 第 89 篇实测暴露。
+# 这里只放行「纯分隔符」，模型真编出来的字仍然照抓。
+_TEMPLATE_SEPARATORS = frozenset("/|·、，,；;：:-–—~～")
+
+
 def _fully_segmented_by_allowed(value: str, allowed: set[str]) -> bool:
-    """Accept an OCR block only when every character belongs to allowlisted chunks."""
+    """Accept an OCR block only when every character belongs to allowlisted chunks.
+
+    模板渲染的分隔符（见 `_TEMPLATE_SEPARATORS`）可被跳过，因为它们由版式产生、
+    不属于任何一条 expected_text，却会把相邻两条白名单文字粘成一个 OCR 块。
+    """
     if not value:
         return True
     tokens = sorted((token for token in allowed if token), key=len, reverse=True)
@@ -70,6 +82,8 @@ def _fully_segmented_by_allowed(value: str, allowed: set[str]) -> bool:
     for index in range(len(value)):
         if index not in reachable:
             continue
+        if value[index] in _TEMPLATE_SEPARATORS:
+            reachable.add(index + 1)
         for token in tokens:
             if value.startswith(token, index):
                 reachable.add(index + len(token))

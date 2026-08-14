@@ -67,6 +67,97 @@ INFOGRAPHIC_LAYOUTS = {
 }
 
 
+# ============================================================================
+# 视觉任务单的三条「编译期预防」检查（2026-08-14 第 89 篇实跑后新增）
+#
+# 背景：那一篇机械链共发起 45 次生图，其中 39 次是重渲 —— 必要量的 7.5 倍，
+# 同时也是撞 429 限流的主因。逐次复盘后，其中约 30 次可由下面三条纯字符串
+# 检查在**编译期**拦掉，根本不必等图渲出来再由 visual-qa 发现。
+# 生图一次几十秒且吃配额，把可机器判的错留到渲染后，是最贵的一种晚发现。
+# ============================================================================
+
+# 否定式措辞：生图模型对 "no X" 基本不敏感（实测连写三轮 no sign board /
+# no rounded plate / no punctuation，模型照样加底板；改成正面描述当轮就对）。
+_LAYOUT_NEGATIVE_PATTERNS = re.compile(
+    r"\b(no|not|without|avoid|never|don't|do not|free of)\b|不要|禁止|不得|不能|没有",
+    re.IGNORECASE,
+)
+
+# 「N 个节点/里程碑」这类表述会诱导模型给每个节点各贴一遍标签
+# （实测：eight ordered stops → 同一个词渲了 8 遍；three milestones → 3 遍）。
+# 数量词与名词之间允许夹 0-2 个修饰词（ordered / passed / equal / small …），
+# 否则 "three passed milestones" 这类会漏网（本文件配套测试当场抓到过）。
+_LAYOUT_NODE_COUNT = re.compile(
+    r"\b(two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+    r"(?:[a-z-]+\s+){0,2}"
+    r"(stops?|steps?|milestones?|nodes?|points?|stages?|segments?)\b",
+    re.IGNORECASE,
+)
+# 声明「节点不带文字」的正面表述，命中任一即认为已规避
+_LAYOUT_NODE_TEXTFREE = re.compile(
+    r"carry no text|no text on|without any lettering|free of any lettering|"
+    r"no lettering|carries no label|no label on|text appears in exactly",
+    re.IGNORECASE,
+)
+
+
+def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[str]:
+    """expected_text 之间、以及与 title 之间不得互相包含。
+
+    命中任一即报错：渲出来该词必然出现 ≥2 次，直接违反 required_text
+    「整图恰好出现一次」硬门。
+    """
+    errors: list[str] = []
+    values = [str(v).strip() for v in expected if str(v).strip()]
+    title = title.strip()
+
+    for value in values:
+        if title and value != title and value in title:
+            errors.append(
+                f"{label}.expected_text「{value}」是 title「{title}」的子串 —— "
+                f"渲出来会出现两次，必然违反 visual-qa 的 required_text"
+                f"「整图恰好一次」硬门。请改写 title 使其不含任何标签词"
+            )
+    for i, a in enumerate(values):
+        for j, b in enumerate(values):
+            if i < j and (a in b or b in a):
+                errors.append(
+                    f"{label}.expected_text 存在互相包含的两条：「{a}」与「{b}」—— "
+                    f"短的那条会被判出现两次。请改写成互不包含的措辞"
+                )
+    return errors
+
+
+def _layout_negative_phrasing_errors(label: str, layout: str) -> list[str]:
+    """layout 用否定式描述构图 → 生图模型基本无视，白渲一轮。"""
+    if not layout:
+        return []
+    hit = _LAYOUT_NEGATIVE_PATTERNS.search(layout)
+    if not hit:
+        return []
+    return [
+        f"{label}.layout 含否定式措辞「{hit.group(0)}」—— 生图模型对 no/不要 这类"
+        f"指令基本不敏感（实测连写三轮 no sign board / no rounded plate，模型照样加底板；"
+        f"改成正面描述「像标题那样的独立立体黏土字」当轮即对）。"
+        f"请改写成**正面描述你要什么**，而不是列举不要什么"
+    ]
+
+
+def _layout_node_label_errors(label: str, layout: str) -> list[str]:
+    """layout 提到节点数量却没声明节点无文字 → 模型给每个节点复制一遍标签。"""
+    if not layout:
+        return []
+    hit = _LAYOUT_NODE_COUNT.search(layout)
+    if not hit or _LAYOUT_NODE_TEXTFREE.search(layout):
+        return []
+    return [
+        f"{label}.layout 描述了节点数量「{hit.group(0)}」，但未声明节点本身不带文字 —— "
+        f"模型会给每个节点各贴一遍标签（实测 eight ordered stops 把同一个词渲了 8 遍）。"
+        f"请补一句正面声明，如「Individual blocks carry no text at all」或"
+        f"「Text appears in exactly N places: ...」"
+    ]
+
+
 def _nonempty_list(value: object) -> bool:
     return (
         isinstance(value, list)
@@ -156,6 +247,18 @@ def validate_visual_plan(plan: dict) -> list[str]:
                     errors.append(
                         f"{label}.expected_text[{text_index}] 疑似重复字：{value}"
                     )
+            # 🔴 2026-08-14 第 89 篇实跑新增：expected_text 之间、以及与 title 之间
+            #    不得互相包含。否则渲出来该词会出现两次，直接违反 visual-qa 的
+            #    required_text「整图恰好出现一次」硬门 —— 而这一刀要等图渲完才砍下来。
+            #    实测代价：标题「走量的和攻坚的」含标签「走量」「攻坚」，白渲 8 次。
+            #    纯字符串检查，没有任何理由留到渲染后才发现。
+            errors.extend(_text_overlap_errors(
+                label, str(item.get("title") or ""), item["expected_text"]
+            ))
+        # 🔴 layout 是原样进 prompt 的构图指令，下面两条来自同一次实跑的教训：
+        _layout_raw = str(item.get("layout") or "")
+        errors.extend(_layout_negative_phrasing_errors(label, _layout_raw))
+        errors.extend(_layout_node_label_errors(label, _layout_raw))
         if not _nonempty_list(item.get("facts")):
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")

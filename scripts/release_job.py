@@ -175,12 +175,34 @@ def adopt_final(
     }
 
     approval = cwd / "_draft-approval.md"
+    # 🔴 2026-08-14 第 89 篇实跑教训：这里的覆写会把作者拍板时说的话、当时定下的
+    #    取舍、几轮返工的原因整份冲掉 —— 那一次是人工发现后手抄回来的。
+    #    文档虽然提醒过「要写在另一个文件里」，但提醒挡不住既成事实：
+    #    走完整流程的文章，作者审读记录本来就写在 _draft-approval.md 里，
+    #    到 adopt-final 这一步才被覆盖，作者根本没有机会「提前写到别处」。
+    #    改为：覆写前若检测到非机器块内容，自动落存一份，绝不静默丢弃。
+    if approval.exists():
+        try:
+            previous = approval.read_text(encoding="utf-8")
+        except OSError:
+            previous = ""
+        if previous.strip() and "# 作者定稿接管" not in previous:
+            backup = cwd / "_draft-decisions.md"
+            stamp = _now_iso()
+            header = (
+                f"\n\n---\n\n"
+                f"## 自动存档：adopt-final 覆写前的 _draft-approval.md（{stamp}）\n\n"
+            )
+            with backup.open("a", encoding="utf-8") as handle:
+                handle.write(header + previous.rstrip() + "\n")
+
     approval.write_text(
         "# 作者定稿接管\n\n"
         "审批结论：通过\n"
         "来源：作者提供定稿\n"
         f"定稿 SHA-256：{sha256_file(final)}\n"
-        f"接管时间：{_now_iso()}\n",
+        f"接管时间：{_now_iso()}\n"
+        "\n> 原 _draft-approval.md 若含作者拍板记录，已自动存档到 _draft-decisions.md。\n",
         encoding="utf-8",
     )
     checkpoint, checkpoint_errors = write_checkpoint_receipt(

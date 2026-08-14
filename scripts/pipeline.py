@@ -1086,12 +1086,20 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     )
 
                 bd = verify_bold_density(text)
-                if bd.get("verdict") != "ok":
+                # 🔴 2026-08-14 放宽（sandy 拍板）：软硬双阈值。
+                #    'soft_over' = 略超软上限，只提示不阻断（"稍微超就超一点"）；
+                #    只有真刷屏（超硬上限）或整句加粗超额才拦。
+                _bd_verdict = bd.get("verdict")
+                if _bd_verdict in ("bold_over", "integral_bold_violation",
+                                   "both_violations"):
                     errors.append(
-                        f"verify_bold_density verdict={bd.get('verdict')} "
-                        f"({bd.get('bold_count', 0)}/{bd.get('bold_limit', 0)}，"
-                        f"整段加粗 {bd.get('integral_bold_count', 0)})"
+                        f"verify_bold_density verdict={_bd_verdict} "
+                        f"({bd.get('bold_count', 0)}/硬上限 {bd.get('bold_hard_limit', 0)}，"
+                        f"整句加粗 {bd.get('integral_bold_count', 0)}/"
+                        f"{bd.get('integral_bold_allowance', 0)})"
                     )
+                elif _bd_verdict == "soft_over":
+                    print(f"   ℹ️ {bd.get('notes', '')}")
 
                 # H2/part_subtitles 对齐（前移自 format_layout exit 3 —— 写完正文即拦，
                 # 不要等到排版阶段才发现漏写标题）

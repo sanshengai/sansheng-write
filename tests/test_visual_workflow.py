@@ -49,11 +49,11 @@ def _plan() -> dict:
                 "id": "03",
                 "position": "middle",
                 "aspect_ratio": "16:9",
-                "title": "发布硬门",
+                "title": "三道关卡",
                 "layout_type": "hub-spoke",
                 "layout": "flow",
                 "anchor": "中段锚点二",
-                "expected_text": ["预检", "发布", "读回"],
+                "expected_text": ["预检", "推送", "读回"],
                 "facts": ["三步必须由一个命令完成"],
             },
             {
@@ -409,8 +409,9 @@ def test_long_chinese_layout_is_rejected(tmp_path):
     # 英文长描述无害：实测 538 字英文一次成功
     plan["infographics"][0]["layout"] = (
         "Use one clean S-shaped roadmap with exactly five text slots: the title once "
-        "at the top and the four allowlisted labels once along the road. Never add "
-        "secondary captions, explanatory sentences, repeated labels or blank text cards."
+        "at the top and the four allowlisted labels once along the road. Every text "
+        "slot holds exactly one allowlisted string, rendered as plain raised letters "
+        "resting directly on the road surface."
     )
     assert not [e for e in validate_visual_plan(plan) if "layout 含" in e]
 

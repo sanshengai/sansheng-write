@@ -40,6 +40,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from visual_qa import _fully_segmented_by_allowed  # noqa: E402
+
 # 走 ChatGPT 账号的 codex 只放行部分模型 —— `gpt-5.6-codex` 会被服务端 400 拒掉
 # （"not supported when using Codex with a ChatGPT account"），别照抄历史文章里记的那个名字。
 DEFAULT_MODEL = "gpt-5.6-terra"
@@ -486,10 +489,18 @@ def main() -> int:
             for t in by_path[rel].get("expected_text") or []
             if _normalized(t)
         }
+        # 🔴 2026-08-14：这里原本只做「等值或子串」判断，比 visual_qa.py 那份更弱 ——
+        #    封面底栏把 tag1/tag2 排成「选型 / 盘点」，OCR 连读成一项时，
+        #    既不等值也不是任何单条的子串，于是判成「白名单外文字」。
+        #    同一份缺陷在两处实现里各写了一遍，改了 visual_qa.py 这边照样卡。
+        #    统一复用 visual_qa.py 的 `_fully_segmented_by_allowed`（含模板分隔符跳过），
+        #    消除逻辑分叉，避免下次只改一处又漏。
         unexpected = [
             value
             for value in observed
-            if value and not any(value == item or value in item for item in allowed)
+            if value
+            and not any(value == item or value in item for item in allowed)
+            and not _fully_segmented_by_allowed(value, allowed)
         ]
         missing = [
             t

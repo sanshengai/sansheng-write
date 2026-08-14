@@ -1309,52 +1309,79 @@ def verify_pos_ratio(text: str, sample_chars: int = 300) -> dict:
 # ============================================================================
 # v5 新增（45 号实跑暴露 P1-4/P1-5）：verify_bold_density
 # 关联：writing.md §加粗与重点标识 C3 + iron-rules.md 严禁整句加粗
-# 标准（按字数档）：
-#   <3000 字  → 粗体 ≤25  / 粗斜体 ≤5
-#   3000-5000 → 粗体 ≤35  / 粗斜体 ≤7
-#   5000-8000 → 粗体 ≤45  / 粗斜体 ≤9
-#   >8000     → 粗体 ≤55  / 粗斜体 ≤12
-# 整句加粗（≥15 中文字符的 **...** 块）：严禁，>0 即违规
+#
+# 🔴 2026-08-14 放宽（sandy 拍板）：原来是「按字数分四档 + 固定上限 + 超一个就 exit」，
+#    89 号实跑暴露两个真问题：
+#    ① 档位是阶跃的 —— 4973 字上限 35、5001 字上限 45，多写两句话上限突然涨 10，
+#       写作期得围着档位边界打转，这是被工具牵着走。
+#    ② 硬门没有弹性 —— 超 1 处和超 30 处同样判死，逼着为凑指标去删有用的标识。
+#    作者原话：「不要把字数限得那么死，稍微超就超一点，可以给个更宽泛的范围……
+#    重点标识每次都卡着一个很死的闸门，没有太大必要性。」
+#
+#    改为：**按字数线性折算 + 软硬双阈值**
+#      软上限 = max(30, 每千中文字 10 处)   → 超了只提示，不阻断
+#      硬上限 = 软上限 × 1.5               → 真刷屏才拦（exit）
+#    整句加粗：阈值 15 → 20 中文字符，且允许 ≤2 处（金句节拍器本来就该有位置），
+#             >2 处才判违规。
+#    保留拦截的初衷不变：防「满屏加粗等于没有加粗」，不是防「多标了两个词」。
 # ============================================================================
 
-def verify_bold_density(text: str, integral_threshold_chars: int = 15) -> dict:
+# 每千中文字允许的粗体处数（软上限的折算系数）
+_BOLD_PER_1K = 10
+# 软上限保底值（短文不至于被压到没有标识可用）
+_BOLD_SOFT_FLOOR = 30
+# 硬上限 = 软上限 × 此系数（真·刷屏才阻断）
+_BOLD_HARD_RATIO = 1.5
+# 整句加粗允许保留的处数（留给金句，超出才算违规）
+_INTEGRAL_BOLD_ALLOWANCE = 2
+
+
+def verify_bold_density(text: str, integral_threshold_chars: int = 20) -> dict:
     """
     校验 markdown 文本的粗体密度 + 整句加粗违规。
 
     :param text: 待检测的 markdown 全文
-    :param integral_threshold_chars: 「整句加粗」的中文字符阈值（默认 15）
+    :param integral_threshold_chars: 「整句加粗」的中文字符阈值（默认 20）
     :return: {
         'word_count': 中文字符数,
         'tier': '<3000' | '3000-5000' | '5000-8000' | '>8000',
-        'bold_limit': 粗体上限,
-        'italic_bold_limit': 粗斜体上限,
+        'bold_limit': 粗体软上限（超了提示不阻断）,
+        'bold_hard_limit': 粗体硬上限（超了才阻断）,
+        'italic_bold_limit': 粗斜体软上限,
         'bold_count': 实际粗体数,
         'italic_bold_count': 实际粗斜体数,
         'integral_bold_count': 整句加粗数（≥阈值字符的粗体）,
+        'integral_bold_allowance': 整句加粗允许处数,
         'integral_bold_samples': 前 3 个违规整句样本,
-        'verdict': 'ok' | 'bold_over' | 'integral_bold_violation' | 'both_violations',
+        'verdict': 'ok' | 'soft_over'（提示级）| 'bold_over' | 'integral_bold_violation'
+                   | 'both_violations',
         'notes': str,
     }
+
+    ⚠️ 调用方约定：只有 verdict 属于 {'bold_over', 'integral_bold_violation',
+       'both_violations'} 才阻断；'soft_over' 是提示级，不要当失败处理。
     """
     import re
 
     if not text or not isinstance(text, str):
         return {'verdict': 'invalid_input', 'notes': '输入为空'}
 
-    # 1. 中文字数（按档）
+    # 1. 中文字数 → 线性折算软上限（tier 仅保留作展示，不再决定上限）
     word_count = len(re.findall(r'[一-鿿]', text))
     if word_count < 3000:
         tier = '<3000'
-        bold_limit, italic_bold_limit = 25, 5
     elif word_count < 5000:
         tier = '3000-5000'
-        bold_limit, italic_bold_limit = 35, 7
     elif word_count < 8000:
         tier = '5000-8000'
-        bold_limit, italic_bold_limit = 45, 9
     else:
         tier = '>8000'
-        bold_limit, italic_bold_limit = 55, 12
+
+    bold_limit = max(_BOLD_SOFT_FLOOR, round(word_count / 1000 * _BOLD_PER_1K))
+    bold_hard_limit = int(bold_limit * _BOLD_HARD_RATIO)
+    # 粗斜体按粗体的 1/5 折算，同样给保底
+    italic_bold_limit = max(6, round(bold_limit / 5))
+    italic_bold_hard_limit = int(italic_bold_limit * _BOLD_HARD_RATIO)
 
     # 2. 提取所有 ***粗斜体*** 和 **粗体**（粗斜体优先匹配）
     italic_bold_blocks = re.findall(r'\*\*\*[^*]+\*\*\*', text)
@@ -1372,37 +1399,58 @@ def verify_bold_density(text: str, integral_threshold_chars: int = 15) -> dict:
         if zh_in_b >= integral_threshold_chars:
             integral_bold.append(b)
 
-    # 4. 裁决
-    bold_over = bold_count > bold_limit
-    italic_over = italic_bold_count > italic_bold_limit
-    integral_violation = len(integral_bold) > 0
+    # 4. 裁决（软硬双阈值：软上限只提示，硬上限才阻断）
+    bold_soft_over = bold_count > bold_limit
+    bold_hard_over = bold_count > bold_hard_limit
+    italic_soft_over = italic_bold_count > italic_bold_limit
+    italic_hard_over = italic_bold_count > italic_bold_hard_limit
+    # 整句加粗留 allowance 个名额给金句，超出才算违规
+    integral_violation = len(integral_bold) > _INTEGRAL_BOLD_ALLOWANCE
 
-    if (bold_over or italic_over) and integral_violation:
+    hard_over = bold_hard_over or italic_hard_over
+    soft_over = bold_soft_over or italic_soft_over
+
+    if hard_over and integral_violation:
         verdict = 'both_violations'
     elif integral_violation:
         verdict = 'integral_bold_violation'
-    elif bold_over or italic_over:
+    elif hard_over:
         verdict = 'bold_over'
+    elif soft_over:
+        verdict = 'soft_over'          # 提示级，调用方不得当失败处理
     else:
         verdict = 'ok'
 
     notes_parts = []
-    if bold_over:
-        notes_parts.append(f'粗体 {bold_count} > 上限 {bold_limit}')
-    if italic_over:
-        notes_parts.append(f'粗斜体 {italic_bold_count} > 上限 {italic_bold_limit}')
+    if bold_hard_over:
+        notes_parts.append(f'粗体 {bold_count} > 硬上限 {bold_hard_limit}（刷屏）')
+    elif bold_soft_over:
+        notes_parts.append(f'粗体 {bold_count} 略超软上限 {bold_limit}（提示，不阻断）')
+    if italic_hard_over:
+        notes_parts.append(f'粗斜体 {italic_bold_count} > 硬上限 {italic_bold_hard_limit}')
+    elif italic_soft_over:
+        notes_parts.append(f'粗斜体 {italic_bold_count} 略超软上限 {italic_bold_limit}（提示）')
     if integral_violation:
-        notes_parts.append(f'整句加粗 {len(integral_bold)} 处（严禁）')
-    notes = '；'.join(notes_parts) if notes_parts else f'通过：粗体 {bold_count}/{bold_limit}，粗斜体 {italic_bold_count}/{italic_bold_limit}，无整句加粗'
+        notes_parts.append(
+            f'整句加粗 {len(integral_bold)} 处 > 允许 {_INTEGRAL_BOLD_ALLOWANCE} 处'
+        )
+    notes = '；'.join(notes_parts) if notes_parts else (
+        f'通过：粗体 {bold_count}/{bold_limit}（硬上限 {bold_hard_limit}），'
+        f'粗斜体 {italic_bold_count}/{italic_bold_limit}，'
+        f'整句加粗 {len(integral_bold)}/{_INTEGRAL_BOLD_ALLOWANCE}'
+    )
 
     return {
         'word_count': word_count,
         'tier': tier,
         'bold_limit': bold_limit,
+        'bold_hard_limit': bold_hard_limit,
         'italic_bold_limit': italic_bold_limit,
+        'italic_bold_hard_limit': italic_bold_hard_limit,
         'bold_count': bold_count,
         'italic_bold_count': italic_bold_count,
         'integral_bold_count': len(integral_bold),
+        'integral_bold_allowance': _INTEGRAL_BOLD_ALLOWANCE,
         'integral_bold_samples': [b[:60] for b in integral_bold[:3]],
         'verdict': verdict,
         'notes': notes,
