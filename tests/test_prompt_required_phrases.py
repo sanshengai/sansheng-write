@@ -135,7 +135,10 @@ COVER_META = {
              "accent": "全在这", "tag1": "选型", "tag2": "盘点"},
     "title": "十分钟补齐", "cover_style": "montage-evidence",
 }
-COVER_ITEM = {"visual_facts": ["模型盘点", "选型对比"]}
+# 🔴 visual_facts 刻意与五项文字零重叠：曾用「模型盘点/选型对比」当 fixture，
+#    tag1「选型」是「选型对比」的子串 —— 变异测试当场揭穿五项文字断言被架空
+#    （把 tags 从 prompt 里删掉，断言靠 facts 的子串照样绿）。
+COVER_ITEM = {"visual_facts": ["八条产品线到货", "评测速览"]}
 
 # 🔴 上限 2400 比信息图的 1700 宽：封面多背一份五项文字排印合同
 #    （三个画布锚定字号 + 胶囊规格 + accent 染色规则），每条都追溯到真 bug
