@@ -3056,6 +3056,47 @@ def _handoff_to_distribute(cwd: Path) -> bool:
     return True
 
 
+def cmd_podcast_pregen(cwd: Path):
+    """定稿冻结点预生成播客音频（2026-08-16 审计 P4）。
+
+    NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段、堵住后面的
+    官网同步（89 篇它一失败，官网晚了 5 小时）。本命令允许在**最后一个会改写
+    `定稿.md` 的机械步骤之后**（assemble-release 的信息图机器块 + BGM 的
+    AUDIO-CARD 都已注入）就后台把音频生出来；finalize 的 distribution 步靠
+    `podcast_episode.cmd_generate` 的预生成短路直接取件。
+
+    为什么闸在两个 marker 上：播客的漂移判据是 `定稿.md` 全文哈希
+    （distribute._is_drifted）。若在任一写入方之前预生成，digest 必然对不上，
+    finalize 只能重新生成一遍——预生成不但没省时间，还多烧一次 18 分钟。
+    """
+    sys.path.insert(0, str(Path(__file__).parent))
+    import distribute
+
+    if "podcast" not in distribute.enabled_channels():
+        print("⚠ podcast 渠道未启用（profile distribute 配置），无事可做")
+        return
+    final_md = cwd / "定稿.md"
+    if not final_md.is_file():
+        print("❌ 缺 定稿.md")
+        raise SystemExit(2)
+    text = final_md.read_text(encoding="utf-8")
+    gate_missing = []
+    if "<!-- SANSHENG-VISUAL-START:" not in text:
+        gate_missing.append("assemble-release 的信息图机器块")
+    if "<!-- AUDIO-CARD-START -->" not in text:
+        gate_missing.append("BGM 的 AUDIO-CARD")
+    if gate_missing:
+        print(f"❌ 定稿尚缺：{'、'.join(gate_missing)}——预生成必须晚于全部")
+        print("   会改写 定稿.md 的机械步骤，否则音频与最终定稿哈希不一致，")
+        print("   finalize 取件短路失效、还得重生成一遍。先走完视觉链与 BGM。")
+        raise SystemExit(2)
+    import podcast_episode
+    rc = podcast_episode.cmd_generate(cwd)
+    if rc == 0:
+        print("✓ 播客预生成完成；finalize 到 distribution 步会直接取件")
+    raise SystemExit(rc)
+
+
 def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     """收集所有「纯静态、不依赖昂贵操作」的检查结果。
 
@@ -3821,6 +3862,10 @@ def main():
     )
     p_dist.add_argument("rest", nargs=argparse.REMAINDER,
                         help="转发给 distribute.py 的参数")
+    sub.add_parser(
+        "podcast-pregen",
+        help="定稿冻结点后台预生成播客音频；finalize 到点直接取件（省 ~18 分钟阻塞）",
+    )
 
     # 同时接受 `--dir X finalize ...` 与 `finalize ... --dir X`，降低 Windows
     # 终端/自动化调用时“站错目录却读到缺 state”的概率。
@@ -3843,6 +3888,8 @@ def main():
         import distribute
         os.chdir(cwd)
         sys.exit(distribute.main(args.rest or ["status"]))
+    elif args.cmd == "podcast-pregen":
+        cmd_podcast_pregen(cwd)
     elif args.cmd == "init":
         cmd_init(cwd)
     elif args.cmd == "status":

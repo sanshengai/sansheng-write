@@ -56,6 +56,10 @@ python "$SKILL/scripts/pipeline.py" status
    - 只读 [release-runtime.md](release-runtime.md) 并按命令顺序执行。
    - 视觉业务规划在本 Skill 内完成；外部 `baoyu-image-gen` 只渲染像素。
    - BGM 是发布硬门。
+   - ⏱ **BGM 注入 AUDIO-CARD 后，立刻以后台任务跑 `pipeline.py podcast-pregen`**
+     （NotebookLM 生成 ~18 分钟，是收尾链最大阻塞项；预生成产物只写
+     `dist/podcast/` 专属车道，不与机械链单写者冲突）。finalize 到
+     distribution 步会自动取件；期间定稿若又被改动，取件短路失效、照常重生成。
    - 草稿创建只运行 `release-to-draft`。
 
 作者直接提供已确认定稿时，跳过 1--4，使用：

@@ -161,6 +161,26 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         log(f"✗ 找不到 {final_md}")
         return 2
 
+    # 🔴 2026-08-16 预生成短路（审计 P4）：`pipeline.py podcast-pregen` 允许在
+    #    定稿冻结点就后台生成音频（NotebookLM 实测 ~18 分钟，是 finalize 串行链
+    #    里最大的阻塞项，89 篇它一失败官网同步跟着晚了 5 小时）。finalize 到点
+    #    再调本函数时，只要「音频在 + 状态已 drafted/dispatched + source_digest
+    #    与当前定稿一致」就直接取件：不重进 NotebookLM，只把预生成时还拿不到的
+    #    永久链接补进 sidecar/shownotes。定稿在预生成后又被改过（digest 漂移）
+    #    则照常走完整生成——短路永远不会拿旧音频配新定稿。
+    out_dir = distribute.channel_dir(article_dir, "podcast")
+    mp3 = out_dir / "audio.mp3"
+    if (
+        mp3.is_file()
+        and mp3.with_suffix(".json").is_file()
+        and distribute.get_status(article_dir, "podcast") in {"drafted", "dispatched"}
+        and not distribute._is_drifted(article_dir, "podcast")
+    ):
+        log("✓ 已有与当前定稿一致的预生成音频，跳过生成（取件模式）")
+        refresh_sidecar_url(article_dir, mp3,
+                            smax=int(c.get("shownotes_max") or 800))
+        return 0
+
     prompt_path = Path(str(c.get("focus_prompt") or "")).expanduser()
     if not str(prompt_path) or not prompt_path.is_file():
         log("✗ profile 的 podcast.focus_prompt 未配置或文件不存在")
@@ -372,6 +392,43 @@ def write_sidecar(article_dir: Path, mp3: Path, title: str, c: dict) -> Path:
         log(f"⚠ {shownotes.name} 已存在且与本次内容不一致，未覆盖")
         log(f"  若不是你手动改的，删掉它重跑即可刷新（当前标题应为：{ep_title}）")
     return side
+
+
+def refresh_sidecar_url(article_dir: Path, mp3: Path, *, smax: int = 800) -> None:
+    """把预生成时还不存在的永久链接补进 sidecar / shownotes（取件模式专用）。
+
+    预生成发生在 release-to-draft 之前，`write_sidecar` 那时拿不到 wechat_url，
+    「原文：URL」这行就缺。finalize 取件时链接已登记，在这里补上。
+    shownotes 只在**仍是机器生成形态**（与旧 sidecar 逐字一致）时同步——
+    手改过的不动，与 write_sidecar 的不覆盖设计同构。
+    """
+    side = mp3.with_suffix(".json")
+    if not side.is_file():
+        return
+    url = distribute.read_wechat_url(article_dir)
+    if not url:
+        return
+    try:
+        data = json.loads(side.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    desc = str(data.get("description") or "")
+    if url in desc:
+        return
+    old_title = str(data.get("title") or "")
+    old_body = f"# {old_title}\n\n{desc}\n"
+    new_desc = f"{desc}\n\n原文：{url}".strip()[:smax]
+    data["description"] = new_desc
+    side.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
+    log("✓ sidecar 补写原文链接")
+    shownotes = mp3.parent / "shownotes.md"
+    if shownotes.is_file():
+        if shownotes.read_text(encoding="utf-8") == old_body:
+            shownotes.write_text(f"# {old_title}\n\n{new_desc}\n", encoding="utf-8")
+            log("✓ shownotes 补写原文链接")
+        else:
+            log("⚠ shownotes 已被手改，未自动补原文链接")
 
 
 # ===== publish =====

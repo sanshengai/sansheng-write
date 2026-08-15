@@ -93,6 +93,7 @@ python "$SKILL/scripts/pipeline.py" assemble-release
 ```
 
 2. 运行 `generate_article_bgm.py`，生成 MP3 并插入 AUDIO-CARD。
+   （提速）此后即可后台跑 `pipeline.py podcast-pregen` 预生成播客；finalize 到点直接取件，省 ~18 分钟。
 3. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
 4. 运行：
 
