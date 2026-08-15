@@ -177,6 +177,74 @@ def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[st
     return errors
 
 
+def _layout_composition_errors(
+    label: str, layout: str, aspect_ratio: str, expected: list[str]
+) -> list[str]:
+    """版式三条（2026-08-16 第 90 篇实跑新增 —— 单张图吃掉 7 次渲染的根因）。
+
+    前三条闸门管的是「文字会不会被渲坏」；这三条管的是**版式会不会诱导模型出错**，
+    是同源但不同层的问题。第 90 篇 infographic-03 连废 6 版，逐版归因：
+
+      v1  竖排三栏  → 标题被渲两遍（模型把整图标题当成第一栏的栏标题）
+      v2  竖排三栏  → 标题降格成栏标签，与另两条并列，语义层级塌了
+      v3  竖排三栏  → **中文竖着排**、桥体压着字（竖栏诱导竖排版）
+      v4  改横向    → 构图对了，但三栏只给两个标签 → 模型自己补一个，「各管一段」渲两遍
+      v5  补第三标签 → 通过，但河道横贯出血，crop_safe 被 QA 判失败
+      v6  加四边留白 → 全过
+
+    三条各自独立可测，且都只在「宽图 / 多分区」时触发，不影响单主体图。
+    """
+    if not layout:
+        return []
+    errors: list[str] = []
+    low = layout.lower()
+    ratio = str(aspect_ratio or "")
+
+    # ① 横图别写竖排结构：vertical bands / columns 会诱导模型把中文也竖排。
+    if ratio in {"16:9", "21:9", "2.35:1"}:
+        vertical = re.search(
+            r"\b(vertical (?:band|bands|strip|strips|column|columns|lane|lanes)|"
+            r"stacked vertically|from top to bottom of the frame|top-to-bottom)\b",
+            low,
+        )
+        if vertical:
+            errors.append(
+                f"{label}.layout 在 {ratio} 宽图里写了竖向结构「{vertical.group(0)}」——"
+                f"竖栏会诱导模型把中文也竖着排（第 90 篇实测：竖排三栏连废 3 版，"
+                f"其中一版整段中文竖排且被桥体压住）。宽图请写横向布局："
+                f"「runs horizontally across…」「three equal parts left to right」"
+            )
+
+    # ② 分区数必须等于标签数：少一个标签，模型会自己补一个（补出来的必然是重复现有标签）。
+    part_words = re.findall(
+        r"\b(?:in the )?(left|middle|centre|center|right)\s+(?:part|third|band|zone|area|section)\b",
+        low,
+    )
+    parts = {w.replace("centre", "middle").replace("center", "middle") for w in part_words}
+    labels = [str(x).strip() for x in (expected or []) if str(x).strip()]
+    if len(parts) >= 2 and labels and len(labels) < len(parts):
+        errors.append(
+            f"{label}.layout 划出了 {len(parts)} 个视觉分区（{sorted(parts)}），"
+            f"但 expected_text 只有 {len(labels)} 条标签 —— 模型会给没标签的那个分区"
+            f"**自己补一个**，补出来的通常是重复某条现有标签（第 90 篇实测：三栏两标签，"
+            f"「各管一段」被渲了两遍）。每个分区各给一条专属标签，或把分区合并"
+        )
+
+    # ③ 主体横贯到边 = crop_safe 必挂：微信正文两侧还会再裁一次。
+    edge = re.search(
+        r"\b(from the left edge to the right edge|edge to edge|across the (?:full|entire) (?:frame|width)|"
+        r"spans the whole frame|fills the frame)\b",
+        low,
+    )
+    if edge:
+        errors.append(
+            f"{label}.layout 让主体「{edge.group(0)}」横贯到画面边缘 —— crop_safe 会判失败"
+            f"（第 90 篇实测：河道贯到边，QA 当场打回）。改成「a generous band of empty "
+            f"ivory clay frames all four edges」这类**先留白再放主体**的写法"
+        )
+    return errors
+
+
 def _layout_negative_phrasing_errors(label: str, layout: str) -> list[str]:
     """layout 用否定式描述构图 → 生图模型基本无视，白渲一轮。"""
     if not layout:
@@ -425,6 +493,12 @@ def validate_visual_plan(plan: dict) -> list[str]:
         errors.extend(_layout_concrete_subject_errors(label, _layout_raw))
         # 与上一条同源：物象要具体，但不能是自带文字的物件（2026-08-16 实证）
         errors.extend(_layout_textual_prop_errors(label, _layout_raw))
+        # 第四类：版式（横图别竖排 / 分区数=标签数 / 主体别贴边）——
+        # 前三类管「文字被渲坏」，这一类管「版式诱导模型出错」（第 90 篇 7 次渲染的根因）
+        errors.extend(_layout_composition_errors(
+            label, _layout_raw, str(item.get("aspect_ratio") or ""),
+            [str(x) for x in (item.get("expected_text") or [])],
+        ))
         if not _nonempty_list(item.get("facts")):
             errors.append(f"{label}.facts 必须是非空字符串列表")
         position = str(item.get("position") or "")

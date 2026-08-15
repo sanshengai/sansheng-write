@@ -5,15 +5,21 @@
   "_comment_3_layout_中文上限": "🔴 layout 写英文或短标签，中文上限 24 字（编译器会拦）。它原样进 prompt 的 SCENE 段，模型看见中文就会照着画进图里 —— 实测 layout 中文 0 字的图一次成功，108 字那张连废 4 版（其中一版把 layout 里的『训练和比赛』画成了图上标签），181 字那张多画出『污染』。英文长描述无害，写多少都行，而且越具体越好。",
   "_comment_5_占位内容是实测样本": "下面四张的 title / expected_text / layout 不是虚构占位，而是 2026-08-15 对照实验里实测首过率 83-100% 的真实样本。照着这个**形状**写自己的内容即可：标题与标签之间最多共享 1 个字，layout 里一定有能画出来的东西。",
   "_comment_4_不要写否定式": "🔴 别写 no / not / 不要 / 禁止 —— 扩散模型对否定式基本不敏感（实测连写三轮 no sign board / no rounded plate，模型照样加底板）。要什么就正面描述什么。唯一例外是收尾那句『these carry no text』，它有实测效果，编译器已内置，不用你写。",
+  "_comment_6_版式三条": "🔴 2026-08-16 第 90 篇实跑新增（单张图吃掉 7 次渲染的根因，编译器会拦）。前面几条管「文字会不会被渲坏」，这三条管「版式会不会诱导模型出错」：① **宽图别写竖排结构**：16:9/2.35:1 里写 vertical bands / from top to bottom，会诱导模型把中文也竖着排（实测连废 3 版，其中一版整段中文竖排还被桥体压住）；宽图写 「runs horizontally across…」「three equal parts left to right」。② **分区数必须等于标签数**：layout 划了三个分区却只给两条 expected_text，模型会给空的那个**自己补一个**，补出来的通常是重复现有标签（实测「各管一段」被渲两遍）。③ **主体别贴边**：写 from the left edge to the right edge / fills the frame，crop_safe 必挂（微信正文两侧还会再裁一次）。改成先留白再放主体：「a generous band of empty ivory clay frames all four edges. Inside that margin sits one diorama…」",
   "schema_version": 1,
   "cover": {
     "title": "逐字填写封面标题",
     "subtitle": "可选副标题",
-    "visual_facts": ["视觉事实一", "视觉事实二"]
+    "visual_facts": [
+      "视觉事实一",
+      "视觉事实二"
+    ]
   },
   "hero": {
     "title": "Hero 标题",
-    "visual_facts": ["核心概念"]
+    "visual_facts": [
+      "核心概念"
+    ]
   },
   "infographics": [
     {
@@ -24,8 +30,13 @@
       "layout_type": "linear-progression",
       "layout": "A tall smooth clay column stands down the centre of the frame. Five small clay robots stand in a column to its left, each holding up a tiny pennant; three more of the same robots stand to its right. The robots, pennants and column are smooth blank clay.",
       "anchor": "定稿中唯一的一句开篇锚句（图片插在这句之后）",
-      "expected_text": ["中国五个", "美国三个"],
-      "facts": ["已核实事实"]
+      "expected_text": [
+        "中国五个",
+        "美国三个"
+      ],
+      "facts": [
+        "已核实事实"
+      ]
     },
     {
       "id": "02",
@@ -35,8 +46,13 @@
       "layout_type": "binary-comparison",
       "layout": "On the left, a dozen small clay workers each push a loaded cart in loose rows. On the right, one large clay machine with a conveyor belt, tended by a single worker. Both sit on their own low clay platform.",
       "anchor": "定稿中唯一的一句中段锚句",
-      "expected_text": ["走量", "攻坚"],
-      "facts": ["已核实事实"]
+      "expected_text": [
+        "走量",
+        "攻坚"
+      ],
+      "facts": [
+        "已核实事实"
+      ]
     },
     {
       "id": "03",
@@ -46,8 +62,13 @@
       "layout_type": "hub-spoke",
       "layout": "A wide clay road runs across the upper half with small cars moving along it. A second road runs across the lower half, broken in the middle where a little bridge has collapsed into rubble, with a tiny worker standing at the gap.",
       "anchor": "定稿中唯一的另一句中段锚句",
-      "expected_text": ["快线更新了", "主力线未动"],
-      "facts": ["已核实事实"]
+      "expected_text": [
+        "快线更新了",
+        "主力线未动"
+      ],
+      "facts": [
+        "已核实事实"
+      ]
     },
     {
       "id": "04",
@@ -57,8 +78,13 @@
       "layout_type": "winding-roadmap",
       "layout": "In the upper left, three small clay houses sit on a fresh smooth foundation slab and a tiny clay worker slides the third one into place. In the lower right, five identical houses sit on an older cracked slab with weeds at its edge.",
       "anchor": "定稿中唯一的一句结尾锚句",
-      "expected_text": ["换了三个", "没换五个"],
-      "facts": ["已核实事实"]
+      "expected_text": [
+        "换了三个",
+        "没换五个"
+      ],
+      "facts": [
+        "已核实事实"
+      ]
     }
   ]
 }

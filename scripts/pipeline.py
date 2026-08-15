@@ -3245,6 +3245,69 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
         except Exception as exc:
             add("warn", "visual-plan.json", f"检查异常：{exc}")
 
+    # --- 9. 裸 URL 前移（2026-08-16 第 90 篇实跑：这条本来只在 format_layout 报，
+    #        每报一次就要重转一次 HTML 再重排，实测吃掉一整轮 ≈ 8 分钟）---
+    if text:
+        # Markdown 版等价检查：正文里的完整 URL 必须在 link-card / deep-read 块内。
+        stripped = re.sub(r"<section[^>]*>.*?</section>", "", text, flags=re.S)
+        stripped = re.sub(r"<!--.*?-->", "", stripped, flags=re.S)
+        stripped = re.sub(r"\[[^\]]*\]\([^)]*\)", "", stripped)      # MD 链接语法不算裸露
+        stripped = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", stripped)
+        bare = re.findall(
+            r"(?<![\w./@-])(?:https?://)?[\w-]+(?:\.[\w-]+)*"
+            r"\.(?:com|cn|net|org|top|io|dev|app|ai|co|xyz|me)/[^\s<>\"'()（）【】，。、；]+",
+            stripped,
+        )
+        add("ok" if not bare else "fail", "裸 URL（前移自排版门）",
+            "无裸露 URL" if not bare
+            else f"{len(bare)} 处未走 link-card/deep-read：{bare[0][:60]} —— "
+                 f"排版门也会拦，现在改省一轮重排")
+
+    # --- 10. DEEP READ 入口兑现（同上，前移自 format_layout 的发布前素材门）---
+    if text and "SANSHENG-DEEP-READ" in text:
+        try:
+            from profile_config import identity
+            site = str((identity() or {}).get("site") or "").strip()
+        except Exception:
+            site = ""
+        if site:
+            # 取 DEEP READ 标记之后、下一个机器块标记（SOURCES 等）之前的整段。
+            # 🔴 别用 `.*?</section>` 非贪婪切：DEEP READ 卡内部有多层嵌套 section，
+            #    第一个 </section> 出现在站点入口之前，会把入口切掉 → 正例被误判 fail
+            #    （本检查的首版就这么挂了一条测试）。
+            start = text.find("<!-- SANSHENG-DEEP-READ -->")
+            rest = text[start:]
+            nxt = re.search(r"<!-- SANSHENG-(?!DEEP-READ)", rest)
+            block = rest[: nxt.start()] if nxt else rest
+            has = site.replace("https://", "").replace("http://", "").rstrip("/") in block
+            add("ok" if has else "fail", "DEEP READ 入口",
+                "已含自有阵地入口" if has
+                else f"缺 profile 声明的入口 {site} —— 排版门会拦，现在补省一轮重排")
+
+    # --- 11. 信息图锚点段落边界（前移自 assemble-release：锚点若在段落中间，
+    #        装配会把整段劈成两半，判定为「改变作者正文」而拒绝写入）---
+    if text and plan_path.exists():
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            bad = []
+            for item in plan.get("infographics") or []:
+                anchor = str(item.get("anchor") or "")
+                if not anchor:
+                    continue
+                hits = [m for m in re.finditer(re.escape(anchor), text)]
+                if len(hits) != 1:
+                    bad.append(f"{item.get('id')}:命中{len(hits)}次")
+                    continue
+                end = hits[0].end()
+                tail = text[end:end + 2]
+                if tail and not tail.startswith("\n\n") and tail.strip():
+                    bad.append(f"{item.get('id')}:锚点在段落中间")
+            add("ok" if not bad else "fail", "信息图锚点",
+                "全部唯一且落在段末" if not bad
+                else f"{'、'.join(bad)} —— assemble-release 会拒绝装配（改变作者正文）")
+        except Exception as exc:
+            add("warn", "信息图锚点", f"检查异常：{exc}")
+
     return results
 
 
