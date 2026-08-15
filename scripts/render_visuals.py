@@ -60,6 +60,61 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+ATTEMPT_LOG = "素材/.render-attempts.jsonl"
+
+
+def attempt_log_path(cwd: Path) -> Path:
+    return cwd / "素材" / ".render-attempts.jsonl"
+
+
+def read_attempts(cwd: Path) -> list[dict]:
+    """读全部历史尝试记录。文件不存在或有坏行都不抛错 —— 它是观测数据，
+    永远不该成为渲染链路失败的原因。"""
+    path = attempt_log_path(cwd)
+    if not path.is_file():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:                                     # noqa: BLE001
+            continue
+    return rows
+
+
+def next_seq(rows: list[dict], label: str) -> int:
+    """该 label 在本文累计的下一个渲染序号（从 1 起）。"""
+    return sum(1 for r in rows if r.get("label") == label) + 1
+
+
+def log_attempt(cwd: Path, record: dict) -> None:
+    """追加一条尝试记录。
+
+    🔴 2026-08-16 新增。此前整条视觉链路对「重渲」是**完全盲的**：
+    `.gen-log.jsonl` 只追加成功的那次，`_visual-qa.json` 只保存最终通过的那版，
+    `render-receipt.json` 的 attempts 只到整批粒度。于是「某张图渲了几次、
+    每次为什么不合格、是谁判的」一条都查不到。
+
+    代价是实打实的：为了搞清楚 45 次生图里哪些是必要的，只能靠 60 张手工
+    对照实验去反推 —— 而这些数据本该在跑的时候就落下来。
+    无法测量就无法改进，这个文件就是为了让下一次不必再手工反推。
+
+    刻意做成**跨调用累积、永不清空**：重渲的定义本身就跨越多次命令调用，
+    每次调用清一次等于把要测的东西抹掉。
+    """
+    path = attempt_log_path(cwd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:                                         # noqa: BLE001
+        # 观测失败绝不拖垮渲染
+        pass
+
+
 def prompt_body(text: str) -> str:
     """canonical prompt 里真正该发给图像模型的那部分（剥掉 YAML frontmatter）。"""
     return text.split("---", 2)[-1].lstrip() if text.startswith("---") else text
@@ -624,6 +679,9 @@ def render_visuals(
     written_records: dict[str, dict[str, Any]] = {}
     attempt_reports: list[dict[str, Any]] = []
     last_errors: dict[str, str] = {}
+    # 本次命令调用的标识：尝试日志靠它把「一次调用内的多轮 policy 重试」
+    # 和「跨调用的人工重渲」区分开 —— 前者是自动降级，后者才是真正的返工。
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     def persist_success(task_id: str, result: dict[str, Any]) -> dict[str, Any]:
         """A successful render is evidence even when another task later fails.
@@ -736,6 +794,17 @@ def render_visuals(
         next_pending = []
         for task_id in pending:
             result = by_id.get(task_id)
+            history = read_attempts(cwd)
+            trace = {
+                "kind": "render",
+                "ts": _now(),
+                "label": task_id,
+                "seq": next_seq(history, task_id),
+                "run_id": run_id,
+                "attempt_id": attempt_number,
+                "policy_id": renderer["id"],
+                "model": renderer.get("model") or "",
+            }
             if result and result.get("success"):
                 success = {
                     **result,
@@ -749,6 +818,15 @@ def render_visuals(
                     next_pending.append(task_id)
                     successes.pop(task_id, None)
                     last_errors[task_id] = str(exc)
+                    log_attempt(cwd, {**trace, "outcome": "validation_failed",
+                                      "error": str(exc)[:300]})
+                else:
+                    record = written_records.get(task_id) or {}
+                    log_attempt(cwd, {
+                        **trace, "outcome": "ok",
+                        "output_sha256": record.get("output_sha256", ""),
+                        "prompt_sha256": record.get("prompt_sha256", ""),
+                    })
             else:
                 next_pending.append(task_id)
                 last_errors[task_id] = (
@@ -756,6 +834,8 @@ def render_visuals(
                     if result
                     else f"renderer 无结构化结果（exit={returncode}）"
                 )
+                log_attempt(cwd, {**trace, "outcome": "renderer_failed",
+                                  "error": last_errors[task_id][:300]})
         attempt_reports.append(
             {
                 "attempt_id": attempt_number,

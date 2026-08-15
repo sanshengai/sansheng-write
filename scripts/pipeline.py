@@ -3337,12 +3337,133 @@ def cmd_visual_qa(cwd: Path) -> None:
     from visual_qa import run_visual_qa
 
     qa, errors = run_visual_qa(cwd)
+    _log_qa_verdict(cwd, qa, errors)
     if errors:
         print("❌ 视觉 QA 未通过：")
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
     print(f"✅ 独立视觉 QA 通过：{len(qa['assets'])} 张最终图片")
+
+
+def summarize_render_attempts(rows: list) -> dict:
+    """把尝试日志汇总成「每张渲了几次 / 浪费了多少」。
+
+    必要量 = 图数（每张至少渲一次）。浪费 = 实际渲染数 − 必要量。
+    第 89 篇的真实数字是 45 次调用、6 张图 —— 浪费 39 次，占 87%。
+    那次是靠事后手工数出来的；有了这个函数就不用再数。
+    """
+    renders = [r for r in rows if r.get("kind") == "render"]
+    qa_rows = [r for r in rows if r.get("kind") == "qa_verdict"]
+    per_label: dict[str, dict] = {}
+    for r in renders:
+        label = str(r.get("label") or "?")
+        slot = per_label.setdefault(
+            label, {"renders": 0, "ok": 0, "failed": 0, "qa_fail": 0,
+                    "models": set(), "distinct_outputs": set()})
+        slot["renders"] += 1
+        if r.get("outcome") == "ok":
+            slot["ok"] += 1
+            if r.get("output_sha256"):
+                slot["distinct_outputs"].add(r["output_sha256"])
+        else:
+            slot["failed"] += 1
+        if r.get("model"):
+            slot["models"].add(r["model"])
+    for r in qa_rows:
+        label = str(r.get("label") or "?")
+        if label in per_label and r.get("outcome") == "fail":
+            per_label[label]["qa_fail"] += 1
+    total = len(renders)
+    needed = len(per_label)
+    return {
+        "total_renders": total,
+        "assets": needed,
+        "necessary": needed,
+        "wasted": max(0, total - needed),
+        "waste_ratio": (total - needed) / total if total else 0.0,
+        "per_label": {
+            k: {**v, "models": sorted(v["models"]),
+                "distinct_outputs": len(v["distinct_outputs"])}
+            for k, v in sorted(per_label.items())
+        },
+    }
+
+
+def cmd_render_stats(cwd: Path) -> None:
+    """打印本篇的生图重渲统计。数据源是 素材/.render-attempts.jsonl（累积）。"""
+    from render_visuals import ATTEMPT_LOG, read_attempts
+
+    rows = read_attempts(cwd)
+    if not rows:
+        print(f"暂无渲染尝试记录（{ATTEMPT_LOG} 还没有内容）")
+        print("  它从 2026-08-16 起才开始记录；更早的文章查不到历史。")
+        return
+    s = summarize_render_attempts(rows)
+    print("=== 生图重渲统计 ===")
+    print(f"  实际渲染 {s['total_renders']} 次 ｜ 图 {s['assets']} 张 ｜ "
+          f"必要量 {s['necessary']} 次 ｜ 浪费 {s['wasted']} 次"
+          f"（{s['waste_ratio'] * 100:.0f}%）")
+    print()
+    print(f"  {'图':22} {'渲染':>4} {'成功':>4} {'失败':>4} {'QA打回':>6} {'不同产物':>8}")
+    print("  " + "-" * 56)
+    for label, v in s["per_label"].items():
+        print(f"  {label[:20]:22} {v['renders']:4} {v['ok']:4} {v['failed']:4} "
+              f"{v['qa_fail']:6} {v['distinct_outputs']:8}")
+    worst = max(s["per_label"].items(), key=lambda kv: kv[1]["renders"],
+                default=None)
+    if worst and worst[1]["renders"] > 1:
+        print()
+        print(f"  最费的一张：{worst[0]}（{worst[1]['renders']} 次）")
+        print("  排查顺序按实测收益：frontmatter 是否泄漏 → SCENE 有没有具体物象 → "
+              "文字之间是否共享 ≥2 字 → layout 有没有自带文字的物件")
+
+
+def _log_qa_verdict(cwd: Path, qa, errors: list) -> None:
+    """把 QA 判定追加进渲染尝试日志。
+
+    🔴 这是「重渲」信号里最关键的一半：图渲成功了、但被判不合格，于是又渲一次。
+    `_visual-qa.json` 只保存最终通过的那一版，失败的判定连同原因一起消失 ——
+    结果就是没人知道某张图被打回过几次、为什么被打回。
+
+    渲染侧的 log_attempt 记的是「渲了几次」，这里记的是「为什么还要再渲」。
+    两者拼起来才能回答「45 次里哪些是必要的」。
+    """
+    try:
+        from render_visuals import log_attempt, next_seq, read_attempts
+    except ImportError:                                       # pragma: no cover
+        return
+    try:
+        history = read_attempts(cwd)
+        assets = (qa or {}).get("assets") or []
+        # 逐张记：哪张图的哪几项检查没过
+        for asset in assets:
+            label = Path(str(asset.get("path") or "")).stem or "?"
+            checks = asset.get("checks") or {}
+            failed = sorted(
+                name for name, value in (checks.items()
+                                         if isinstance(checks, dict) else [])
+                if (value.get("pass") if isinstance(value, dict) else value) is False
+            )
+            log_attempt(cwd, {
+                "kind": "qa_verdict",
+                "ts": _now_iso(),
+                "label": label,
+                "seq": next_seq(history, label),
+                "outcome": "fail" if failed else "ok",
+                "failed_checks": failed,
+                "reviewer": str(((qa or {}).get("reviewer") or {}).get("model") or ""),
+            })
+        # 结构性错误（缺记录、字节不符…）不挂在某一张上，单独记一条
+        if errors and not assets:
+            log_attempt(cwd, {
+                "kind": "qa_verdict", "ts": _now_iso(), "label": "(batch)",
+                "seq": 0, "outcome": "fail",
+                "errors": [str(e)[:200] for e in errors[:10]],
+            })
+    except Exception:                                         # noqa: BLE001
+        # 观测失败绝不改变 QA 的判定结果
+        pass
 
 
 def cmd_release_to_draft(cwd: Path) -> None:
@@ -3657,6 +3778,10 @@ def main():
         help="调用独立看图进程，生成结构化 _visual-qa.json",
     )
     sub.add_parser(
+        "render-stats",
+        help="本篇生图重渲统计（每张渲了几次、浪费多少、谁最费）",
+    )
+    sub.add_parser(
         "release-to-draft",
         help="唯一草稿发布入口：预检 → draft/add → draft/get → 远端凭证",
     )
@@ -3768,6 +3893,8 @@ def main():
         cmd_select_visuals(cwd, args.selections)
     elif args.cmd == "visual-qa":
         cmd_visual_qa(cwd)
+    elif args.cmd == "render-stats":
+        cmd_render_stats(cwd)
     elif args.cmd == "release-to-draft":
         cmd_release_to_draft(cwd)
     elif args.cmd == "skip":
