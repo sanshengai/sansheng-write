@@ -158,6 +158,49 @@ def extract_section(md_text: str, section_title: str) -> str:
     return "\n".join(out).strip()
 
 
+def _voice_excerpt(text: str, budget: int = 6000) -> str:
+    """作者声纹样本取「最近」的一段预算，而不是最旧的。
+
+    2026-08-16 审计：learn_edits 往**尾部**追加新样本，而这里旧实现取
+    `text[:6000]`（头部）——新样本永不可见，窗口里 56% 是同一篇旧文。
+    顺带剥两类纯噪声：微信导出残留的 HTML 行、重复的同名小节标题
+    （同一批追加的段落共享一行标题，重复 28 次实测占掉近 600 字符预算）。
+    """
+    import re as _re
+
+    lines = []
+    seen_headers: set[str] = set()
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("<") and not s.startswith("<!--"):
+            continue  # 微信 HTML 残渣
+        if s.startswith("## "):
+            if s in seen_headers:
+                continue
+            seen_headers.add(s)
+        lines.append(line)
+    cleaned = "\n".join(lines)
+    if len(cleaned) <= budget:
+        return cleaned
+    # 从尾部往前按「## 」小节边界凑预算，保住段落完整性
+    sections = _re.split(r"(?m)^(?=## )", cleaned)
+    picked: list[str] = []
+    total = 0
+    for sec in reversed(sections):
+        if picked and total + len(sec) > budget:
+            break
+        picked.insert(0, sec)
+        total += len(sec)
+    excerpt = "".join(picked)
+    return excerpt[-budget:] if len(excerpt) > budget else excerpt
+
+
+def _toolbox_body(text: str) -> str:
+    """《反 AI 写作工具箱》只留 A/B/C 规则本体，剥掉尾部元说明与沿革。"""
+    idx = text.find("## 与你的手册 compact 的关系")
+    return text[:idx].rstrip() if idx > 0 else text
+
+
 def extract_style_examples(md_text: str, author: str) -> str:
     """从风格示例库.md（按写作环节分区结构）抽取本路由 author 的全部 few-shot 段落。
 
@@ -528,34 +571,36 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
         parts.append("## 一·声、作者声纹样本（谁在说话——优先级高于下文一切他人范文）")
         parts.append("")
         parts.append("> 🟢 这是作者本人的文字。**全文的「我」以这里的说话方式为准**；")
-        parts.append("> 他人范文只管句子顺不顺，声音的归属听这里。")
+        parts.append("> 他人范文只管句子顺不顺，声音的归属听这里。（取最近样本，尾部优先）")
         parts.append("")
-        parts.append(vc_text[:6000])
+        parts.append(_voice_excerpt(vc_text))
         parts.append("")
         parts.append("---")
         parts.append("")
 
     # 1-样. 整篇金标范文（🔴 2026-06-10 P1-8：范文-规则配比反转）
-    parts.append("## 一·样、整篇金标范文（写前通读，校准耳朵）")
-    parts.append("")
-    parts.append("> 🟢 **用法：写初稿前从头到尾通读一遍，让耳朵先校准到「人在说话」的频率。**")
-    parts.append("> 这是一整篇真文章的完整语流——句子怎么接句子、段落怎么呼吸、哪里密哪里松，")
-    parts.append("> 比任何规则描述都管用（AI 腔是分布偏置，规则压不动，剂量范文压得动）。")
-    parts.append("> 🔴 **抄声音不抄内容**：范文内容与本篇无关，不许搬观点/句子/比喻进正文；")
-    parts.append("> 读完合上，用它的「说话方式」写你自己的内容。")
-    parts.append("")
+    # 🔴 2026-08-16 审计修正：缺料时**整节不输出**。旧行为是无条件打印节标题 +
+    #    5 行「写前通读一遍」的用法说明，再补一行「⚠️ 未找到」——让模型对着
+    #    不存在的范文执行阅读指令，纯噪声还占注意力。缺料只进 missing 清单。
     gold = select_gold_sample(author) if author else None
     if gold:
+        parts.append("## 一·样、整篇金标范文（写前通读，校准耳朵）")
+        parts.append("")
+        parts.append("> 🟢 **用法：写初稿前从头到尾通读一遍，让耳朵先校准到「人在说话」的频率。**")
+        parts.append("> 这是一整篇真文章的完整语流——句子怎么接句子、段落怎么呼吸、哪里密哪里松，")
+        parts.append("> 比任何规则描述都管用（AI 腔是分布偏置，规则压不动，剂量范文压得动）。")
+        parts.append("> 🔴 **抄声音不抄内容**：范文内容与本篇无关，不许搬观点/句子/比喻进正文；")
+        parts.append("> 读完合上，用它的「说话方式」写你自己的内容。")
+        parts.append("")
         gtitle, gtext = gold
         parts.append(f"### 《{gtitle}》（{author}，已机械清洗：破折号→--、去图链）")
         parts.append("")
         parts.append(gtext)
+        parts.append("")
+        parts.append("---")
+        parts.append("")
     else:
         missing.append(f"整篇金标范文未注入（profile/corpus/samples/{author or '?'}/ 不存在或无合适篇目——这是可选料，缺省不影响写作）")
-        parts.append(f"⚠️ 未找到 {author or '（无路由）'} 的整篇范文（可选特性：把范文放进 profile/corpus/samples/{author or '<author>'}/ 即可启用）")
-    parts.append("")
-    parts.append("---")
-    parts.append("")
 
     # 1-α. 叠加路由 modifier (2026-05-27 双层加载机制)
     # article-meta.yaml 可填 modifier_style: <某作者手册名>（也支持 list）；
@@ -592,7 +637,10 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     parts.append("")
     tf = SKILL_DIR / "references" / "反 AI 写作工具箱.md"
     if tf.exists():
-        parts.append(tf.read_text(encoding="utf-8").strip())
+        # 只注入 A/B/C 三层规则本体。「与手册 compact 的关系」「与 iron-rules 的
+        # 关系」「历史背景」是写给维护者的元说明与沿革（~3.4KB），
+        # 对写作期模型是纯噪声（2026-08-16 审计确认），从首个元说明标题处截断。
+        parts.append(_toolbox_body(tf.read_text(encoding="utf-8").strip()))
     else:
         missing.append(f"反 AI 写作工具箱 不存在：{tf}")
         parts.append(f"⚠️ 未找到 {tf}")
@@ -661,24 +709,23 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     parts.append("")
 
     # 4. 风格 few-shot 示例（与 compact 配套，语感锚定）
-    parts.append("## 三、风格 few-shot 示例（最佳段落语感锚）")
-    parts.append("")
+    # 🔴 缺料时整节不输出（同「金标范文」节的 2026-08-16 修正）：
+    #    空节标题 + 占位说明对写作期模型是纯噪声，缺料只进 missing 清单。
     sf = corpus_dir() / "style-examples.md"
-    if not sf.exists():
-        missing.append("风格示例库不存在：profile/corpus/style-examples.md（可选料，缺省不影响）")
-        parts.append("⚠️ 未找到 profile/corpus/style-examples.md（可选：自建后此处按 author 注入 few-shot 段落）")
-    elif not author:
-        parts.append("（未解析出 author 路由，跳过 few-shot 示例。）")
-    else:
+    examples = ""
+    if sf.exists() and author:
         examples = extract_style_examples(sf.read_text(encoding="utf-8"), author)
-        if examples:
-            parts.append(examples)
-        else:
-            parts.append(f"（style-examples.md 暂无「{author}」路由的 few-shot 示例，"
-                         "该路由以 compact 手册为准。）")
-    parts.append("")
-    parts.append("---")
-    parts.append("")
+    if examples:
+        parts.append("## 三、风格 few-shot 示例（最佳段落语感锚）")
+        parts.append("")
+        parts.append(examples)
+        parts.append("")
+        parts.append("---")
+        parts.append("")
+    elif not sf.exists():
+        missing.append("风格示例库不存在：profile/corpus/style-examples.md（可选料，缺省不影响）")
+    elif author:
+        missing.append(f"style-examples.md 暂无「{author}」路由的 few-shot 示例（该路由以 compact 手册为准）")
 
     # 5. AI 腔写作禁区（与 B-主门同源）
     parts.append("## 四、AI 腔写作禁区（与写后 B-主门同源）")

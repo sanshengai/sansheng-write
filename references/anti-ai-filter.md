@@ -459,7 +459,7 @@ AI 不会自然产生自嘲——它倾向把自己定位为权威解释者。�
    - **风格审** → 第一节统计层（句长/温度/情绪/密度节奏/收尾/风格漂移）+ 第四节追问下沉 + 第五节 AI 句式；
    - **铁律审** → 第二节语言层（禁用词黑名单 / 破句 / 连贯性）+ `iron_rules` 子集（破折号 `--`、无引导句、无尾部总结、感叹号 ≤3）；
    - **事实核查** → 第八节论证深度（So What / Prove It）+ 版本/价格/时间类 claim 官网信源核实。
-2. **各角色独立出 verdict**：每角色返回对齐 [agent-contracts.md](agent-contracts.md) review tier-1 契约的结构化裁决 `{role, issues, pass}`（`role` 非空 str、`issues` list、`pass` 严格 bool）。subagent 是无状态执行单元：**不碰 `.state.json`、不调 `pipeline.py`、不自行 `skip`、不静默吞错**（违反即判不合规，见 [iron-rules.md](iron-rules.md) subagent 协作铁律）。
+2. **各角色独立出 verdict**：每角色返回对齐 [agent-contracts.md](agent-contracts.md) review tier-1 契约的结构化裁决 `{role, issues, pass}`（`role` 非空 str、`issues` list、`pass` 严格 bool）。subagent 是无状态执行单元：**不碰 `.state.json`、不调 `pipeline.py`、不自行 `skip`、不静默吞错**（违反即判不合规——这四禁即协作契约本体，另见 [iron-rules.md](iron-rules.md) §发布主链 第 7 条单一写者）。
 3. **过双门**：编排器收齐全部 verdict 后，先逐项过 tier-1 结构契约 `validate_output("review", payload)`，再对**新产出 verdicts 集合**过 tier-2 语义门 `scripts/contracts.py:verify_review_set(verdicts)`（① 去重后 ≥3 不同 role；② `pass=false` 的 issues 必须非空；③ `pass=true` 却带非空 issues 的弱不一致警示）。tier-2 门**只对本次审稿 team 新产出强制，不追溯历史冻结 golden**（历史无统一 review 产物）。
 4. **编排器主轴汇总裁决 + 应用 fixes（汇总不外派）**：双门通过后，**编排器主轴自己**汇总三角色 issues、去重消冲突、形成统一处置清单，并按前八节规则**自己应用 fixes**（照 [agent-contracts.md](agent-contracts.md) content_enhance 合并关 / cover 选优「主轴自做不外派」定式）。**绝不派任何 subagent 做汇总/裁决/改稿**——汇总需要全局视野与最终裁量权，属编排器主轴职责，外派会丢上下文且违反单一状态写者精神。`verify_review_set` 是汇总裁决**前置**的机器化把关，不替编排器裁决该不该回流、也不判 issue 内容对错。
 5. **失败回流**：任一 `pass=false` → 编排器按 [autopilot.md](autopilot.md) §失败语义就地处置（定向重磨该维度命中的段落 / 重派该角色复核）。**同一处连错 3 次才回报用户**，回报带三要素（阶段名 / 失败原因含哪关挂 / 已尝试恢复方式）。恢复决策权完全归编排器，subagent 无权放弃或 skip。

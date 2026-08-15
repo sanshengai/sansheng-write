@@ -241,8 +241,8 @@
 > - **`orchestrator=on`**（`pipeline.py orchestrator on`）：走下方
 >   「调研 fan-out 并行派发」段，编排器把调研拆 3 类子任务并发派发 subagent，
 >   收齐过 tier-1 + tier-2 双门后由**主轴编排器**做「写/换角度/别写」决策。
-> - **`orchestrator=off`（默认/回退）或未接编排器**：直接走本步骤下方
->   **原有串行调研流程（原文一字未改，下界限）**——逻辑与历史完全一致。
+> - **`orchestrator=off`（需显式切换；`init` 默认是 on）或未接编排器**：直接走
+>   本步骤下方**原有串行调研流程（原文一字未改，下界限）**——逻辑与历史完全一致。
 >
 > 与原流程的关系：fan-out 段只改**执行拓扑**（串行 → 三路并行 + 双验证门），
 > **不改调研要求与产出规则**——仍要多渠道搜集、三层对照、官网第一信源核实、
@@ -262,7 +262,7 @@
    - **全网调研**：选题核心词 + 衍生词（3-5 关键词组合）多渠道搜集观点/数据/趋势；
    - **事实核查**：对选题里出现的版本号/价格/时间/参数等硬数字逐条核实
      （**官网第一信源 + 权威媒体交叉核对**，呼应 [iron-rules.md](iron-rules.md)
-     §模型对比内容铁律 / 全局 Guardrails）；
+     §内容与归档 第 1 条：版本/价格/时间/参数必须核实，不确定就标注）；
    - **「别人写过吗」竞品勘探**：同领域自媒体/大 V 近期写作的切入角度与差异化缺口。
 2. **逐子任务构造上下文 bundle**：对**每一类**子任务，编排器按
    [orchestration.md](orchestration.md) §上下文 bundle 模板组装四键 `dict`：
@@ -278,7 +278,8 @@
    做调研，只产出对齐 `_OUTPUT_SCHEMA["research"]` 的结构化产物
    （`{"findings":[{claim,support,confidence}],"sources":[{url,title,tier,accessed}]}`），
    **不碰 `.state.json`、不调 `pipeline.py`、不自行 `skip`、不静默吞错**
-   （违反即判不合规，详见 [iron-rules.md](iron-rules.md) subagent 协作铁律）。
+   （违反即判不合规——这四禁即协作契约本体，另见 [iron-rules.md](iron-rules.md)
+   §发布主链 第 7 条「控制器是机械链唯一命令写者」）。
 4. **收齐 → 过双验证门**：编排器等 3 个 subagent 全部返回（含失败回传）后，
    先逐单元过 tier-1 结构契约 `validate_output("research", payload)`
    （sources[].url 结构强校验），再对**合并后的新产出集合**过 tier-2 语义门
@@ -536,9 +537,9 @@
 
 排版阶段由 `format_layout.py --all` 自动处理，无需手动操作。`case-timeline.html` 模板用于并列案例/场景展示，不用于 H2/H3 标题。
 
-🔴 **H2/H3 命名规则**：详见 `iron-rules.md` 「标题铁律」章节（H2 不写 `PART NN｜` 前缀，H3 不写"一、" / "1." / "①" 等编号前缀，`format_layout.py` 的 `_clean_h2_text` / `_clean_h3` 兜底剥离）。
+🔴 **H2/H3 命名规则**：见 `iron-rules.md` §排版 第 1 条（H2/H3 只写纯标题——H2 不写 `PART NN｜` 前缀，H3 不写"一、" / "1." / "①" 等编号前缀，`format_layout.py` 的 `_clean_h2_text` / `_clean_h3` 兜底剥离）。
 
-副标题（如"新国标拆解""现场观察"）由 `article-meta.yaml` 的 `part_subtitles` 按 H2 序号对齐填入——不是写在 MD 里，见下方 [H2 副标题预填铁律](iron-rules.md)。
+副标题（如"新国标拆解""现场观察"）由 `article-meta.yaml` 的 `part_subtitles` 按 H2 序号对齐填入——不是写在 MD 里，规则见下方前置断言说明。
 
 🔴 **`part_subtitles` 数量必须严格等于 H2 数量**（前置断言）：
 - `format_layout.py --all` 在处理 H2 前做断言，不对齐直接 `sys.exit(3)` 阻断排版

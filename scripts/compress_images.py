@@ -47,6 +47,57 @@ SKIP_NAMES = {"hero.png", "bgm_cover.png", "music_cover.png"}
 # 1K 横切规范长边（image-routing.md "1K 分辨率横切规范"）
 TARGET_LONG_EDGE = 1024
 
+# 后处理台账：add_logo.js 打完水印记一笔 sha，本脚本压缩完更新同一笔。
+# 处理前先比「当前 sha == 台账 sha」——命中即跳过。这不只是省重编码时间：
+# add_logo.js 是**就地覆写且无已处理检测**的，整目录重跑后处理会在已打过
+# 水印的图上再叠一层 35% logo（2026-08-16 审计确认的真缺陷），台账是唯一护栏。
+LEDGER_NAME = ".postprocess-ledger.json"
+
+
+def _ledger_path(directory: Path) -> Path:
+    return directory / LEDGER_NAME
+
+
+def load_ledger(directory: Path) -> dict:
+    try:
+        data = json.loads(_ledger_path(directory).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def record_ledger(path: Path, stage: str) -> None:
+    """把 path 的当前字节 sha 记进其所在目录的台账。失败只警告，不拦流程。"""
+    try:
+        directory = path.resolve().parent
+        ledger = load_ledger(directory)
+        ledger[path.name] = {
+            "sha256": _sha256(path),
+            "stage": stage,
+            "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        }
+        _ledger_path(directory).write_text(
+            json.dumps(ledger, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"WARN: 后处理台账写入失败（不拦流程）：{exc}", file=sys.stderr)
+
+
+def ledger_says_unchanged(path: Path) -> bool:
+    """只认 stage == "compressed" 的记录。
+
+    add_logo.js 打完章会先记一笔 stage="logo"——那说明水印在了、但**还没压缩**，
+    此时跳过等于让 >max-mb 的图永远得不到缩尺寸（首版实现踩过这个坑，
+    活体链路验证当场抓到）。压缩是链路末步，只有自己盖过的章才作数。
+    """
+    entry = load_ledger(path.resolve().parent).get(path.name)
+    return (
+        bool(entry)
+        and entry.get("stage") == "compressed"
+        and entry.get("sha256") == _sha256(path)
+    )
+
 
 def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tuple[float, float, str]:
     """压缩单个 PNG，返回 (原大小 MB, 压缩后 MB, 状态)"""
@@ -57,6 +108,11 @@ def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tupl
         if verbose:
             print(f"SKIP  {path.name:30s} ({size_mb:.2f}MB) -- 组件小图跳过清单")
         return (size_mb, size_mb, "SKIP_COMPONENT")
+    if ledger_says_unchanged(path):
+        size_mb = path.stat().st_size / 1024 / 1024
+        if verbose:
+            print(f"SKIP  {path.name:30s} ({size_mb:.2f}MB) -- 台账命中，字节未变")
+        return (size_mb, size_mb, "SKIP_UNCHANGED")
 
     orig_mb = path.stat().st_size / 1024 / 1024
     try:
@@ -85,6 +141,7 @@ def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tupl
 
     new_mb = path.stat().st_size / 1024 / 1024
     tag = "RESIZE" if resized else "OPT   "
+    record_ledger(path, "compressed")
     if verbose:
         action = f"{tag} {path.name:30s} {orig_mb:.2f}MB -> {new_mb:.2f}MB ({(1-new_mb/orig_mb)*100:.0f}% saved)"
         print(action)

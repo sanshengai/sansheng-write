@@ -16,8 +16,45 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const JIMP_PATH = 'jimp';
+
+// 后处理台账（与 compress_images.py 的 LEDGER_NAME 同一份文件、同一约定）：
+// 本脚本是**就地覆写**的，没有台账时整目录重跑会在已打过水印的图上再叠一层
+// 35% logo（2026-08-16 审计确认）。打完章立刻记 sha；下次进来「当前 sha ==
+// 台账 sha」即跳过 —— 图被重渲后 sha 必变，照常重新打章，不影响正常链路。
+const LEDGER_NAME = '.postprocess-ledger.json';
+
+function sha256File(p) {
+  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+}
+
+function ledgerPathFor(imagePath) {
+  return path.join(path.dirname(path.resolve(imagePath)), LEDGER_NAME);
+}
+
+function readLedger(ledgerPath) {
+  try {
+    const data = JSON.parse(fs.readFileSync(ledgerPath, 'utf-8'));
+    return data && typeof data === 'object' ? data : {};
+  } catch (e) { return {}; }
+}
+
+function recordLedger(imagePath, stage) {
+  try {
+    const lp = ledgerPathFor(imagePath);
+    const ledger = readLedger(lp);
+    ledger[path.basename(imagePath)] = {
+      sha256: sha256File(imagePath),
+      stage,
+      at: new Date().toISOString(),
+    };
+    fs.writeFileSync(lp, JSON.stringify(ledger, null, 2) + '\n');
+  } catch (e) {
+    console.error(`  ⚠️ 台账写入失败（不拦流程）: ${e.message}`);
+  }
+}
 
 // 读仓根 .env 里的一个键（Node 进程看不见 .env——Python 侧的 profile_config 才解析它。
 // 复核 SEP-01：此前只读 process.env，.env 配置法在 logo 阶段全断）。shell env 优先。
@@ -59,6 +96,11 @@ async function addLogo(imagePath, logoDir) {
   const fname = path.basename(imagePath).toLowerCase();
   if (SKIP_FILES.includes(fname) || SKIP_PREFIXES.some(p => fname.startsWith(p))) {
     console.log(`  ⏭  跳过 ${path.basename(imagePath)}（组件小图 / 新闻照 / 厂商官方素材，不打水印）`);
+    return;
+  }
+  const ledgerRec = readLedger(ledgerPathFor(imagePath))[path.basename(imagePath)];
+  if (ledgerRec && ledgerRec.sha256 === sha256File(imagePath)) {
+    console.log(`  ⏭  跳过 ${path.basename(imagePath)}（台账命中：已处理且字节未变，避免二次叠水印）`);
     return;
   }
   try {
@@ -111,6 +153,7 @@ async function addLogo(imagePath, logoDir) {
 
     img.composite(logo, posX, posY);
     await img.write(imagePath);
+    recordLedger(imagePath, 'logo');
     console.log(`  ✅ ${path.basename(imagePath)}`);
   } catch (error) {
     console.error(`  ❌ ${path.basename(imagePath)}: ${error.message}`);

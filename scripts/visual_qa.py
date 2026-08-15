@@ -29,6 +29,10 @@ except ImportError:  # pragma: no cover - direct script execution
 QA_REQUEST_FILE = "_visual-qa-request.json"
 QA_FILE = "_visual-qa.json"
 QA_MARKDOWN_FILE = "_visual-qa.md"
+# 整个独立复核器进程的外层预算。必须大于「ceil(资产数/并发) × 单张预算 + 重试余量」
+# —— 这组不等式由 tests/test_visual_qa_timeout_budget.py 钉死；旧配置 6 张 ÷ 3 并发
+# = 1200s 会先撞这堵 900s 的墙，而且死状是裸 traceback（无 except 捕获）。
+QA_PROCESS_TIMEOUT = 900
 BASE_REQUIRED_CHECKS = (
     "text_match",
     "no_unexpected_text",
@@ -676,16 +680,24 @@ def run_visual_qa(
     candidate = cwd / "_visual-qa.candidate.json"
     if candidate.exists():
         candidate.unlink()
-    completed = subprocess.run(
-        [*command, "--request", str(request_path), "--output", str(candidate)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=900,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [*command, "--request", str(request_path), "--output", str(candidate)],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=QA_PROCESS_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        # 以前这里没有捕获，撞墙 = 裸 traceback 抛穿到 CLI，操作者只能靠猜。
+        return None, [
+            f"独立视觉复核进程超时（>{QA_PROCESS_TIMEOUT}s）。"
+            "先查 visual_qa_codex.py 的 DEFAULT_JOBS 是否足以让全部资产一波跑完"
+            "（波数 × 单张预算必须小于本上限），再查 codex 是否卡死"
+        ]
     if completed.returncode != 0:
         return None, [
             f"独立视觉复核进程失败（exit={completed.returncode}）："

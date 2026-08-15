@@ -903,8 +903,8 @@ def verify_content_enhance_set(strategies: dict,
 # 直接复用 verify_infographic_set 的模块级常量 _K1_MIN/_K1_MAX
 # （= [900, 1200]，依据见该函数上方「1K 容差带的依据」文档串：1K 标称
 # 1024，下界 900≈−12% 排缩略图、上界 1200≈+17% 容 1080/1152 且挡 2k
-# 长卷）。封面与信息图同属 baoyu-* 1K 横切规范（见 image-routing.md
-# §1K 分辨率横切规范 / iron-rules.md §生图分辨率铁律），**同一既定标准**，
+# 长卷）。封面与信息图同属 baoyu-* 1K 横切规范（唯一真源就是
+# verify_infographic_set 的 _K1_MIN/_K1_MAX，文档层只存索引），**同一既定标准**，
 # 故此处**不另立常量、不重复造规则**——改 1K 口径只在 verify_infographic_set
 # 一处改即全域生效（单一事实源）。
 #
@@ -1308,7 +1308,7 @@ def verify_pos_ratio(text: str, sample_chars: int = 300) -> dict:
 # ===== 【第 8 节】加粗密度门 =====
 # ============================================================================
 # v5 新增（45 号实跑暴露 P1-4/P1-5）：verify_bold_density
-# 关联：writing.md §加粗与重点标识 C3 + iron-rules.md 严禁整句加粗
+# 关联：writing.md §加粗与重点标识（整句加粗口径的唯一机器真源即本函数）
 #
 # 🔴 2026-08-14 放宽（sandy 拍板）：原来是「按字数分四档 + 固定上限 + 超一个就 exit」，
 #    89 号实跑暴露两个真问题：
@@ -2536,6 +2536,7 @@ def log_observation(stage: str, event: str, verdict: str,
                     detail: str = "", article: str = "", *,
                     issue_codes: list[str] | None = None,
                     metrics: dict | None = None,
+                    elapsed_ms: float | None = None,
                     artifact_digest: str = "",
                     source: str = "runtime") -> None:
     """追加一条运行观察到 `_skill-observations.jsonl`（仅本地文件，**不联网**）。
@@ -2624,6 +2625,10 @@ def log_observation(stage: str, event: str, verdict: str,
                     metric_map[key] = float(value) if '.' in value else int(value)
                 except ValueError:
                     metric_map[key] = value
+        # 耗时单列一个显式形参（2026-08-16 审计：日志从不记耗时，任何量化改进
+        # 都得靠 mtime 考古）。放进 metrics 而非新顶层字段 —— 零 schema 变更。
+        if elapsed_ms is not None:
+            metric_map['elapsed_ms'] = round(float(elapsed_ms), 1)
         if not artifact_digest:
             candidates = {
                 'verify_writing': ['定稿.md'],

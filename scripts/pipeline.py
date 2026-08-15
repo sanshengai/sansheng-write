@@ -42,6 +42,7 @@ import subprocess
 import sys
 import argparse
 import shutil
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1268,7 +1269,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     errors.append(
                         f"infographic 没有 .gen-log.jsonl 记录，但 素材/ 里有 {len(infos)} 张 infographic*.png。"
                         f"必须经 {VISUAL_PRODUCER} 编译、renderer adapter 渲染并记录，"
-                        f"以保证风格统一可追溯（详见 iron-rules.md 信息图铁律）"
+                        f"以保证风格统一可追溯（详见 iron-rules.md §视觉 第 1/3 条）"
                     )
 
                 # 新文章严格核对：meta 路由 → analysis/structured → prompt →
@@ -1896,7 +1897,21 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
             )
         return  # --pre 只判定不标 done
     state = load_state(cwd)
+    _t0 = time.perf_counter()
     passed, errors = verify_stage(stage, cwd, state, legacy=legacy)
+    # 每条 verify 命令记一笔整体耗时（2026-08-16 审计：观察日志从不记耗时，
+    # 阶段耗时画像只能靠 mtime 考古）。失败静默由 log_observation 自身保证。
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from contracts import log_observation as _logobs_elapsed
+        _logobs_elapsed(
+            f"verify_{stage}", "verify_stage_elapsed",
+            "ok" if passed else "fail",
+            f"errors={len(errors)}", cwd.name,
+            elapsed_ms=(time.perf_counter() - _t0) * 1000,
+        )
+    except Exception:
+        pass
     if passed:
         _record_stage_success(cwd, state, stage)
         save_state(cwd, state)

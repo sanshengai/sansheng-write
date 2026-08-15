@@ -376,10 +376,9 @@ return**（P3.1 复审硬约束，防裸崩）。
 > 规则名），空 list = 通过。纯函数：只读入参 + 磁盘 PNG 像素（IO），
 > 不碰网络/状态，异常转结构化原因不裸崩。1K 口径**复用**
 > `verify_infographic_set` 的模块级 `_K1_MIN/_K1_MAX`（=`[900,1200]`，
-> 单一事实源，**不重复造规则**，见 [image-routing.md](image-routing.md)
-> §1K 分辨率横切规范 / [iron-rules.md](iron-rules.md) §生图分辨率铁律）；
-> 2.35:1 依据 [cover-styles.md](cover-styles.md)「不变的底层铁律」第一条
-> （briefing/noir + montage 3 亚型全共享 `2.35:1`）。
+> 单一事实源在 `contracts.py` 本体，**不重复造规则**，文档只存索引）；
+> 2.35:1 依据 [iron-rules.md](iron-rules.md) §视觉 第 2 条
+> （封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`）。
 
 > 🔴 **2026-05-22 封面锁定 `montage-evidence`：多风格 fan-out 选优 +「近 3 篇
 > 回避」已废止/删除。** 默认路径只按 montage-evidence 生成单张 `素材/cover.png`，

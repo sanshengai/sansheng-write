@@ -21,7 +21,8 @@
 环境变量：
 
 - `SANSHENG_WRITE_VISUAL_QA_MODEL`   复核模型，默认 `gpt-5.6-terra`
-- `SANSHENG_WRITE_VISUAL_QA_JOBS`    并发看图进程数，默认 3（上游总超时 900s）
+- `SANSHENG_WRITE_VISUAL_QA_JOBS`    并发看图进程数，默认 6（须使 6 张图一波跑完，
+  否则会撞上游 QA_PROCESS_TIMEOUT=900s 的外层墙，见 DEFAULT_JOBS 注释）
 - `SANSHENG_WRITE_VISUAL_QA_CODEX`   codex 可执行文件，默认 `codex`
 """
 
@@ -36,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -46,8 +48,17 @@ from visual_qa import _fully_segmented_by_allowed  # noqa: E402
 # 走 ChatGPT 账号的 codex 只放行部分模型 —— `gpt-5.6-codex` 会被服务端 400 拒掉
 # （"not supported when using Codex with a ChatGPT account"），别照抄历史文章里记的那个名字。
 DEFAULT_MODEL = "gpt-5.6-terra"
-DEFAULT_JOBS = 3
+# 🔴 2026-08-16 审计修正：3 → 6。上游 run_visual_qa 给整个复核器进程的预算是
+#    visual_qa.QA_PROCESS_TIMEOUT = 900s；标准 6 张 ÷ 3 并发 = 2 波 × 600s =
+#    1200s，最坏情形先被外层砍掉、死状还是裸 traceback。提到 6 = 一波 600s，
+#    留出重试余量（600 + 10 + 240 < 900，由 tests/test_visual_qa_timeout_budget.py
+#    钉死这组不等式）。顺带每轮少等一波（~36s）。
+DEFAULT_JOBS = 6
 PER_ASSET_TIMEOUT = 600
+# 单张 codex 非零退出（限流/网络抖动）重试一次的预算：比首发短，
+# 保证「首发 600 + 喘息 10 + 重试 240」仍然落在外层 900s 之内。
+RETRY_TIMEOUT = 240
+RETRY_PAUSE = 10
 
 # ⚠️ 这些定义直接决定闸门松紧，改之前想清楚：
 # 判太松 = 闸门形同虚设；判太严 = 每次都误杀，真出问题时反而没人信它。
@@ -332,20 +343,32 @@ def _review_one(
             # 但 checks 照样给 true）。这种失败不报错、只是悄悄把闸门架空，最危险。
             # 走 stdin 则完全绕开 shell 解析：codex exec 在 PROMPT 缺省时从 stdin 读指令。
         ]
-        completed = subprocess.run(
-            cmd,
-            cwd=str(workdir),
-            input=_build_prompt(asset),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=PER_ASSET_TIMEOUT,
-            check=False,
-        )
+        # 非零退出（限流 / 网络抖动 / codex 偶发崩溃）重试一次：旧行为是单张
+        # 失败即整轮 QA 判失败（上游 assets 集合对不上 request），一张 429 废一轮。
+        # 只重试非零退出；超时不重试（预算不够），契约类失败（JSON 坏 / traits
+        # 没复述）是确定性问题，重试只会烧 600s 掩盖真因。
+        completed = None
+        for budget in (PER_ASSET_TIMEOUT, RETRY_TIMEOUT):
+            if completed is not None:
+                time.sleep(RETRY_PAUSE)
+                if answer_path.is_file():
+                    answer_path.unlink()
+            completed = subprocess.run(
+                cmd,
+                cwd=str(workdir),
+                input=_build_prompt(asset),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=budget,
+                check=False,
+            )
+            if completed.returncode == 0:
+                break
         if completed.returncode != 0:
             tail = (completed.stderr or completed.stdout or "").strip()[-600:]
-            return {"path": rel, "_error": f"codex exit={completed.returncode}：{tail}"}
+            return {"path": rel, "_error": f"codex exit={completed.returncode}（含重试一次）：{tail}"}
         if not answer_path.is_file():
             return {"path": rel, "_error": "codex 没有写出结论文件"}
         raw = answer_path.read_text(encoding="utf-8").strip()
