@@ -112,3 +112,40 @@ def test_success_does_not_bloat_the_receipt(tmp_path, monkeypatch, capsys):
         (tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["status"] == "done"
     assert "tail" not in receipt["latest"]
+
+def _run_capture_kwargs(tmp_path, monkeypatch):
+    captured = {}
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def runner(command, **kwargs):
+        captured.update(kwargs)
+        return R()
+
+    monkeypatch.setattr(
+        pipeline, "brand",
+        lambda: {"publish": {"website_command": "echo {code}",
+                             "website_cwd": str(tmp_path)}})
+    monkeypatch.setattr(pipeline, "_archived_code", lambda c: "OBS-27")
+    monkeypatch.setattr(pipeline, "_resolve_website_command", lambda c: (c, ""))
+    monkeypatch.setattr(pipeline, "_uncommitted_archive_outputs", lambda c, w: [])
+    pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/X", runner=runner)
+    return captured
+
+
+def test_website_sync_timeout_covers_a_real_release(tmp_path, monkeypatch):
+    """一次真实授权发布（全站构建+素材上传+激活+验证）实测约 20 分钟。
+    900s 会把发布进程在中途杀掉（2026-08-15 OBS-27 finalize 实证），
+    超时必须给足余量。"""
+    monkeypatch.delenv("SANSHENG_WRITE_WEBSITE_TIMEOUT", raising=False)
+    kwargs = _run_capture_kwargs(tmp_path, monkeypatch)
+    assert kwargs["timeout"] >= 2400
+
+
+def test_website_sync_timeout_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("SANSHENG_WRITE_WEBSITE_TIMEOUT", "120")
+    kwargs = _run_capture_kwargs(tmp_path, monkeypatch)
+    assert kwargs["timeout"] == 120

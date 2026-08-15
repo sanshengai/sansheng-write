@@ -2692,7 +2692,11 @@ def _run_website_sync(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=900,
+            # 🔴 2026-08-15 实测：一次真实授权发布（全站构建+素材打包上传+激活+CDN
+            # 失效+逐篇封面验证）约 20 分钟，900s 会把发布进程在构建/上传中途杀掉，
+            # OBS-27 的 finalize 就是这么超时的（还留下 locked 构建 worktree 残留）。
+            # 留足余量到 40 分钟；发布器内部各环节有自己的失败路径，不靠这里兜底。
+            timeout=int(os.getenv("SANSHENG_WRITE_WEBSITE_TIMEOUT", "2400")),
             check=False,
         )
     except Exception as exc:
