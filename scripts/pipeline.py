@@ -2590,7 +2590,17 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
         return []
     if probe.returncode != 0:
         return []
-    return [line.strip() for line in (probe.stdout or "").splitlines() if line.strip()]
+    # 🔴 2026-08-16 第 90 篇实跑修：**本检查自己写的回执要排除掉**。
+    #    `_append_website_sync_attempt` 每次失败都会更新 `_website-sync-receipt.json`，
+    #    而它就在被扫描的文章目录里 —— 于是「提交回执 → 重跑 → 回执又被更新 → 又判未提交」
+    #    形成死循环，实测卡了三轮才靠人工绕开。回执是**本次运行的产物**，不是
+    #    官网构建需要的归档产物（构建只读作品库与派生视图），扫它没有意义。
+    _SELF_WRITTEN = ("_website-sync-receipt.json", "_finalize-state.json")
+    return [
+        line.strip()
+        for line in (probe.stdout or "").splitlines()
+        if line.strip() and not any(name in line for name in _SELF_WRITTEN)
+    ]
 
 
 def _run_website_sync(
