@@ -29,7 +29,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, WebSearch, WebFetch, Agent,
 
 进任何 `{数据目录}/{N}-{选题名}/` 目录**第一件事**跑 `python "$SKILL/scripts/pipeline.py" status`。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
 
-**长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段；命令未返回期间每 60 秒以内报告一次“仍在运行 / 已完成数量 / 当前阻塞”。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
+**长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段与预计耗时；命令是阻塞式调用，返回前无法插播——命令返回后（或分批调用间隙）报告进度，进行中状态可查 `素材/.render-attempt-*.json` 与 `.gen-log.jsonl` 增量。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
 
 ## 🔎 静态预检（写完正文就跑，别等被打回）
 
@@ -73,9 +73,9 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
-| 转图文 / 拆图文 | xhs-storyboard.md |
+| 转图文 / 拆图文（**低频能力**；本 profile 小红书渠道已冻结，仅显式要求时用） | xhs-storyboard.md |
 | 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭**；未在 profile 启用时本行不适用，不要主动提及） | distribute.md |
-| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md + agent-contracts.md |
+| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md（派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |
 | 我改了 / 学习我的修改（draft vs final diff 提 pattern 写 playbook.md） | learn-edits.md |

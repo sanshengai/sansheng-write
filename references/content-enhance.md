@@ -6,44 +6,19 @@
 
 ---
 
-## 🔀 内容增强阶段（编排器主轴串行执行 —— 不并行）
+## 🔀 执行形态（三句话，别展开）
 
-> **2026-05-22 混合方案决策**：content_enhance **不做 fan-out 并行**。即使
-> `orchestrator=on`（其余 4 阶段 research / infographic / cover / review 并行），
-> 内容增强始终由编排器**主轴依次串行**执行 4 套策略。
->
-> **为什么单独让它串行**：4 套增强策略（角度发现 / 密度强化 / 细节锚定 /
-> 真实体感）需要互相呼应、共用一套嗓音——若拆散到 4 个隔离 subagent 各做
-> 各的、再靠主轴 merge 收口，有「顾此失彼 / 嗓音不统一」的连贯性折损风险。
-> 内容增强是连贯性敏感环节，并行省下的时间不值得这个质量风险；其余 4 个
-> fan-out 阶段的子任务天然独立，无此顾虑。详见 `audit-2026-05-22` 决策记录。
->
-> ⚠️ **执行形态：自觉参考，非状态机记账的正式阶段**。content_enhance
-> **不在 `scripts/pipeline.py:STAGE_ORDER` 里**（STAGE_ORDER 只有 outline /
-> writing / cover / infographic / bgm / layout / logo / publish / archive 九
-> 个 stage）——它是**大纲选定后、正文写作前的可选写作参考**，由编排器/主笔
-> 在 writing 之前**自觉**去读、按下方「策略一~四」**依次串行**展开 4 套策略，
-> 而非状态机强制或会逐阶段提示的受控环节。`pipeline.py status / next` 不会
-> 因为「没做内容增强」而拦你或提醒你；写不写、写到什么程度，靠主笔在 writing
-> 阶段把本文档当输入约束（见 [writing.md](writing.md)）自行落实。四策略键集 =
-> 契约单一事实源 `scripts/contracts.py:_CE_STRATEGY_KEYS`（`angle` / `density` /
-> `detail` / `texture`，与「策略一~四」一一对应）。
->
-> **验证门：手动自检关，非 pipeline 强制门**。4 策略产出后，编排器主轴完成
-> 「两两去重 / 消矛盾 / 统一嗓音 / 与正文融合」的合并，**可**对合并产物调
-> `scripts/contracts.py:verify_content_enhance_set(strategies, article_body)`
-> 过 tier-2 语义自检（去重 / 无矛盾 / 实质性 / 不脱节）。但要诚实交代：该函数
-> 目前**未被任何 pipeline / autopilot / orchestration 运行时调用**（仅有
-> test / regression-baseline 覆盖），保留为**未来接线预留**——所以它是「编排器
-> 想自查时手动调」的语义关，**不是机器把关链上的强制门**，跟
-> [agent-contracts.md](agent-contracts.md) 对 content_enhance 标注的
-> `(语义关/非 schema 强制)` 口径一致。校验逻辑与产出标准本身不变，只是别误以为
-> 它会自动拦截缺失的增强。
->
-> **一句话定性**：4 套增强策略是把 AI 文章从「正确但没意思」拉到「想转发」的
-> 关键写作杠杆，值得每篇正经文都过一遍；但它的执行形态是**主笔自觉参考 + 手动
-> 自检**，不是受控 pipeline 阶段 + 自动强制门——别被「阶段 / 验证门」字样误导成
-> 后者。
+<!-- 🔴 2026-08-16 精简：本节原 3KB、把「这不是机器闸门」说了 4 遍。
+     保留的第一条是真约束（连贯性敏感，orchestrator=on 也不并行），删不得。 -->
+
+> 1. 🔴 **content_enhance 不做 fan-out 并行**——即使 `orchestrator=on`（其余
+>    4 阶段并行），4 套策略始终由编排器**主轴依次串行**执行：它们要互相呼应、
+>    共用一套嗓音，拆给隔离 subagent 再 merge 有连贯性折损（2026-05-22 定案）。
+> 2. 它不在 `STAGE_ORDER` 里：大纲选定后、正文写作前的**自觉写作参考**，
+>    `status / next` 不会因为没做而拦你。四策略键集单一真源
+>    `contracts.py:_CE_STRATEGY_KEYS`（angle/density/detail/texture）。
+> 3. `verify_content_enhance_set` 是**手动语义自检**（运行时无人调用，测试
+>    保留为接线预留），不是机器强制门——别把过没过它当成质量凭证。
 
 ---
 
