@@ -548,7 +548,6 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     tags = " / ".join(text["tags"])
     background = recipe["background"]
     accent = recipe["accent"]
-    neutrals = ", ".join(recipe.get("neutrals") or [])
     accent_hint = (
         f"the exact characters 「{text['accent_phrase']}」"
         if text.get("accent_phrase")
@@ -559,6 +558,14 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         for fact in item.get("visual_facts") or []
         if str(fact).strip()
     )
+    # 🔴 2026-08-16 精简：4954 → ~2660 字符（模型可见正文 ~2220），对齐信息图
+    #    prompt 的同一套实证规则（frontmatter 已由渲染层剥离；否定式清到 1 条；
+    #    色号 8 处 → 2 处；「写给工具链的话」全部撤掉）。压缩不碰三样东西：
+    #    ① 画布锚定的字号规格（12%-14% 等）——2026-07 修过的真 bug，去掉会复发
+    #      （第 81 篇 L1 只有画布高 8%，主次颠倒）；测试钉的是锚点契约本身。
+    #    ② 主题色胶囊 78%-85% 不透明 + 哑光磨砂（2026-07-28 定案，辨识度主要来源）。
+    #    ③ logo 否定式——唯一保留的否定：画出品牌字是法律/品牌风险，宁可无效不可漏写。
+    #    banned terms 门（largest / extra-black / ultra-black）依旧有效，改词时避开。
     return (
         _frontmatter(fields)
         + "\n\nCreate a polished dark editorial montage for a WeChat article cover.\n\n"
@@ -567,76 +574,40 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         )
         + "\n\n"
         "## LAYOUT\n"
-        "- One unified deep-charcoal canvas, exact 2.35:1 landscape.\n"
-        "- Put the text in a slightly larger left zone, the evidence collage in a slightly "
-        "smaller right zone, and separate them with one narrow quiet gutter. Preserve "
-        "generous outer safe margins and abundant negative space.\n"
-        "- Keep the Chinese title block compact and vertically centered in the left zone. "
-        "Never center it across the full canvas or place it along the bottom.\n"
-        "- One upper-left 45-degree key light only; all soft shadows fall lower-right.\n\n"
-        "## ONLY VISIBLE TEXT ALLOWLIST\n"
-        f"- Main Chinese headline: {title}\n"
-        f"- Supporting Chinese subtitle: {subtitle or '(none)'}\n"
-        f"- Quiet pill tags: {tags}\n"
-        # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比。
-        # 旧版写的是「L1 at 100% scale」+ 其余按 L1 的比例 —— 但 100% 相对谁没定义，
-        # 模型可以把 L1 定成任意大小，整组跟着缩。实测第 81 篇 L1 只有画布高 8%，
-        # 比 ghost 还小，主次颠倒；而同一份提示词在第 76/80 篇却给出 12% 的 L1。
-        # 同理 ghost 旧值 145%-155% of L1 等于**规范本身在要求英文比中文大**。
-        "- The main headline is the single dominant element on the entire canvas: "
-        "pure white, heaviest weight, first reading focus. Its cap height MUST be "
-        "12%-14% of the canvas height, and its line MUST span 70%-90% of the width "
-        "of the left text zone. No other high-contrast text may be set larger than it.\n"
-        "- The supporting subtitle is 58%-64% of the headline cap height: semibold white, "
-        f"one line only, with ONLY {accent_hint} rendered in the exact accent color {accent}. "
-        "Never colour any part of the main headline — it earns dominance through size, not hue.\n"
-        f"- Descriptor tags: {tags}. Render them at "
-        "30%-34% of headline cap height inside the pill; tags never compete with the headline.\n"
-        "- Keep the background purely pictorial: abstract lines and low-contrast shapes only. "
-        "Do not render ghost words, watermark text, letters or numbers behind the Chinese block.\n"
-        # 🔴 品牌胶囊（2026-07-28 定案）。已认可的两张封面里，底部这条
-        # 主题色标签胶囊是**辨识度的主要来源**——但满色 100% 不透明太抢眼，
-        # 会跟 L1 争视觉焦点。故降到 ~80% 并加一点哑光磨砂。
-        # ⚠️ 「磨砂」≠「毛玻璃」：下面 STRICT FORBIDDEN 里的 glassmorphism /
-        # glossy reflections 依然全图有效，这里要的是**半透明 + 细微颗粒的哑光**，
-        # 不是高光条、镜面反射或彩虹边。两者一旦混淆就会渲成廉价的玻璃按钮。
-        "- Put all tags in ONE auto-fit pill sitting directly under L2. Fill the pill "
-        f"with the exact accent color {accent} at 78%-85% opacity over the dark canvas, so it "
-        "reads as a soft branded chip rather than a bright solid block. Give it a FLAT "
-        "MATTE frosted body: slight translucency plus a very faint grain. No border, no "
-        "glow, no drop shadow, no specular highlight, no rim light, no gradient sheen, "
-        "no reflection. Frosted here means matte translucency only, NOT glassmorphism.\n"
-        "- Separate the tags with thin vertical dividers or a slash. Tag text is pure "
-        "white. Render exactly the two allowlisted tags; never add, drop, merge or wrap a tag.\n\n"
+        f"- One unified deep-charcoal canvas, exact color {background}, exact 2.35:1 "
+        "landscape, generous margins and negative space; one upper-left 45-degree key "
+        "light, soft shadows lower-right.\n"
+        "- A slightly larger left text zone, a slightly smaller right evidence collage, "
+        "one narrow quiet gutter between them.\n\n"
+        "## VISIBLE TEXT (exhaustive)\n"
+        # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比（第 81 篇实测教训）。
+        f"- Main Chinese headline: {title} -- pure white, heaviest weight, the single "
+        "dominant element. Its cap height MUST be 12%-14% of the canvas height, its "
+        "line spans 70%-90% of the left zone width, compact and vertically centered "
+        "in the left zone.\n"
+        f"- Supporting Chinese subtitle: {subtitle or '(none)'} -- semibold white, one "
+        f"line, 58%-64% of the headline cap height; ONLY {accent_hint} is set in the "
+        f"accent color {accent}, every headline character stays pure white.\n"
+        f"- Tags {tags} -- exactly these two, in ONE auto-fit pill under the subtitle: "
+        "that same accent fill at 78%-85% opacity, a FLAT MATTE frosted body, matte "
+        "like clay rather than glossy like glass, white tag text at 30%-34% of "
+        "headline cap height with thin dividers.\n"
+        "These are the only visible characters on the canvas; collage, badges and "
+        "background stay textless, purely pictorial: abstract lines and low-contrast "
+        "shapes.\n\n"
         "## RIGHT COLLAGE\n"
-        "- Use one dominant flat-vector metaphor object derived from the verified facts, "
-        "plus exactly three much smaller dark evidence badges and restrained curved dashed "
-        "arrows. The main object must be the first visual focus.\n"
-        "- No photographs, recognisable faces or hands. A small faceless athlete silhouette is allowed "
-        "when it is directly required by a source fact; otherwise use objects, curves, facilities, "
-        "maps or service nodes to express the argument.\n"
-        "- Main object: flat-vector editorial form with thin physical depth, same-hue "
-        "halftone, upper-left highlight and soft lower-right contact shadow.\n"
-        f"- Badges: very dark charcoal fill, a hairline border in {accent}, rounded corners; never white cards.\n\n"
-        "## COLOR & BACKGROUND\n"
-        f"- Canvas base MUST be the exact deep-charcoal color {background}.\n"
-        f"- The only visible accent hue is exactly {accent}; all other foreground text is pure white.\n"
-        f"- Deep surfaces use only these registered near-black neutrals: {neutrals}.\n"
-        "- No hard split-color panels; no bright, beige, photographic or scrapbook canvas.\n\n"
-        "## STRICT FORBIDDEN\n"
-        "- No recognisable faces, detailed hands, photorealistic stock imagery, robots, glowing brains, "
-        "generic gear piles, code, file paths, UI, grids, stars, particles or random letters.\n"
-        "- No brand name, account name, issue number or signature text; logo is added later.\n"
-        "- No pure black, extra accent hues, neon, chrome, glassmorphism, glossy reflections, "
-        "centered giant headline, bottom title bar or crowded poster composition.\n"
-        "- Never render layout guides, measurements or percentages. Never render the facts "
-        "below, color names, hex codes, layout labels or instruction words as visible text.\n"
-        "- The allowlist above is exhaustive: every other visible letter, word or number is "
-        "forbidden. Evidence badges must be pictorial and textless.\n\n"
+        "One dominant flat-vector metaphor object drawn from the facts below -- thin "
+        "physical depth, same-hue halftone, upper-left highlight, soft lower-right "
+        "contact shadow -- plus exactly three much smaller near-black badges with "
+        "hairline borders in that same accent hue and one tiny textless pictogram "
+        "each, linked by restrained curved dashed arrows. Speak through objects, "
+        "curves, facilities, maps or service nodes; a small faceless silhouette only "
+        "where a fact requires a person.\n\n"
+        "No brand name, account name, issue number or signature text; the logo is "
+        "added later.\n\n"
         "## PICTORIAL BRIEF\n"
-        "Build the right-side collage from the following source facts as TEXTLESS visual "
-        "evidence only: interpret their objects, spaces, paths and relationships; never "
-        "render any sentence, number, label or proper noun from this list as visible text.\n"
+        "Express these source facts as TEXTLESS visual evidence -- their objects, "
+        "spaces, paths and relationships:\n"
         f"{pictorial_facts or '- Derive textless evidence objects from the approved title.'}\n"
     )
 

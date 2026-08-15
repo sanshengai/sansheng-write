@@ -233,19 +233,22 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert 'producer_chain: ["sansheng-write.visual-planner"]' in cover
     assert "baoyu-cover-image" not in cover
     assert 'aspect_ratio: "2.35:1"' in cover
-    assert "Canvas base MUST be the exact deep-charcoal color #0E0E10" in cover
-    assert "only visible accent hue is exactly #2F6F8F" in cover
-    assert "slightly larger left zone" in cover
-    assert "slightly smaller right zone" in cover
+    # 🔴 2026-08-16 封面 prompt 精简（4954 → ~2100 字符）后，以下断言全部改钉
+    #    行为契约而非措辞 —— 上一轮信息图精简的教训：钉措辞的断言会把
+    #    「改进措辞」误判成「破坏契约」。
+    # 色号只留两处：画布底色 + 主题色首次定义（其余位置以 that same accent 回指）。
+    assert "#0E0E10" in cover
+    assert "#2F6F8F" in cover
+    assert "slightly larger left" in cover
+    assert "slightly smaller right" in cover
     assert "narrow quiet gutter" in cover
-    assert "Do not render ghost words" in cover
     assert "CONDITION × SIGNAL × LEVER" not in cover
     assert any(
         "purely pictorial low-contrast background" in trait
         for trait in visual_profile("montage-evidence")["required_visual_traits"]
     )
-    assert "ONLY VISIBLE TEXT ALLOWLIST" in cover
-    assert "Never render layout guides, measurements or percentages" in cover
+    # 文字白名单的穷尽性：改成正面陈述（这些是画布上唯一的可见字符）。
+    assert "the only visible characters" in cover
     assert "Main Chinese headline: 规则不能丢" in cover
     assert "Supporting Chinese subtitle: 弱模型也能稳" in cover
     # 🔴 钉的是「字号必须锚在画布上」这条契约本身，不是措辞。
@@ -253,22 +256,21 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     # 实测同一份提示词跑出过 L1 占画布高 8% 和 12% 两种结果（前者主标题比
     # 整张封面失去视觉主体）。这条断言防止锚点被改回相对值。
     assert "cap height MUST be 12%-14% of the canvas height" in cover
-    assert "supporting subtitle is 58%-64% of the headline cap height" in cover
-    # 主题色只染 L2，L1 靠字号称王 —— 防止「两行都染 / 主标题染色」回潮。
-    assert "Never colour any part of the main headline" in cover
+    assert "58%-64% of the headline cap height" in cover
+    # 主题色只染 L2，L1 靠字号称王 —— 正面表述：主标题每个字都保持纯白。
+    assert "stays pure white" in cover
     # 🔴 品牌胶囊：主题色 78%-85% + 哑光磨砂。满色 100% 会跟 L1 争焦点。
+    #    「磨砂 ≠ 毛玻璃」由正面对比表述承载（matte like clay rather than glossy
+    #    like glass），否定式版本已随 STRICT FORBIDDEN 段一起删除。
     assert "78%-85% opacity" in cover
     assert "FLAT MATTE frosted body" in cover
-    # 「磨砂」与「毛玻璃」必须泾渭分明——合并掉就会渲成廉价玻璃按钮
-    assert "NOT glassmorphism" in cover
-    assert "glassmorphism" in cover.split("STRICT FORBIDDEN")[1]
-    assert "no specular highlight" in cover
-    assert "Render exactly the two allowlisted tags" in cover
-    assert "Descriptor tags: 规则内建 / 独立验收" in cover
+    assert "matte like clay" in cover
+    assert "exactly these two" in cover
+    assert "Tags 规则内建 / 独立验收" in cover
     assert "确定性视觉合同" not in cover
     assert "一份任务单" in cover
     assert "一条发布入口" in cover
-    assert "TEXTLESS visual evidence only" in cover
+    assert "TEXTLESS visual evidence" in cover
     # cover / hero 仍由 _native_raster_contract 提供这句；infographic 在
     # 2026-08-16 第二轮精简里把它并进了排版段（讲的本是同一件事），
     # 所以两边措辞不同、语义一致 —— 分开断言，别用一个循环硬套。
@@ -288,6 +290,9 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
         assert "sculpted from" in prompt
     assert "same dimensional matte-clay material" in hero
     assert "bright editorial evidence montage" not in cover
+    # cover_prompt_banned_terms 的三个禁词（largest / extra-black / ultra-black）
+    # 一个都不许进 canonical prompt —— 主标题的支配地位用 dominant/heaviest 表述。
+    assert "largest" not in cover.casefold()
     assert "extra-black" not in cover.casefold()
     assert "ultra-black" not in cover.casefold()
     assert 'visual_profile: "warm-light-clay"' in info

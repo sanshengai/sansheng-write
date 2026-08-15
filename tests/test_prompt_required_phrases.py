@@ -124,3 +124,71 @@ def test_allowlist_reaches_the_prompt():
 def test_facts_never_reach_the_prompt():
     """facts 是给人看的核实依据，泄漏进 prompt 会被渲成图上文字。"""
     assert "已核实事实" not in _prompt()
+
+
+# ── 封面 prompt 的同套安全网（2026-08-16 精简 4954 → ~2660 后加装） ──────────
+# 封面走 montage-evidence 自建契约，没有 required_prompt_groups 逐字门，
+# 但 banned terms 门（largest / extra-black / ultra-black）与防膨胀逻辑同样适用。
+
+COVER_META = {
+    "lead": {"line1": "十分钟补齐", "line2": "一个月的模型全在这",
+             "accent": "全在这", "tag1": "选型", "tag2": "盘点"},
+    "title": "十分钟补齐", "cover_style": "montage-evidence",
+}
+COVER_ITEM = {"visual_facts": ["模型盘点", "选型对比"]}
+
+# 🔴 上限 2400 比信息图的 1700 宽：封面多背一份五项文字排印合同
+#    （三个画布锚定字号 + 胶囊规格 + accent 染色规则），每条都追溯到真 bug
+#    （第 81 篇 L1 只占画布高 8%）。改造后实测正文 ~2220。
+_COVER_MAX_CHARS = 2400
+# 色号刻意保留两处（画布底色 + 主题色首次定义）：封面固定走 Banana Pro，
+# 带 hex 的基线首过率 5/6；且实测配方 hex 与文字矛盾时 Pro 听文字的
+# （封面实验误用 warm-light-clay 配方的 #F7F2E9 仍渲出深炭底）。
+_COVER_MAX_HEX = 2
+
+
+def _cover():
+    import copy
+
+    from profile_config import visual_profile
+    recipe = visual_profile("montage-evidence")
+    recipe["sha256"] = "0" * 64
+    return vw._cover_prompt(
+        copy.deepcopy(COVER_ITEM), copy.deepcopy(COVER_META), recipe
+    )
+
+
+def test_cover_prompt_does_not_balloon_again():
+    body = _body(_cover())
+    assert len(body) <= _COVER_MAX_CHARS, (
+        f"封面 prompt 正文 {len(body)} 字符，超过上限 {_COVER_MAX_CHARS}。"
+        f"改造前是 ~4500 —— 一路加禁令加出来的。加之前先想想能不能改。"
+    )
+
+
+def test_cover_negations_stay_near_zero():
+    body = _body(_cover())
+    hits = _NEG.findall(body)
+    assert len(hits) <= 1, (
+        f"封面 prompt 有 {len(hits)} 条否定式（{hits}）。"
+        f"唯一允许保留的否定语义是 logo 合规那句。"
+    )
+
+
+def test_cover_hex_budget_holds():
+    body = _body(_cover())
+    hexes = _HEX.findall(body)
+    assert len(hexes) <= _COVER_MAX_HEX, f"封面 prompt 正文 hex 超预算：{hexes}"
+
+
+def test_cover_prompt_carries_no_banned_terms():
+    from evidence import cover_prompt_banned_terms
+    assert cover_prompt_banned_terms(_cover()) == []
+
+
+def test_cover_five_text_fields_reach_the_prompt():
+    text = _cover()
+    lead = COVER_META["lead"]
+    for field in ("line1", "line2", "tag1", "tag2"):
+        assert lead[field] in text, f"lead.{field} 没进封面 prompt"
+    assert lead["accent"] in text
