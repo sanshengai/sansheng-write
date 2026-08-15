@@ -304,6 +304,15 @@
 > **不改产出规则**——仍要多渠道、三层对照、官网第一信源、无法确认标待核实。
 > `orchestrator=off` 时下方原文串行路径**原文不变**继续生效（下界限）。
 
+> 🔴 **调研落盘契约（路径无关，2026-08-16 审计补）**：无论调研走 fan-out、
+> 串行，还是**体外**（deep-research 产物 / 用户递进来的调研底稿），大纲收尾时
+> 必须把「已核实的事实 + 信源」蒸馏成 `素材/research/findings.json`
+> （schema = `contracts.validate_output("research", payload)`：
+> `{"findings":[{claim,support,confidence}],"sources":[{url,title,tier}]}`，
+> 写盘前先过校验）。这不是形式主义：`prep_writing.py` 会把它渲染成写作期的
+> 「一·据」事实清单，事实复核（fact-check.md）的最便宜通路「对上素材 → ✓」
+> 也只认它——六篇实证该文件全缺，导致每篇复核都从零重搜 4-8 轮同样的 URL。
+
 ---
 
 > **以下为原串行调研流程原文（`orchestrator=off` / 未接编排器时走此路，一字未改）：**
