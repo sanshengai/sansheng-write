@@ -331,7 +331,11 @@ def test_moments_cta_does_not_repeat_site_when_bare_host_is_present(tmp_path, mo
 def test_handoff_auto_podcast_runs_generate_then_publish(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
-    monkeypatch.setattr(distribute, "cmd_plan", lambda cwd: calls.append("plan") or 0)
+    monkeypatch.setattr(
+        distribute,
+        "cmd_plan",
+        lambda cwd, only="": calls.append(("plan", only)) or 0,
+    )
     monkeypatch.setattr(
         distribute, "channel_config",
         lambda ch: {"enabled": True, "auto_after_finalize": True},
@@ -345,12 +349,12 @@ def test_handoff_auto_podcast_runs_generate_then_publish(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "podcast_episode", fake)
 
     assert pipeline._handoff_to_distribute(tmp_path) is True
-    assert calls == ["plan", "generate", ("publish", True)]
+    assert calls == [("plan", "podcast"), "generate", ("publish", True)]
 
 
 def test_handoff_auto_podcast_failure_is_not_reported_as_success(tmp_path, monkeypatch):
     monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
-    monkeypatch.setattr(distribute, "cmd_plan", lambda cwd: 0)
+    monkeypatch.setattr(distribute, "cmd_plan", lambda cwd, only="": 0)
     monkeypatch.setattr(
         distribute, "channel_config",
         lambda ch: {"enabled": True, "auto_after_finalize": True},
@@ -364,6 +368,18 @@ def test_handoff_auto_podcast_failure_is_not_reported_as_success(tmp_path, monke
     monkeypatch.setitem(sys.modules, "podcast_episode", fake)
 
     assert pipeline._handoff_to_distribute(tmp_path) is False
+
+
+def test_handoff_does_not_auto_plan_assisted_social_channels(tmp_path, monkeypatch):
+    """小红书 / 微博必须按篇显式触发，profile 已启用也不等于授权。"""
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["xhs", "weibo"])
+    monkeypatch.setattr(
+        distribute,
+        "cmd_plan",
+        lambda *a, **k: pytest.fail("finalize 不得自动规划社媒"),
+    )
+
+    assert pipeline._handoff_to_distribute(tmp_path) is True
 
 
 def test_website_failure_does_not_roll_back_moments(tmp_path, monkeypatch):

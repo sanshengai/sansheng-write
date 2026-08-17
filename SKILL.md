@@ -1,6 +1,6 @@
 ---
 name: sansheng-write
-description: Use when 用户要写、改、润色或排版中文长文和公众号文章，包含选题、标题、封面或图文化需求；触发词：写文章、帮我写、改稿、定稿、公众号文章。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
+description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文；触发词：写文章、帮我写、改稿、定稿、公众号文章、转小红书、发微博、一稿多投。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 metadata:
   version: "1.4.1"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp__doubao_search__web_search, mcp__tavily__tavily_search, mcp__datapro_search__dataPro_search, WebSearch, WebFetch, Agent, TodoWrite]
@@ -73,8 +73,8 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
-| 转图文 / 拆图文（**低频能力**；本 profile 小红书渠道已冻结，仅显式要求时用） | xhs-storyboard.md |
-| 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭**；未在 profile 启用时本行不适用，不要主动提及） | distribute.md |
+| 转图文 / 拆图文（**低频能力**；仅按篇显式要求时用；图片也是文章，先定唯一传播命题） | xhs-storyboard.md |
+| 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭且不随正式链接自动触发**；小红书 3:4、微博 1:1 分别生图） | distribute.md |
 | 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md（派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |

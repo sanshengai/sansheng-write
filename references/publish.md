@@ -106,8 +106,8 @@ python "$SKILL/scripts/pipeline.py" finalize \
 ## 之后：一稿多投
 
 `finalize` 拿到永久链接后，同一篇可以派生到小红书 / 微博 / 播客——见 [distribute.md](distribute.md)。
-分发是**独立的第二段链路**，不阻塞 finalize：生图、NotebookLM 与浏览器自动化都可能跑很久，
-不该拖住归档与官网同步。
+分发是**独立的第二段链路**。小红书与微博必须由用户按篇显式点名，不能因为 profile 已启用
+或拿到正式链接就自动规划；它们分别生成 3:4 与 1:1 专属图片，再预填浏览器等待作者确认。
 
 若 profile 已为播客显式配置 `auto_after_finalize: true`，`finalize` 完成核心收尾后会继续
 生成音频并推送 RSS；失败会以非零退出明确暴露，但不会回滚已经完成的归档和官网同步。

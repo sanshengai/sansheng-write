@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 SKILL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL / "scripts"))
@@ -53,7 +54,14 @@ def all_enabled(monkeypatch):
     """把三个渠道都打开（profile.example 里默认是全注释的）。"""
     cfg = {
         "xhs": {"enabled": True, "title_max": 20, "body_max": 1000, "tag_min": 4},
-        "weibo": {"enabled": True, "body_soft_max": 140, "tag_min": 2},
+        "weibo": {
+            "enabled": True,
+            "lead_max": 140,
+            "body_max": 5000,
+            "tag_min": 2,
+            "image_min": 4,
+            "image_max": 9,
+        },
         "podcast": {"enabled": True, "shownotes_max": 800},
     }
     monkeypatch.setattr(distribute, "distribute_channel", lambda n: cfg.get(n, {}))
@@ -80,12 +88,14 @@ def _write_social(article: Path, xhs_title=GOOD_XHS_TITLE, xhs_body=GOOD_XHS_BOD
     p.write_text(text, encoding="utf-8")
 
 
-def _write_images(article: Path, n: int = 6) -> None:
-    """小红书是图文，verify 会查图。"""
-    d = distribute.channel_dir(article, "xhs") / "images"
-    d.mkdir(parents=True, exist_ok=True)
-    for i in range(n):
-        (d / f"{i + 1:02d}-p.png").write_bytes(b"x")
+def _write_images(article: Path, n: int = 6, channels=("xhs", "weibo")) -> None:
+    """写渠道专属测试图：小红书 3:4，微博 1:1。"""
+    for channel in channels:
+        d = distribute.channel_dir(article, channel) / "images"
+        d.mkdir(parents=True, exist_ok=True)
+        size = (900, 1200) if channel == "xhs" else (1200, 1200)
+        for i in range(n):
+            Image.new("RGB", size, "white").save(d / f"{i + 1:02d}-p.png")
 
 
 # ===== 配置解析 =====
@@ -127,7 +137,10 @@ def test_plan_产出计划与待填槽(article, all_enabled):
     plan = json.loads((distribute.dist_dir(article) / distribute.PLAN_FILE).read_text(encoding="utf-8"))
     assert set(plan["channels"]) == {"xhs", "weibo", "podcast"}
     assert plan["channels"]["xhs"]["constraints"]["title_max"] == 20
-    assert plan["channels"]["weibo"]["constraints"]["body_max"] == 140
+    assert plan["channels"]["weibo"]["constraints"]["lead_max"] == 140
+    assert plan["channels"]["weibo"]["constraints"]["body_max"] == 5000
+    assert plan["channels"]["xhs"]["constraints"]["aspect"] == "3:4"
+    assert plan["channels"]["weibo"]["constraints"]["aspect"] == "1:1"
     # 槽是空的：脚本不编内容
     assert plan["channels"]["xhs"]["fill"]["title"] == ""
     for ch in ("xhs", "weibo", "podcast"):
@@ -160,9 +173,34 @@ def test_无定稿时_plan_失败(tmp_path, all_enabled):
 
 # ===== verify 硬门 =====
 
-def test_微博超字数被拦(article, all_enabled):
+def test_微博首段超过140字被拦(article, all_enabled):
     distribute.cmd_plan(article)
     _write_social(article, weibo_body="字" * 200 + "\n\n#测试# #分发#")
+    _write_images(article)
+    assert distribute.cmd_verify(article, "weibo") == 2
+
+
+def test_微博全文超过140字仍可通过(article, all_enabled):
+    """140 是首屏预算，不是全文上限；完整内容可以在后续段落展开。"""
+    distribute.cmd_plan(article)
+    body = (
+        "先给一个完整结论：这套流程把文章转换成渠道原生内容。\n\n"
+        + "具体机制与证据。" * 80
+        + "\n\n#测试# #分发#"
+    )
+    _write_social(article, weibo_body=body)
+    _write_images(article)
+    assert len(body.replace("\n", "")) > 140
+    assert distribute.cmd_verify(article, "weibo") == 0
+
+
+def test_微博全文超过硬上限被拦(article, all_enabled):
+    distribute.cmd_plan(article)
+    _write_social(
+        article,
+        weibo_body="首段先交付结论。\n\n" + "字" * 5001 + "\n\n#测试# #分发#",
+    )
+    _write_images(article)
     assert distribute.cmd_verify(article, "weibo") == 2
 
 
@@ -218,6 +256,7 @@ def test_未先_plan_不能_verify(article, all_enabled):
 def test_定稿变更后_verify_阻断(article, all_enabled):
     distribute.cmd_plan(article)
     _write_social(article)
+    _write_images(article)
     assert distribute.cmd_verify(article, "weibo") == 0
     (article / "定稿.md").write_text(FINAL_TEXT + "\n改了一句。\n", encoding="utf-8")
     assert distribute.cmd_verify(article, "weibo") == 2
@@ -250,6 +289,7 @@ def test_未_verify_不能_dispatch(article, all_enabled):
 def test_dry_run_不写凭证(article, all_enabled):
     distribute.cmd_plan(article)
     _write_social(article)
+    _write_images(article)
     distribute.cmd_verify(article, "weibo")
     assert distribute.cmd_dispatch(article, "weibo", confirm=False) == 0
     assert not (distribute.channel_dir(article, "weibo") / distribute.RECEIPT_FILE).exists()
@@ -284,6 +324,7 @@ def test_找不到发布脚本时失败且不写凭证(article, all_enabled, mon
     monkeypatch.setattr(distribute, "resolve_post_script", lambda ch, cfg: None)
     distribute.cmd_plan(article)
     _write_social(article)
+    _write_images(article)
     distribute.cmd_verify(article, "weibo")
     assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 2
     assert distribute.get_status(article, "weibo") == "verified"   # 状态不许前进
@@ -296,6 +337,7 @@ def test_填充失败不写凭证(article, all_enabled, fake_browser):
     fake_call.rc = 1
     distribute.cmd_plan(article)
     _write_social(article)
+    _write_images(article)
     distribute.cmd_verify(article, "weibo")
     assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 2
     assert distribute.get_status(article, "weibo") == "verified"
@@ -335,18 +377,44 @@ def test_微博文案走位置参数而非_content(article, all_enabled, fake_br
     assert argv[2].startswith("一个完整的判断")
 
 
-def test_微博限图数量(article, all_enabled, fake_browser, monkeypatch):
-    """微博最多 4 张自动排九宫格，不能把 16 张轮播图全丢过去。"""
-    cfg = {"enabled": True, "body_soft_max": 140, "tag_min": 2, "image_max": 4}
+def test_微博使用9张专属方图(article, all_enabled, fake_browser, monkeypatch):
+    """微博读取自己的 1:1 九宫格，不截取小红书前四张。"""
+    cfg = {
+        "enabled": True,
+        "lead_max": 140,
+        "body_max": 5000,
+        "tag_min": 2,
+        "image_min": 4,
+        "image_max": 9,
+    }
     monkeypatch.setattr(distribute, "distribute_channel",
                         lambda n: cfg if n == "weibo" else {"enabled": True, "tag_min": 4})
     _, calls = fake_browser
     distribute.cmd_plan(article, only="weibo")
     _write_social(article)
-    _write_images(article, n=16)
+    _write_images(article, n=9)
     distribute.cmd_verify(article, "weibo")
     assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 0
-    assert calls[0].count("--image") == 4
+    assert calls[0].count("--image") == 9
+    image_args = [Path(arg) for arg in calls[0] if arg.endswith(".png")]
+    assert all(path.parent.name == "images" and path.parent.parent.name == "weibo"
+               for path in image_args)
+
+
+def test_微博不能复用小红书图片(article, all_enabled):
+    distribute.cmd_plan(article, only="weibo")
+    _write_social(article)
+    _write_images(article, channels=("xhs",))
+    assert distribute.cmd_verify(article, "weibo") == 2
+
+
+def test_微博竖图被比例闸门拦截(article, all_enabled):
+    distribute.cmd_plan(article, only="weibo")
+    _write_social(article)
+    _write_images(article, channels=("weibo",))
+    bad = distribute.channel_dir(article, "weibo") / "images" / "01-p.png"
+    Image.new("RGB", (900, 1200), "white").save(bad)
+    assert distribute.cmd_verify(article, "weibo") == 2
 
 
 # ===== 小红书字数算法 =====
@@ -404,6 +472,7 @@ def test_小红书导流违禁词被识别(text, label):
     "五本书拆穿了同一个错觉。你怎么看，评论区聊聊。",
     "条件塑造结果，判断可能误读结果。",
     "从《引爆点》到《逆转》，作者反复提醒一件事。",
+    "项目已在 GitHub 与品牌官网公开。",
 ])
 def test_正常文案不被误拦(text):
     assert not distribute.xhs_divert_hits(text), f"误伤：{text}"

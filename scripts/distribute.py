@@ -66,9 +66,9 @@ CHANNELS: dict[str, dict] = {
     "weibo": {
         "label": "微博",
         "dispatch_mode": "assisted",
-        "artifacts": ["社媒文案.txt"],
+        "artifacts": ["社媒文案.txt", "weibo/images/"],
         "upstream": "定稿.md",
-        "note": "复用小红书图；正文超 140 字会被折叠",
+        "note": "独立生成 1:1 图片；前 140 字先交付结论，正文可完整展开",
     },
     "podcast": {
         "label": "播客（小宇宙）",
@@ -276,7 +276,9 @@ def _slots_for(channel: str, ctx: dict, cfg: dict) -> dict:
                 "tag_prefix": "#",
                 "tag_min": int(cfg.get("tag_min", 4)),
                 "image_min": int(cfg.get("image_min", 6)),
+                "image_ideal": int(cfg.get("image_ideal", 9)),
                 "image_max": int(cfg.get("image_max", 16)),
+                "aspect": "3:4",
             },
             "fill": {"title": "", "body": "", "tags": []},
             "upstream_required": "xhs-outline.md（按 xhs-storyboard.md 提炼，禁按段落切）",
@@ -293,18 +295,22 @@ def _slots_for(channel: str, ctx: dict, cfg: dict) -> dict:
         return {
             **common,
             "constraints": {
-                # 微博超 140 字折叠成「展开全文」，直接压阅读率。这是软上限不是硬上限，
-                # 但骨架把它当硬门——想突破得显式改 profile，而不是随手写长。
-                "body_max": int(cfg.get("body_soft_max", 140)),
+                # 140 字是首屏写作预算，不是当前平台正文硬上限。首段先自成一体，
+                # 后文再用分段、编号、链接与话题补足信息。
+                "lead_max": int(cfg.get("lead_max", 140)),
+                "body_max": int(cfg.get("body_max", 5000)),
                 "tag_format": "#话题#（前后都要井号，与小红书不同）",
                 "tag_min": int(cfg.get("tag_min", 2)),
-                "image_max": int(cfg.get("image_max", 4)),
+                "image_min": int(cfg.get("image_min", 4)),
+                "image_ideal": int(cfg.get("image_ideal", 9)),
+                "image_max": int(cfg.get("image_max", 9)),
+                "aspect": "1:1",
             },
             "fill": {"body": "", "tags": [], "images": []},
             "note": (
-                "URL 自动转 t.cn 短链，约占 25 字符且计入 140 字 → 正文实际可用约 90-100 字。"
-                "微博是三渠道里唯一能直给链接的，**引流链接写进正文**，"
-                "不要放评论区（多一次点击，且会被后来的评论淹没）"
+                "微博编辑器以纯文本为主：用短段落、①②③、emoji 与 #话题# 建立层级。"
+                "链接可以直接写进正文；图片必须在 dist/weibo/images/ 独立生成 1:1 版本，"
+                "不得复用小红书 3:4 卡片。"
             ),
             "divert_url": ctx["wechat_url"],
             "divert_format": "正文末尾另起一行：🔗 全文：<链接>",
@@ -542,6 +548,55 @@ def _visible_len(text: str) -> int:
     return len(text.replace("\n", "").strip())
 
 
+def _social_images(article_dir: Path, channel: str) -> list[Path]:
+    """读取渠道专属图片；不回落文章素材，也不跨渠道复用。"""
+    images_dir = channel_dir(article_dir, channel) / "images"
+    if not images_dir.is_dir():
+        return []
+    return sorted(
+        p for p in images_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")
+    )
+
+
+def _social_image_problems(article_dir: Path, channel: str, cons: dict) -> list[str]:
+    """校验张数与比例，防止把公众号图或另一渠道的卡片误传。"""
+    images = _social_images(article_dir, channel)
+    minimum = int(cons.get("image_min", 6 if channel == "xhs" else 4))
+    maximum = int(cons.get("image_max", 16 if channel == "xhs" else 9))
+    problems: list[str] = []
+    if len(images) < minimum:
+        problems.append(
+            f"图片只有 {len(images)} 张，少于 {minimum} 张；请放入 "
+            f"{channel_dir(article_dir, channel) / 'images'}")
+    if len(images) > maximum:
+        problems.append(f"图片有 {len(images)} 张，超过 {maximum} 张上限")
+    if not images:
+        return problems
+
+    try:
+        from PIL import Image
+    except ImportError:
+        problems.append("无法校验图片比例：缺 Pillow（pip install pillow）")
+        return problems
+
+    target = 0.75 if channel == "xhs" else 1.0
+    label = "3:4" if channel == "xhs" else "1:1"
+    tolerance = 0.035
+    for image_path in images:
+        try:
+            with Image.open(image_path) as image:
+                width, height = image.size
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{image_path.name} 不是可读图片：{str(exc)[:80]}")
+            continue
+        ratio = width / height if height else 0
+        if abs(ratio - target) > tolerance:
+            problems.append(
+                f"{image_path.name} 为 {width}×{height}，不是渠道要求的 {label}")
+    return problems
+
+
 def cmd_verify(article_dir: Path, channel: str) -> int:
     if channel not in CHANNELS:
         print(f"[distribute] ✗ 未知渠道 {channel!r}", file=sys.stderr)
@@ -590,8 +645,7 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
             bad = [t for t in parsed["tags"] if t.endswith("#") and len(t) > 1]
             if bad:
                 problems.append(f"标签用了微博的 #话题# 格式：{' '.join(bad[:3])}（小红书是 #标签）")
-            if not (cdir / "images").is_dir() or not list((cdir / "images").glob("*")):
-                problems.append(f"缺图：{cdir / 'images'} 为空（小红书是图文，没图发不了）")
+            problems.extend(_social_image_problems(article_dir, channel, cons))
             # 🔴 站外导流硬门：命中即拦，不给"要不要改"的余地。
             # 平台扣分累计不清零，一次侥幸的代价是账号长期降权。
             divert = xhs_divert_hits(f"{parsed['title']}\n{parsed['body']}")
@@ -601,13 +655,24 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
                     + "。小红书 2026-06 起间接导流同样违规（扣分不清零），"
                       "见 distribute.md「引流策略」——这一路只做认知，不做引流")
         else:
-            bmax = cons.get("body_max", 140)
+            bmax = cons.get("body_max", 5000)
             total = len(parsed["body"].replace("\n", "").strip())
             if total > bmax:
-                problems.append(f"正文 {total} 字，超过 {bmax} 字（微博会折叠成「展开全文」）")
+                problems.append(f"正文 {total} 字，超过 {bmax} 字上限")
+            lead = next(
+                (p.strip() for p in re.split(r"\n\s*\n", parsed["body"]) if p.strip()),
+                "",
+            )
+            lead_max = int(cons.get("lead_max", 140))
+            lead_len = _visible_len(lead)
+            if lead_len > lead_max:
+                problems.append(
+                    f"首段 {lead_len} 字，超过 {lead_max} 字首屏预算；"
+                    "先在首段交付完整结论，再展开细节")
             bad = [t for t in parsed["tags"] if not t.endswith("#")]
             if bad:
                 problems.append(f"标签缺尾部井号：{' '.join(bad[:3])}（微博是 #话题#）")
+            problems.extend(_social_image_problems(article_dir, channel, cons))
 
         if len(parsed["tags"]) < cons.get("tag_min", 2):
             problems.append(f"标签只有 {len(parsed['tags'])} 个，少于 {cons.get('tag_min', 2)} 个")
@@ -695,9 +760,9 @@ def _dispatch_assisted(article_dir: Path, channel: str) -> int:
         print(f"[distribute] ✗ 读不到 {channel} 段文案", file=sys.stderr)
         return 2
 
-    images = _dispatch_images(article_dir, cfg)
-    if channel == "xhs" and not images:
-        print("[distribute] ✗ 小红书是图文，至少要一张图", file=sys.stderr)
+    images = _dispatch_images(article_dir, channel, cfg)
+    if not images:
+        print(f"[distribute] ✗ {CHANNELS[channel]['label']} 缺渠道专属图片", file=sys.stderr)
         return 2
 
     bun = _find_bun()
@@ -753,11 +818,16 @@ def resolve_post_script(channel: str, cfg: dict) -> Path | None:
         return p if p.is_file() else None
 
     if channel == "weibo":
-        cache = Path.home() / ".claude" / "plugins" / "cache" / "baoyu-skills"
-        if cache.is_dir():
-            found = sorted(cache.rglob("weibo-post.ts"))
-            if found:
-                return found[-1]
+        roots = (
+            Path.home() / ".claude" / "plugins" / "cache" / "baoyu-skills",
+            Path.home() / ".codex" / "plugins" / "cache",
+        )
+        found: list[Path] = []
+        for cache in roots:
+            if cache.is_dir():
+                found.extend(cache.rglob("weibo-post.ts"))
+        if found:
+            return sorted(found)[-1]
     return None
 
 
@@ -769,19 +839,10 @@ def _find_bun() -> str:
     return str(cand) if cand.is_file() else ""
 
 
-def _dispatch_images(article_dir: Path, cfg: dict) -> list[Path]:
-    """发布用图：小红书轮播图优先，没有就回落文章素材。
-
-    微博与小红书共用同一批图（微博最多 4 张，自动排九宫格）。
-    """
-    imgs_dir = channel_dir(article_dir, "xhs") / "images"
-    imgs = sorted(p for p in imgs_dir.glob("*")
-                  if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")) if imgs_dir.is_dir() else []
-    if not imgs:
-        assets = article_dir / "素材"
-        if assets.is_dir():
-            imgs = [assets / n for n in list_source_images(article_dir)]
-    return imgs[:int(cfg.get("image_max", 18))]
+def _dispatch_images(article_dir: Path, channel: str, cfg: dict) -> list[Path]:
+    """只派发渠道专属图片，防止比例错误或两端图文错位。"""
+    return _social_images(article_dir, channel)[:int(cfg.get(
+        "image_max", 16 if channel == "xhs" else 9))]
 
 
 # ===== 【第 8 节】status =====

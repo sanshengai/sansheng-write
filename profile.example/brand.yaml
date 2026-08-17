@@ -191,6 +191,7 @@ publish:
 #       body_max: 1000         # 正文上限（含标签）
 #       tag_min: 4
 #       image_min: 6           # 轮播图张数区间，见 xhs-storyboard.md
+#       image_ideal: 9
 #       image_max: 16
 #
 #     # ---- 微博：走 baoyu-post-to-weibo 的 Chrome CDP ----
@@ -200,9 +201,12 @@ publish:
 #       # 留空则自动在 baoyu 插件缓存里递归查 weibo-post.ts
 #       # （那个目录名带版本 hash，写死必然在插件升级后失效）
 #       post_script: ""
-#       body_soft_max: 140     # 超过会被折叠成「展开全文」，压阅读率
+#       lead_max: 140          # 首段先独立交付结论；不是全文上限
+#       body_max: 5000         # 正文硬上限；建议按内容控制在 300-1200 字
 #       tag_min: 2
-#       image_max: 4           # 4 张自动排九宫格
+#       image_min: 4
+#       image_ideal: 9         # 完整九宫格
+#       image_max: 9           # 必须来自 dist/weibo/images/ 的 1:1 专属图
 #
 #     # ---- 播客：NotebookLM 生成音频 → 自建 RSS → 平台侧抓取 ----
 #     podcast:

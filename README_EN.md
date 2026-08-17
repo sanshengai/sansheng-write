@@ -154,8 +154,8 @@ output — no errors, no nags, no noise. If you just want to write, skip this se
 
 | Module | What it does | What you must provide | If you don't enable it |
 |---|---|---|---|
-| Xiaohongshu (RED) | Re-narrates the piece as 6-16 carousel cards, opens a browser with title/body/images filled in, you click Publish | A RED account + a script that drives the creator platform (bring your own) | No effect at all on writing or WeChat publishing |
-| Weibo | Generates a ≤140-char post reusing the RED images, opens a browser filled in, you click Send | A Weibo account (the posting script is auto-discovered) | Same |
+| Xiaohongshu (RED) | Re-narrates one distribution thesis as 6-10 dedicated 3:4 carousel cards, opens a browser with title/body/images filled in, you click Publish | A RED account + a script that drives the creator platform (bring your own) | No effect at all on writing or WeChat publishing |
+| Weibo | Generates a complete post plus 4-9 dedicated 1:1 cards, opens a browser filled in, you click Send | A Weibo account (the posting script is auto-discovered) | Same |
 | Podcast (RSS) | Turns the piece into a two-host audio episode and ships it to your feed host; `auto_after_finalize` can run the whole RSS handoff after the permanent article URL is finalized | NotebookLM session, ffmpeg, a host for the mp3 and `feed.xml` (SSH-reachable) | Same |
 
 Moments copy is written to `_moments-copy.md` as a paste-ready payload: the first byte of visible
@@ -175,8 +175,10 @@ prints the checklist and exits instead of blocking.
 > **preserves comments**. Without it, it writes nothing and prints a snippet for you to paste —
 > it will never silently strip the comments from your profile.
 
-**Common ground rule**: these modules fill the content into the platform's composer and then stop.
-**You always click the final Publish button.** A wrong draft can be fixed; a published post cannot.
+**Common ground rule**: RED and Weibo run only when you explicitly request them for a specific
+article; a permanent URL alone never triggers them. Their image sets are generated separately for
+their native aspect ratios. These modules fill the content into the platform's composer and then
+stop. **You always click the final Publish button.** A wrong draft can be fixed; a published post cannot.
 
 ---
 

@@ -2998,47 +2998,34 @@ def cmd_finalize(wechat_url: str, cwd: Path) -> None:
 
 
 def _handoff_to_distribute(cwd: Path) -> bool:
-    """finalize 后规划分发；显式授权的播客继续生成并上线。
+    """finalize 只处理有长期授权的播客；社媒必须按篇显式触发。
 
-    assisted 渠道仍停在填充前，最后一下由作者确认。RSS 没有发布按钮：
-    profile 的 ``podcast.auto_after_finalize: true`` 就是长期授权，因此必须
-    生成到 receipt 才算完成。失败返回 False，让 finalize 非零退出；已经完成的
-    归档/官网同步保持不回滚。
+    小红书 / 微博即使在 profile 中启用，也不会因为文章拿到永久链接就自动规划。
+    作者明确说「转小红书 / 发微博」后，Agent 才另行运行
+    ``distribute plan --only ...``。RSS 没有发布按钮：profile 的
+    ``podcast.auto_after_finalize: true`` 是长期授权，因此必须生成到 receipt
+    才算完成。失败返回 False，让 finalize 非零退出；已经完成的归档/官网同步不回滚。
     """
     try:
         import distribute
     except ImportError:
         return True
-    if not distribute.enabled_channels():
-        return True
-    try:
-        print()
-        distribute.cmd_plan(cwd)
-    except Exception as e:                                  # noqa: BLE001
-        print(f"⚠ 分发计划生成失败（不影响已完成的发布收尾）：{str(e)[:200]}")
-        return False
-
     enabled = distribute.enabled_channels()
-    assisted = [ch for ch in enabled
-                 if distribute.CHANNELS[ch]["dispatch_mode"] == "assisted"]
-    podcast_cfg = distribute.channel_config("podcast")
-    podcast_auto = (
-        "podcast" in enabled
-        and bool(podcast_cfg.get("auto_after_finalize"))
-    )
-
-    if assisted:
-        print()
-        print("下一步（需作者确认的分发）：")
-        print("  1. 按 references/distribute.md 的口径填 dist/社媒文案.txt")
-        print("  2. verify 后 dispatch --confirm 填好发布框，最后一下由作者点击")
-
     if "podcast" not in enabled:
         return True
+    podcast_cfg = distribute.channel_config("podcast")
+    podcast_auto = (
+        bool(podcast_cfg.get("auto_after_finalize"))
+    )
     if not podcast_auto:
-        print()
-        print("下一步（播客）：运行 podcast_episode.py generate，再 publish --confirm。")
         return True
+
+    try:
+        print()
+        distribute.cmd_plan(cwd, only="podcast")
+    except Exception as e:                                  # noqa: BLE001
+        print(f"⚠ 播客分发计划生成失败（不影响已完成的发布收尾）：{str(e)[:200]}")
+        return False
 
     receipt = distribute.channel_dir(cwd, "podcast") / distribute.RECEIPT_FILE
     if (
