@@ -2,7 +2,7 @@
 name: sansheng-write
 description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文；触发词：写文章、帮我写、改稿、定稿、公众号文章、转小红书、发微博、一稿多投。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 metadata:
-  version: "1.4.1"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
+  version: "1.5.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp__doubao_search__web_search, mcp__tavily__tavily_search, mcp__datapro_search__dataPro_search, WebSearch, WebFetch, Agent, TodoWrite]
 ---
 
