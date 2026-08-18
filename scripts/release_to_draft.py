@@ -94,13 +94,45 @@ class _VisibleTextParser(HTMLParser):
 
 def _semantic_body_digest(html: str) -> str:
     """Bind visible text while allowing WeChat's documented HTML sanitization."""
+    text = _visible_text(html)
+    normalized = "".join(text.split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _visible_text(html: str) -> str:
+    """Return human-visible text, including copyable plain-text URLs."""
     parser = _VisibleTextParser()
     parser.feed(str(html or ""))
     parser.close()
     text = "".join(parser.parts)
-    text = html_lib.unescape(text).replace("\u00a0", " ")
-    normalized = "".join(text.split())
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return html_lib.unescape(text).replace("\u00a0", " ")
+
+
+_BROKEN_INLINE_FONT_RE = re.compile(
+    r'\bstyle\s*=\s*"[^>]*?\bfont-family\s*:\s*"',
+    re.IGNORECASE,
+)
+
+
+def _promotion_contract(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Compile URL repetition promised by weave.link/base placement wording."""
+    merged: dict[str, int] = {}
+    weave = meta.get("weave") if isinstance(meta.get("weave"), dict) else {}
+    for key in ("link", "base"):
+        value = str(weave.get(key) or "").strip()
+        if not value or value.startswith("不织"):
+            continue
+        opening = bool(re.search(r"开篇|开头|首屏", value))
+        ending = bool(re.search(r"文末|结尾|末尾", value))
+        required = int(opening) + int(ending)
+        required = required or 1
+        for url in re.findall(r'https?://[^\s<>"）)，。；：、】》”’]+', value):
+            clean = url.rstrip("，。；：、】》”’")
+            merged[clean] = max(merged.get(clean, 0), required)
+    return [
+        {"url": url, "required_visible_count": count}
+        for url, count in merged.items()
+    ]
 
 
 def _published_digest(digest: str) -> str:
@@ -207,6 +239,11 @@ def build_expected_draft(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         return None, errors
     profile = brand()
     html = html_path.read_text(encoding="utf-8")
+    if _BROKEN_INLINE_FONT_RE.search(html):
+        return None, [
+            '定稿.html 含 style="...font-family: "..." 非法嵌套引号；'
+            '微信清洗会丢组件，先重跑 format_layout.py --all --check'
+        ]
     content = _extract_content(html)
     unsupported = _unsupported_local_images(content)
     if unsupported:
@@ -216,6 +253,19 @@ def build_expected_draft(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             f"而上传器会吞掉这个失败、把本地路径原样留在正文里）：{unsupported}"
             "；跑一次 `compress_images.py <素材目录>` 会就地转 PNG 并改好引用",
         ]
+    promotion_contract = _promotion_contract(meta)
+    visible = _visible_text(content)
+    promotion_errors = []
+    for item in promotion_contract:
+        actual_count = visible.count(item["url"])
+        required_count = int(item["required_visible_count"])
+        if actual_count < required_count:
+            promotion_errors.append(
+                f'推广地址可见次数不足：{item["url"]} '
+                f'需要 {required_count} 次，实际 {actual_count} 次'
+            )
+    if promotion_errors:
+        return None, promotion_errors
     return {
         "title": title,
         "digest": digest,
@@ -228,6 +278,7 @@ def build_expected_draft(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         "image_count": _image_count(content),
         "cover_path": str(cover_path),
         "cover_sha256": hashlib.sha256(cover_path.read_bytes()).hexdigest(),
+        "promotion_contract": promotion_contract,
     }, []
 
 
@@ -500,6 +551,16 @@ def _compare_readback(
         bool(cover_media_id)
         and cover_media_id == str(actual.get("thumb_media_id") or "")
     )
+    promotion_counts: dict[str, int] = {}
+    visible = _visible_text(content)
+    for item in expected.get("promotion_contract") or []:
+        url = str(item.get("url") or "")
+        promotion_counts[url] = visible.count(url)
+    checks["promotion_urls"] = all(
+        promotion_counts.get(str(item.get("url") or ""), 0)
+        >= int(item.get("required_visible_count") or 1)
+        for item in expected.get("promotion_contract") or []
+    )
     errors = [f"draft/get 回读字段不一致：{name}" for name, ok in checks.items() if not ok]
     if unuploaded:
         # 单独给一条能直接照着修的报错：只说「image_src_uploaded 不一致」
@@ -508,6 +569,8 @@ def _compare_readback(
             f"以下 {len(unuploaded)} 张图未上传成功、仍指向本地路径"
             f"（微信只收 jpg/png，webp 会被 40005 拒收）：{unuploaded}"
         )
+    if not checks["promotion_urls"]:
+        errors.append(f"draft/get 回读推广地址次数不足：{promotion_counts}")
     return checks, errors
 
 
@@ -597,6 +660,12 @@ def release_to_draft(
         "body_digest": _semantic_body_digest(str(actual.get("content") or "")),
         "image_count": _image_count(str(actual.get("content") or "")),
         "thumb_media_id": str(actual.get("thumb_media_id") or ""),
+        "promotion_url_counts": {
+            str(item.get("url") or ""): _visible_text(
+                str(actual.get("content") or "")
+            ).count(str(item.get("url") or ""))
+            for item in expected.get("promotion_contract") or []
+        },
         "remote_digest": stable_digest(actual),
     }
     receipt = {

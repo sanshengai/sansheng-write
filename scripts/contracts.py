@@ -1674,14 +1674,17 @@ def verify_publish_assets(article_dir: str) -> dict:
                 deep_errors.append('DEEP READ 模块缺固定小标或「继续往下读」标题')
 
             expected_urls = []
+            positioned_urls = []
             weave = meta.get('weave') or {}
             for key in ('link', 'base'):
                 value = str(weave.get(key) or '')
                 if value and not value.lstrip().startswith('不织'):
-                    expected_urls.extend(
+                    urls = [
                         u.rstrip('，。；：、】》”’')
-                        for u in re.findall(r'https?://[^\s<>"）)]+', value)
-                    )
+                        for u in re.findall(r'https?://[^\s<>"）)，。；：、】》”’]+', value)
+                    ]
+                    expected_urls.extend(urls)
+                    positioned_urls.extend((url, value) for url in urls)
             try:
                 from profile_config import identity as _identity
                 site = str((_identity() or {}).get('site') or '').strip()
@@ -1692,6 +1695,16 @@ def verify_publish_assets(article_dir: str) -> dict:
             for url in dict.fromkeys(expected_urls):
                 if url not in text:
                     deep_errors.append(f'DEEP READ 未兑现 article-meta/profile 声明的入口：{url}')
+            first_h2 = re.search(r'^##\s+', text, re.MULTILINE)
+            deep_pos = text.find(deep_marker)
+            opening_end = first_h2.start() if first_h2 else (deep_pos if deep_pos >= 0 else len(text))
+            opening_region = text[:opening_end]
+            deep_region = text[deep_pos:] if deep_pos >= 0 else ''
+            for url, declaration in positioned_urls:
+                if re.search(r'开篇|开头|首屏', declaration) and url not in opening_region:
+                    deep_errors.append(f'weave 声明开篇/首屏推广，但开篇未出现地址：{url}')
+                if re.search(r'文末|结尾|末尾', declaration) and url not in deep_region:
+                    deep_errors.append(f'weave 声明文末推广，但 DEEP READ 未出现地址：{url}')
             if deep_errors:
                 errors.extend(deep_errors)
             else:

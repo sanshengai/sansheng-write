@@ -13,7 +13,7 @@ import copy
 import re
 
 
-COVER_TEXT_CONTRACT_REVISION = "montage-cover-text/1"
+COVER_TEXT_CONTRACT_REVISION = "montage-cover-text/2"
 
 
 SIGNATURE_VISUAL_PROFILES = {
@@ -142,6 +142,16 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
             values[key] = ""
         else:
             values[key] = str(raw or "").strip()
+
+    identity = meta.get("cover_identity")
+    if identity is not None and not isinstance(identity, str):
+        errors.append("cover_identity 必须是字符串")
+        identity = ""
+    identity = str(identity or "").strip()
+    if identity and identity not in (values.get("line1", "") + values.get("line2", "")):
+        errors.append(
+            f"cover_identity={identity!r} 必须显式进入封面 L1/L2；底部小标签不算"
+        )
 
     subtitle = lead.get("subtitle")
     if subtitle is not None and not isinstance(subtitle, str):

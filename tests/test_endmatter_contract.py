@@ -58,3 +58,28 @@ def test_standard_deep_read_and_sources_pass(tmp_path, monkeypatch):
     result = contracts.verify_publish_assets(str(d))
     assert result["verdict"] == "ok", result["errors"]
     assert result["checks_passed"] == result["checks_total"] == 9
+
+
+def test_weave_opening_and_ending_positions_are_both_enforced(tmp_path, monkeypatch):
+    d = _article(tmp_path)
+    monkeypatch.setattr(profile_config, "identity", lambda: {"site": "https://example.com"})
+    meta_path = d / "article-meta.yaml"
+    meta_path.write_text(
+        meta_path.read_text(encoding="utf-8").replace(
+            'base: "自有站点 https://example.com"',
+            'base: "自有站点 https://example.com，放在开篇第一屏与文末"',
+        ),
+        encoding="utf-8",
+    )
+    with (d / "定稿.md").open("a", encoding="utf-8") as f:
+        f.write(
+            "\n<!-- SANSHENG-DEEP-READ -->\n"
+            "<section>DEEP READ 继续往下读 "
+            "https://mp.weixin.qq.com/s/old https://example.com</section>\n"
+            "<!-- SANSHENG-SOURCES -->\n"
+            "<section>SOURCES 信息来源 https://source.example/report</section>\n"
+        )
+
+    result = contracts.verify_publish_assets(str(d))
+    assert result["verdict"] == "fail"
+    assert any("开篇未出现地址" in error for error in result["errors"])

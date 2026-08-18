@@ -212,6 +212,28 @@ def test_cover_text_contract_uses_exact_five_fields_and_rejects_drift():
     assert any("lead.tag2 不能为空" in error for error in errors)
 
 
+def test_cover_identity_must_be_prominent_not_only_a_small_tag():
+    from scripts.visual_contracts import cover_text_contract
+
+    meta = {
+        "cover_identity": "德鲁克",
+        "lead": {
+            "line1": "不是教你管人",
+            "line2": "是教你对成果负责",
+            "accent": "对成果负责",
+            "tag1": "管理",
+            "tag2": "德鲁克",
+        },
+    }
+    _, errors = cover_text_contract(meta)
+    assert any("底部小标签不算" in error for error in errors)
+
+    meta["lead"]["line1"] = "德鲁克不教管人"
+    meta["lead"]["tag2"] = "五本书"
+    _, errors = cover_text_contract(meta)
+    assert errors == []
+
+
 def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     from scripts.profile_config import visual_profile
     from scripts.visual_workflow import compile_visual_plan

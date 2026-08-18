@@ -359,6 +359,53 @@ def test_wechat_unsupported_image_format_is_blocked_before_push(tmp_path):
     assert "compress_images.py" in detail   # 给出照着做就能修的下一步
 
 
+def test_malformed_inline_font_style_is_blocked_before_push(tmp_path):
+    from scripts.release_to_draft import build_expected_draft
+
+    root = _article(tmp_path)
+    (root / "定稿.html").write_text(
+        '<html><body><section style="font-family: "Source Han Serif SC", serif;">'
+        '<p>主题曲卡片</p></section></body></html>',
+        encoding="utf-8",
+    )
+
+    expected, errors = build_expected_draft(root)
+    assert expected is None
+    assert any("非法嵌套引号" in error for error in errors)
+
+
+def test_promotion_url_promised_twice_must_survive_remote_readback(tmp_path):
+    from scripts.release_to_draft import _compare_readback, build_expected_draft
+
+    root = _article(tmp_path)
+    url = "https://example.com/tools/booknotes-author/"
+    with (root / "article-meta.yaml").open("a", encoding="utf-8") as stream:
+        stream.write(
+            'weave:\n  base: "德鲁克作品集 '
+            + url
+            + '，放在开篇第一屏与文末。"\n'
+        )
+    (root / "定稿.html").write_text(
+        f"<html><body><section><p>{url}</p><p>正文</p><p>{url}</p></section></body></html>",
+        encoding="utf-8",
+    )
+    expected, errors = build_expected_draft(root)
+    assert errors == []
+    actual = {
+        "title": expected["title"],
+        "author": expected["author"],
+        "digest": expected["digest"],
+        "content": f"<section><p>{url}</p><p>正文</p></section>",
+        "content_source_url": expected["source_url"],
+        "thumb_media_id": "cover-media-001",
+        "need_open_comment": expected["need_open_comment"],
+        "only_fans_can_comment": expected["only_fans_can_comment"],
+    }
+    checks, errors = _compare_readback(expected, actual, "cover-media-001")
+    assert checks["promotion_urls"] is False
+    assert any("推广地址次数不足" in error for error in errors)
+
+
 def test_compress_images_converts_unsupported_and_rewrites_references(tmp_path):
     """转换必须连引用一起改，且删掉原文件——留着下次还会被引用回去。"""
     import sys as _sys

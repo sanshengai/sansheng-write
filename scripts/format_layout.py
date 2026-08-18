@@ -223,6 +223,22 @@ def apply_meta_to_args(args, meta):
 # ===== 【第 4 节】模块10 预发布自检 --check =====
 #  模块 10: 预发布自检 (--check)
 # ========================================
+_BROKEN_INLINE_FONT_RE = re.compile(
+    r'\bstyle\s*=\s*"[^>]*?\bfont-family\s*:\s*"',
+    re.IGNORECASE,
+)
+
+
+def repair_inline_font_family_quotes(html):
+    """修复 baoyu-md 把双引号字体名嵌进双引号 style 属性的非法 HTML。"""
+    return re.sub(
+        r'font-family\s*:\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"',
+        lambda m: "font-family: " + ", ".join(m.groups()),
+        html,
+        flags=re.IGNORECASE,
+    )
+
+
 def check_all(html, cwd, meta=None):
     """预发布自检，返回 (errors, warnings) 两个列表。
 
@@ -250,6 +266,12 @@ def check_all(html, cwd, meta=None):
             log(f"📏 Content 字符数: {chars}/20000")
     else:
         errors.append("严重结构损坏：未找到 <div id=\"output\"> 或 </body>，MD转HTML解析失败")
+
+    if _BROKEN_INLINE_FONT_RE.search(html):
+        errors.append(
+            '发现 style="...font-family: "..." 的嵌套双引号；HTML 属性已损坏，'
+            '微信会丢失主题曲卡片或推广链接。请重新运行 format_layout.py --all'
+        )
 
     # 1b. meta description 安全检查
     # baoyu-md 的 extractSummaryFromBody 不跳过 `<`/`<!--` 开头的裸 HTML 行，
@@ -2390,6 +2412,9 @@ def run(args):
                           getattr(args, 'wechat_compat', False)])
 
     if has_processing:
+        # baoyu-md 的默认中文字体栈曾把未转义双引号写入 style="..."，浏览器容错能看，
+        # 微信编辑器清洗后会丢组件。排版时先修，--check 再独立硬拦残留。
+        html = repair_inline_font_family_quotes(html)
         # 🔴 先修 baoyu 写 data-local-path 的反斜杠转义坑（\nuwa→换行、\table→\t 等）
         html = normalize_img_local_paths(html, cwd)
         if args.all or args.colors:

@@ -76,6 +76,8 @@ endmatter:
 # 🟢 推荐使用下面的嵌套写法。format_layout.py 也兼容扁平写法（lead_line1: "..." 等）作过渡，
 #    但新文章统一用嵌套，视觉层次清晰、IDE 折叠友好。
 # lead 同时供两处消费：① 文内导读栏组件 ② 封面 L1/L2 文案（scripts/visual_workflow.py）
+# 人物/品牌/作品为主题时填写；该词必须直写进 L1/L2，底部小标签不算。
+cover_identity: ""
 # 封面对字数是硬约束——L1 要占画布高 12%~14% 才能成为视觉主体，反推左区只放得下约 8 字位；
 # 超限模型只能缩字号，封面规范压不住。详见 references/title.md「封面三件套」。
 lead:

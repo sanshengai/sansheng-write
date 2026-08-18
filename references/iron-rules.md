@@ -10,6 +10,7 @@
 4. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
 5. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
 6. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
+7. `weave` 声明“开篇与文末”的地址必须以可复制明文各出现一次，且 `draft/get` 回读仍为两次。
 7. 控制器是机械链唯一命令写者；模型只交付任务单候选与视觉 QA，不运行、重试或并发启动长命令。
 
 ## 视觉
@@ -40,6 +41,7 @@
     封面走本仓 `montage-evidence`；把方法来源伪装成已执行 producer 同样拒绝发布。
 15. 封面文字只认 `lead.line1/line2/accent/tag1/tag2`：五项必填，accent 必须是 L2 结尾，
     tag1/tag2 恰好两项。`lead.subtitle` 是文章导读，不得冒充封面标签。
+16. 人物、品牌或作品为主题时填写 `cover_identity`，并把它写入 L1/L2；小标签不算显著出现。
 16. renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
 17. `cover.png`、`hero.png`、`infographic-*.png` 必须是 `baoyu-image-gen` 直接返回的 PNG
     像素文件；SVG 转换器只服务独立精确图表，不得占用这些正式生成图槽位。
