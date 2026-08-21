@@ -183,6 +183,28 @@ def vertex_project(cli_value: str = "") -> str:
     return _run(["gcloud", "config", "get-value", "project"])
 
 
+def resolve_model(cli_value: "str | None", meta_value: "str | None") -> str:
+    """决定本次用哪个模型：CLI > article-meta.yaml > 默认，但**过滤掉历史引擎遗留值**。
+
+    🔴 为什么要过滤：存量文章的 `article-meta.yaml` 里躺着当年的 model 值
+    （MiniMax 时代的 `music-2.6-free` 等，本仓 32 篇）。那是「当初用什么生成的」
+    的**历史记录**，不是「下次该用什么」的配置。
+
+    不去批量改那些存档——改了等于伪造历史，92 篇的主题曲确实是 MiniMax 生成的。
+    改成在这里挡：非 `lyria-` 前缀一律忽略并告警，让存档保持诚实、让生成用当前引擎。
+    否则旧值会盖过默认模型、被原样发给 Vertex 而报错。
+    """
+    cli_value = str(cli_value or "").strip()
+    if cli_value:
+        return cli_value
+    meta_value = str(meta_value or "").strip()
+    if meta_value and not meta_value.startswith("lyria-"):
+        print(f"⚠️  article-meta.yaml 里的 music.model 是「{meta_value}」——历史引擎遗留值，已忽略。")
+        print(f"    本次使用 {DEFAULT_LYRIA_MODEL}（该 meta 保持原样，它记录的是当初的生成来源）。")
+        meta_value = ""
+    return meta_value or DEFAULT_LYRIA_MODEL
+
+
 def find_article_file(article_dir: Path) -> Path:
     """在文章目录中查找 Markdown 原文"""
     candidates = ["定稿.md", "article.md", "README.md", "index.md"]
@@ -579,7 +601,7 @@ def main():
     print(f"\n📄 文章: {article_file.name}")
     print(f"📰 标题: {article_title(article_file, article_dir)}")
 
-    model = args.model or meta_music.get("model") or DEFAULT_LYRIA_MODEL
+    model = resolve_model(args.model, meta_music.get("model"))
     gender = args.gender or meta_music.get("gender") or determine_vocal_gender(article_dir)
     if gender not in VOCAL_STYLES:
         gender = determine_vocal_gender(article_dir)
