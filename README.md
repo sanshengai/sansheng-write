@@ -152,7 +152,7 @@ cp .env.example .env              # 填你自己的 key
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
 | **baoyu-skills 插件** | ② 起硬依赖 | md→HTML、像素渲染与微信 API 适配不可用 | 安装 `JimLiu/baoyu-skills`；provider 与微信 key 配在它自己的 `~/.baoyu-skills/` |
 | 已配置的 image provider | ③ | `render-visuals` 非零退出 | 按 `baoyu-image-gen` 配置 provider/model；业务视觉规则仍由本 Skill 编译 |
-| `MINIMAX_API_KEY` | ③ | BGM 硬门失败，不能推草稿 | MiniMax 国内站密钥 |
+| gcloud ADC（Vertex OAuth） | ③ | BGM 硬门失败，不能推草稿 | `gcloud auth application-default login` + `gcloud config set project <P>`；BGM 走 Lyria 3，**不用 API Key** |
 | 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
 | playwright / matplotlib | ③ 可选 | 独立精确图表的 SVG 转 PNG、数据图画不了；不用于封面/Hero/信息图补字 | `pip install playwright matplotlib` |
 

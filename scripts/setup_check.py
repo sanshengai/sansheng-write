@@ -172,8 +172,25 @@ def main() -> int:
     except Exception as exc:
         print(f"  {BAD}baoyu-image-gen renderer  探测失败 -- {exc}")
 
-    mm = _env_present("MINIMAX_API_KEY")
-    print(f"  {OK if mm else BAD}MINIMAX_API_KEY  " + ("已配置" if mm else "未配置 -- BGM 是发布硬门"))
+    # BGM 引擎 2026-08-21 由 MiniMax 切回 Lyria 3（Vertex interactions + OAuth）。
+    # 凭证不再是 API Key，而是 gcloud ADC，所以探的是 token 能不能取到、project 有没有设。
+    import subprocess as _sp
+
+    def _gc(cmd):
+        try:
+            r = _sp.run(cmd, capture_output=True, text=True, timeout=30, shell=(os.name == "nt"))
+            return (r.stdout or "").strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    tok = os.environ.get("GOOGLE_OAUTH_TOKEN", "").strip() or _gc(
+        ["gcloud", "auth", "application-default", "print-access-token"])
+    proj = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip() or _gc(
+        ["gcloud", "config", "get-value", "project"])
+    print(f"  {OK if tok else BAD}Vertex OAuth token  "
+          + ("可取得（gcloud ADC）" if tok else "取不到 -- 跑 gcloud auth application-default login；BGM 是发布硬门"))
+    print(f"  {OK if proj else BAD}Vertex project  "
+          + (f"{proj}" if proj else "未设置 -- 跑 gcloud config set project <PROJECT>"))
 
     # 微信凭证配在 baoyu 侧 ~/.baoyu-skills/.env（键名 WECHAT_APP_ID/WECHAT_APP_SECRET），
     # 不在本仓 .env——此前查错键名+错位置，永远发不了 ✅（复核 D5-1）

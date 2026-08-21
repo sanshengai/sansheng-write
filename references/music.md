@@ -1,13 +1,19 @@
-# 文章音乐生成（BGM / 主题曲）· MiniMax 版
+# 文章音乐生成（BGM / 主题曲）· Lyria 3 版
 
 > 从文章内容提炼主旨、生成**中文人声主题曲**、嵌入微信文章的完整 SOP。
 > **可从任意步骤开始**--每步均自包含。本阶段由编排器单线程执行（契约见 references/orchestration.md）。
 
 > ### 📌 引擎沿革
-> - 初版：Google Lyria 3 Pro（多模态图文输入）。
-> - 因 Lyria 3 在 Vertex AI 全路径 404（项目白名单不开放）**废弃**。
-> - **现引擎：MiniMax `music-2.6-free`**。与 Lyria 版差异：
->   ① 不支持图片输入（仅文字 prompt）；② 风格池收窄为 4 种舒缓系；③ 走**方法A**（`lyrics_optimizer` 自动写词）；④ 时长不锁（公众号无硬控）。
+> - 2026-04 初版：Google Lyria 3 Pro（多模态图文输入）。
+> - 2026-05-29 因 Vertex 全路径 404 **误判**为「项目白名单不开放」而废弃 → 切 MiniMax `music-2.6-free`。
+> - 2026-08-20 MiniMax 音乐 API 对非历史付费用户关停（HTTP 410 / `status_code 2153`）。
+>   按量计费 Key、订阅 Key、网页声贝三条通道实测全灭，充值升套餐均无法解锁。
+> - 2026-08-21 **查明当年的 404 是端点形态用错**——Lyria 3 走 `interactions`，不是 `:predict`；
+>   换对后实测跑通中文女声整首歌（176s）。**现引擎：Lyria 3 Pro `lyria-3-pro-preview`**。
+>
+> 现引擎特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 4 种舒缓系；
+> ③ 自动写词，且**歌词随响应返回**（落 `{歌名}-歌词.txt`，旧引擎「词不可控、看不到文本」的代价消失）；
+> ④ 时长约 3 分钟；⑤ 计费 $0.08/首，走 Cloud，$300 赠金可覆盖。
 
 ---
 
@@ -34,7 +40,8 @@
 
 ## 核心脚本（V2：Claude 提炼诗意意象 → 传参）
 
-> 🔴 **不调 Google**（那是 Lyria 时代走 Google AI Studio 的历史包袱，MiniMax 不碰 Google）。由 **Claude 在 BGM 阶段按下面《Claude 提炼标准》提炼**，作为参数传给脚本；脚本是纯执行器（拼 V2 空灵 prompt → MiniMax 写词生成）。
+> 🔴 **提炼环节不调任何模型**：由 **Claude 在 BGM 阶段按下面《Claude 提炼标准》提炼**，作为参数传给脚本；脚本是纯执行器（拼 V2 空灵 prompt → Lyria 3 写词生成）。
+> （生成环节本身走 Google Vertex；这与「提炼不调模型」不冲突，别再沿用旧文档里"不碰 Google"的说法。）
 
 ```bash
 python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
@@ -46,10 +53,10 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 # 参数优先级：CLI > article-meta.yaml music 块 > 规则兜底
 #   --theme-brief  不传则用 frontmatter digest/description 兜底（音色不如诗意提炼空灵，会警告）
 #   --style  ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal（默认 ethereal_folk）
-#   --gender 默认按序号奇偶交替（奇女偶男）；--model 默认 music-2.6-free 限免
+#   --gender 默认按序号奇偶交替（奇女偶男）；--model 默认 lyria-3-pro-preview
 ```
 
-前置：`.env` 需含 `MINIMAX_API_KEY`（国内站 api.minimaxi.com，账户需余额>0）。封面（可选，失败不阻塞）另需 `GOOGLE_API_KEY`（gen_img.py 用）。
+前置：已装 gcloud 并跑过 `gcloud auth application-default login` + `gcloud config set project <PROJECT>`（脚本用 ADC 取 OAuth token；**不需要 API Key**，缺凭证 exit 2 阻断发布链）。封面（可选，失败不阻塞）另需 `GOOGLE_API_KEY`（gen_img.py 的 Vertex Express key，与本阶段凭证不是同一套）。
 
 ---
 
@@ -75,9 +82,9 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 
 ---
 
-## 🔴 Claude 提炼标准（方法A 的最大杠杆）
+## 🔴 Claude 提炼标准（自动写词的最大杠杆）
 
-方法A 下 MiniMax 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色空灵度**（实测：AI 分析歌词给适配风格）。所以 Claude 提炼时务必：
+Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色空灵度**（实测：模型按歌词语义决定配器与唱法）。所以 Claude 提炼时务必：
 
 | 要素 | 标准 |
 |---|---|
@@ -93,16 +100,28 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 
 ---
 
-## API 调用要点（MiniMax music_generation）
+## API 调用要点（Vertex Lyria 3 · interactions）
 
 | 项 | 值 |
 |----|----|
-| 端点 | `POST https://api.minimaxi.com/v1/music_generation`（国内站，key 不与 minimax.io 互通） |
-| 鉴权 | `Authorization: Bearer {MINIMAX_API_KEY}`（无需 GroupId） |
-| 模型 | `music-2.6-free`（限免，需账户余额 >0）/ `music-2.6`（付费） |
-| 入参 | `prompt` + `lyrics_optimizer=true` + `is_instrumental=false` + `audio_setting{44100/256000/mp3}` + `output_format=url` |
-| 返回 | 同步，`data.audio` 为 url（24h 有效），下载落 `<文章目录>/{歌名}.mp3` |
-| 常见错误 | `1008 余额不足` → 登录 platform.minimaxi.com 用户中心-余额 充值 |
+| 端点 | `POST https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions` |
+| 鉴权 | `Authorization: Bearer $(gcloud auth application-default print-access-token)` |
+| 模型 | `lyria-3-pro-preview`（整首，可几分钟）/ `lyria-3-clip-preview`（固定 30s） |
+| 入参 | `{"model": "...", "input": "<自然语言描述，含风格/人声/配器/主旨/简体中文歌词要求>"}` |
+| 返回 | 同步；`outputs[]` 含 `type=audio`（**内联 base64 mp3**，无链接过期问题）、`type=text`×2（歌词 / caption） |
+| 计费 | $0.08/首（Clip $0.04）。走 `aiplatform.googleapis.com` = Cloud 计费，**$300 赠金覆盖** |
+
+### 🔴 三个坑（错任一个都报错，且报错措辞会把人带偏）
+
+| 现象 | 真正原因 |
+|------|----------|
+| **404** `not found or your project does not have access` | 用了 `publishers/google/models/{M}:predict`——那个形态只适用于 `lyria-002`。**不是**没白名单（public preview 无需 allowlist），社区里大批人卡在这个误判上，本管线 2026-05 也栽在这里 |
+| **401** `API keys are not supported by this API` | interactions 只认 OAuth2。`.env` 里那把 `AQ.` 开头的 Vertex Express key 用不了（它是给 `gen_img.py` 的） |
+| **403** `Permission 'aiplatform.interactions.create' denied` | project 选错。必须用**当前 ADC 账号自己有权限**的 project，别拿 `.env` 里的 `GOOGLE_VERTEX_PROJECT` |
+
+> 🔴 **歌词默认出繁体**——prompt 必须显式写「Simplified Chinese（简体中文，NOT traditional）」，
+> `build_music_prompt()` 已内置该约束，改 prompt 时不要删掉。
+> 🔴 `lyria-002` 是**纯器乐无人声**（实测），顶不了主题曲，只能当纯 BGM 用。
 
 ---
 
@@ -137,4 +156,4 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 
 ---
 
-*引擎 Lyria → MiniMax music-2.6-free，方法A 自动写词，风格池收窄 4 种舒缓系。*
+*引擎 Lyria 3 Pro（Vertex interactions + OAuth），自动写词并回传歌词，风格池收窄 4 种舒缓系。*

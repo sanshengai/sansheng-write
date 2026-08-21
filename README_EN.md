@@ -138,7 +138,7 @@ cp .env.example .env              # your own keys
 | Node 18+ / jimp | ② | No logo watermark | `cd scripts && npm install` |
 | **baoyu-skills plugin** | hard dep from ② | md→HTML, pixel rendering, and WeChat adapters are unavailable | install `JimLiu/baoyu-skills`; provider and WeChat credentials stay under its own `~/.baoyu-skills/` |
 | Configured image provider | ③ | `render-visuals` exits non-zero | configure provider/model through `baoyu-image-gen`; this Skill still owns the visual rules |
-| `MINIMAX_API_KEY` | ③ | The BGM release gate fails | MiniMax China API key |
+| gcloud ADC (Vertex OAuth) | ③ | The BGM release gate fails | `gcloud auth application-default login` + `gcloud config set project <P>`; BGM runs on Lyria 3, **no API key needed** |
 | WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP |
 | playwright / matplotlib | ③ optional | No SVG→PNG for separate deterministic diagrams and no data charts; never used to add text to covers/Hero/infographics | `pip install playwright matplotlib` |
 

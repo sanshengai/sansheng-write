@@ -110,7 +110,7 @@ infographic_style: "claymation"      # 固定值，全站统一粘土风。不�
 visual_profile: "warm-light-clay"    # 固定值，与 claymation 绑定。
                                      # 配方会把暖米黄背景、当前主题主色、浅色阈值同时绑定到信息图与 Hero。
 
-# 音乐配置（BGM 阶段确定；引擎 MiniMax，风格池收窄为 4 种舒缓系）
+# 音乐配置（BGM 阶段确定；引擎 Lyria 3 Pro，风格池收窄为 4 种舒缓系）
 music:
   # 风格 4 选 1（必须跟 generate_article_bgm.py 的 STYLE_POOL 同步）：
   #   ethereal_folk   空灵民谣 — 深度思考/观点输出/人物说理（70 BPM）
@@ -121,7 +121,7 @@ music:
   style: ""
   gender: ""                 # 人声性别：留空=按文章序号自动交替（奇数女/偶数男），或手动 female / male
   song_name: ""              # 歌曲名（AI 起名或自定义）
-  model: "music-2.6-free"    # MiniMax 限免版（付费用 music-2.6）
+  model: "lyria-3-pro-preview"   # 整首（可几分钟）；30s 片段用 lyria-3-clip-preview
 
 # 阶段完成记录（各阶段完成后勾选）
 # - outline

@@ -7,7 +7,7 @@ pipeline.py — 微信公众号写作流水线管理器
 
 流程顺序：
   outline → writing+title → cover → infographic → bgm → layout → logo → publish → archive
-(2026-06-18: BGM 阶段复活, 引擎 Lyria→MiniMax; 见 references/music.md)
+(2026-08-21: BGM 引擎 MiniMax→Lyria 3 Pro, 走 Vertex interactions; 见 references/music.md)
   writing 阶段内部还含 prep_writing→开头盲选→内容增强→磨稿→冷读外审 五个无状态子步骤，
   不在 STAGE_ORDER 记账，详见 autopilot.md。
 
@@ -110,14 +110,14 @@ STAGE_ORDER = [
     "publish",
     "archive",
 ]
-# 2026-06-18: 'bgm' stage 复活 (引擎 Lyria→MiniMax music-2.6-free, 方法A 自动写词)
+# 2026-08-21: 'bgm' 引擎切 Lyria 3 Pro (lyria-3-pro-preview, Vertex interactions + OAuth, 自动写词)
 
 STAGE_LABELS = {
     "outline":     "选题 + 大纲",
     "writing":     "正文写作 + 标题锻造",
     "cover":       "视觉任务单 + 封面（sansheng-write.visual-planner）",
     "infographic": "Hero + 信息图 ≥ 4 张（visual planner 编译，baoyu-image-gen 渲染）",
-    "bgm":         "主题音乐（generate_article_bgm.py · MiniMax 方法A）",
+    "bgm":         "主题音乐（generate_article_bgm.py · Lyria 3 Pro）",
     "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
     "publish":     "草稿事务（预检 + draft/add + 官方 draft/get 读回）",
@@ -150,7 +150,7 @@ STAGE_HINTS = {
     ),
     "bgm": (
         f'python "{_skill_path("scripts/generate_article_bgm.py")}" .\n'
-        "  （MiniMax music-2.6-free 方法A：从定稿提炼诗意意象 → 自动写词 → 生成中文人声主题曲\n"
+        "  （Lyria 3 Pro：从定稿提炼诗意意象 → 自动写词 → 生成中文人声主题曲，歌词随响应返回\n"
         "   舒缓空灵 4 风格 / 男女声奇偶交替 / 自动插 AUDIO-CARD 引导卡片。不需图片输入）\n"
         "  🔴 必须在 layout（MD→HTML）之前跑：先插卡进 定稿.md，排版才会渲染出音频卡片。\n"
         "  完成后：pipeline.py verify bgm"
