@@ -8,7 +8,7 @@
 
 🔴 端点/凭证三件事（错任一件都会得到误导性报错，2026-08-21 实测）：
     ① 端点是 `POST /v1beta1/projects/{P}/locations/global/interactions`，
-       **不是** `publishers/google/models/{M}:predict`（后者只适用于 lyria-002）。
+       **不是** `publishers/google/models/{M}:predict`（那是旧版音乐模型的端点形态）。
        用错 → 404 "not found or your project does not have access"，读起来像没白名单，
        其实 public preview 无需 allowlist。社区里一大片人卡在这个误判上。
     ② 只认 **OAuth2**（gcloud ADC），传 API Key → 401 "API keys are not supported"。
@@ -128,7 +128,7 @@ VOCAL_STYLES = {
 #    判据：404=端点形态错 / 401=该用 OAuth 而非 API key / 403 denied=project 选错。
 VERTEX_INTERACTIONS = ("https://aiplatform.googleapis.com/v1beta1"
                        "/projects/{project}/locations/global/interactions")
-DEFAULT_LYRIA_MODEL = "lyria-3-pro-preview"   # 整首（可几分钟）；30s 片段用 lyria-3-clip-preview
+DEFAULT_LYRIA_MODEL = "lyria-3-pro-preview"   # 🔴 固定用这一个，别换：其余 Google 音乐模型要么无人声要么只出 30s
 
 
 def load_env():
@@ -540,7 +540,7 @@ def main():
                         help="人声性别（默认按文章序号奇偶交替）")
     parser.add_argument("--model", default=None,
                         help=f"Lyria 模型（默认 article-meta.yaml music.model，再兜底 {DEFAULT_LYRIA_MODEL}）。"
-                             "整首用 lyria-3-pro-preview；30s 片段用 lyria-3-clip-preview")
+                             "🔴 固定 lyria-3-pro-preview，除非你明确知道在做什么，否则不要传")
     parser.add_argument("--output", default=None, help="输出 MP3 文件路径")
     parser.add_argument(
         "--skip-cover",

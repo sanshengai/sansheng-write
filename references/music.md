@@ -106,7 +106,7 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 |----|----|
 | 端点 | `POST https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions` |
 | 鉴权 | `Authorization: Bearer $(gcloud auth application-default print-access-token)` |
-| 模型 | `lyria-3-pro-preview`（整首，可几分钟）/ `lyria-3-clip-preview`（固定 30s） |
+| 模型 | `lyria-3-pro-preview` — 本管线**固定用这一个**，不要换 |
 | 入参 | `{"model": "...", "input": "<自然语言描述，含风格/人声/配器/主旨/简体中文歌词要求>"}` |
 | 返回 | 同步；`outputs[]` 含 `type=audio`（**内联 base64 mp3**，无链接过期问题）、`type=text`×2（歌词 / caption） |
 | 计费 | $0.08/首（Clip $0.04）。走 `aiplatform.googleapis.com` = Cloud 计费，**$300 赠金覆盖** |
@@ -115,13 +115,13 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 
 | 现象 | 真正原因 |
 |------|----------|
-| **404** `not found or your project does not have access` | 用了 `publishers/google/models/{M}:predict`——那个形态只适用于 `lyria-002`。**不是**没白名单（public preview 无需 allowlist），社区里大批人卡在这个误判上，本管线 2026-05 也栽在这里 |
+| **404** `not found or your project does not have access` | 用了 `publishers/google/models/{M}:predict`——那是旧版音乐模型的端点形态，对 Lyria 3 必然 404。**不是**没白名单（public preview 无需 allowlist），社区里大批人卡在这个误判上，本管线 2026-05 也栽在这里 |
 | **401** `API keys are not supported by this API` | interactions 只认 OAuth2。`.env` 里那把 `AQ.` 开头的 Vertex Express key 用不了（它是给 `gen_img.py` 的） |
 | **403** `Permission 'aiplatform.interactions.create' denied` | project 选错。必须用**当前 ADC 账号自己有权限**的 project，别拿 `.env` 里的 `GOOGLE_VERTEX_PROJECT` |
 
 > 🔴 **歌词默认出繁体**——prompt 必须显式写「Simplified Chinese（简体中文，NOT traditional）」，
 > `build_music_prompt()` 已内置该约束，改 prompt 时不要删掉。
-> 🔴 `lyria-002` 是**纯器乐无人声**（实测），顶不了主题曲，只能当纯 BGM 用。
+> 🔴 **只用 `lyria-3-pro-preview`**。Google 还有别的音乐模型，但要么纯器乐没人声、要么只出 30 秒片段，都顶不了主题曲——本管线不提供切换选项，避免选错。
 
 ---
 

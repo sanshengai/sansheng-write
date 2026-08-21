@@ -121,7 +121,7 @@ music:
   style: ""
   gender: ""                 # 人声性别：留空=按文章序号自动交替（奇数女/偶数男），或手动 female / male
   song_name: ""              # 歌曲名（AI 起名或自定义）
-  model: "lyria-3-pro-preview"   # 整首（可几分钟）；30s 片段用 lyria-3-clip-preview
+  model: "lyria-3-pro-preview"   # 🔴 固定用这一个，不要改
 
 # 阶段完成记录（各阶段完成后勾选）
 # - outline
