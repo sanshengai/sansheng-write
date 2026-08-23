@@ -149,3 +149,43 @@ def test_website_sync_timeout_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("SANSHENG_WRITE_WEBSITE_TIMEOUT", "120")
     kwargs = _run_capture_kwargs(tmp_path, monkeypatch)
     assert kwargs["timeout"] == 120
+
+
+def test_archived_code_reads_this_worktree_works_file(tmp_path):
+    article = tmp_path / "94-psychology"
+    article.mkdir()
+    (tmp_path / "作品库.yaml").write_text(
+        "works:\n- seq: 94\n  code: OBS-30\n", encoding="utf-8")
+    assert pipeline._archived_code(article) == "OBS-30"
+
+
+def test_archived_code_missing_code_raises(tmp_path):
+    article = tmp_path / "94-psychology"
+    article.mkdir()
+    (tmp_path / "作品库.yaml").write_text(
+        "works:\n- seq: 94\n  title: x\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="没有 CODE"):
+        pipeline._archived_code(article)
+
+
+def test_empty_code_does_not_run_website_command(tmp_path, monkeypatch):
+    called = {"n": 0}
+
+    def runner(*_a, **_k):
+        called["n"] += 1
+        raise AssertionError("empty CODE must not invoke website_command")
+
+    monkeypatch.setattr(
+        pipeline, "brand",
+        lambda: {"publish": {"website_command": "run-site {code}",
+                             "website_cwd": str(tmp_path)}})
+    monkeypatch.setattr(pipeline, "_archived_code", lambda _c: "")
+    monkeypatch.setattr(pipeline, "_resolve_website_command", lambda c: (c, ""))
+    monkeypatch.setattr(pipeline, "_uncommitted_archive_outputs", lambda c, w: [])
+    assert pipeline._run_website_sync(
+        tmp_path, "https://mp.weixin.qq.com/s/X", runner=runner) is False
+    assert called["n"] == 0
+    receipt = json.loads(
+        (tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+    assert receipt["latest"]["status"] == "failed"
+    assert receipt["latest"]["reason"] == "article_code_missing"

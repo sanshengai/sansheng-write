@@ -127,6 +127,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - `article-meta.yaml.source_url` 可填完整 URL、`default` 或 `treasure`。
 - 默认阅读原文地址来自 profile 的 `publish.source_url_default`。
 - 官网同步来自 profile 的 `publish.website_command`；相对路径命令应同时配置 `publish.website_cwd` 或 `SANSHENG_WRITE_WEBSITE_CWD`。
+- 🔴 `{code}` 不得为空。CODE 必须从**本 worktree** 的 `文稿成品/作品库.yaml` 读出；空 CODE 会让 HTML 上线而 `article-assets` / `song-assets` 因未授权不上线，封面、正文图、主题曲全部 404（2026-08-21 OBS-30）。
 - 朋友圈尾巴来自 `writing.moments_cta` 和 `identity.site`。
 
 缺微信凭证、远端读回失败或官网命令失败都应明确阻断；不存在“先发布、以后再补证据”的降级路径。

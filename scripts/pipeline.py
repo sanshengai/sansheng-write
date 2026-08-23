@@ -2461,18 +2461,30 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
 
 
 def _archived_code(cwd: Path) -> str:
-    try:
-        from works_registry import load_works
+    """Read CODE from this worktree's 作品库.yaml. Fail closed.
 
-        seq_text = cwd.name.split("-", 1)[0]
-        seq = int(seq_text) if seq_text.isdigit() else None
-        record = next(
-            (item for item in load_works() if item.get("seq") == seq),
-            None,
-        )
-        return str((record or {}).get("code") or "")
-    except Exception:
-        return ""
+    不得回落到全局 WORKS_FILE：那份指针常钉在主仓，子 worktree 归档后主仓
+    读出来是空的。2026-08-21 OBS-30 因此以空 CODE 跑完官网同步——HTML 上线，
+    article-assets / song-assets 仍受保护没上传，封面、正文图、主题曲全 404。
+    """
+    seq_text = cwd.name.split("-", 1)[0]
+    if not seq_text.isdigit():
+        raise ValueError(f"文章目录名读不出序号：{cwd.name}")
+    works_path = cwd.parent / "作品库.yaml"
+    if not works_path.is_file():
+        raise FileNotFoundError(f"本 worktree 找不到作品库：{works_path}")
+    if _yaml is None:
+        raise RuntimeError("需要 PyYAML 才能读取作品库")
+    data = _yaml.safe_load(works_path.read_text(encoding="utf-8")) or {}
+    seq = int(seq_text)
+    record = next(
+        (item for item in (data.get("works") or []) if item.get("seq") == seq),
+        None,
+    )
+    code = str((record or {}).get("code") or "").strip()
+    if not code:
+        raise RuntimeError(f"作品库 {works_path} 里序号 {seq} 没有 CODE")
+    return code
 
 
 # 构建工具的进度行（git checkout / npm / rsync 都会刷成千上万行），它们在
@@ -2642,8 +2654,34 @@ def _run_website_sync(
         )
         print(f"❌ 官网同步工作目录不存在：{website_cwd}")
         return False
+    try:
+        code = str(_archived_code(cwd) or "").strip()
+    except Exception as exc:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "article_code_missing",
+                "detail": str(exc)[:300],
+                "created_at": _now_iso(),
+            },
+        )
+        print(f"❌ 官网同步拿不到文章 CODE：{exc}")
+        print("   空 CODE 会让 HTML 上线而封面/正文图/主题曲全部 404。")
+        return False
+    if not code:
+        _append_website_sync_attempt(
+            receipt_path,
+            {
+                "status": "failed",
+                "reason": "article_code_missing",
+                "created_at": _now_iso(),
+            },
+        )
+        print("❌ 官网同步拒绝空 CODE：不传编号时资产仍受保护，不会上传。")
+        return False
     values = {
-        "code": _archived_code(cwd),
+        "code": code,
         "article_dir": str(cwd),
         "wechat_url": wechat_url,
     }
