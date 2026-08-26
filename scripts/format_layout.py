@@ -1274,6 +1274,13 @@ def process_lead(html, cwd, args):
         hero_rel = "素材/hero.png"
         hero_abs = os.path.join(cwd, "素材", "hero.png")
 
+    # 🔴 Hero 是本函数直接注入的，而 normalize_img_local_paths() 在主流程里跑在
+    # process_lead_quote() **之前** —— 它归一不到这里写下的路径。Windows 反斜杠
+    # 绝对路径里的 \n \t \r \b 会被后续处理误解析成控制字符，data-local-path 被截断，
+    # 上传器报 Image not found 却**照常返回成功**，草稿里悄悄少一张 Hero。
+    # 与 normalize_img_local_paths 同口径：一律用正斜杠（Windows 与 wechat-api 都接受）。
+    hero_abs = hero_abs.replace("\\", "/")
+
     lead = lead.replace(
         '<img src="{{HERO_IMAGE_URL}}"',
         f'<img src="{hero_rel}" data-local-path="{hero_abs}"',
