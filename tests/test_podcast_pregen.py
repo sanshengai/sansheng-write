@@ -169,3 +169,42 @@ def test_title_or_prompt_change_expires_audio(tmp_path):
     state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
     (art / "podcast-focus.md").write_text("提示词也变了。\n", encoding="utf-8")
     assert pe.generation_is_fresh(art, config) is False
+
+
+def test_generation_manifest_binds_audio_and_generation_inputs(tmp_path):
+    art = _pregen_article(tmp_path)
+    config = _podcast_cfg(art)
+    mp3 = distribute.channel_dir(art, "podcast") / "audio.mp3"
+
+    manifest_path = pe._write_audio_manifest(
+        art,
+        mp3,
+        config,
+        {"codec_name": "mp3", "duration_seconds": 123.5},
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["audio_sha256"] == hashlib.sha256(mp3.read_bytes()).hexdigest()
+    assert manifest["generation_digest"] == pe.generation_digest(art, config)
+    assert manifest["duration_seconds"] == 123.5
+    assert not manifest_path.with_suffix(manifest_path.suffix + ".next").exists()
+    assert pe.generation_is_fresh(art, config) is True
+
+
+def test_invalid_or_stale_generation_manifest_expires_audio(tmp_path):
+    art = _pregen_article(tmp_path)
+    config = _podcast_cfg(art)
+    mp3 = distribute.channel_dir(art, "podcast") / "audio.mp3"
+    manifest_path = pe._write_audio_manifest(
+        art,
+        mp3,
+        config,
+        {"codec_name": "mp3", "duration_seconds": 123.5},
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["generation_digest"] = "stale"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert pe.generation_is_fresh(art, config) is False
+
+    manifest_path.write_text("{broken", encoding="utf-8")
+    assert pe.generation_is_fresh(art, config) is False

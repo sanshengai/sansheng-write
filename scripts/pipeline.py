@@ -1014,12 +1014,17 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
     try:
         import distribute as _distribute_audio
         if _distribute_audio.podcast_wechat_embed_enabled():
-            from release_to_draft import AUDIO_RECEIPT_FILE, verify_wechat_audio
+            from release_to_draft import (
+                AUDIO_RECEIPT_FILE,
+                compare_wechat_audio_receipts,
+                verify_wechat_audio,
+            )
             receipt_path = cwd / AUDIO_RECEIPT_FILE
             if not receipt_path.is_file():
                 errors.append(
                     "双音频草稿尚无官方读回凭证；请在微信编辑器插入主题曲与播客音频、"
-                    "保存后运行 pipeline.py wechat-audio-check，再正式发布"
+                    "保存并完成首尾试听后运行 pipeline.py wechat-audio-check "
+                    "--confirm-audition，再正式发布"
                 )
             else:
                 try:
@@ -1027,27 +1032,16 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
                     expected_media = str(
                         (state.get("stages", {}).get("publish", {}) or {}).get("draft_media_id") or ""
                     )
-                    if not audio_receipt.get("remote_verified"):
-                        errors.append("双音频草稿凭证未标 remote_verified=true")
-                    if expected_media and audio_receipt.get("draft_media_id") != expected_media:
-                        errors.append("双音频草稿凭证与本篇 draft_media_id 不一致")
-                    if set(audio_receipt.get("roles") or []) != {"theme", "podcast"}:
-                        errors.append("双音频草稿凭证未同时覆盖 theme 与 podcast")
                     fresh_receipt, fresh_errors = verify_wechat_audio(cwd, persist=False)
                     errors.extend(
                         f"正式发布前远端复核失败：{error}" for error in fresh_errors
                     )
                     if fresh_receipt is not None:
-                        if (
-                            audio_receipt.get("handoff_digest")
-                            != fresh_receipt.get("handoff_digest")
-                        ):
-                            errors.append("双音频草稿凭证已过期：交接单在上次核验后变化")
-                        if (
-                            audio_receipt.get("local_audio_sha256")
-                            != fresh_receipt.get("local_audio_sha256")
-                        ):
-                            errors.append("双音频草稿凭证已过期：本地音频在上次核验后变化")
+                        errors.extend(compare_wechat_audio_receipts(
+                            audio_receipt,
+                            fresh_receipt,
+                            expected_media_id=expected_media,
+                        ))
                 except (json.JSONDecodeError, OSError) as exc:
                     errors.append(f"双音频草稿凭证损坏：{exc}")
     except Exception as exc:
@@ -3778,14 +3772,18 @@ def cmd_release_to_draft(cwd: Path) -> None:
         print("⏸ 草稿仍需人工插入音频：")
         for role in handoff["roles"]:
             print(f"   • {role['label']} ← {role['source']}")
-        print("   保存草稿后运行：pipeline.py wechat-audio-check；通过后再正式发布。")
+        print("   保存后在微信预览分别试听两条音频的开头/结尾 10 秒，再运行：")
+        print("   pipeline.py wechat-audio-check --confirm-audition")
 
 
-def cmd_wechat_audio_check(cwd: Path) -> None:
+def cmd_wechat_audio_check(cwd: Path, *, confirm_audition: bool = False) -> None:
     """人工插入音频后的官方读回门；没有凭证就不得进入 finalize。"""
     from release_to_draft import verify_wechat_audio
 
-    receipt, errors = verify_wechat_audio(cwd)
+    receipt, errors = verify_wechat_audio(
+        cwd,
+        audition_confirmed=confirm_audition,
+    )
     if errors or receipt is None:
         _log_audio_event(
             cwd, "wechat_audio_readback", "fail",
@@ -4071,9 +4069,14 @@ def main():
         "release-to-draft",
         help="唯一草稿发布入口：预检 → draft/add → draft/get → 远端凭证",
     )
-    sub.add_parser(
+    p_wechat_audio = sub.add_parser(
         "wechat-audio-check",
         help="人工插入主题曲/播客音频后，用官方 draft/get 复核再允许正式发布",
+    )
+    p_wechat_audio.add_argument(
+        "--confirm-audition",
+        action="store_true",
+        help="确认已在微信预览分别试听两条音频的开头 10 秒和结尾 10 秒",
     )
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
@@ -4125,7 +4128,10 @@ def main():
     elif args.cmd == "podcast-pregen":
         cmd_podcast_pregen(cwd)
     elif args.cmd == "wechat-audio-check":
-        cmd_wechat_audio_check(cwd)
+        cmd_wechat_audio_check(
+            cwd,
+            confirm_audition=getattr(args, "confirm_audition", False),
+        )
     elif args.cmd == "init":
         cmd_init(cwd)
     elif args.cmd == "status":

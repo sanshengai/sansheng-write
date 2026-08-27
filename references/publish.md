@@ -28,10 +28,10 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 若 `podcast.wechat_embed: true`，草稿创建成功后会生成 `_wechat-audio-handoff.json`。作者在微信编辑器依次把主题曲与播客音频插入各自卡片并删除占位文字，保存后运行：
 
 ```bash
-python "$SKILL/scripts/pipeline.py" wechat-audio-check
+python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition
 ```
 
-只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`。
+先在微信预览分别试听主题曲与播客的开头/结尾 10 秒。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；试听声明会与该次远端回读绑定。
 
 ### 阶段二：作者人工正式发布
 
@@ -127,7 +127,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - `_release-attempt.json`：草稿创建后的断点记录，防重试重复建稿。
 - `_publish-receipt.json`：官方读回通过后的 v2 凭证。
 - `_wechat-audio-handoff.json`：人工插入双音频前的草稿 ID、角色、相对路径与本地 SHA-256。
-- `_wechat-audio-receipt.json`：人工编辑后的官方全文回读凭证；`finalize` 前会再次远端复核，不能只复用旧文件。
+- `_wechat-audio-receipt.json`：人工编辑后的官方全文回读、远端播放器身份与首尾试听凭证；`finalize` 前会再次远端复核，不能只复用旧文件。
 - `_website-sync-receipt.json`：官网同步完成、失败或未配置记录。
 
 本地 HTML、Hero、视觉凭证发生变化后，旧发布凭证失效，必须重跑 `release-to-draft`。标题、作者正文、播客提示词、语言、时长或生成器版本变化后，旧播客音频失效；只改音频卡样式不重生成节目。

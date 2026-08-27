@@ -58,7 +58,7 @@ python "$SKILL/scripts/pipeline.py" status
    - BGM 是发布硬门。
    - ⏱ **BGM 注入 AUDIO-CARD 后，启用了 `podcast.wechat_embed: true` 就立刻跑 `pipeline.py podcast-pregen`**。它先写入同级 PODCAST-CARD，再生成音频；随后才允许排版与草稿。未显式开启嵌入时，仍可预生成 RSS，但公众号保持单卡。
    - 固定首屏顺序是「导读 → 主题曲卡 → 播客卡 → 正文」；两卡同宽上下排列。
-   - 草稿创建只运行 `release-to-draft`；人工插入两份微信原生音频并保存后，必须运行 `wechat-audio-check`，通过后才能正式发布。
+   - 草稿创建只运行 `release-to-draft`；人工插入两份微信原生音频并保存、在微信预览分别试听两条音频的开头/结尾 10 秒后，必须运行 `wechat-audio-check --confirm-audition`，通过后才能正式发布。
 
 作者直接提供已确认定稿时，跳过 1--4，使用：
 

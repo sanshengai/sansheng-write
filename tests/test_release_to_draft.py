@@ -228,7 +228,12 @@ def _dual_audio_article(root: Path) -> Path:
 
 
 def _dual_audio_reader(
-    *, mutate_body: bool = False, stray_podcast: bool = False, duplicate_image: bool = False
+    *,
+    mutate_body: bool = False,
+    stray_podcast: bool = False,
+    duplicate_image: bool = False,
+    duplicate_audio_identity: bool = False,
+    reverse_cards: bool = False,
 ):
     base = _reader()
 
@@ -238,7 +243,8 @@ def _dual_audio_reader(
             "（👉 删除本段文字，并插入主题曲音频）",
             '<mp-common-mpaudio name="主题曲"></mp-common-mpaudio>',
         )
-        podcast_player = '<mp-common-mpaudio name="播客"></mp-common-mpaudio>'
+        podcast_name = "主题曲" if duplicate_audio_identity else "播客"
+        podcast_player = f'<mp-common-mpaudio name="{podcast_name}"></mp-common-mpaudio>'
         content = content.replace(
             "（👉 删除本段文字，并插入播客音频）",
             "" if stray_podcast else podcast_player,
@@ -253,6 +259,17 @@ def _dual_audio_reader(
                 "https://wechat-image.invalid/hero.png",
                 1,
             )
+        if reverse_cards:
+            blocks = re.findall(
+                r"<!-- (?:AUDIO|PODCAST)-CARD-START -->.*?"
+                r"<!-- (?:AUDIO|PODCAST)-CARD-END -->",
+                content,
+                flags=re.S,
+            )
+            assert len(blocks) == 2
+            content = content.replace(blocks[0], "__FIRST_AUDIO_CARD__", 1)
+            content = content.replace(blocks[1], blocks[0], 1)
+            content = content.replace("__FIRST_AUDIO_CARD__", blocks[1], 1)
         actual["content"] = content
         return actual
 
@@ -263,7 +280,11 @@ def test_dual_audio_readback_checks_players_and_full_article(tmp_path):
     from scripts.release_to_draft import verify_wechat_audio
 
     article = _dual_audio_article(tmp_path)
-    receipt, errors = verify_wechat_audio(article, reader=_dual_audio_reader())
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(),
+        audition_confirmed=True,
+    )
 
     assert errors == []
     assert receipt is not None
@@ -271,6 +292,96 @@ def test_dual_audio_readback_checks_players_and_full_article(tmp_path):
     assert receipt["audio_count"] == 2
     assert all(receipt["remote_readback"]["checks"].values())
     assert set(receipt["local_audio_sha256"]) == {"theme", "podcast"}
+    assert set(receipt["remote_audio_components"]) == {"theme", "podcast"}
+    assert receipt["audition"]["confirmed"] is True
+
+
+def test_dual_audio_readback_requires_explicit_remote_audition(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(article, reader=_dual_audio_reader())
+
+    assert receipt is None
+    assert any("开头 10 秒、结尾 10 秒" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_duplicate_remote_component_identity(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(duplicate_audio_identity=True),
+        audition_confirmed=True,
+    )
+
+    assert receipt is None
+    assert any("相同的远端音频组件身份" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_reversed_card_order(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(reverse_cards=True),
+        audition_confirmed=True,
+    )
+
+    assert receipt is None
+    assert any("主题曲卡 → 播客卡 → 正文" in error for error in errors)
+
+
+def test_finalize_receipt_comparison_rejects_stale_remote_player(tmp_path):
+    from scripts.release_to_draft import (
+        compare_wechat_audio_receipts,
+        verify_wechat_audio,
+    )
+
+    article = _dual_audio_article(tmp_path)
+    stored, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(),
+        audition_confirmed=True,
+    )
+    assert errors == [] and stored is not None
+    fresh = json.loads(json.dumps(stored, ensure_ascii=False))
+    fresh.pop("audition")
+    fresh["remote_audio_components"]["podcast"]["component_digest"] = "replaced"
+
+    compare_errors = compare_wechat_audio_receipts(
+        stored,
+        fresh,
+        expected_media_id="draft-media-001",
+    )
+
+    assert any("远端播放器身份" in error for error in compare_errors)
+
+
+def test_finalize_receipt_comparison_rejects_legacy_receipt_without_audition(tmp_path):
+    from scripts.release_to_draft import (
+        compare_wechat_audio_receipts,
+        verify_wechat_audio,
+    )
+
+    article = _dual_audio_article(tmp_path)
+    current, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(),
+        audition_confirmed=True,
+    )
+    assert errors == [] and current is not None
+    legacy = json.loads(json.dumps(current, ensure_ascii=False))
+    legacy["schema_version"] = 2
+    legacy.pop("audition")
+    legacy.pop("remote_audio_components")
+
+    compare_errors = compare_wechat_audio_receipts(legacy, current)
+
+    assert any("缺人工试听证明" in error for error in compare_errors)
+    assert any("远端播放器身份" in error for error in compare_errors)
 
 
 def test_dual_audio_readback_rejects_unrelated_manual_body_edit(tmp_path):

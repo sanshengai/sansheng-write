@@ -46,6 +46,8 @@ DOWNLOAD_RETRIES = 5
 DOWNLOAD_INTERVAL = 90       # status=completed 后 CDN 仍可能没同步好，晨报实测要等
 MIN_AUDIO_BYTES = 100_000
 PODCAST_GENERATOR_SCHEMA = 2
+AUDIO_MANIFEST_SCHEMA = 1
+AUDIO_MANIFEST_FILE = "audio.manifest.json"
 
 
 def log(msg: str) -> None:
@@ -84,25 +86,83 @@ def generation_digest(article_dir: Path, c: dict | None = None) -> str:
     return distribute._digest(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
+def _audio_manifest_path(mp3: Path) -> Path:
+    return mp3.parent / AUDIO_MANIFEST_FILE
+
+
+def _read_audio_manifest(mp3: Path) -> dict:
+    path = _audio_manifest_path(mp3)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"_invalid": True}
+    return payload if isinstance(payload, dict) else {"_invalid": True}
+
+
+def _write_audio_manifest(
+    article_dir: Path,
+    mp3: Path,
+    c: dict,
+    probe: dict,
+) -> Path:
+    """Atomic generation receipt binding the reusable MP3 to its true inputs."""
+    payload = {
+        "schema_version": AUDIO_MANIFEST_SCHEMA,
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "source_digest": distribute.source_digest(article_dir, "podcast"),
+        "generation_digest": generation_digest(article_dir, c),
+        "audio_sha256": hashlib.sha256(mp3.read_bytes()).hexdigest(),
+        "bytes": mp3.stat().st_size,
+        "codec_name": str(probe.get("codec_name") or ""),
+        "duration_seconds": float(probe.get("duration_seconds") or 0),
+    }
+    path = _audio_manifest_path(mp3)
+    candidate = path.with_suffix(path.suffix + ".next")
+    candidate.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    candidate.replace(path)
+    return path
+
+
 def generation_is_fresh(article_dir: Path, c: dict | None = None) -> bool:
     c = c or cfg()
     mp3 = distribute.channel_dir(article_dir, "podcast") / "audio.mp3"
     entry = (distribute.read_state(article_dir).get("channels", {}).get("podcast") or {})
-    return (
+    state_fresh = (
         mp3.is_file()
         and not distribute._is_drifted(article_dir, "podcast")
         and entry.get("generation_digest") == generation_digest(article_dir, c)
         and entry.get("audio_sha256") == hashlib.sha256(mp3.read_bytes()).hexdigest()
     )
+    if not state_fresh:
+        return False
+    manifest = _read_audio_manifest(mp3)
+    if not manifest:
+        # v1.6.0 and earlier had only the state receipt. Keep those articles usable;
+        # the next real generation writes the stronger manifest automatically.
+        return True
+    return (
+        not manifest.get("_invalid")
+        and manifest.get("schema_version") == AUDIO_MANIFEST_SCHEMA
+        and manifest.get("source_digest") == distribute.source_digest(article_dir, "podcast")
+        and manifest.get("generation_digest") == generation_digest(article_dir, c)
+        and manifest.get("audio_sha256") == entry.get("audio_sha256")
+        and manifest.get("bytes") == mp3.stat().st_size
+        and float(manifest.get("duration_seconds") or 0) > 0
+    )
 
 
-def validate_audio(path: Path) -> tuple[bool, str]:
-    """用 ffprobe 验证候选确有音频流与正时长，避免半文件覆盖已可用旧件。"""
+def probe_audio(path: Path) -> tuple[dict | None, str]:
+    """Use ffprobe to return evidence for a decodable, positive-duration audio stream."""
     if not path.is_file() or path.stat().st_size < MIN_AUDIO_BYTES:
-        return False, "文件不存在或过小"
+        return None, "文件不存在或过小"
     probe = shutil.which("ffprobe")
     if not probe:
-        return False, "找不到 ffprobe"
+        return None, "找不到 ffprobe"
     try:
         result = subprocess.run(
             [probe, "-v", "error", "-select_streams", "a:0", "-show_entries",
@@ -114,10 +174,19 @@ def validate_audio(path: Path) -> tuple[bool, str]:
         streams = data.get("streams") or []
         duration = float((streams[0] if streams else {}).get("duration") or 0)
         if result.returncode != 0 or not streams or duration <= 0:
-            return False, (result.stderr or "无有效音频流/时长").strip()[:200]
+            return None, (result.stderr or "无有效音频流/时长").strip()[:200]
     except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
-        return False, str(exc)[:200]
-    return True, ""
+        return None, str(exc)[:200]
+    return {
+        "codec_name": str(streams[0].get("codec_name") or ""),
+        "duration_seconds": duration,
+    }, ""
+
+
+def validate_audio(path: Path) -> tuple[bool, str]:
+    """Compatibility wrapper for callers that only need a pass/fail result."""
+    evidence, error = probe_audio(path)
+    return evidence is not None, error
 
 
 def _nlm_bin() -> str:
@@ -384,8 +453,8 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
             candidate.unlink(missing_ok=True)
             log(f"✗ ffmpeg 转码失败，已保留原 audio.mp3：{str(exc)[:200]}")
             return 1
-        valid, reason = validate_audio(candidate)
-        if not valid:
+        audio_probe, reason = probe_audio(candidate)
+        if audio_probe is None:
             candidate.unlink(missing_ok=True)
             log(f"✗ 候选音频验证失败，已保留原 audio.mp3：{reason}")
             return 1
@@ -393,7 +462,10 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         m4a.unlink(missing_ok=True)
         log(f"✓ {mp3}  ({mp3.stat().st_size // 1024} KB)")
 
-        # 7. sidecar
+        # 7. manifest + sidecar。manifest 与 MP3 同目录原子替换；若在两步之间
+        #    崩溃，state 仍是旧 generation_digest，后续 freshness 会拒绝误复用。
+        manifest = _write_audio_manifest(article_dir, mp3, c, audio_probe)
+        log(f"✓ generation manifest: {manifest.name}")
         write_sidecar(article_dir, mp3, title, c)
         distribute.set_status(article_dir, "podcast", "drafted",
                               source_digest=distribute.source_digest(

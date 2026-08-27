@@ -135,7 +135,7 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 2. 调 `gen_img.py` 生成 1:1 主题曲封面 `素材/bgm_cover.png`（不打水印）
 3. 用 `audio_cards.py` 的共享模板写入「🎵 阅读配乐｜本文主题曲」卡片
 
-若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后必须跑 `pipeline.py wechat-audio-check`。
+若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后从微信预览分别试听两条音频的开头/结尾 10 秒，再跑 `pipeline.py wechat-audio-check --confirm-audition`。
 
 ### 卡片设计规范
 
@@ -152,7 +152,7 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 - ☐ `定稿.md` 含 AUDIO-CARD；开启嵌入时还含 PODCAST-CARD 与同源播客 MP3
 - ☐ 已重新走排版管线，固定顺序为导读 → 主题曲 → 播客 → 正文
 - ☐ 两份 MP3 已插入各自卡片并删除占位文字
-- ☐ `wechat-audio-check` 官方全文回读通过，手机端预览均可正常播放
+- ☐ `wechat-audio-check --confirm-audition` 官方全文回读通过，微信预览已分别试听两条音频的开头/结尾 10 秒
 
 ---
 

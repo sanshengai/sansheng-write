@@ -211,12 +211,17 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
     if errors:
         return None, errors
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at": _now(),
         "draft_media_id": media_id,
         "status": "manual_insert_required",
         "roles": roles,
-        "next_command": "pipeline.py wechat-audio-check",
+        "audition_required": {
+            "surface": "wechat_preview",
+            "segments": ["first_10_seconds", "last_10_seconds"],
+            "reason": "draft/get exposes component metadata, not the uploaded audio bytes",
+        },
+        "next_command": "pipeline.py wechat-audio-check --confirm-audition",
     }
     (cwd / AUDIO_HANDOFF_FILE).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -251,20 +256,19 @@ def _section_spans(html: str) -> list[tuple[int, int, str]]:
     return spans
 
 
-def _audio_inside_card(
+def _card_bounds(
     content: str,
     *,
     role: str,
     label_pos: int,
-    audio_positions: list[int],
-) -> bool:
-    """Fail closed unless a player sits inside the role's actual card container."""
+) -> tuple[int, int] | None:
+    """Return the smallest trustworthy container for one labelled audio card."""
     marker_start = "<!-- AUDIO-CARD-START -->" if role == "theme" else "<!-- PODCAST-CARD-START -->"
     marker_end = "<!-- AUDIO-CARD-END -->" if role == "theme" else "<!-- PODCAST-CARD-END -->"
     start = content.rfind(marker_start, 0, label_pos + 1)
     end = content.find(marker_end, label_pos)
     if start >= 0 and end >= 0:
-        return any(label_pos < audio_pos < end for audio_pos in audio_positions)
+        return start, end
 
     # 微信可能剥掉 HTML 注释，但会保留卡片的块级 section 与内联样式。
     # 不退回“标题到文章末尾”这种宽泛区间，否则正文里的游离播放器会假通过。
@@ -281,13 +285,79 @@ def _audio_inside_card(
         if identified:
             candidates.append((section_start, section_end))
     if not candidates:
+        return None
+    return min(candidates, key=lambda span: span[1] - span[0])
+
+
+def _audio_inside_card(
+    content: str,
+    *,
+    role: str,
+    label_pos: int,
+    audio_positions: list[int],
+) -> bool:
+    """Fail closed unless a player sits inside the role's actual card container."""
+    bounds = _card_bounds(content, role=role, label_pos=label_pos)
+    if bounds is None:
         return False
-    _, card_end = min(candidates, key=lambda span: span[1] - span[0])
+    _, card_end = bounds
     return any(label_pos < audio_pos < card_end for audio_pos in audio_positions)
 
 
+_REMOTE_AUDIO_ID_ATTRS = {
+    "audio_id",
+    "media_id",
+    "src",
+    "voice_encode_fileid",
+    "voice_id",
+}
+
+
+def _audio_components(content: str) -> list[dict[str, Any]]:
+    """Extract stable remote component evidence without pretending it is a byte hash."""
+    components: list[dict[str, Any]] = []
+    pattern = re.compile(
+        rf"<(?P<tag>{AUDIO_TAG})\b(?P<attrs>[^>]*)>",
+        re.I | re.S,
+    )
+    for match in pattern.finditer(str(content or "")):
+        attrs = {
+            name.lower(): html_lib.unescape(value.strip())
+            for name, _, value in re.findall(
+                r"([:\w-]+)\s*=\s*([\"'])(.*?)\2",
+                match.group("attrs"),
+                flags=re.S,
+            )
+            if value.strip()
+        }
+        strong_identity = {
+            key: value for key, value in attrs.items() if key in _REMOTE_AUDIO_ID_ATTRS
+        }
+        fallback_identity = {
+            key: value
+            for key, value in attrs.items()
+            if key not in {"class", "style"} and not key.startswith("data-")
+        }
+        identity = strong_identity or fallback_identity
+        components.append({
+            "position": match.start(),
+            "tag": match.group("tag").lower(),
+            "identity_strength": "remote_id" if strong_identity else "tag_attributes",
+            "identity": identity,
+            "component_digest": stable_digest({
+                "tag": match.group("tag").lower(),
+                "identity": identity,
+            }),
+        })
+    return components
+
+
 def verify_wechat_audio(
-    cwd: Path, *, reader: Reader | None = None, persist: bool = True
+    cwd: Path,
+    *,
+    reader: Reader | None = None,
+    persist: bool = True,
+    audition_confirmed: bool = False,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """官方 draft/get 复核双音频，同时确认其余草稿内容没有被人工误改。"""
     handoff_path = cwd / AUDIO_HANDOFF_FILE
@@ -364,12 +434,13 @@ def verify_wechat_audio(
     except Exception as exc:
         return None, [str(exc)]
     content = str(actual.get("content") or "")
-    audio_positions = [
-        match.start()
-        for match in re.finditer(rf"<{AUDIO_TAG}\b", content, re.I)
-    ]
+    components = _audio_components(content)
+    audio_positions = [int(component["position"]) for component in components]
     labels = [str(role.get("label") or "").lstrip("🎵🎧 ") for role in roles]
     label_positions = [content.find(label) for label in labels]
+    if any(pos < 0 for pos in label_positions) or label_positions != sorted(label_positions):
+        errors.append("草稿双音频卡顺序错误；必须是主题曲卡 → 播客卡 → 正文")
+    remote_audio_components: dict[str, dict[str, Any]] = {}
     for role, label, pos in zip(roles, labels, label_positions):
         if pos < 0:
             errors.append(f"草稿读回缺卡片标题：{label}")
@@ -381,11 +452,36 @@ def verify_wechat_audio(
             audio_positions=audio_positions,
         ):
             errors.append(f"{role.get('label')} 卡片内未读回微信原生音频组件")
+        else:
+            bounds = _card_bounds(
+                content,
+                role=str(role.get("role") or ""),
+                label_pos=pos,
+            )
+            inside = [
+                component
+                for component in components
+                if bounds is not None and pos < int(component["position"]) < bounds[1]
+            ]
+            if len(inside) == 1:
+                evidence = dict(inside[0])
+                evidence.pop("position", None)
+                remote_audio_components[str(role.get("role") or "")] = evidence
+            else:
+                errors.append(
+                    f"{role.get('label')} 卡片内音频组件身份不唯一：{len(inside)} 个"
+                )
         placeholder = str(role.get("placeholder") or "")
         if placeholder and placeholder in content:
             errors.append(f"{role.get('label')} 仍保留插入占位文字")
     if len(audio_positions) != len(roles):
         errors.append(f"草稿读回原生音频共 {len(audio_positions)} 个，应为 {len(roles)} 个")
+    component_digests = [
+        str(item.get("component_digest") or "")
+        for item in remote_audio_components.values()
+    ]
+    if len(component_digests) == len(roles) and len(set(component_digests)) != len(roles):
+        errors.append("主题曲与播客卡读回了相同的远端音频组件身份")
 
     full_checks, full_errors = _compare_readback(
         expected,
@@ -397,10 +493,15 @@ def verify_wechat_audio(
     if not full_checks["image_identity"]:
         full_errors.append("draft/get 回读字段不一致：image_identity")
     errors.extend(full_errors)
+    if persist and not audition_confirmed:
+        errors.append(
+            "微信 API 不能证明播放器内字节等于本地 MP3；请在微信预览分别试听主题曲和播客"
+            "的开头 10 秒、结尾 10 秒，再用 --confirm-audition 重新核验"
+        )
     if errors:
         return None, errors
     receipt = {
-        "schema_version": 2,
+        "schema_version": 3,
         "verified_at": _now(),
         "draft_media_id": media_id,
         "roles": [role.get("role") for role in roles],
@@ -408,14 +509,59 @@ def verify_wechat_audio(
         "handoff_digest": stable_digest(handoff),
         "local_audio_sha256": local_audio_sha256,
         "remote_content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "remote_audio_components": remote_audio_components,
         "remote_readback": {"checks": full_checks},
         "remote_verified": True,
     }
+    if audition_confirmed:
+        receipt["audition"] = {
+            "confirmed": True,
+            "confirmed_at": _now(),
+            "surface": "wechat_preview",
+            "roles": [role.get("role") for role in roles],
+            "segments": ["first_10_seconds", "last_10_seconds"],
+            "attestation": "the two remote players match their labelled local audio roles",
+        }
     if persist:
         (cwd / AUDIO_RECEIPT_FILE).write_text(
             json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
     return receipt, []
+
+
+def compare_wechat_audio_receipts(
+    stored: dict[str, Any],
+    fresh: dict[str, Any],
+    *,
+    expected_media_id: str = "",
+) -> list[str]:
+    """Validate the persisted human+API proof against a new draft/get readback."""
+    errors: list[str] = []
+    if not stored.get("remote_verified"):
+        errors.append("双音频草稿凭证未标 remote_verified=true")
+    if expected_media_id and stored.get("draft_media_id") != expected_media_id:
+        errors.append("双音频草稿凭证与本篇 draft_media_id 不一致")
+    if set(stored.get("roles") or []) != {"theme", "podcast"}:
+        errors.append("双音频草稿凭证未同时覆盖 theme 与 podcast")
+    audition = stored.get("audition") or {}
+    if (
+        not audition.get("confirmed")
+        or audition.get("surface") != "wechat_preview"
+        or set(audition.get("roles") or []) != {"theme", "podcast"}
+        or set(audition.get("segments") or [])
+        != {"first_10_seconds", "last_10_seconds"}
+    ):
+        errors.append(
+            "双音频草稿凭证缺人工试听证明；需在微信预览分别试听两条音频的"
+            "开头/结尾 10 秒后重跑 wechat-audio-check --confirm-audition"
+        )
+    if stored.get("handoff_digest") != fresh.get("handoff_digest"):
+        errors.append("双音频草稿凭证已过期：交接单在上次核验后变化")
+    if stored.get("local_audio_sha256") != fresh.get("local_audio_sha256"):
+        errors.append("双音频草稿凭证已过期：本地音频在上次核验后变化")
+    if stored.get("remote_audio_components") != fresh.get("remote_audio_components"):
+        errors.append("双音频草稿凭证已过期：远端播放器身份在上次核验后变化")
+    return errors
 
 
 # 微信 media/uploadimg 只认 jpg / png，其余一律 40005 invalid file type。

@@ -111,7 +111,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → 人工插入双音频 → `wechat-audio-check` → `finalize`）。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → 人工插入双音频并在微信预览试听首尾 → `wechat-audio-check --confirm-audition` → `finalize`）。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 
