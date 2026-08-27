@@ -964,6 +964,20 @@ def _log_archive_event(cwd: Path, event: str, verdict: str, detail: str,
         pass
 
 
+def _log_audio_event(cwd: Path, event: str, verdict: str, detail: str,
+                     *, error_count: int = 0) -> None:
+    """Record podcast/WeChat audio gates without making telemetry critical-path."""
+    try:
+        from contracts import log_observation
+        log_observation(
+            "audio", event, verdict, detail, cwd.name,
+            issue_codes=([f"audio.{event}.fail"] if verdict == "fail" else []),
+            metrics={"errors": error_count},
+        )
+    except Exception:
+        pass
+
+
 def _archive_source_errors(cwd: Path) -> list[str]:
     """Check folder identity and golden-line source before archive writes anything."""
     from profile_config import golden_lines_file
@@ -997,6 +1011,47 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
         override={"wechat_url": wechat_url},
     )
     errors.extend(_archive_source_errors(cwd))
+    try:
+        import distribute as _distribute_audio
+        if _distribute_audio.podcast_wechat_embed_enabled():
+            from release_to_draft import AUDIO_RECEIPT_FILE, verify_wechat_audio
+            receipt_path = cwd / AUDIO_RECEIPT_FILE
+            if not receipt_path.is_file():
+                errors.append(
+                    "双音频草稿尚无官方读回凭证；请在微信编辑器插入主题曲与播客音频、"
+                    "保存后运行 pipeline.py wechat-audio-check，再正式发布"
+                )
+            else:
+                try:
+                    audio_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    expected_media = str(
+                        (state.get("stages", {}).get("publish", {}) or {}).get("draft_media_id") or ""
+                    )
+                    if not audio_receipt.get("remote_verified"):
+                        errors.append("双音频草稿凭证未标 remote_verified=true")
+                    if expected_media and audio_receipt.get("draft_media_id") != expected_media:
+                        errors.append("双音频草稿凭证与本篇 draft_media_id 不一致")
+                    if set(audio_receipt.get("roles") or []) != {"theme", "podcast"}:
+                        errors.append("双音频草稿凭证未同时覆盖 theme 与 podcast")
+                    fresh_receipt, fresh_errors = verify_wechat_audio(cwd, persist=False)
+                    errors.extend(
+                        f"正式发布前远端复核失败：{error}" for error in fresh_errors
+                    )
+                    if fresh_receipt is not None:
+                        if (
+                            audio_receipt.get("handoff_digest")
+                            != fresh_receipt.get("handoff_digest")
+                        ):
+                            errors.append("双音频草稿凭证已过期：交接单在上次核验后变化")
+                        if (
+                            audio_receipt.get("local_audio_sha256")
+                            != fresh_receipt.get("local_audio_sha256")
+                        ):
+                            errors.append("双音频草稿凭证已过期：本地音频在上次核验后变化")
+                except (json.JSONDecodeError, OSError) as exc:
+                    errors.append(f"双音频草稿凭证损坏：{exc}")
+    except Exception as exc:
+        errors.append(f"双音频 finalize 检查异常：{exc}")
     return errors
 
 
@@ -1837,6 +1892,21 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
         errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
     if not (cwd / "定稿.html").exists():
         errors.append("缺 定稿.html（先走 layout 阶段）")
+    else:
+        try:
+            import distribute as _distribute_audio
+            if _distribute_audio.podcast_wechat_embed_enabled():
+                html_text = (cwd / "定稿.html").read_text(encoding="utf-8")
+                theme_pos = html_text.find("<!-- AUDIO-CARD-START -->")
+                podcast_pos = html_text.find("<!-- PODCAST-CARD-START -->")
+                if theme_pos < 0 or podcast_pos < 0:
+                    errors.append(
+                        "定稿.html 缺双音频卡（先完成 podcast-pregen，再重跑完整排版）"
+                    )
+                elif theme_pos > podcast_pos:
+                    errors.append("定稿.html 双音频卡顺序错误（主题曲应在播客版之前）")
+        except Exception as exc:
+            errors.append(f"定稿.html 双音频卡检查异常：{exc}")
     cover_route_errors = _cover_route_errors(cwd, allow_postprocessed=True)
     errors.extend(f"cover_route: {e}" for e in cover_route_errors)
     route_errors = _visual_route_errors(cwd, allow_postprocessed=True)
@@ -3066,10 +3136,16 @@ def _handoff_to_distribute(cwd: Path) -> bool:
         return False
 
     receipt = distribute.channel_dir(cwd, "podcast") / distribute.RECEIPT_FILE
+    try:
+        import podcast_episode
+        podcast_fresh = podcast_episode.generation_is_fresh(cwd, podcast_cfg)
+    except Exception:
+        podcast_fresh = False
     if (
         receipt.is_file()
         and distribute.get_status(cwd, "podcast") == "dispatched"
         and not distribute._is_drifted(cwd, "podcast")
+        and podcast_fresh
     ):
         print("✓ 播客已有与当前定稿一致的 receipt，跳过重复生成。")
         return True
@@ -3077,7 +3153,6 @@ def _handoff_to_distribute(cwd: Path) -> bool:
     print()
     print("播客已配置 auto_after_finalize=true，继续自动生成并推送 RSS…")
     try:
-        import podcast_episode
         rc = podcast_episode.cmd_generate(cwd)
         if rc != 0:
             print(
@@ -3101,12 +3176,12 @@ def cmd_podcast_pregen(cwd: Path):
     NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段、堵住后面的
     官网同步（89 篇它一失败，官网晚了 5 小时）。本命令允许在**最后一个会改写
     `定稿.md` 的机械步骤之后**（assemble-release 的信息图机器块 + BGM 的
-    AUDIO-CARD 都已注入）就后台把音频生出来；finalize 的 distribution 步靠
+    AUDIO-CARD 都已注入）生成同级 PODCAST-CARD 与音频；finalize 的 distribution 步靠
     `podcast_episode.cmd_generate` 的预生成短路直接取件。
 
-    为什么闸在两个 marker 上：播客的漂移判据是 `定稿.md` 全文哈希
-    （distribute._is_drifted）。若在任一写入方之前预生成，digest 必然对不上，
-    finalize 只能重新生成一遍——预生成不但没省时间，还多烧一次 18 分钟。
+    为什么闸在两个 marker 上：播客语义摘要会剥离全部机器装配块，但仍必须等
+    作者正文冻结；公众号嵌入开启时，PODCAST-CARD 还必须在 Markdown→HTML 前写入。
+    标题、正文、提示词或生成参数变化都会让预生成凭证失效。
     """
     sys.path.insert(0, str(Path(__file__).parent))
     import distribute
@@ -3125,14 +3200,30 @@ def cmd_podcast_pregen(cwd: Path):
     if "<!-- AUDIO-CARD-START -->" not in text:
         gate_missing.append("BGM 的 AUDIO-CARD")
     if gate_missing:
+        _log_audio_event(
+            cwd, "podcast_pregen", "fail",
+            f"missing_gates={len(gate_missing)}", error_count=len(gate_missing),
+        )
         print(f"❌ 定稿尚缺：{'、'.join(gate_missing)}——预生成必须晚于全部")
         print("   会改写 定稿.md 的机械步骤，否则音频与最终定稿哈希不一致，")
         print("   finalize 取件短路失效、还得重生成一遍。先走完视觉链与 BGM。")
         raise SystemExit(2)
+    # 先写卡再生成：这样排版可与耗时的 NotebookLM 任务并行；如果生成失败，
+    # 发布素材门会因缺同源 audio.mp3/状态凭证而拒绝把空卡推入草稿箱。
+    if distribute.podcast_wechat_embed_enabled():
+        from audio_cards import upsert_card
+        changed = upsert_card(final_md, "podcast", "AI 生成 · 双主持")
+        print("✓ 播客卡已写入定稿末尾" if changed else "✓ 播客卡无需更新")
+
     import podcast_episode
     rc = podcast_episode.cmd_generate(cwd)
     if rc == 0:
-        print("✓ 播客预生成完成；finalize 到 distribution 步会直接取件")
+        _log_audio_event(cwd, "podcast_pregen", "ok", "generation_receipt=fresh")
+        print("✓ 播客预生成完成；现在可排版，finalize 到 distribution 步会直接取件")
+    else:
+        _log_audio_event(
+            cwd, "podcast_pregen", "fail", f"exit_code={rc}", error_count=1
+        )
     raise SystemExit(rc)
 
 
@@ -3627,7 +3718,7 @@ def _log_qa_verdict(cwd: Path, qa, errors: list) -> None:
 def cmd_release_to_draft(cwd: Path) -> None:
     """唯一草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
     from release_job import validate_release_job
-    from release_to_draft import release_to_draft
+    from release_to_draft import release_to_draft, write_audio_handoff
 
     def preflight(root: Path):
         _, job_errors = validate_release_job(root)
@@ -3649,6 +3740,14 @@ def cmd_release_to_draft(cwd: Path) -> None:
         print("❌ release-to-draft 被合同门阻断：")
         for error in errors:
             print(f"   • {error}")
+        raise SystemExit(2)
+
+    handoff, handoff_errors = write_audio_handoff(cwd, receipt["draft_media_id"])
+    if handoff_errors or handoff is None:
+        print("❌ 草稿已创建，但双音频人工接管清单生成失败：")
+        for error in handoff_errors:
+            print(f"   • {error}")
+        print("   远端草稿 ID 已保存在 _release-attempt.json；修复后重跑会复用，不会重复创建。")
         raise SystemExit(2)
 
     state = load_state(cwd)
@@ -3674,6 +3773,35 @@ def cmd_release_to_draft(cwd: Path) -> None:
     print(
         f"✅ 微信草稿箱已推送并由 draft/get 读回确认："
         f"{receipt['draft_media_id']}{resumed}"
+    )
+    if handoff.get("roles"):
+        print("⏸ 草稿仍需人工插入音频：")
+        for role in handoff["roles"]:
+            print(f"   • {role['label']} ← {role['source']}")
+        print("   保存草稿后运行：pipeline.py wechat-audio-check；通过后再正式发布。")
+
+
+def cmd_wechat_audio_check(cwd: Path) -> None:
+    """人工插入音频后的官方读回门；没有凭证就不得进入 finalize。"""
+    from release_to_draft import verify_wechat_audio
+
+    receipt, errors = verify_wechat_audio(cwd)
+    if errors or receipt is None:
+        _log_audio_event(
+            cwd, "wechat_audio_readback", "fail",
+            f"errors={len(errors)}", error_count=len(errors),
+        )
+        print("❌ 微信双音频读回未通过：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    _log_audio_event(
+        cwd, "wechat_audio_readback", "ok",
+        f"audio_count={receipt['audio_count']}",
+    )
+    print(
+        f"✅ 微信双音频读回通过：{receipt['audio_count']} 个原生音频组件，"
+        "占位文字已清除；现在可正式发布。"
     )
 
 
@@ -3943,6 +4071,10 @@ def main():
         "release-to-draft",
         help="唯一草稿发布入口：预检 → draft/add → draft/get → 远端凭证",
     )
+    sub.add_parser(
+        "wechat-audio-check",
+        help="人工插入主题曲/播客音频后，用官方 draft/get 复核再允许正式发布",
+    )
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
     p_s.add_argument("stage", choices=STAGE_ORDER)
@@ -3992,6 +4124,8 @@ def main():
         sys.exit(distribute.main(args.rest or ["status"]))
     elif args.cmd == "podcast-pregen":
         cmd_podcast_pregen(cwd)
+    elif args.cmd == "wechat-audio-check":
+        cmd_wechat_audio_check(cwd)
     elif args.cmd == "init":
         cmd_init(cwd)
     elif args.cmd == "status":

@@ -55,13 +55,20 @@
 | 引用 | `<blockquote>` |
 | 分隔 | `<hr>` |
 | SVG | `<svg>` 及子元素（有额外限制，见第6节） |
-| 微信专属 | `<mpvoice>`、`<mpvideo>`、`<mp-common-profile>` |
+| 微信专属 | `<mpvoice>`、`<mpaudio>`、`<mp-common-mpaudio>`、`<mpvideo>`、`<mp-common-profile>` |
 
 > **⚠️ `<section>` 优先于 `<div>`**：实测 `<div>` 偶尔出现样式丢失，`<section>` 稳定性更高。
 
 ### 2b. 禁用标签（会被删除或导致错误）
 
 `<script>`、`<iframe>`、`<object>`、`<embed>`、`<form>`、`<input>`、`<textarea>`、`<select>`、`<button>`、`<link>`、`<meta>`、`<video>`（用 `<mpvideo>` 替代）、`<audio>`（用 `<mpvoice>` 替代）
+
+### 2d. 长音频与播客
+
+- 普通 HTML `<audio>` 不会变成公众号播放器；长播客必须在微信编辑器中插入微信原生音频组件。
+- 官方回读可能表现为 `<mpvoice>`、`<mpaudio>` 或 `<mp-common-mpaudio>`，核验器三种都识别。
+- 不在草稿 API HTML 中伪造播放器，也不把两个播放器塞进 `flex`/双栏；双卡保持同宽上下文档流。
+- 人工插入后必须执行 `pipeline.py wechat-audio-check`。它只允许“占位文字 → 原生播放器”这一项差异，正文、图片、推广链接、标题、摘要和封面均须保持一致。
 
 ### 2c. 属性过滤
 

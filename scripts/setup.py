@@ -64,7 +64,7 @@ MODULES = [
     {
         "key": "podcast",
         "name": "播客（RSS）",
-        "what": "把定稿做成双主持音频，推到你自己的 feed 主机，播客平台自动抓取",
+        "what": "把定稿做成双主持音频，复用到公众号、官网与自己的 RSS",
         "need": "NotebookLM 登录态、ffmpeg、一台放 mp3 与 feed.xml 的主机（可 SSH）",
         "without": "完全不影响写作与公众号发布",
         "fields": [
@@ -72,6 +72,10 @@ MODULES = [
             ("remote_host", "feed 主机（如 user@host）", True),
             ("remote_episodes_dir", "主机上放 mp3 的目录", True),
             ("feed_rebuild_command", "主机上重建 feed.xml 的命令", True),
+        ],
+        "switches": [
+            ("auto_after_finalize", "取得正式链接后自动推送 RSS？", False),
+            ("wechat_embed", "公众号导读后也放同级播客音频卡？", False),
         ],
     },
 ]
@@ -178,6 +182,13 @@ def main() -> int:
                 break
             if got:
                 vals[field] = got
+        if vals.get("enabled"):
+            for field, prompt, default in m.get("switches", []):
+                current_value = current[m["key"]].get(field)
+                vals[field] = _ask_yes_no(
+                    prompt,
+                    default=bool(current_value) if current_value is not None else default,
+                )
         chosen[m["key"]] = vals
 
     # ---- 写盘 ----

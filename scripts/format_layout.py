@@ -1293,17 +1293,28 @@ def process_lead(html, cwd, args):
         log("✅ 导读栏已注入到 div#output 内最前面（带 purge 锚点）")
 
     # ============================================================
-    # 🎵 音乐栏前置（2026-06-18 BGM 复活，引擎 MiniMax）
+    # 🎵🎧 双音频栏前置（主题曲 + 播客版）
     # ------------------------------------------------------------
-    # generate_article_bgm.py 把 AUDIO-CARD 块追加在 定稿.md 末尾；排版时
-    # 这里把它上移到导读栏（Hero 图）下方渲染（满足「卡片在导读后、正文前」版式）。
+    # 两个生成器先把机器卡收口在 定稿.md 末尾；排版时这里统一按
+    # 主题曲 → 播客版的固定顺序，上移到导读栏下方、正文之前。移动端保持
+    # 同宽上下流式排列；不要改成左右两栏压缩微信原生播放器。
     # ============================================================
-    audio_card_match = re.search(r'<!-- AUDIO-CARD-START -->[\s\S]*?<!-- AUDIO-CARD-END -->', new_html)
-    if audio_card_match:
-        audio_card = audio_card_match.group(0)
-        new_html = new_html.replace(audio_card, '')
-        new_html = new_html.replace(wrapped_lead, f'{wrapped_lead}\n{audio_card}\n', 1)
-        log("✅ 音乐栏已前置至导读栏（Hero图）下方")
+    audio_cards = []
+    for start, end in (
+        ('AUDIO-CARD-START', 'AUDIO-CARD-END'),
+        ('PODCAST-CARD-START', 'PODCAST-CARD-END'),
+    ):
+        match = re.search(
+            rf'<!-- {start} -->[\s\S]*?<!-- {end} -->', new_html
+        )
+        if match:
+            audio_cards.append(match.group(0))
+            new_html = new_html.replace(match.group(0), '')
+    if audio_cards:
+        block = '\n'.join(audio_cards)
+        new_html = new_html.replace(wrapped_lead, f'{wrapped_lead}\n{block}\n', 1)
+        labels = '主题曲 + 播客版' if len(audio_cards) == 2 else '音频卡'
+        log(f"✅ {labels}已同级前置至导读栏（Hero图）下方")
 
     return new_html
 

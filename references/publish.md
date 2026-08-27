@@ -19,10 +19,19 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 - title / digest / author
 - `content_source_url`
 - `need_open_comment` / `only_fans_can_comment`
-- 规范化正文摘要与图片数量
+- 规范化正文摘要、图片数量与图片是否已换成微信远端地址
+- profile 声明的推广链接可见次数
 - `thumb_media_id`
 
 只拿到 `media_id` 不算成功；不得手工登记，不得拆开调用低层接口。
+
+若 `podcast.wechat_embed: true`，草稿创建成功后会生成 `_wechat-audio-handoff.json`。作者在微信编辑器依次把主题曲与播客音频插入各自卡片并删除占位文字，保存后运行：
+
+```bash
+python "$SKILL/scripts/pipeline.py" wechat-audio-check
+```
+
+只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`。
 
 ### 阶段二：作者人工正式发布
 
@@ -110,16 +119,18 @@ python "$SKILL/scripts/pipeline.py" finalize \
 或拿到正式链接就自动规划；它们分别生成 3:4 与 1:1 专属图片，再预填浏览器等待作者确认。
 
 若 profile 已为播客显式配置 `auto_after_finalize: true`，`finalize` 完成核心收尾后会继续
-生成音频并推送 RSS；失败会以非零退出明确暴露，但不会回滚已经完成的归档和官网同步。
+推送 RSS；启用了公众号嵌入时复用草稿前已生成的同一份 MP3，不得重新生成。失败会以非零退出明确暴露，但不会回滚已经完成的归档和官网同步。
 
 ## 凭证
 
 - `_publish-ready.json`：调用微信前的本地包摘要。
 - `_release-attempt.json`：草稿创建后的断点记录，防重试重复建稿。
 - `_publish-receipt.json`：官方读回通过后的 v2 凭证。
+- `_wechat-audio-handoff.json`：人工插入双音频前的草稿 ID、角色、相对路径与本地 SHA-256。
+- `_wechat-audio-receipt.json`：人工编辑后的官方全文回读凭证；`finalize` 前会再次远端复核，不能只复用旧文件。
 - `_website-sync-receipt.json`：官网同步完成、失败或未配置记录。
 
-本地 HTML、Hero、视觉凭证发生变化后，旧发布凭证失效，必须重跑 `release-to-draft`。
+本地 HTML、Hero、视觉凭证发生变化后，旧发布凭证失效，必须重跑 `release-to-draft`。标题、作者正文、播客提示词、语言、时长或生成器版本变化后，旧播客音频失效；只改音频卡样式不重生成节目。
 
 ## 配置
 

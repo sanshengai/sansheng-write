@@ -64,6 +64,11 @@ import re
 import urllib.request
 import urllib.error
 from pathlib import Path
+
+try:
+    from .audio_cards import upsert_card
+except ImportError:  # pragma: no cover - direct script execution
+    from audio_cards import upsert_card
 from datetime import datetime
 
 # Windows GBK 控制台下 print 含 emoji/全角会 UnicodeEncodeError（成功路径也会崩、退出码非0）。
@@ -340,6 +345,21 @@ def build_music_prompt(theme_brief: str, imagery: list, style_key: str, gender: 
 # ============================================================
 # 🚀 Lyria 3 音乐生成（Vertex interactions + OAuth，自动写词，同步返回内联音频）
 # ============================================================
+def _write_audio_atomically(audio_b64: str, output_path: Path) -> None:
+    """Validate and atomically replace audio so a failed run preserves the last good file."""
+    import base64
+
+    candidate = output_path.with_name(f"{output_path.name}.next")
+    try:
+        decoded = base64.b64decode(audio_b64, validate=True)
+        if len(decoded) < 1024:
+            raise ValueError(f"返回音频异常短：{len(decoded)} bytes")
+        candidate.write_bytes(decoded)
+        os.replace(candidate, output_path)
+    finally:
+        candidate.unlink(missing_ok=True)
+
+
 def generate_music_lyria3(prompt: str, output_path: Path, token: str, project: str,
                           model: str = DEFAULT_LYRIA_MODEL) -> "dict | None":
     """调用 Vertex Lyria 3 生成中文人声整首歌并写入 output_path（mp3）。
@@ -400,9 +420,8 @@ def generate_music_lyria3(prompt: str, output_path: Path, token: str, project: s
         print(f"  ❌ 未返回音频：{json.dumps(result, ensure_ascii=False)[:200]}")
         return None
 
-    import base64
     try:
-        output_path.write_bytes(base64.b64decode(audio_b64))
+        _write_audio_atomically(audio_b64, output_path)
     except Exception as e:  # noqa: BLE001
         print(f"  ❌ 音频写入失败：{e}")
         return None
@@ -504,30 +523,15 @@ def ensure_description_frontmatter(article_path: Path) -> None:
 
 
 def insert_audio_card(article_path: Path, style_name: str, song_name: str):
-    """把音频引导卡片（含「请将光标定位于此插入音频」占位框）追加到 定稿.md 末尾。
+    """把主题曲卡片写入 定稿.md，并与播客卡保持同骨架、固定顺序。
 
-    铁律：AUDIO-CARD 必须位于文件最末尾；排版阶段 format_layout.py --all 会自动前置到导读栏下方。
+    铁律：机器卡先收口到文件末尾；排版阶段 format_layout.py --all 再自动
+    前置到导读栏下方。保留 song_name 参数以兼容既有调用。
     """
     ensure_description_frontmatter(article_path)
-    content = article_path.read_text(encoding="utf-8")
-    if "<!-- AUDIO-CARD-START -->" in content or "本文主题曲" in content:
-        print("  ⏭️  文中已存在音频引导卡片，跳过插入。")
-        return
-
-    audio_card = f"""
-<!-- AUDIO-CARD-START -->
-<section style="margin: 20px 0; padding: 16px; border: 1px solid #d7e3ea; border-radius: 10px; background: #f2f7f9;">
-  <section style="display: table; width: 100%; margin-bottom: 12px; border-bottom: 1px dashed #d7e3ea; padding-bottom: 8px;">
-    <section style="display: table-cell; text-align: left; vertical-align: middle; font-size: 14px; color: #2F6F8F; font-weight: bold;"><span style="font-size: 16px; margin-right: 4px;">🎵</span>本文主题曲</section>
-    <section style="display: table-cell; text-align: right; vertical-align: middle; font-size: 12px; color: #8a929a; font-weight: normal;">AI 生成 · {style_name}</section>
-  </section>
-  <!-- 预留插入位置 -->
-  <p style="text-align: center; margin: 10px 0; color: #b0b6bb; font-size: 13px;">（👉 请将光标定位于此，删除本段文字并插入音频）</p>
-</section>
-<!-- AUDIO-CARD-END -->
-"""
-    article_path.write_text(content.rstrip() + "\n\n" + audio_card.strip() + "\n", encoding="utf-8")
-    print(f"  ✅ 音频引导卡片已追加到 {article_path.name} 末尾（排版时自动前置到导读下方）")
+    changed = upsert_card(article_path, "theme", f"AI 生成 · {style_name}")
+    action = "已写入" if changed else "无需更新"
+    print(f"  ✅ 主题曲卡片{action}（排版时与播客卡同级前置到导读下方）")
 
     html_path = article_path.parent / "定稿.html"
     if html_path.exists():

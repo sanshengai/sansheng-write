@@ -390,6 +390,34 @@ def build_publish_manifest(cwd: Path) -> tuple[dict, list[str]]:
             errors.append(f"缺 {rel}")
             continue
         files.append({"path": rel, "sha256": sha256_file(path), "bytes": path.stat().st_size})
+    md_path = cwd / "定稿.md"
+    md_text = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
+    if "<!-- AUDIO-CARD-START -->" in md_text:
+        try:
+            from .audio_cards import locate_theme_audio
+        except ImportError:  # pragma: no cover - direct script execution
+            from audio_cards import locate_theme_audio
+        theme = locate_theme_audio(cwd)
+        if theme is None:
+            errors.append("无法唯一定位主题曲 mp3，不能封存微信双音频包")
+        else:
+            files.append({
+                "path": theme.relative_to(cwd).as_posix(),
+                "sha256": sha256_file(theme),
+                "bytes": theme.stat().st_size,
+                "role": "theme-audio",
+            })
+    if "<!-- PODCAST-CARD-START -->" in md_text:
+        podcast = cwd / "dist" / "podcast" / "audio.mp3"
+        if not podcast.is_file():
+            errors.append("缺 dist/podcast/audio.mp3，不能封存微信双音频包")
+        else:
+            files.append({
+                "path": "dist/podcast/audio.mp3",
+                "sha256": sha256_file(podcast),
+                "bytes": podcast.stat().st_size,
+                "role": "podcast-audio",
+            })
     payload = {
         "schema_version": 1,
         "visual_manifest_digest": (receipt or {}).get("manifest_digest", ""),
@@ -482,11 +510,15 @@ def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None,
 
 def _semantic_draft_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
-    text = re.sub(
-        r"(?ms)^<!-- AUDIO-CARD-START -->.*?^<!-- AUDIO-CARD-END -->\s*",
-        "",
-        text,
-    )
+    for start, end in (
+        ("AUDIO-CARD-START", "AUDIO-CARD-END"),
+        ("PODCAST-CARD-START", "PODCAST-CARD-END"),
+    ):
+        text = re.sub(
+            rf"(?ms)^<!-- {start} -->.*?^<!-- {end} -->\s*",
+            "",
+            text,
+        )
     text = re.sub(r"(?m)^!\[[^\]]*\]\(素材/[^)]+\)\s*$", "", text)
     text = re.sub(r"(?m)^coverImage:\s*.*$", "coverImage: <generated>", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"

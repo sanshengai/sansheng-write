@@ -23,6 +23,23 @@ def test_music_meta_ignores_inline_comments(tmp_path):
 from scripts.generate_article_bgm import resolve_model, DEFAULT_LYRIA_MODEL
 
 
+def test_atomic_audio_write_preserves_old_file_on_invalid_payload(tmp_path):
+    from scripts.generate_article_bgm import _write_audio_atomically
+
+    output = tmp_path / "theme.mp3"
+    output.write_bytes(b"last-good-audio")
+
+    try:
+        _write_audio_atomically("not-valid-base64", output)
+    except Exception:
+        pass
+    else:
+        raise AssertionError("invalid payload should fail")
+
+    assert output.read_bytes() == b"last-good-audio"
+    assert not (tmp_path / "theme.mp3.next").exists()
+
+
 def test_legacy_minimax_model_in_meta_is_ignored():
     """存量 meta 里的 music-2.6-free 不得盖过当前引擎，否则会被原样发给 Vertex 报错。"""
     assert resolve_model(None, "music-2.6-free") == DEFAULT_LYRIA_MODEL

@@ -22,6 +22,7 @@ sidecar 的文件要求文件名必须是纯 YYYY-MM-DD.mp3，否则**静默跳�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -29,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +45,7 @@ POLL_TIMEOUT = 1800          # 30 分钟。长文比晨报慢，20 分钟不够�
 DOWNLOAD_RETRIES = 5
 DOWNLOAD_INTERVAL = 90       # status=completed 后 CDN 仍可能没同步好，晨报实测要等
 MIN_AUDIO_BYTES = 100_000
+PODCAST_GENERATOR_SCHEMA = 2
 
 
 def log(msg: str) -> None:
@@ -60,6 +63,61 @@ except Exception:
 
 def cfg() -> dict:
     return distribute_channel("podcast")
+
+
+def generation_digest(article_dir: Path, c: dict | None = None) -> str:
+    """绑定真正影响节目内容的输入；缺任何一项都不得复用旧音频。"""
+    c = c or cfg()
+    prompt = Path(str(c.get("focus_prompt") or "")).expanduser()
+    prompt_sha = (
+        hashlib.sha256(prompt.read_bytes()).hexdigest() if prompt.is_file() else ""
+    )
+    payload = {
+        "schema": PODCAST_GENERATOR_SCHEMA,
+        "source_digest": distribute.source_digest(article_dir, "podcast"),
+        "title": distribute.read_final_title(article_dir),
+        "focus_prompt_sha256": prompt_sha,
+        "language": str(c.get("language") or "zh"),
+        "length": str(c.get("length") or "default"),
+        "format": "deep_dive",
+    }
+    return distribute._digest(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def generation_is_fresh(article_dir: Path, c: dict | None = None) -> bool:
+    c = c or cfg()
+    mp3 = distribute.channel_dir(article_dir, "podcast") / "audio.mp3"
+    entry = (distribute.read_state(article_dir).get("channels", {}).get("podcast") or {})
+    return (
+        mp3.is_file()
+        and not distribute._is_drifted(article_dir, "podcast")
+        and entry.get("generation_digest") == generation_digest(article_dir, c)
+        and entry.get("audio_sha256") == hashlib.sha256(mp3.read_bytes()).hexdigest()
+    )
+
+
+def validate_audio(path: Path) -> tuple[bool, str]:
+    """用 ffprobe 验证候选确有音频流与正时长，避免半文件覆盖已可用旧件。"""
+    if not path.is_file() or path.stat().st_size < MIN_AUDIO_BYTES:
+        return False, "文件不存在或过小"
+    probe = shutil.which("ffprobe")
+    if not probe:
+        return False, "找不到 ffprobe"
+    try:
+        result = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "a:0", "-show_entries",
+             "stream=codec_name,duration", "-of", "json", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=120, check=False,
+        )
+        data = json.loads(result.stdout or "{}")
+        streams = data.get("streams") or []
+        duration = float((streams[0] if streams else {}).get("duration") or 0)
+        if result.returncode != 0 or not streams or duration <= 0:
+            return False, (result.stderr or "无有效音频流/时长").strip()[:200]
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
+        return False, str(exc)[:200]
+    return True, ""
 
 
 def _nlm_bin() -> str:
@@ -174,7 +232,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         mp3.is_file()
         and mp3.with_suffix(".json").is_file()
         and distribute.get_status(article_dir, "podcast") in {"drafted", "dispatched"}
-        and not distribute._is_drifted(article_dir, "podcast")
+        and generation_is_fresh(article_dir, c)
     ):
         log("✓ 已有与当前定稿一致的预生成音频，跳过生成（取件模式）")
         refresh_sidecar_url(article_dir, mp3,
@@ -237,9 +295,15 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
 
     try:
         # 2. 喂裸 markdown。**不做二次提炼**——晨报验证过，提炼一遍反而丢细节。
-        _retry("source add", lambda: run_nlm(
-            "source", "add", nb, "--file", str(final_md),
-            "--wait", "--wait-timeout", "240", timeout=300))
+        # 只喂作者正文。微信信息图与双音频卡属于机器装配；把它们送入模型会
+        # 让占位提示进入节目素材，并导致纯样式改动误触发整集重生成。
+        source_text = distribute.source_text_for_channel(article_dir, "podcast")
+        with tempfile.TemporaryDirectory(prefix="sansheng-podcast-") as tmp:
+            source_md = Path(tmp) / "article.md"
+            source_md.write_text(source_text, encoding="utf-8")
+            _retry("source add", lambda: run_nlm(
+                "source", "add", nb, "--file", str(source_md),
+                "--wait", "--wait-timeout", "240", timeout=300))
 
         # 3. 建音频
         art = _extract_id(
@@ -310,16 +374,32 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         if not ff:
             log("✗ 找不到 ffmpeg")
             return 1
-        subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(m4a),
-                        "-codec:a", "libmp3lame", "-b:a", "96k", str(mp3)], check=True)
+        candidate = out_dir / "audio.next.mp3"
+        candidate.unlink(missing_ok=True)
+        try:
+            subprocess.run([ff, "-y", "-loglevel", "error", "-i", str(m4a),
+                            "-codec:a", "libmp3lame", "-b:a", "96k", str(candidate)],
+                           check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            candidate.unlink(missing_ok=True)
+            log(f"✗ ffmpeg 转码失败，已保留原 audio.mp3：{str(exc)[:200]}")
+            return 1
+        valid, reason = validate_audio(candidate)
+        if not valid:
+            candidate.unlink(missing_ok=True)
+            log(f"✗ 候选音频验证失败，已保留原 audio.mp3：{reason}")
+            return 1
+        candidate.replace(mp3)
         m4a.unlink(missing_ok=True)
         log(f"✓ {mp3}  ({mp3.stat().st_size // 1024} KB)")
 
         # 7. sidecar
         write_sidecar(article_dir, mp3, title, c)
         distribute.set_status(article_dir, "podcast", "drafted",
-                              source_digest=distribute._digest(
-                                  distribute.read_final_text(article_dir)))
+                              source_digest=distribute.source_digest(
+                                  article_dir, "podcast"),
+                              generation_digest=generation_digest(article_dir, c),
+                              audio_sha256=hashlib.sha256(mp3.read_bytes()).hexdigest())
         return 0
     finally:
         if not keep_notebook:
@@ -442,6 +522,9 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
     if not mp3.is_file() or not side.is_file():
         log(f"✗ 缺 audio.mp3 或 sidecar，先跑 generate（{out_dir}）")
         return 2
+    if not generation_is_fresh(article_dir, c):
+        log("✗ 播客音频与当前定稿/标题/提示词/生成参数不一致；请先重跑 generate")
+        return 2
 
     host = str(c.get("remote_host") or "").strip()
     remote_dir = str(c.get("remote_episodes_dir") or "").strip()
@@ -483,9 +566,17 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
         "mode": "rss",
         "remote_stem": stem,
         "published_at": distribute._now(),
+        "source_digest": distribute.source_digest(article_dir, "podcast"),
+        "generation_digest": generation_digest(article_dir, c),
+        "audio_sha256": hashlib.sha256(mp3.read_bytes()).hexdigest(),
         "note": "已上传并重建 feed；平台侧 1-12 小时内抓取",
     })
-    distribute.set_status(article_dir, "podcast", "dispatched")
+    distribute.set_status(
+        article_dir, "podcast", "dispatched",
+        source_digest=distribute.source_digest(article_dir, "podcast"),
+        generation_digest=generation_digest(article_dir, c),
+        audio_sha256=hashlib.sha256(mp3.read_bytes()).hexdigest(),
+    )
     log("✓ 已上线，平台 1-12 小时内自动抓取（不需要手动操作）")
     return 0
 

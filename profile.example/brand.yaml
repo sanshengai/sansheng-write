@@ -215,6 +215,9 @@ publish:
 #       # false = 只生成分发计划，之后由你另行运行 generate/publish。
 #       # NotebookLM 登录失效时仍可能需要在真实浏览器运行一次 nlm login。
 #       auto_after_finalize: false
+#       # true = 在公众号草稿的导读后加入同级「播客版」卡片；此时 podcast-pregen
+#       # 会成为 release-to-draft 前置硬门。必须显式开启，旧 profile 不追溯。
+#       wechat_embed: false
 #       channel_title: "你的节目名"
 #       feed_base_url: "https://podcast.example.com"   # feed.xml 与音频的公网前缀
 #       episodes_dir: ""       # 音频落盘目录（本机或远端挂载点）

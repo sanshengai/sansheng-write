@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 import html as html_lib
-from html.parser import HTMLParser
 import json
 import os
 import re
@@ -23,18 +22,23 @@ from typing import Any, Callable
 import yaml
 
 try:
+    from .audio_cards import locate_theme_audio
     from .evidence import stable_digest
     from .profile_config import brand
 except ImportError:  # pragma: no cover - direct script execution
+    from audio_cards import locate_theme_audio
     from evidence import stable_digest
     from profile_config import brand
 
 
 ATTEMPT_FILE = "_release-attempt.json"
 RECEIPT_FILE = "_publish-receipt.json"
+AUDIO_HANDOFF_FILE = "_wechat-audio-handoff.json"
+AUDIO_RECEIPT_FILE = "_wechat-audio-receipt.json"
 Publisher = Callable[[dict[str, Any]], dict[str, Any]]
 Reader = Callable[[str, dict[str, Any]], dict[str, Any]]
 Preflight = Callable[[Path], tuple[dict[str, Any] | None, list[str]]]
+AUDIO_TAG = r"(?:mpvoice|mpaudio|mp-common-mpaudio)"
 
 
 def _now() -> str:
@@ -153,6 +157,265 @@ def _published_digest(digest: str) -> str:
 
 def _image_count(html: str) -> int:
     return len(re.findall(r"<img\b", str(html or ""), flags=re.I))
+
+
+def _image_sources(html: str) -> list[str]:
+    """Return ordered image identities from a draft readback."""
+    return [
+        html_lib.unescape(match.group(2).strip())
+        for match in re.finditer(
+            r"<img\b[^>]*\bsrc\s*=\s*([\"'])(.*?)\1",
+            str(html or ""),
+            flags=re.I | re.S,
+        )
+    ]
+
+
+def _relative(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path.resolve())
+
+
+def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None, list[str]]:
+    """写出微信编辑器人工接管清单；只含相对路径与哈希，不泄露本机目录。"""
+    md = cwd / "定稿.md"
+    text = md.read_text(encoding="utf-8") if md.is_file() else ""
+    roles: list[dict[str, Any]] = []
+    errors: list[str] = []
+    if "<!-- AUDIO-CARD-START -->" in text:
+        theme = locate_theme_audio(cwd)
+        if theme is None:
+            errors.append("无法唯一定位主题曲 mp3；请清理歧义或保留带生成 sidecar 的文件")
+        else:
+            roles.append({
+                "role": "theme",
+                "label": "🎵 阅读配乐｜本文主题曲",
+                "source": _relative(theme, cwd),
+                "sha256": hashlib.sha256(theme.read_bytes()).hexdigest(),
+                "placeholder": "（👉 删除本段文字，并插入主题曲音频）",
+            })
+    if "<!-- PODCAST-CARD-START -->" in text:
+        podcast = cwd / "dist" / "podcast" / "audio.mp3"
+        if not podcast.is_file():
+            errors.append("缺 dist/podcast/audio.mp3")
+        else:
+            roles.append({
+                "role": "podcast",
+                "label": "🎧 音频版本｜本期播客",
+                "source": _relative(podcast, cwd),
+                "sha256": hashlib.sha256(podcast.read_bytes()).hexdigest(),
+                "placeholder": "（👉 删除本段文字，并插入播客音频）",
+            })
+    if errors:
+        return None, errors
+    payload = {
+        "schema_version": 1,
+        "created_at": _now(),
+        "draft_media_id": media_id,
+        "status": "manual_insert_required",
+        "roles": roles,
+        "next_command": "pipeline.py wechat-audio-check",
+    }
+    (cwd / AUDIO_HANDOFF_FILE).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return payload, []
+
+
+def _without_audio_slots(html: str) -> str:
+    """Remove only the two intentional manual-insert deltas before readback diff."""
+    value = str(html or "")
+    value = value.replace("（👉 删除本段文字，并插入主题曲音频）", "")
+    value = value.replace("（👉 删除本段文字，并插入播客音频）", "")
+    return re.sub(
+        rf"(?is)<{AUDIO_TAG}\b[^>]*(?:>.*?</{AUDIO_TAG}\s*>|/>)",
+        "",
+        value,
+    )
+
+
+def _section_spans(html: str) -> list[tuple[int, int, str]]:
+    """Return balanced section spans, including each opening tag for card identity."""
+    stack: list[tuple[int, str]] = []
+    spans: list[tuple[int, int, str]] = []
+    for match in re.finditer(r"(?is)<section\b[^>]*>|</section\s*>", str(html or "")):
+        token = match.group(0)
+        if token.lower().startswith("</"):
+            if stack:
+                start, opening = stack.pop()
+                spans.append((start, match.end(), opening))
+        else:
+            stack.append((match.start(), token))
+    return spans
+
+
+def _audio_inside_card(
+    content: str,
+    *,
+    role: str,
+    label_pos: int,
+    audio_positions: list[int],
+) -> bool:
+    """Fail closed unless a player sits inside the role's actual card container."""
+    marker_start = "<!-- AUDIO-CARD-START -->" if role == "theme" else "<!-- PODCAST-CARD-START -->"
+    marker_end = "<!-- AUDIO-CARD-END -->" if role == "theme" else "<!-- PODCAST-CARD-END -->"
+    start = content.rfind(marker_start, 0, label_pos + 1)
+    end = content.find(marker_end, label_pos)
+    if start >= 0 and end >= 0:
+        return any(label_pos < audio_pos < end for audio_pos in audio_positions)
+
+    # 微信可能剥掉 HTML 注释，但会保留卡片的块级 section 与内联样式。
+    # 不退回“标题到文章末尾”这种宽泛区间，否则正文里的游离播放器会假通过。
+    candidates: list[tuple[int, int]] = []
+    for section_start, section_end, opening in _section_spans(content):
+        if not (section_start <= label_pos < section_end):
+            continue
+        normalized = opening.lower().replace(" ", "")
+        identified = (
+            f'data-audio-role="{role}"' in normalized
+            or f"data-audio-role='{role}'" in normalized
+            or ("#d7e3ea" in normalized and "#f2f7f9" in normalized)
+        )
+        if identified:
+            candidates.append((section_start, section_end))
+    if not candidates:
+        return False
+    _, card_end = min(candidates, key=lambda span: span[1] - span[0])
+    return any(label_pos < audio_pos < card_end for audio_pos in audio_positions)
+
+
+def verify_wechat_audio(
+    cwd: Path, *, reader: Reader | None = None, persist: bool = True
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """官方 draft/get 复核双音频，同时确认其余草稿内容没有被人工误改。"""
+    handoff_path = cwd / AUDIO_HANDOFF_FILE
+    if not handoff_path.is_file():
+        return None, [f"缺 {AUDIO_HANDOFF_FILE}；先运行 release-to-draft"]
+    try:
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return None, [f"{AUDIO_HANDOFF_FILE} 解析失败：{exc}"]
+    media_id = str(handoff.get("draft_media_id") or "").strip()
+    roles = handoff.get("roles") or []
+    if not media_id or not roles:
+        return None, [f"{AUDIO_HANDOFF_FILE} 缺 draft_media_id 或 roles"]
+
+    errors: list[str] = []
+    local_audio_sha256: dict[str, str] = {}
+    root = cwd.resolve()
+    for role in roles:
+        source = str(role.get("source") or "").strip()
+        local = (root / source).resolve() if source else Path()
+        expected_sha = str(role.get("sha256") or "").strip()
+        try:
+            local.relative_to(root)
+        except (ValueError, OSError):
+            errors.append(f"{role.get('label') or role.get('role')} 音频路径越出文章目录：{source}")
+            continue
+        if not source or not local.is_file():
+            errors.append(f"{role.get('label') or role.get('role')} 本地音频不存在：{source}")
+            continue
+        actual_sha = hashlib.sha256(local.read_bytes()).hexdigest()
+        local_audio_sha256[str(role.get("role") or "")] = actual_sha
+        if not expected_sha or actual_sha != expected_sha:
+            errors.append(
+                f"{role.get('label') or role.get('role')} 已在草稿交接后变化；"
+                "请重新运行 release-to-draft 生成交接单"
+            )
+    expected, expected_errors = build_expected_draft(cwd)
+    errors.extend(expected_errors)
+    attempt_path = cwd / ATTEMPT_FILE
+    try:
+        attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        errors.append(f"缺 {ATTEMPT_FILE}；无法核对封面与草稿身份")
+        attempt = {}
+    except (json.JSONDecodeError, OSError) as exc:
+        errors.append(f"{ATTEMPT_FILE} 损坏：{exc}")
+        attempt = {}
+    if attempt and str(attempt.get("draft_media_id") or "") != media_id:
+        errors.append(f"{AUDIO_HANDOFF_FILE} 与 {ATTEMPT_FILE} 的 draft_media_id 不一致")
+
+    initial_receipt_path = cwd / RECEIPT_FILE
+    try:
+        initial_receipt = json.loads(initial_receipt_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        errors.append(f"缺 {RECEIPT_FILE}；无法确认人工插音频前的配图身份")
+        initial_receipt = {}
+    except (json.JSONDecodeError, OSError) as exc:
+        errors.append(f"{RECEIPT_FILE} 损坏：{exc}")
+        initial_receipt = {}
+    if initial_receipt and str(initial_receipt.get("draft_media_id") or "") != media_id:
+        errors.append(f"{AUDIO_HANDOFF_FILE} 与 {RECEIPT_FILE} 的 draft_media_id 不一致")
+    baseline_image_sources = (
+        (initial_receipt.get("remote_readback") or {}).get("image_sources")
+        if initial_receipt
+        else None
+    )
+    if not isinstance(baseline_image_sources, list):
+        errors.append(f"{RECEIPT_FILE} 缺 remote_readback.image_sources；请重跑 release-to-draft")
+    if errors or expected is None:
+        return None, errors
+
+    try:
+        actual = (reader or _default_reader(cwd))(media_id, expected)
+    except Exception as exc:
+        return None, [str(exc)]
+    content = str(actual.get("content") or "")
+    audio_positions = [
+        match.start()
+        for match in re.finditer(rf"<{AUDIO_TAG}\b", content, re.I)
+    ]
+    labels = [str(role.get("label") or "").lstrip("🎵🎧 ") for role in roles]
+    label_positions = [content.find(label) for label in labels]
+    for role, label, pos in zip(roles, labels, label_positions):
+        if pos < 0:
+            errors.append(f"草稿读回缺卡片标题：{label}")
+            continue
+        if not _audio_inside_card(
+            content,
+            role=str(role.get("role") or ""),
+            label_pos=pos,
+            audio_positions=audio_positions,
+        ):
+            errors.append(f"{role.get('label')} 卡片内未读回微信原生音频组件")
+        placeholder = str(role.get("placeholder") or "")
+        if placeholder and placeholder in content:
+            errors.append(f"{role.get('label')} 仍保留插入占位文字")
+    if len(audio_positions) != len(roles):
+        errors.append(f"草稿读回原生音频共 {len(audio_positions)} 个，应为 {len(roles)} 个")
+
+    full_checks, full_errors = _compare_readback(
+        expected,
+        actual,
+        str(attempt.get("cover_media_id") or ""),
+        content_normalizer=_without_audio_slots,
+    )
+    full_checks["image_identity"] = _image_sources(content) == baseline_image_sources
+    if not full_checks["image_identity"]:
+        full_errors.append("draft/get 回读字段不一致：image_identity")
+    errors.extend(full_errors)
+    if errors:
+        return None, errors
+    receipt = {
+        "schema_version": 2,
+        "verified_at": _now(),
+        "draft_media_id": media_id,
+        "roles": [role.get("role") for role in roles],
+        "audio_count": len(audio_positions),
+        "handoff_digest": stable_digest(handoff),
+        "local_audio_sha256": local_audio_sha256,
+        "remote_content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "remote_readback": {"checks": full_checks},
+        "remote_verified": True,
+    }
+    if persist:
+        (cwd / AUDIO_RECEIPT_FILE).write_text(
+            json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    return receipt, []
 
 
 # 微信 media/uploadimg 只认 jpg / png，其余一律 40005 invalid file type。
@@ -518,6 +781,8 @@ def _compare_readback(
     expected: dict[str, Any],
     actual: dict[str, Any],
     cover_media_id: str,
+    *,
+    content_normalizer: Callable[[str], str] | None = None,
 ) -> tuple[dict[str, bool], list[str]]:
     pairs = {
         "title": (expected["title"], actual.get("title")),
@@ -541,9 +806,14 @@ def _compare_readback(
         for name, (wanted, got) in pairs.items()
     }
     content = str(actual.get("content") or "")
+    expected_content = str(expected["content"])
+    compared_content = content_normalizer(content) if content_normalizer else content
+    compared_expected = (
+        content_normalizer(expected_content) if content_normalizer else expected_content
+    )
     checks["body_digest"] = _semantic_body_digest(
-        expected["content"]
-    ) == _semantic_body_digest(content)
+        compared_expected
+    ) == _semantic_body_digest(compared_content)
     checks["image_count"] = expected["image_count"] == _image_count(content)
     unuploaded = _unuploaded_images(content)
     checks["image_src_uploaded"] = not unuploaded
@@ -659,6 +929,7 @@ def release_to_draft(
         "source_url": str(actual.get("content_source_url") or ""),
         "body_digest": _semantic_body_digest(str(actual.get("content") or "")),
         "image_count": _image_count(str(actual.get("content") or "")),
+        "image_sources": _image_sources(str(actual.get("content") or "")),
         "thumb_media_id": str(actual.get("thumb_media_id") or ""),
         "promotion_url_counts": {
             str(item.get("url") or ""): _visible_text(

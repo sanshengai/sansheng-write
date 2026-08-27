@@ -125,34 +125,34 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 
 ---
 
-## 微信文章插入（AUDIO-CARD 引导卡片）
+## 微信文章插入（同级双音频卡）
 
 > 🔴 **顺序铁律**：`generate_article_bgm.py` 必须在 MD→HTML 排版**之前**执行（先生成 mp3 + 把卡片写入 定稿.md，排版才渲染出卡片）。
-> 🔴 **位置铁律**：脚本把 `<!-- AUDIO-CARD-START -->`…`<!-- AUDIO-CARD-END -->` 块追加到 `定稿.md` **最末尾**；`format_layout.py --all` 自动前置到导读栏下方。严禁放在开头（会被 baoyu-md 误吞进 `<meta description>` 导致 head 崩坏）。
+> 🔴 **位置铁律**：脚本先把 `AUDIO-CARD` 与可选 `PODCAST-CARD` 机器块收口到 `定稿.md` **最末尾**；`format_layout.py --all` 再按「导读 → 主题曲 → 播客 → 正文」前置。严禁直接写在开头（会被 baoyu-md 误吞进 `<meta description>` 导致 head 崩坏）。
 
 脚本会自动：
 1. 生成 `{歌名}.mp3` + `{歌名}.json`（元数据）
 2. 调 `gen_img.py` 生成 1:1 主题曲封面 `素材/bgm_cover.png`（不打水印）
-3. 把含「👉 请将光标定位于此插入音频」占位框的 Block 级卡片追加到 `定稿.md` 末尾
+3. 用 `audio_cards.py` 的共享模板写入「🎵 阅读配乐｜本文主题曲」卡片
 
-发布时：微信后台 → 素材管理 → 音频 → 上传 mp3（可设封面图 bgm_cover.png）；编辑器里定位到卡片占位处插入音频。
+若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后必须跑 `pipeline.py wechat-audio-check`。
 
 ### 卡片设计规范
 
 - 🔴 不做"假播放按钮"（微信原生 `mpaudio` 已有完整 UI）
 - 🔴 不用 `display: flex` 包裹播放器（微信块级组件会破版）
-- ✅ 上下流式 Block 容器：顶部标题栏「🎵 本文主题曲」（不显歌名，避免与微信自带重复）+ 下部留空给 `<mpvoice>`
-- ✅ 边框 `rgba(47, 111, 143,0.15)` 淡主题色圆角细框
+- ✅ 两张卡共用同宽 Block 骨架与淡主题色圆角细框，只以图标、标题和用途元信息区分
+- ✅ 移动端上下连续排列，不用双栏；主题曲服务“边读边听”，播客服务“代替阅读”，不互相从属
 
 ---
 
 ## 发布检查
 
 - ☐ BGM 已生成（**排版之前**）：`{歌名}.mp3` + `素材/bgm_cover.png`
-- ☐ `定稿.md` 含 AUDIO-CARD 引导卡片（关键字「本文主题曲」）
-- ☐ 已重新走排版管线（MD→HTML + format_layout.py --all），卡片前置到导读下方
-- ☐ MP3 已上传微信素材库、封面选 `bgm_cover.png`
-- ☐ 手机端预览可正常播放
+- ☐ `定稿.md` 含 AUDIO-CARD；开启嵌入时还含 PODCAST-CARD 与同源播客 MP3
+- ☐ 已重新走排版管线，固定顺序为导读 → 主题曲 → 播客 → 正文
+- ☐ 两份 MP3 已插入各自卡片并删除占位文字
+- ☐ `wechat-audio-check` 官方全文回读通过，手机端预览均可正常播放
 
 ---
 

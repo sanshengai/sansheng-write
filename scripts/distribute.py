@@ -170,6 +170,35 @@ def read_final_text(article_dir: Path) -> str:
     return p.read_text(encoding="utf-8") if p.is_file() else ""
 
 
+def source_text_for_channel(article_dir: Path, channel: str) -> str:
+    """返回该渠道真正消费的语义输入，而不是一律使用排版后的文件字节。
+
+    播客只消费作者正文；信息图引用、主题曲卡和播客卡都是微信机器装配，既不应
+    喂给 NotebookLM，也不应因只改卡片样式就让已有音频被误判过期。
+    """
+    text = read_final_text(article_dir)
+    if channel != "podcast" or not text:
+        return text
+    from assemble_release import strip_machine_assembly
+    return strip_machine_assembly(text)
+
+
+def source_digest(article_dir: Path, channel: str) -> str:
+    return _digest(source_text_for_channel(article_dir, channel))
+
+
+def podcast_wechat_embed_enabled() -> bool:
+    """播客是否也是微信草稿硬门。
+
+    必须显式写 ``wechat_embed: true``。RSS 自动分发授权不等于允许修改公众号
+    版式；旧文章/旧 profile 缺字段时保持原来的主题曲单卡，避免补发时被追溯。
+    """
+    cfg = channel_config("podcast")
+    if not bool(cfg.get("enabled")):
+        return False
+    return cfg.get("wechat_embed") is True
+
+
 def read_wechat_url(article_dir: Path) -> str:
     """公众号永久链接。分发文案里的原文入口指向它，也是 finalize 已跑过的证据。
 
@@ -234,8 +263,12 @@ def _is_drifted(article_dir: Path, channel: str) -> bool:
     entry = read_state(article_dir)["channels"].get(channel) or {}
     recorded = entry.get("source_digest")
     if not recorded:
-        return False
-    return recorded != _digest(read_final_text(article_dir))
+        # 播客是昂贵且会对外分发的二进制产物，旧状态缺绑定证据时必须重新生成；
+        # 其它历史渠道维持兼容，避免把尚未 plan 的归档全部误报为漂移。
+        return channel == "podcast" and get_status(article_dir, channel) in {
+            "drafted", "verified", "dispatched"
+        }
+    return recorded != source_digest(article_dir, channel)
 
 
 def _source_drifted(article_dir: Path, channel: str) -> bool:
@@ -397,7 +430,7 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
             and not _is_drifted(article_dir, ch)
         )
         if not already_dispatched:
-            set_status(article_dir, ch, "planned", source_digest=plan["source_digest"])
+            set_status(article_dir, ch, "planned", source_digest=source_digest(article_dir, ch))
 
     plan_path = dist_dir(article_dir) / PLAN_FILE
     _write_json(plan_path, plan)

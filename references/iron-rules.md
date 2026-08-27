@@ -7,11 +7,13 @@
 1. 新文章必须经过 pipeline；不得手改 `.state.json`。
 2. 作者定稿进入机械链时先 `adopt-final`，不得伪造前半程审稿文件。
 3. BGM 是发布硬门；缺 MP3 或 AUDIO-CARD 就没完成，`skip bgm` 被拒绝。
-4. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
-5. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
-6. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
-7. `weave` 声明“开篇与文末”的地址必须以可复制明文各出现一次，且 `draft/get` 回读仍为两次。
-7. 控制器是机械链唯一命令写者；模型只交付任务单候选与视觉 QA，不运行、重试或并发启动长命令。
+4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与草稿人工插入后的官方读回凭证同为发布硬门；缺一项不得推草稿或 `finalize`。
+5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
+6. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
+7. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
+8. 公众号首屏固定为「导读 → 主题曲卡 → 播客卡 → 正文」；两卡是同级选项、同宽上下排，不互相从属，也不做左右双栏。
+9. `weave` 声明“开篇与文末”的地址必须以可复制明文各出现一次，且 `draft/get` 回读仍为两次。
+10. 控制器是机械链唯一命令写者；模型只交付任务单候选与视觉 QA，不运行、重试或并发启动长命令。
 
 ## 视觉
 

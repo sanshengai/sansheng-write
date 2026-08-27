@@ -1469,9 +1469,10 @@ def verify_publish_assets(article_dir: str) -> dict:
       1. 定稿.md 存在
       2. 定稿.md 含 frontmatter（title + description）
       3. 素材/*.png 的每张图都在 定稿.md 中有 ![ 引用
-      4. AUDIO-CARD（若存在）只出现一次且位于文件最末尾区块；
+      4. 双音频卡（若存在）各只出现一次、主题曲在前且位于文件末尾机器区块；
          状态感知：.state.json 的 bgm 阶段 == done 而 AUDIO-CARD 缺失 → error（BGM 静默丢失），
-         bgm 为 pending/skip/无 state 时维持软兜底（历史归档文章不误伤）
+         启用微信播客嵌入时，PODCAST-CARD + 同源 audio.mp3 都是硬门；旧 profile
+         未写 wechat_embed 时保持主题曲单卡（历史归档文章不误伤）
       5. 定稿.md 不含 [插图] 占位符
       6. 信息来源（若存在）不使用 ### H3 标题
       7. 信息来源（若存在）不含 markdown 链接语法 [title](url)
@@ -1585,29 +1586,71 @@ def verify_publish_assets(article_dir: str) -> dict:
         warnings.append('素材/ 目录不存在，跳过图片嵌入检查')
         passed += 1
 
-    # 4) AUDIO-CARD 位置 (BGM 2026-06-18 复活；对历史归档文章软兜底，硬存在校验
+    # 4) 双音频卡位置与产物绑定。主题曲与播客是同级模块，不是彼此的附属；
+    #    固定顺序 = AUDIO-CARD → PODCAST-CARD。移动端实际仍是上下流式排列。
+    #    AUDIO-CARD (BGM 2026-06-18 复活；对历史归档文章软兜底，硬存在校验
     #    见 pipeline.py verify bgm)。状态感知：读 .state.json 的 bgm 阶段——
     #      · 若 stages.bgm.status == 'done'（本文已声明产出 BGM）→ AUDIO-CARD 缺失判 error；
     #      · 若 bgm 为 pending/skip/无 state（历史 34/36/40 号归档文章无 bgm=done）→ 维持软兜底放行。
     #    历史 golden 基线仍含/不含 AUDIO-CARD 块均不误伤：缺失只在 bgm=done 时才硬拦。
     bgm_status = _stage_status('bgm')
     audio_marks = list(re.finditer(r'<!-- AUDIO-CARD-START -->', text))
+    podcast_marks = list(re.finditer(r'<!-- PODCAST-CARD-START -->', text))
+    podcast_required = False
+    podcast_status = 'pending'
+    podcast_drifted = False
+    podcast_errors = []
+    try:
+        import distribute as _distribute
+        podcast_required = _distribute.podcast_wechat_embed_enabled()
+        podcast_status = _distribute.get_status(base, 'podcast')
+        podcast_drifted = _distribute._is_drifted(base, 'podcast')
+    except Exception as exc:
+        if podcast_marks:
+            podcast_errors.append(f'播客卡配置/状态读取失败：{exc}')
     if not audio_marks:
         if bgm_status == 'done':
             # 本文已声明 BGM 阶段完成却无 AUDIO-CARD 块 → BGM 静默丢失，硬拦
             errors.append('bgm 阶段已标 done 但 定稿.md 无 AUDIO-CARD 块（BGM 产物缺失，疑似静默丢失）')
-        else:
-            passed += 1  # bgm 未声明产出（pending/skip/无 state）→ 软兜底，不存在是正常情况
     elif len(audio_marks) > 1:
         errors.append(f'AUDIO-CARD 块出现 {len(audio_marks)} 次（历史遗留, 应仅 1 次）')
     else:
-        # 历史归档兼容: 距文末 ≤ 800 字符 即视为末尾
+        # 历史归档兼容：单卡或双卡都属于文末机器区块；排版时才整体前置。
         last_idx = audio_marks[0].start()
         tail_chars = len(text) - last_idx
-        if tail_chars > 800:
+        if tail_chars > 2600:
             warnings.append(
                 f'AUDIO-CARD 距文末 {tail_chars} 字符 (历史归档兼容, 不强制)'
             )
+
+    if len(podcast_marks) > 1:
+        podcast_errors.append(f'PODCAST-CARD 块出现 {len(podcast_marks)} 次（应仅 1 次）')
+    if podcast_required and not podcast_marks:
+        podcast_errors.append('podcast 微信嵌入已启用但 定稿.md 无 PODCAST-CARD 块')
+    if podcast_marks:
+        if not audio_marks:
+            podcast_errors.append('PODCAST-CARD 存在但缺 AUDIO-CARD；双卡必须同级成组')
+        elif audio_marks[0].start() > podcast_marks[0].start():
+            podcast_errors.append('双音频卡顺序错误；应为主题曲在前、播客版在后')
+        podcast_mp3 = base / 'dist' / 'podcast' / 'audio.mp3'
+        if not podcast_mp3.is_file():
+            podcast_errors.append('PODCAST-CARD 存在但缺 dist/podcast/audio.mp3')
+        if podcast_status not in {'drafted', 'dispatched'}:
+            podcast_errors.append(
+                f'PODCAST-CARD 存在但播客状态为 {podcast_status}（需 drafted/dispatched）'
+            )
+        if podcast_drifted:
+            podcast_errors.append('播客音频与当前作者正文不一致（source digest 已漂移）')
+        try:
+            import podcast_episode as _podcast_episode
+            if not _podcast_episode.generation_is_fresh(base):
+                podcast_errors.append(
+                    '播客生成参数、主持提示词或音频字节已变化（generation digest 失效）'
+                )
+        except Exception as exc:
+            podcast_errors.append(f'播客生成凭证检查失败：{exc}')
+    errors.extend(podcast_errors)
+    if not (len(audio_marks) > 1 or podcast_errors or (not audio_marks and bgm_status == 'done')):
         passed += 1
 
     # 5) [插图] 占位符

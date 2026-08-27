@@ -87,22 +87,18 @@ Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后�
 ## 3. 后处理、BGM 与排版
 
 1. 由确定性装配器按任务单位置嵌入信息图：
-
 ```bash
 python "$SKILL/scripts/pipeline.py" assemble-release
 ```
-
-2. 运行 `generate_article_bgm.py`，生成 MP3 并插入 AUDIO-CARD。
-   （提速）此后即可后台跑 `pipeline.py podcast-pregen` 预生成播客；finalize 到点直接取件，省 ~18 分钟。
-3. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
-4. 运行：
-
+2. 运行 `generate_article_bgm.py`，生成 MP3 并插入主题曲 AUDIO-CARD。
+3. 若 profile 显式配置 `podcast.wechat_embed: true`，立即运行 `pipeline.py podcast-pregen`：先插入同级 PODCAST-CARD，再生成 `dist/podcast/audio.mp3`。这是草稿前硬门，不得留到 `finalize`；未显式配置时保持历史主题曲单卡。
+4. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
+5. 运行：
 ```bash
 python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 ```
-
 🔴 **微信只收 jpg / png**，webp/avif/heic/bmp/tiff 一律 `40005`，且上传器会**吞掉**
 这个失败、把本地 `src` 原样留在正文里（草稿一片坏图，而 `image_count` 数量对得上、
 校验全绿——2026-07-28 连推三版才发现）。三道防线已内建，不必手动记：
@@ -153,21 +149,20 @@ QA 资产集合从最终 HTML 与 Markdown 的实际引用共同计算；Hero �
 python "$SKILL/scripts/pipeline.py" release-check
 python "$SKILL/scripts/pipeline.py" release-to-draft
 ```
-
 该命令不可拆分：
-
 1. 验证 release job。
 2. 执行全部发布前硬门并写 `_publish-ready.json`。
 3. 创建微信草稿；拿到 `media_id` 后立即写 `_release-attempt.json`。
 4. 调微信官方 `draft/get` 读回。
-5. 比对标题、摘要、作者、阅读原文、评论设置、正文规范化摘要、图片数量、封面 media ID。
-6. 全部一致才写 v2 `_publish-receipt.json` 并把 publish 标为 done。
-
+5. 比对标题、摘要、作者、阅读原文、评论设置、正文规范化摘要、图片数量、上传后的图片地址、推广链接与封面 media ID。
+6. 全部一致才写 v2 `_publish-receipt.json` 并把 publish 标为 done；若含音频卡，同时写 `_wechat-audio-handoff.json`，绑定草稿 ID、两份音频路径与 SHA-256。
 读回失败时保留 attempt；同一 ready digest 重试只读回原草稿，不重复创建。产物发生变化后才会开启新 attempt。
 
 ## 6. 人工正式发布与自动收尾
 
-作者在微信后台人工处理预览、原创、赞赏和正式发布。拿到永久链接后运行：
+若启用了公众号播客卡，作者先在微信编辑器的两个占位处分别插入主题曲与播客原生音频，删除占位文字并保存，然后运行 `python "$SKILL/scripts/pipeline.py" wechat-audio-check`。
+该命令不是只数播放器：它再次 `draft/get`，校验固定顺序「导读 → 🎵 阅读配乐｜本文主题曲 → 🎧 音频版本｜本期播客 → 正文」，并复核标题、摘要、正文、图片、推广链接、封面及本地音频哈希。通过后才写 `_wechat-audio-receipt.json`。主题曲与播客同级同宽、上下排列，不做手机端左右双栏。
+作者再人工处理预览、原创、赞赏和正式发布。拿到永久链接后运行：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" finalize \
@@ -175,6 +170,8 @@ python "$SKILL/scripts/pipeline.py" finalize \
 ```
 
 固定顺序：登记永久链接 → 归档作品库 → 验证归档 → **生成 `_moments-copy.md`** → 已获长期授权的自动播客 → 执行已配置官网同步。官网命令未配置时记录 skipped。🔴 **朋友圈文案前移到归档验证之后**：它只需要标题、摘要和永久链接，不依赖播客音频与官网；压在链尾会让作者等一个 10-30 分钟的音频才拿到文案，而首发那几小时最需要它。**播客或官网失败不得阻断、也不得回滚它。** 内容要求见 publish.md「朋友圈内容协议」。
+
+`finalize` 在任何写盘前还会再次读回远端草稿；音频、正文或交接哈希任一变化，旧凭证立即失效。公众号、官网与 RSS 复用同一个 `dist/podcast/audio.mp3`，禁止各自重生成一份。
 
 - 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。**NotebookLM 登录失效时 `podcast_episode.py` 会自动拉起 `nlm login` 弹浏览器授权（2026-07-30 起），探测恢复后继续原流程**；只有自动登录失败才提示人工 `nlm login`（无人值守环境用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示）。不得误说成“音频只能手动生成”。
 - 小红书与微博不随 `finalize` 自动规划。用户明确点名某篇要「转小红书 / 发微博」后，才运行 `distribute.py plan --only ...`，分别制作 3:4 与 1:1 专属图片并预填发布页。
@@ -185,6 +182,6 @@ python "$SKILL/scripts/pipeline.py" finalize \
 
 - 非零退出：修复明确报错后重跑同一命令。
 - 长命令尚未退出：每 60 秒以内报告一次存活进度，等待当前单写者返回；禁止另开终端、直调 renderer 或重复启动同一命令。
-- 图片或 prompt 改动：重新 `visual-qa`、`seal visual`、`release-to-draft`。
+- 图片或 prompt 改动：重新 `visual-qa`、`seal visual`、`release-to-draft`；标题、正文、播客提示词或生成参数改动还必须重跑 `podcast-pregen`。
 - 草稿已创建但读回失败：不得删除 attempt，不得手工登记 media ID。
 - 需要换 provider：只改 `renderer-policy.json`，不得改 canonical prompt 或图片比例。

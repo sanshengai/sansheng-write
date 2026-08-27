@@ -4,6 +4,7 @@
 一失败官网同步晚了 5 小时）。定稿冻结点预生成 + finalize 取件把它移出关键路径。
 """
 import json
+import hashlib
 import sys
 from pathlib import Path
 
@@ -39,9 +40,26 @@ def _pregen_article(tmp_path: Path, *, with_url: bool = False) -> Path:
         "pub_date": "2026-08-16T00:00:00+08:00", "kind": "article",
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (out / "shownotes.md").write_text("# 深聊 | 标题\n\n本期摘要\n", encoding="utf-8")
+    prompt = art / "podcast-focus.md"
+    prompt.write_text("围绕文章展开，不增加正文外事实。\n", encoding="utf-8")
+    config = _podcast_cfg(art)
     distribute.set_status(art, "podcast", "drafted",
-                          source_digest=distribute._digest(FINAL))
+                          source_digest=distribute.source_digest(art, "podcast"),
+                          generation_digest=pe.generation_digest(art, config),
+                          audio_sha256=hashlib.sha256(
+                              (out / "audio.mp3").read_bytes()
+                          ).hexdigest())
     return art
+
+
+def _podcast_cfg(art: Path) -> dict:
+    return {
+        "enabled": True,
+        "shownotes_max": 800,
+        "focus_prompt": str(art / "podcast-focus.md"),
+        "language": "zh",
+        "length": "default",
+    }
 
 
 def _forbid_nlm(monkeypatch):
@@ -52,14 +70,14 @@ def _forbid_nlm(monkeypatch):
 
 def test_generate_short_circuits_on_fresh_pregen(tmp_path, monkeypatch):
     art = _pregen_article(tmp_path)
-    monkeypatch.setattr(pe, "cfg", lambda: {"enabled": True, "shownotes_max": 800})
+    monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))
     _forbid_nlm(monkeypatch)
     assert pe.cmd_generate(art) == 0
 
 
 def test_short_circuit_backfills_wechat_url(tmp_path, monkeypatch):
     art = _pregen_article(tmp_path, with_url=True)
-    monkeypatch.setattr(pe, "cfg", lambda: {"enabled": True, "shownotes_max": 800})
+    monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))
     _forbid_nlm(monkeypatch)
     assert pe.cmd_generate(art) == 0
     side = json.loads((distribute.channel_dir(art, "podcast") / "audio.json")
@@ -74,7 +92,7 @@ def test_hand_edited_shownotes_survive_url_backfill(tmp_path, monkeypatch):
     hand = "# 手写标题\n\n作者自己改过的 shownotes\n"
     (distribute.channel_dir(art, "podcast") / "shownotes.md").write_text(
         hand, encoding="utf-8")
-    monkeypatch.setattr(pe, "cfg", lambda: {"enabled": True, "shownotes_max": 800})
+    monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))
     _forbid_nlm(monkeypatch)
     assert pe.cmd_generate(art) == 0
     assert (distribute.channel_dir(art, "podcast") / "shownotes.md").read_text(
@@ -85,11 +103,11 @@ def test_drifted_final_defeats_short_circuit(tmp_path, monkeypatch):
     """预生成后定稿又改过 → 不许拿旧音频交差，必须走完整生成。"""
     art = _pregen_article(tmp_path)
     (art / "定稿.md").write_text(FINAL + "\n新增段落。\n", encoding="utf-8")
-    # focus_prompt 未配置 → 完整生成路径会在短路之后、touching nlm 之前
-    # 以 rc=2 停下——恰好证明它没有走短路（短路返回 0）。
-    monkeypatch.setattr(pe, "cfg", lambda: {"enabled": True})
+    # 完整生成路径会触碰被禁用的 NotebookLM 并以 rc=1 停下——恰好证明
+    # 它没有误走取件短路（短路返回 0）。
+    monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))
     _forbid_nlm(monkeypatch)
-    assert pe.cmd_generate(art) == 2
+    assert pe.cmd_generate(art) == 1
 
 
 def test_pregen_gate_requires_both_markers(tmp_path, monkeypatch):
@@ -126,3 +144,28 @@ def test_pregen_noop_when_channel_disabled(tmp_path, monkeypatch):
     art.mkdir()
     monkeypatch.setattr(distribute, "enabled_channels", lambda: [])
     assert cmd_podcast_pregen(art) is None
+
+
+def test_machine_card_layout_change_does_not_expire_audio(tmp_path):
+    art = _pregen_article(tmp_path)
+    final = art / "定稿.md"
+    final.write_text(
+        final.read_text(encoding="utf-8").replace("音乐卡", "音乐卡（新版配色）"),
+        encoding="utf-8",
+    )
+    assert pe.generation_is_fresh(art, _podcast_cfg(art)) is True
+
+
+def test_title_or_prompt_change_expires_audio(tmp_path):
+    art = _pregen_article(tmp_path)
+    config = _podcast_cfg(art)
+    state_path = art / ".state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["stages"]["writing"]["title_final"] = "另一个标题"
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    assert pe.generation_is_fresh(art, config) is False
+
+    state["stages"]["writing"]["title_final"] = "标题"
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    (art / "podcast-focus.md").write_text("提示词也变了。\n", encoding="utf-8")
+    assert pe.generation_is_fresh(art, config) is False

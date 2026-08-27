@@ -22,11 +22,17 @@ VISUAL_BLOCK_RE = re.compile(
     r"<!-- SANSHENG-VISUAL-END:\1 -->"
     r"(?:\r?\n)?"
 )
-AUDIO_BLOCK_RE = re.compile(
+THEME_AUDIO_BLOCK_RE = re.compile(
     r"(?ms)(?:\r?\n)?"
     r"<!-- AUDIO-CARD-START -->.*?<!-- AUDIO-CARD-END -->"
     r"(?:\r?\n)?"
 )
+PODCAST_AUDIO_BLOCK_RE = re.compile(
+    r"(?ms)(?:\r?\n)?"
+    r"<!-- PODCAST-CARD-START -->.*?<!-- PODCAST-CARD-END -->"
+    r"(?:\r?\n)?"
+)
+AUDIO_BLOCK_RES = (THEME_AUDIO_BLOCK_RE, PODCAST_AUDIO_BLOCK_RE)
 LEGACY_VISUAL_REF_RE = re.compile(
     r"(?m)^[ \t]*!\[[^\]\r\n]*\]"
     r"\((?:\./)?素材/infographic-?\d+\.png(?:\s+[\"'][^\"']*[\"'])?\)"
@@ -39,7 +45,8 @@ def strip_machine_assembly(text: str) -> str:
     normalized = text.replace("\r\n", "\n")
     normalized = VISUAL_BLOCK_RE.sub("", normalized)
     normalized = LEGACY_VISUAL_REF_RE.sub("", normalized)
-    normalized = AUDIO_BLOCK_RE.sub("", normalized)
+    for pattern in AUDIO_BLOCK_RES:
+        normalized = pattern.sub("", normalized)
     # Machine blocks occupy whole paragraphs; insertion/removal may leave one extra
     # blank line. Normalize only repeated blank lines, never author prose bytes.
     normalized = re.sub(r"\n{3,}", "\n\n", normalized)
@@ -92,9 +99,14 @@ def assemble_release_markdown(
     if "SANSHENG-VISUAL-START:" in clean or "SANSHENG-VISUAL-END:" in clean:
         return None, ["定稿.md 含不配对的 SANSHENG-VISUAL marker"]
 
-    audio_match = AUDIO_BLOCK_RE.search(clean)
-    audio = audio_match.group(0).strip() if audio_match else ""
-    body = AUDIO_BLOCK_RE.sub("", clean).rstrip()
+    audio_blocks = []
+    body = clean
+    for pattern in AUDIO_BLOCK_RES:
+        match = pattern.search(body)
+        if match:
+            audio_blocks.append(match.group(0).strip())
+        body = pattern.sub("", body)
+    body = body.rstrip()
     items = list(plan["infographics"])
     opening = [item for item in items if item["position"] == "opening"]
     middle = [item for item in items if item["position"] == "middle"]
@@ -125,8 +137,8 @@ def assemble_release_markdown(
         before = assembled[:index].rstrip()
         after = assembled[index:].lstrip()
         assembled = f"{before}\n\n{blocks}\n\n{after}".rstrip()
-    if audio:
-        assembled = f"{assembled}\n\n{audio}"
+    if audio_blocks:
+        assembled = f"{assembled}\n\n" + "\n\n".join(audio_blocks)
     assembled = assembled.rstrip() + "\n"
 
     author_hash_after = author_content_sha256(assembled)

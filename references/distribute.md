@@ -160,3 +160,5 @@ python scripts/distribute.py --dir <文章目录> dispatch weibo --confirm
 `podcast.auto_after_finalize: true` 时，`finalize` 才会把它当成长期授权自动生成并推送
 RSS；否则同样按篇显式运行。音频生成、shownotes、feed 与 receipt 规则见
 `scripts/podcast_episode.py` 的命令帮助。
+
+`podcast.wechat_embed: true` 是另一项独立授权：它只控制公众号是否增加同级播客卡，不从 `auto_after_finalize` 推断。开启后，`podcast-pregen` 在排版前生成音频，公众号、官网与 RSS 全部复用 `dist/podcast/audio.mp3`。节目输入只取作者正文，排除信息图与两张音频卡；复用凭证同时绑定正文摘要、标题、提示词 SHA、语言、时长、生成器版本和音频 SHA，任一语义输入变化都必须重生成。

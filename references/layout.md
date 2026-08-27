@@ -10,6 +10,7 @@
 - `素材/hero.png`
 - 至少 4 张 `素材/infographic-*.png`
 - BGM MP3 与定稿中的 AUDIO-CARD
+- 显式启用 `podcast.wechat_embed` 时：`dist/podcast/audio.mp3` 与 PODCAST-CARD
 
 缺任一发布硬门产物就停，不用占位符先过排版。
 
@@ -20,13 +21,14 @@
 1. H1 标题。
 2. `hero.png`。
 3. 导读栏。
-4. AUDIO-CARD。
-5. 正文与信息图。
-6. `DEEP READ / 继续往下读`：`endmatter.deep_read: true` 时必有，优先放 1 篇
+4. AUDIO-CARD「🎵 阅读配乐｜本文主题曲」。
+5. PODCAST-CARD「🎧 音频版本｜本期播客」（显式启用时）。
+6. 正文与信息图。
+7. `DEEP READ / 继续往下读`：`endmatter.deep_read: true` 时必有，优先放 1 篇
    与本文直接相关的已发内容，再放 profile 的自有站点。
-7. `SOURCES / 信息来源`：正文使用了外部案例、数据、视频或报告时必有。
-8. 推荐阅读。
-9. 关注卡片。
+8. `SOURCES / 信息来源`：正文使用了外部案例、数据、视频或报告时必有。
+9. 推荐阅读。
+10. 关注卡片。
 
 信息图按 `visual-plan.json` 的 opening/middle/closing 位置嵌入。素材存在但正文未引用会被发布预检拦截。
 
@@ -106,7 +108,7 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 - 标题、导读、摘要一致。
 - H2/H3 与 `article-meta.yaml` 数量一致。
 - 无裸露不可点击 URL、无脚本/样式注入、无未替换占位符。
-- Hero、AUDIO-CARD、文末双模块、推荐与关注组件位置正确。
+- Hero、双音频卡、文末双模块、推荐与关注组件位置正确；音频卡固定为主题曲 → 播客，均在导读后、正文前，同宽上下排列。
 - 所有正文图已上传前可解析，且最终视觉凭证有效。
 
 ## 常见故障

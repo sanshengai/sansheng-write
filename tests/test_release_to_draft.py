@@ -72,9 +72,13 @@ def _reader(*, mutate: str = "", keep_local_src: bool = False):
     def read(media_id, expected):
         content = str(expected["content"])
         if not keep_local_src:
+            def uploaded(match):
+                name = match.group(2).replace("\\", "/").rsplit("/", 1)[-1]
+                return f'{match.group(1)}https://wechat-image.invalid/{name}{match.group(3)}'
+
             content = re.sub(
-                r'(<img[^>]*\ssrc=")(?!https?://)[^"]+(")',
-                r"\1https://wechat-image.invalid/uploaded\2",
+                r'(<img[^>]*\ssrc=")(?!https?://)([^"]+)(")',
+                uploaded,
                 content,
                 flags=re.I,
             )
@@ -118,6 +122,10 @@ def test_release_to_draft_is_one_transaction_with_remote_readback(tmp_path):
     assert checks["body_digest"] is True
     assert checks["image_count"] is True
     assert checks["cover_media_id"] is True
+    assert receipt["remote_readback"]["image_sources"] == [
+        "https://wechat-image.invalid/hero.png",
+        "https://wechat-image.invalid/infographic-01.png",
+    ]
 
 
 def test_readback_accepts_publisher_digest_truncation_and_wechat_html_cleanup(
@@ -185,6 +193,131 @@ def test_semantic_body_digest_ignores_markup_inside_sanitized_title_attribute():
 
     assert _semantic_body_digest(local) == _semantic_body_digest(wechat)
     assert _semantic_body_digest(local) != _semantic_body_digest(changed_visible_text)
+
+
+def _dual_audio_article(root: Path) -> Path:
+    from scripts.audio_cards import render_card
+    from scripts.release_to_draft import release_to_draft, write_audio_handoff
+
+    article = _article(root)
+    theme_card = render_card("theme", "原创 · 3 分 20 秒")
+    podcast_card = render_card("podcast", "AI 生成 · 双主持")
+    (article / "定稿.md").write_text(
+        f"# 标题\n\n正文。\n\n{theme_card}\n\n{podcast_card}\n",
+        encoding="utf-8",
+    )
+    (article / "定稿.html").write_text(
+        "<html><body><section><p>正文</p>"
+        '<img src="素材/hero.png"><img src="素材/infographic-01.png">'
+        f"{theme_card}{podcast_card}</section></body></html>",
+        encoding="utf-8",
+    )
+    (article / "主题曲.mp3").write_bytes(b"theme-audio")
+    (article / "dist/podcast").mkdir(parents=True)
+    (article / "dist/podcast/audio.mp3").write_bytes(b"podcast-audio")
+    receipt, release_errors = release_to_draft(
+        article,
+        preflight=_preflight,
+        publisher=_publisher([]),
+        reader=_reader(),
+    )
+    assert release_errors == [] and receipt is not None
+    handoff, errors = write_audio_handoff(article, "draft-media-001")
+    assert errors == [] and handoff is not None
+    return article
+
+
+def _dual_audio_reader(
+    *, mutate_body: bool = False, stray_podcast: bool = False, duplicate_image: bool = False
+):
+    base = _reader()
+
+    def read(media_id, expected):
+        actual = base(media_id, expected)
+        content = actual["content"].replace(
+            "（👉 删除本段文字，并插入主题曲音频）",
+            '<mp-common-mpaudio name="主题曲"></mp-common-mpaudio>',
+        )
+        podcast_player = '<mp-common-mpaudio name="播客"></mp-common-mpaudio>'
+        content = content.replace(
+            "（👉 删除本段文字，并插入播客音频）",
+            "" if stray_podcast else podcast_player,
+        )
+        if stray_podcast:
+            content += podcast_player
+        if mutate_body:
+            content = content.replace("正文", "正文被人工误改", 1)
+        if duplicate_image:
+            content = content.replace(
+                "https://wechat-image.invalid/infographic-01.png",
+                "https://wechat-image.invalid/hero.png",
+                1,
+            )
+        actual["content"] = content
+        return actual
+
+    return read
+
+
+def test_dual_audio_readback_checks_players_and_full_article(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(article, reader=_dual_audio_reader())
+
+    assert errors == []
+    assert receipt is not None
+    assert receipt["roles"] == ["theme", "podcast"]
+    assert receipt["audio_count"] == 2
+    assert all(receipt["remote_readback"]["checks"].values())
+    assert set(receipt["local_audio_sha256"]) == {"theme", "podcast"}
+
+
+def test_dual_audio_readback_rejects_unrelated_manual_body_edit(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article, reader=_dual_audio_reader(mutate_body=True)
+    )
+
+    assert receipt is None
+    assert any("body_digest" in error for error in errors)
+
+
+def test_dual_audio_handoff_expires_when_local_audio_changes(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    (article / "dist/podcast/audio.mp3").write_bytes(b"a-new-podcast")
+    receipt, errors = verify_wechat_audio(article, reader=_dual_audio_reader())
+
+    assert receipt is None
+    assert any("草稿交接后变化" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_player_outside_podcast_card(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article, reader=_dual_audio_reader(stray_podcast=True)
+    )
+
+    assert receipt is None
+    assert any("播客" in error and "卡片内" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_equal_count_image_replacement(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article, reader=_dual_audio_reader(duplicate_image=True)
+    )
+
+    assert receipt is None
+    assert any("image_identity" in error for error in errors)
 
 
 def test_remote_mismatch_blocks_publish_receipt_but_preserves_attempt(tmp_path):
