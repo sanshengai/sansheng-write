@@ -2445,6 +2445,107 @@ def verify_h2_subtitle_align(article_dir: str) -> dict:
     }
 
 
+# ===== 【第 15b 节】标题公式门 =====
+# ============================================================================
+# title.md 的唯一公式：`标签 | 可搜索关键词 + 一句把全文主旨浓缩到底的话`。
+# 本门只扫**能由正则判定的那一半**（前缀、内部编号、揭穿式反差、悬念词、长度）；
+# 「后半句有没有真的覆盖全文主旨」是语义判断，机器判不了，留给 title.md 的 7 步质检。
+#
+# 为什么要有这道机器门：这条规则在 title.md 里写成散文写了很久，仍然连续两篇发出
+# 「「主角」16 章：你转发过的那些名言，多半不是他说的」这类标题 —— 内部编号 + 揭穿式
+# 反差同时命中。iron-rules 的第一原则是「能由代码判断的规则只在代码中执行」，
+# 于是把可判的那部分下沉成门。
+# ============================================================================
+
+_TITLE_TAGS = ('教程', '精选', '分享', '行业', '资讯', '洞察', '随笔')
+
+# (正则, 病灶, ✅ 改法)
+_TITLE_HARD = [
+    (r'\d+\s*章|第\s*\d+\s*[章节期回]|(?<![A-Za-z])[vV]\d+(?:\.\d+)?(?![A-Za-z])',
+     '内部结构编号进标题（N 章 / 第 N 期 / v 号）',
+     '换成读者一眼懂价值的规模量（4 本书 / 52 万字 / 785 封原文），或直接删'),
+    (r'你(?:买过|转发过|用过|见过|读过|以为|一直以为|印象里)',
+     '揭穿式反差（先假设读者错了再纠正他）',
+     '改回正面陈述：这篇整体是什么、覆盖了什么、读者能得到什么'),
+    (r'(?:多半|其实|根本|压根|居然)(?:不是|没有|并不)',
+     '揭穿式否定（多半不是 / 其实并不）',
+     '正面说结论，别用否定揭穿；反差要求读者先有那个错误认知，多数时候并不成立'),
+    (r'真相|这背后|背后的真相|没想到|你猜|卖个?关子',
+     '悬念 / 卖关子用词',
+     '直球说清这篇给什么'),
+    (r'震惊|竟然|细思极恐|万万没想到|太绝了|太牛了',
+     '标题党用语',
+     '用克制陈述代替'),
+]
+
+
+def _title_width(text: str) -> float:
+    """汉字位宽：中文/全角计 1，英数/半角计 0.5，空格不计（与 title.md 长度口径同源）。"""
+    width = 0.0
+    for ch in text:
+        if ch.isspace():
+            continue
+        width += 1.0 if ord(ch) > 0x2E80 else 0.5
+    return width
+
+
+def audit_title_contract(title: str) -> dict:
+    """扫单个标题，返回 {'verdict', 'violations', 'notes'}。纯函数，便于测试。"""
+    import re
+
+    title = (title or '').strip()
+    if not title:
+        return {'verdict': 'skip', 'violations': [], 'notes': '标题为空，跳过'}
+
+    violations: list[str] = []
+
+    head, sep, body = title.partition(' | ')
+    if not sep or head not in _TITLE_TAGS:
+        violations.append(
+            f'缺 2 字分类标签前缀（应为 `标签 | 正文标题`，标签 7 选 1：{"/".join(_TITLE_TAGS)}）'
+            ' → 见 title.md 第一步'
+        )
+        body = title
+
+    for pattern, diagnosis, fix in _TITLE_HARD:
+        hit = re.search(pattern, body)
+        if hit:
+            violations.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
+
+    width = _title_width(title)
+    if width > 30:
+        violations.append(f'长度 {width:g} 字位 > 30 上限 → 砍竖杠后的正文标题，不砍标签')
+
+    if violations:
+        return {
+            'verdict': 'fail',
+            'violations': violations,
+            'notes': '；'.join(violations),
+        }
+    return {
+        'verdict': 'ok',
+        'violations': [],
+        'notes': f'标题过门（{width:g} 字位）；覆盖性仍需人判，见 title.md 7 步质检',
+    }
+
+
+def verify_title_contract(article_dir: str) -> dict:
+    """读 article-meta.yaml 的 title 跑 audit_title_contract。"""
+    from pathlib import Path
+
+    meta_path = Path(article_dir) / 'article-meta.yaml'
+    if not meta_path.exists():
+        return {'verdict': 'skip', 'violations': [],
+                'notes': 'article-meta.yaml 不存在，跳过标题门'}
+    try:
+        import yaml
+        meta = yaml.safe_load(meta_path.read_text(encoding='utf-8')) or {}
+    except Exception as exc:
+        return {'verdict': 'skip', 'violations': [],
+                'notes': f'article-meta.yaml 解析失败：{exc}'}
+    return audit_title_contract(str(meta.get('title') or ''))
+
+
 # ===== 【第 16 节】量化体检报告 =====
 # ============================================================================
 # log_observation（2026-05-22 skill 自省机制）

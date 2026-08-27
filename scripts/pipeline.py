@@ -3269,6 +3269,16 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
             add("ok" if exists else "fail", fname,
                 "存在" if exists else f"缺失 —— {why}")
 
+    # --- 1b. 标题公式门（可正则判定的那一半，覆盖性仍靠 title.md 7 步质检）---
+    try:
+        from contracts import verify_title_contract
+        tc = verify_title_contract(str(cwd))
+        verdict = tc.get("verdict")
+        add("fail" if verdict == "fail" else "ok", "标题公式（title.md）",
+            tc.get("notes", ""))
+    except Exception as exc:
+        add("warn", "标题公式（title.md）", f"检查异常：{exc}")
+
     # --- 2. 外审产物 ---
     for fname, why in (
         ("_fact-check.md", "事实复核（独立上下文 subagent）"),
