@@ -595,6 +595,29 @@ def _cover_text(meta: dict, item: dict) -> dict:
     return text
 
 
+def wants_portrait(meta: dict) -> bool:
+    """meta 声明了 `cover_portrait.file` = 走真实肖像满幅出血路线。
+
+    真人肖像禁止由生图模型画（iron-rules §视觉 4 / image-routing），所以这条路线下
+    renderer 只出底板、右区留空场，肖像由 `cover_portrait.py` 确定性合成。
+    """
+    portrait = (meta or {}).get("cover_portrait")
+    return bool(isinstance(portrait, dict) and str(portrait.get("file") or "").strip())
+
+
+# 肖像满幅出血底板的右区段落：什么都不画，留给确定性合成层
+_RIGHT_ZONE_BLEED = (
+    "The right 34% of the canvas stays an EMPTY quiet deep-charcoal field: no object, "
+    "no frame, no border, no plate, no badge, no icon, no arrow, no lettering -- only "
+    "the ambient gradient and a whisper of halftone, a reserved area a real "
+    "photograph will occupy later.\n"
+    "Around and behind the left-zone text keep a delicate low-contrast texture: long "
+    "thin curved contour lines, one faint line-chart curve, sparse hairline grid marks "
+    "and one or two soft geometric shapes, all at 6%-12% contrast so the headline "
+    "stays the single dominant element and nothing reads as a picture of its own.\n\n"
+)
+
+
 def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     text = _cover_text(meta, item)
     title = text["line1"]
@@ -613,7 +636,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "producer_chain": [VISUAL_PRODUCER],
         "cover_text_contract": text["contract_revision"],
         "stage": "cover",
-        "style": "montage-evidence",
+        "style": "portrait-bleed" if wants_portrait(meta) else "montage-evidence",
         "visual_profile": recipe["name"],
         "visual_profile_sha256": recipe["sha256"],
         "aspect_ratio": "2.35:1",
@@ -631,6 +654,16 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         f"- {str(fact).strip()}"
         for fact in item.get("visual_facts") or []
         if str(fact).strip()
+    )
+    right_zone = _RIGHT_ZONE_BLEED if wants_portrait(meta) else (
+        "One dominant flat-vector EMBLEMATIC object drawn from the facts below -- thin "
+        "physical depth, same-hue halftone, upper-left highlight, soft lower-right "
+        "contact shadow -- plus exactly three much smaller near-black badges with "
+        "hairline borders in that same accent hue and one tiny textless pictogram "
+        "each, linked by restrained curved dashed arrows. That object is attributable "
+        "to this subject at thumbnail size -- for a named person, the one object most "
+        "emblematic of them (instrument, manuscript, letters, product); a small "
+        "faceless silhouette only where a fact requires a person.\n\n"
     )
     # 🔴 2026-08-16 精简：4954 → ~2660 字符（模型可见正文 ~2220），对齐信息图
     #    prompt 的同一套实证规则（frontmatter 已由渲染层剥离；否定式清到 1 条；
@@ -675,15 +708,8 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         #    具体主角。改为 emblematic + 明确的归因要求（缩略图尺寸下能认出属于谁）。
         #    真人肖像仍然不能由 renderer 画（禁生成相似肖像），只能走确定性合成层，
         #    见 references/cover-styles.md §右区主视觉。
-        "One dominant flat-vector EMBLEMATIC object drawn from the facts below -- thin "
-        "physical depth, same-hue halftone, upper-left highlight, soft lower-right "
-        "contact shadow -- plus exactly three much smaller near-black badges with "
-        "hairline borders in that same accent hue and one tiny textless pictogram "
-        "each, linked by restrained curved dashed arrows. That object is attributable "
-        "to this subject at thumbnail size -- for a named person, the one object most "
-        "emblematic of them (instrument, manuscript, letters, product); a small "
-        "faceless silhouette only where a fact requires a person.\n\n"
-        "No brand name, account name, issue number or signature text; the logo is "
+        + right_zone
+        + "No brand name, account name, issue number or signature text; the logo is "
         "added later.\n\n"
         "## PICTORIAL BRIEF\n"
         "Express these source facts as TEXTLESS visual evidence -- their objects, "

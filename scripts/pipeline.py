@@ -3279,6 +3279,24 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     except Exception as exc:
         add("warn", "标题公式（title.md）", f"检查异常：{exc}")
 
+    # --- 1b2. cover_portrait 声明（声明了就得可追溯：文件在、来源与许可齐）---
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import yaml as _yaml
+        from cover_portrait import portrait_spec, validate as _validate_portrait
+
+        meta_file = cwd / "article-meta.yaml"
+        if meta_file.is_file():
+            _meta = _yaml.safe_load(meta_file.read_text(encoding="utf-8")) or {}
+            _spec = portrait_spec(_meta)
+            if str(_spec.get("file") or "").strip():
+                _errs = _validate_portrait(_spec, cwd)
+                add("fail" if _errs else "ok", "封面真实肖像声明（cover_portrait）",
+                    "；".join(_errs) if _errs
+                    else "文件、来源、许可齐备；渲染后跑 cover_portrait.py 合成")
+    except Exception as exc:
+        add("warn", "封面真实肖像声明（cover_portrait）", f"检查异常：{exc}")
+
     # --- 1c. 封面 L1/L2 与外标题的分工（锚点有意重复，那一句不许重复）---
     try:
         from contracts import verify_cover_title_pair

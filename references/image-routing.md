@@ -4,7 +4,9 @@
 
 ## 先判断是否应当生图
 
-- 真人、新闻人物、重大事件：优先使用可授权的真实新闻照，禁止生成相似人物肖像。
+- 真人、新闻人物、重大事件：优先使用可授权的真实新闻照，禁止生成相似人物肖像，也禁止拿真人照片喂给
+  生图模型重绘成风格化肖像。封面要真脸走 `portrait-bleed` 的确定性合成层（见
+  [cover-styles.md §已落地](cover-styles.md)），不走生图模型。
 - 厂商产品界面、Logo、硬件外观：优先官方素材或作者截图。
 - 作者供图：保留原图，使用 `shot-` 前缀；默认不加 AI 图水印。
 - 概念、结构、流程、抽象关系：进入视觉规划器。
@@ -154,6 +156,7 @@ prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与�
 ```bash
 python "$SKILL/scripts/pipeline.py" compile-visuals
 python "$SKILL/scripts/pipeline.py" render-visuals
+python "$SKILL/scripts/cover_portrait.py" .   # 仅当 meta 声明 cover_portrait；未声明自动跳过
 node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 python "$SKILL/scripts/pipeline.py" visual-qa

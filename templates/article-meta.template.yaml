@@ -82,6 +82,17 @@ endmatter:
 # lead 同时供两处消费：① 文内导读栏组件 ② 封面 L1/L2 文案（scripts/visual_workflow.py）
 # 人物/品牌/作品为主题时填写；该词必须直写进 L1/L2，底部小标签不算。
 cover_identity: ""
+# 🔴 真实肖像满幅出血（可选）：填了 file 就自动走 portrait-bleed —— renderer 只出底板、
+#   右区留空场，真实肖像由 scripts/cover_portrait.py 确定性贴进去（禁止 AI 生成/重绘肖像）。
+#   照片顶右、顶上、顶下三边，宽度按肖像自身比例反推（免裁发顶），暖调映射 + 左缘渐隐。
+#   缺 source 或 license 直接拒绝合成。没有可用公有领域肖像、或旧式黑白遗照观感强的，
+#   留空走标志性实物路线。详见 references/cover-styles.md §已落地。
+# cover_portrait:
+#   file: "素材/portrait-src.jpg"
+#   source: "馆藏页 / 档案编号 / 页面 URL"
+#   license: "公有领域（依据）或已授权（凭据）"
+#   credit: ""                   # 需要署名时填
+#   anchor: [0.45, 0.34]         # 脸部中心占原图比例
 # 封面对字数是硬约束——L1 要占画布高 12%~14% 才能成为视觉主体，反推左区只放得下约 8 字位；
 # 超限模型只能缩字号，封面规范压不住。详见 references/title.md「封面三件套」。
 lead:

@@ -22,7 +22,11 @@
 3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。
    该签名配方只由 `scripts/visual_contracts.py` 定义；Baoyu 负责内容分析和布局，无权覆盖
    色板、材质、字形与明暗阈值，私有 profile 也不得覆盖。
-4. 真人真事优先真实授权图片，禁止生成相似人物肖像。
+4. 真人真事优先真实授权图片，禁止生成相似人物肖像，也禁止把真人照片喂给生图模型重绘成风格化肖像。
+   封面需要真脸时走 `portrait-bleed`：renderer 只出底板、右区留空场，真实肖像由
+   `scripts/cover_portrait.py` 确定性合成（与 `add_logo` / 压缩同属既有后处理层，按 `stage` 记账）。
+   该层只许贴可追溯的真实人物照片、只许贴在右区照片位；贴文字、标签、logo 或图表一律禁止，
+   封面上的字仍必须由生图模型原生生成。`cover_portrait` 缺 `source` 或 `license` 即拒绝合成。
 5. 精确数字图、精确拓扑图走独立本地确定性代码路径，不得冒充封面 / Hero / 信息图，也不得进入其最终图证据集。
 6. renderer fallback 只能按配置执行，prompt 和比例不可改变。
 7. 最终图后处理后必须独立 `visual-qa` 并 `seal visual`；Markdown 勾选不算证据。
