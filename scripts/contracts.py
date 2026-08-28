@@ -2466,16 +2466,47 @@ _TITLE_HARD = [
      '换成读者一眼懂价值的规模量（4 本书 / 52 万字 / 785 封原文），或直接删'),
     (r'你(?:买过|转发过|用过|见过|读过|以为|一直以为|印象里)',
      '揭穿式反差（先假设读者错了再纠正他）',
-     '改回正面陈述：这篇整体是什么、覆盖了什么、读者能得到什么'),
+     '改回正面陈述，或改用原话型 / 具象型 / 处境型填法'),
     (r'(?:多半|其实|根本|压根|居然)(?:不是|没有|并不)',
      '揭穿式否定（多半不是 / 其实并不）',
      '正面说结论，别用否定揭穿；反差要求读者先有那个错误认知，多数时候并不成立'),
+    # 揭穿式反差的句式家族（外部标题方法论已逐条枚举，直接采用）：
+    # 共同病灶都是「先给一个假设，再推翻它」，属纯揭底套路。
+    (r'表面(?:上)?是[^，。]{1,12}[，,](?:背后|其实|实际|本质)',
+     '揭穿式句式「表面是 X，背后是 Y」',
+     '直接说那个 Y，别先立一个 X 再推翻'),
+    (r'看(?:起来|上去)(?:像|是)[^，。]{1,12}[，,](?:其实|实际|本质|背后)',
+     '揭穿式句式「看起来是 X，其实是 Y」',
+     '直接说那个 Y'),
+    (r'看似[^，。]{1,12}[，,](?:其实|实际|却)',
+     '揭穿式句式「看似……其实……」',
+     '直接说结论'),
+    (r'原来(?:真正)?的?[^，。]{0,8}(?:才是|其实是)|原来真正',
+     '揭穿式句式「原来真正的 X 是……」',
+     '直接说那个 X 是什么'),
+    (r'这不(?:算|是)[^，。]{1,12}[，,](?:实际|其实)(?:是|上)',
+     '揭穿式句式「这不算 X，实际是 Y」',
+     '直接说 Y'),
     (r'真相|这背后|背后的真相|没想到|你猜|卖个?关子',
      '悬念 / 卖关子用词',
      '直球说清这篇给什么'),
-    (r'震惊|竟然|细思极恐|万万没想到|太绝了|太牛了',
+    (r'震惊|竟然|细思极恐|万万没想到|太绝了|太牛了|绝绝子|封神|不允许还有人不知道',
      '标题党用语',
      '用克制陈述代替'),
+]
+
+# 软提示档：命中只提示不阻断（title.md 里它们是「配额」或「有条件可用」，不是禁令）
+_TITLE_SOFT = [
+    (r'不是[^，。]{1,12}[，,]而是',
+     '「不是 A，而是 B」属揭穿式句式家族',
+     '除非 A 是本篇要正面澄清的核心且正文有专节，否则换正面陈述'),
+    (r'与其说[^，。]{1,12}[，,]不如说',
+     '「与其说 X，不如说 Y」属揭穿式句式家族',
+     '直接说 Y'),
+    (r'全网最|最全|最好|第一|唯一|史上最',
+     '定位型自夸（配额制，不是禁令）',
+     '按 title.md §自夸词是配额：这篇值不值得花一次信用额度 / 正文有自证段 / 同栏目上一篇没用过 -- '
+     '三条不全过就换原话型、具象型或处境型'),
 ]
 
 
@@ -2495,7 +2526,7 @@ def audit_title_contract(title: str) -> dict:
 
     title = (title or '').strip()
     if not title:
-        return {'verdict': 'skip', 'violations': [], 'notes': '标题为空，跳过'}
+        return {'verdict': 'skip', 'violations': [], 'warnings': [], 'notes': '标题为空，跳过'}
 
     violations: list[str] = []
 
@@ -2512,6 +2543,12 @@ def audit_title_contract(title: str) -> dict:
         if hit:
             violations.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
 
+    warnings: list[str] = []
+    for pattern, diagnosis, fix in _TITLE_SOFT:
+        hit = re.search(pattern, body)
+        if hit:
+            warnings.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
+
     width = _title_width(title)
     if width > 30:
         violations.append(f'长度 {width:g} 字位 > 30 上限 → 砍竖杠后的正文标题，不砍标签')
@@ -2520,12 +2557,21 @@ def audit_title_contract(title: str) -> dict:
         return {
             'verdict': 'fail',
             'violations': violations,
-            'notes': '；'.join(violations),
+            'warnings': warnings,
+            'notes': '；'.join(violations + warnings),
+        }
+    if warnings:
+        return {
+            'verdict': 'warn',
+            'violations': [],
+            'warnings': warnings,
+            'notes': '；'.join(warnings),
         }
     return {
         'verdict': 'ok',
         'violations': [],
-        'notes': f'标题过门（{width:g} 字位）；覆盖性仍需人判，见 title.md 7 步质检',
+        'warnings': [],
+        'notes': f'标题过门（{width:g} 字位）；「兑现在正文哪一节」仍需人判，见 title.md 8 步质检',
     }
 
 
@@ -2535,13 +2581,13 @@ def verify_title_contract(article_dir: str) -> dict:
 
     meta_path = Path(article_dir) / 'article-meta.yaml'
     if not meta_path.exists():
-        return {'verdict': 'skip', 'violations': [],
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
                 'notes': 'article-meta.yaml 不存在，跳过标题门'}
     try:
         import yaml
         meta = yaml.safe_load(meta_path.read_text(encoding='utf-8')) or {}
     except Exception as exc:
-        return {'verdict': 'skip', 'violations': [],
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
                 'notes': f'article-meta.yaml 解析失败：{exc}'}
     return audit_title_contract(str(meta.get('title') or ''))
 

@@ -3274,8 +3274,8 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
         from contracts import verify_title_contract
         tc = verify_title_contract(str(cwd))
         verdict = tc.get("verdict")
-        add("fail" if verdict == "fail" else "ok", "标题公式（title.md）",
-            tc.get("notes", ""))
+        add({"fail": "fail", "warn": "warn"}.get(verdict, "ok"),
+            "标题公式（title.md）", tc.get("notes", ""))
     except Exception as exc:
         add("warn", "标题公式（title.md）", f"检查异常：{exc}")
 
