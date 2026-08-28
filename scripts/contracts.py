@@ -2575,6 +2575,72 @@ def audit_title_contract(title: str) -> dict:
     }
 
 
+def _longest_common_cjk_run(a: str, b: str) -> str:
+    """两串里最长的连续公共中文片段（只看汉字，用于判「同一句砍短」）。"""
+    import re
+
+    a_cjk = re.sub(r'[^\u4e00-\u9fff]', '\x00', a)
+    best = ''
+    for i in range(len(a_cjk)):
+        for j in range(i + 1, len(a_cjk) + 1):
+            seg = a_cjk[i:j]
+            if '\x00' in seg:
+                break
+            if len(seg) > len(best) and seg in b:
+                best = seg
+    return best
+
+
+def audit_cover_title_pair(title: str, line1: str, line2: str) -> dict:
+    """封面 L1/L2 与外标题的分工检查（title.md §封面与外标题怎么分工）。
+
+    关键词锚点**有意重复**（L1 就写它），不许重复的是「那一句」-- L2 与外标题
+    冒号后那句必须换填法、不共用主要实词。
+    """
+    title = (title or '').strip()
+    line1 = (line1 or '').strip()
+    line2 = (line2 or '').strip()
+    if not title or not line2:
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
+                'notes': 'title 或 lead.line2 为空，跳过封面分工检查'}
+
+    violations: list[str] = []
+    warnings: list[str] = []
+
+    _, _, body = title.partition(' | ')
+    body = body or title
+    _, _, tail = body.partition('：')
+    tail = tail or body
+
+    if line2 and line2 in title:
+        violations.append(
+            f'封面 L2「{line2}」整段出现在外标题里 → 这是把同一句砍短放上去；'
+            'L2 换一种填法（外标题给原话，L2 就给数字 / 物件）'
+        )
+    else:
+        run = _longest_common_cjk_run(line2, tail)
+        if len(run) >= 4:
+            warnings.append(
+                f'封面 L2 与外标题那句共用「{run}」 → 疑似在说同一件事，'
+                '并排读一遍；重复就改 L2，别改锚点'
+            )
+
+    if line1 and line1 not in title:
+        warnings.append(
+            f'封面 L1「{line1}」没有出现在外标题里 → 锚点可能漂了；'
+            'L1 应当就是外标题的关键词锚点本体（有意重复）'
+        )
+
+    if violations:
+        return {'verdict': 'fail', 'violations': violations, 'warnings': warnings,
+                'notes': '；'.join(violations + warnings)}
+    if warnings:
+        return {'verdict': 'warn', 'violations': [], 'warnings': warnings,
+                'notes': '；'.join(warnings)}
+    return {'verdict': 'ok', 'violations': [], 'warnings': [],
+            'notes': 'L1 锚点与外标题一致、L2 未复述那一句'}
+
+
 def verify_title_contract(article_dir: str) -> dict:
     """读 article-meta.yaml 的 title 跑 audit_title_contract。"""
     from pathlib import Path
@@ -2590,6 +2656,31 @@ def verify_title_contract(article_dir: str) -> dict:
         return {'verdict': 'skip', 'violations': [], 'warnings': [],
                 'notes': f'article-meta.yaml 解析失败：{exc}'}
     return audit_title_contract(str(meta.get('title') or ''))
+
+
+def verify_cover_title_pair(article_dir: str) -> dict:
+    """读 article-meta.yaml 的 title + lead.line1/line2 跑封面分工检查。"""
+    from pathlib import Path
+
+    meta_path = Path(article_dir) / 'article-meta.yaml'
+    if not meta_path.exists():
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
+                'notes': 'article-meta.yaml 不存在，跳过封面分工检查'}
+    try:
+        import yaml
+        meta = yaml.safe_load(meta_path.read_text(encoding='utf-8')) or {}
+    except Exception as exc:
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
+                'notes': f'article-meta.yaml 解析失败：{exc}'}
+    lead = meta.get('lead') or {}
+    if not isinstance(lead, dict):
+        return {'verdict': 'skip', 'violations': [], 'warnings': [],
+                'notes': 'lead 不是映射，跳过'}
+    return audit_cover_title_pair(
+        str(meta.get('title') or ''),
+        str(lead.get('line1') or ''),
+        str(lead.get('line2') or ''),
+    )
 
 
 # ===== 【第 16 节】量化体检报告 =====

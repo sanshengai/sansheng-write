@@ -3279,6 +3279,15 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     except Exception as exc:
         add("warn", "标题公式（title.md）", f"检查异常：{exc}")
 
+    # --- 1c. 封面 L1/L2 与外标题的分工（锚点有意重复，那一句不许重复）---
+    try:
+        from contracts import verify_cover_title_pair
+        cp = verify_cover_title_pair(str(cwd))
+        add({"fail": "fail", "warn": "warn"}.get(cp.get("verdict"), "ok"),
+            "封面/标题分工（title.md）", cp.get("notes", ""))
+    except Exception as exc:
+        add("warn", "封面/标题分工（title.md）", f"检查异常：{exc}")
+
     # --- 2. 外审产物 ---
     for fname, why in (
         ("_fact-check.md", "事实复核（独立上下文 subagent）"),

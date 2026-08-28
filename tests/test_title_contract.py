@@ -8,7 +8,11 @@
 对应 title.md 里「自夸词是配额，不是禁令」。
 """
 
-from scripts.contracts import audit_title_contract, verify_title_contract
+from scripts.contracts import (
+    audit_cover_title_pair,
+    audit_title_contract,
+    verify_title_contract,
+)
 
 
 def test_quote_style_title_passes():
@@ -111,3 +115,50 @@ def test_verify_reads_meta(tmp_path):
 
 def test_verify_skips_without_meta(tmp_path):
     assert verify_title_contract(str(tmp_path))["verdict"] == "skip"
+
+
+# --- 封面 L1/L2 与外标题分工（锚点有意重复，那一句不许重复）---
+
+def test_cover_pair_passes_when_l2_uses_another_fill():
+    r = audit_cover_title_pair(
+        "分享 | 爱因斯坦传：我没有特别的天赋，只有强烈的好奇",
+        "爱因斯坦传", "每句都能点回原信",
+    )
+    assert r["verdict"] == "ok", r["notes"]
+
+
+def test_cover_pair_passes_for_zeng():
+    r = audit_cover_title_pair(
+        "分享 | 曾国藩传：结硬寨，打呆仗", "曾国藩传", "785 封家书原文",
+    )
+    assert r["verdict"] == "ok", r["notes"]
+
+
+def test_cover_pair_rejects_shortened_copy_of_title():
+    r = audit_cover_title_pair(
+        "分享 | 爱因斯坦传：我没有特别的天赋，只有强烈的好奇",
+        "爱因斯坦传", "只有强烈的好奇",
+    )
+    assert r["verdict"] == "fail"
+    assert any("砍短" in v for v in r["violations"])
+
+
+def test_cover_pair_warns_on_shared_words():
+    r = audit_cover_title_pair(
+        "分享 | 曾国藩传：家书奏稿日记，一页读完", "曾国藩传", "家书奏稿摊在一页",
+    )
+    assert r["verdict"] == "warn"
+    assert any("共用" in w for w in r["warnings"])
+
+
+def test_cover_pair_warns_when_anchor_drifts():
+    r = audit_cover_title_pair(
+        "分享 | 爱因斯坦传：我没有特别的天赋，只有强烈的好奇",
+        "相对论八年", "每句都能点回原信",
+    )
+    assert r["verdict"] == "warn"
+    assert any("锚点可能漂" in w for w in r["warnings"])
+
+
+def test_cover_pair_skips_without_line2():
+    assert audit_cover_title_pair("分享 | 爱因斯坦传：随便", "爱因斯坦传", "")["verdict"] == "skip"
