@@ -670,13 +670,19 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "background stay textless, purely pictorial: abstract lines and low-contrast "
         "shapes.\n\n"
         "## RIGHT COLLAGE\n"
-        "One dominant flat-vector metaphor object drawn from the facts below -- thin "
+        # 🔴 2026-08-28：这里原本写的是 "metaphor object"，作者实测反馈「读者看不出这篇
+        #    说的是谁」—— 根因就是这个词：它把右区导向抽象隐喻，而抽象隐喻无法归因到
+        #    具体主角。改为 emblematic + 明确的归因要求（缩略图尺寸下能认出属于谁）。
+        #    真人肖像仍然不能由 renderer 画（禁生成相似肖像），只能走确定性合成层，
+        #    见 references/cover-styles.md §右区主视觉。
+        "One dominant flat-vector EMBLEMATIC object drawn from the facts below -- thin "
         "physical depth, same-hue halftone, upper-left highlight, soft lower-right "
         "contact shadow -- plus exactly three much smaller near-black badges with "
         "hairline borders in that same accent hue and one tiny textless pictogram "
-        "each, linked by restrained curved dashed arrows. Speak through objects, "
-        "curves, facilities, maps or service nodes; a small faceless silhouette only "
-        "where a fact requires a person.\n\n"
+        "each, linked by restrained curved dashed arrows. That object is attributable "
+        "to this subject at thumbnail size -- for a named person, the one object most "
+        "emblematic of them (instrument, manuscript, letters, product); a small "
+        "faceless silhouette only where a fact requires a person.\n\n"
         "No brand name, account name, issue number or signature text; the logo is "
         "added later.\n\n"
         "## PICTORIAL BRIEF\n"
