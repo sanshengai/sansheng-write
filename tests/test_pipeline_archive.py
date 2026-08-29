@@ -14,6 +14,7 @@ import render_works_dashboard as rwd
 import generate_recommend_html as grh
 import profile_config as pc
 import distribute
+import release_to_draft
 
 
 def _allow_golden(monkeypatch, tmp_path, article_name):
@@ -21,6 +22,68 @@ def _allow_golden(monkeypatch, tmp_path, article_name):
     golden.write_text(f"- 一句。 *({article_name})*\n", encoding="utf-8")
     monkeypatch.setattr(pc, "golden_lines_file", lambda: golden)
     return golden
+
+
+def _write_pipeline_state(root):
+    pipeline.save_state(root, {
+        "schema_version": 2,
+        "topic_id": "published-fixture",
+        "run_id": "published-fixture",
+        "stages": {
+            stage: {"status": "done"}
+            for stage in pipeline.STAGE_ORDER
+        },
+    })
+
+
+def test_finalize_preflight_guides_published_recovery_when_audio_receipt_missing(
+    tmp_path, monkeypatch
+):
+    url = "https://mp.weixin.qq.com/s/x"
+    _write_pipeline_state(tmp_path)
+    monkeypatch.setattr(pipeline, "_archive_metadata", lambda *a, **k: ({}, {}, []))
+    monkeypatch.setattr(pipeline, "_archive_source_errors", lambda *a, **k: [])
+    monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: True)
+
+    errors = pipeline._finalize_preflight_errors(tmp_path, url)
+
+    assert any("wechat-published-audio-check" in error for error in errors)
+    assert any(url in error for error in errors)
+
+
+def test_finalize_preflight_accepts_fresh_published_audio_receipt(
+    tmp_path, monkeypatch
+):
+    url = "https://mp.weixin.qq.com/s/x"
+    _write_pipeline_state(tmp_path)
+    stored = {
+        "proof_kind": "wechat_published_article_audio",
+        "wechat_url": url,
+        "remote_verified": True,
+    }
+    (tmp_path / release_to_draft.PUBLISHED_AUDIO_RECEIPT_FILE).write_text(
+        json.dumps(stored), encoding="utf-8"
+    )
+    monkeypatch.setattr(pipeline, "_archive_metadata", lambda *a, **k: ({}, {}, []))
+    monkeypatch.setattr(pipeline, "_archive_source_errors", lambda *a, **k: [])
+    monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: True)
+    monkeypatch.setattr(
+        release_to_draft,
+        "verify_wechat_published_audio",
+        lambda *a, **k: ({"proof_kind": "wechat_published_article_audio"}, []),
+    )
+    monkeypatch.setattr(
+        release_to_draft,
+        "compare_wechat_published_audio_receipts",
+        lambda *a, **k: [],
+    )
+    monkeypatch.setattr(
+        release_to_draft,
+        "verify_wechat_audio",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("draft path used")),
+    )
+
+    assert pipeline._finalize_preflight_errors(tmp_path, url) == []
 
 
 def test_cmd_archive_writes_works_and_refreshes(tmp_path, monkeypatch):

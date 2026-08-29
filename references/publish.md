@@ -33,6 +33,15 @@ python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition
 
 先在微信预览分别试听主题曲与播客的开头/结尾 10 秒。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；试听声明会与该次远端回读绑定。
 
+若文章已经正式发布、草稿被微信回收并返回 `40007 invalid media_id`，不得伪造上述草稿凭证。改在正式文章完成同样的双音频首尾试听，然后运行：
+
+```bash
+python "$SKILL/scripts/pipeline.py" wechat-published-audio-check \
+  "https://mp.weixin.qq.com/s/..." --confirm-audition
+```
+
+命令优先通过官方 `freepublish/batchget` 与 `freepublish/getarticle` 精确绑定永久链接和 `article_id`。仅当账号对已发表内容 API 返回 `48001 api unauthorized` 时，才读取同一微信官方永久页：公开页验证最终正文、图片和双播放器，页面不可见的文章署名、封面 media_id 与评论设置由此前已完整通过的 `_publish-receipt.json` 承接；回执会显式记录两类字段的证据来源。随后生成独立的 `_wechat-published-audio-receipt.json`。这是一条证据来源不同、验收强度不降低的恢复路径；普通路径仍须在正式发布前完成草稿读回。
+
 ### 阶段二：作者人工正式发布
 
 作者在微信后台处理预览、原创声明、赞赏设置和正式发布。公开 Skill 不尝试替作者完成这些高风险动作。

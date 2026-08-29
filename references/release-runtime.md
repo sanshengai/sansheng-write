@@ -162,6 +162,9 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 
 若启用了公众号播客卡，作者先在微信编辑器的两个占位处分别插入主题曲与播客原生音频，删除占位文字并保存；再从微信预览分别试听两条音频的开头 10 秒与结尾 10 秒，最后运行 `python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition`。
 该命令不是只数播放器：它再次 `draft/get`，校验固定顺序「导读 → 🎵 阅读配乐｜本文主题曲 → 🎧 音频版本｜本期播客 → 正文」，并复核标题、摘要、正文、图片、推广链接、封面、本地音频哈希及远端播放器身份。微信 API 不返回播放器内的音频字节，不能用本地 SHA 冒充远端同一性证明，因此人工首尾试听是不可省的物理边界；试听声明与播放器身份共同写入 `_wechat-audio-receipt.json`。主题曲与播客同级同宽、上下排列，不做手机端左右双栏。
+
+若作者已经正式发布，草稿随后被微信回收，`draft/get` 可能返回 `40007 invalid media_id`。这不是放宽发布门的理由，也不得补写或复制 `_wechat-audio-receipt.json`。先在**正式文章**分别试听两条音频的开头与结尾 10 秒，再运行 `python "$SKILL/scripts/pipeline.py" wechat-published-audio-check "https://mp.weixin.qq.com/s/..." --confirm-audition`。该命令只接受官方永久链接：优先用 `freepublish/batchget` 精确定位 `article_id`，再用 `freepublish/getarticle` 复核正式全文；若账号仅对已发表内容 API 返回 `48001 api unauthorized`，才严格降级读取同一 `mp.weixin.qq.com` 永久链接，公开页独立证明标题、摘要、公众号主体、阅读原文、封面 URL、全文语义、图片身份、推广链接与两个原生播放器，公开页不可见的文章署名、封面 media_id 和评论设置则沿用此前已完整通过的官方草稿回执。两种模式都绑定本地双音频哈希和人工首尾试听，并逐项记录证据覆盖面；通过后写独立的 `_wechat-published-audio-receipt.json`，绝不冒充发布前草稿凭证。`finalize` 每次写盘前都会再次读取同一证据面，正式文章身份、永久链接、正文、播放器或本地音频任一变化都会令凭证失效。
+
 作者再人工处理预览、原创、赞赏和正式发布。拿到永久链接后运行：
 
 ```bash
@@ -171,7 +174,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 
 固定顺序：登记永久链接 → 归档作品库 → 验证归档 → **生成 `_moments-copy.md`** → 已获长期授权的自动播客 → 执行已配置官网同步。官网命令未配置时记录 skipped。🔴 **朋友圈文案前移到归档验证之后**：它只需要标题、摘要和永久链接，不依赖播客音频与官网；压在链尾会让作者等一个 10-30 分钟的音频才拿到文案，而首发那几小时最需要它。**播客或官网失败不得阻断、也不得回滚它。** 内容要求见 publish.md「朋友圈内容协议」。
 
-`finalize` 在任何写盘前还会再次读回远端草稿；本地音频、远端播放器身份、正文或交接哈希任一变化，旧凭证立即失效。公众号、官网与 RSS 复用同一个 `dist/podcast/audio.mp3`，禁止各自重生成一份。新生成音频另有 `dist/podcast/audio.manifest.json` 绑定语义输入、生成参数、字节哈希、编码与时长；存量无 manifest 的音频继续兼容，但下次重生成会自动升级。
+`finalize` 在任何写盘前还会再次读回远端证据源：正常路径读草稿，恢复路径读绑定永久链接的正式文章；本地音频、远端播放器身份、正文或交接哈希任一变化，旧凭证立即失效。公众号、官网与 RSS 复用同一个 `dist/podcast/audio.mp3`，禁止各自重生成一份。新生成音频另有 `dist/podcast/audio.manifest.json` 绑定语义输入、生成参数、字节哈希、编码与时长；存量无 manifest 的音频继续兼容，但下次重生成会自动升级。
 
 - 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。**NotebookLM 登录失效时 `podcast_episode.py` 会自动拉起 `nlm login` 弹浏览器授权（2026-07-30 起），探测恢复后继续原流程**；只有自动登录失败才提示人工 `nlm login`（无人值守环境用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示）。不得误说成“音频只能手动生成”。
 - 小红书与微博不随 `finalize` 自动规划。用户明确点名某篇要「转小红书 / 发微博」后，才运行 `distribute.py plan --only ...`，分别制作 3:4 与 1:1 专属图片并预填发布页。

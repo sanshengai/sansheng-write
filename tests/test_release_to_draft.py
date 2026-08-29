@@ -2,6 +2,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 
 def _article(root: Path) -> Path:
     (root / "素材").mkdir()
@@ -276,6 +278,32 @@ def _dual_audio_reader(
     return read
 
 
+def _published_audio_reader(
+    *,
+    remote_url: str = "https://mp.weixin.qq.com/s/x",
+    article_id: str = "published-article-001",
+):
+    base = _dual_audio_reader()
+
+    def read(wechat_url, expected):
+        actual = base("draft-media-001", expected)
+        actual["url"] = remote_url
+        return {
+            "article_id": article_id,
+            "listed_url": remote_url,
+            "article": actual,
+            "readback_mode": "freepublish_api",
+            "published_identity": article_id,
+            "published_surface_sha256": "published-surface-001",
+            "evidence_coverage": {
+                "published_api": ["freepublish/getarticle"],
+                "chained_draft_receipt": [],
+            },
+        }
+
+    return read
+
+
 def test_dual_audio_readback_checks_players_and_full_article(tmp_path):
     from scripts.release_to_draft import verify_wechat_audio
 
@@ -294,6 +322,242 @@ def test_dual_audio_readback_checks_players_and_full_article(tmp_path):
     assert set(receipt["local_audio_sha256"]) == {"theme", "podcast"}
     assert set(receipt["remote_audio_components"]) == {"theme", "podcast"}
     assert receipt["audition"]["confirmed"] is True
+
+
+def test_published_audio_recovery_writes_distinct_official_receipt(tmp_path):
+    from scripts.release_to_draft import (
+        PUBLISHED_AUDIO_RECEIPT_FILE,
+        verify_wechat_published_audio,
+    )
+
+    article = _dual_audio_article(tmp_path)
+    url = "https://mp.weixin.qq.com/s/x"
+    receipt, errors = verify_wechat_published_audio(
+        article,
+        url,
+        reader=_published_audio_reader(),
+        audition_confirmed=True,
+    )
+
+    assert errors == []
+    assert receipt is not None
+    assert receipt["proof_kind"] == "wechat_published_article_audio"
+    assert receipt["readback_mode"] == "freepublish_api"
+    assert receipt["published_identity"] == "published-article-001"
+    assert receipt["published_article_id"] == "published-article-001"
+    assert receipt["wechat_url"] == url
+    assert receipt["audition"]["surface"] == "wechat_published_article"
+    assert (article / PUBLISHED_AUDIO_RECEIPT_FILE).is_file()
+    assert not (article / "_wechat-audio-receipt.json").exists()
+
+
+def test_published_audio_recovery_requires_explicit_audition(tmp_path):
+    from scripts.release_to_draft import verify_wechat_published_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_published_audio(
+        article,
+        "https://mp.weixin.qq.com/s/x",
+        reader=_published_audio_reader(),
+    )
+
+    assert receipt is None
+    assert any("正式文章" in error and "开头 10 秒" in error for error in errors)
+
+
+def test_published_audio_recovery_rejects_wrong_permanent_url(tmp_path):
+    from scripts.release_to_draft import verify_wechat_published_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_published_audio(
+        article,
+        "https://mp.weixin.qq.com/s/x",
+        reader=_published_audio_reader(
+            remote_url="https://mp.weixin.qq.com/s/y"
+        ),
+        audition_confirmed=True,
+    )
+
+    assert receipt is None
+    assert any("URL 与指定永久链接不一致" in error for error in errors)
+
+
+def test_published_audio_receipt_comparison_rejects_changed_article(tmp_path):
+    from scripts.release_to_draft import (
+        compare_wechat_published_audio_receipts,
+        verify_wechat_published_audio,
+    )
+
+    article = _dual_audio_article(tmp_path)
+    url = "https://mp.weixin.qq.com/s/x"
+    stored, errors = verify_wechat_published_audio(
+        article,
+        url,
+        reader=_published_audio_reader(),
+        audition_confirmed=True,
+    )
+    assert errors == [] and stored is not None
+    fresh = json.loads(json.dumps(stored, ensure_ascii=False))
+    fresh.pop("audition")
+    fresh["published_article_id"] = "published-article-002"
+    fresh["remote_content_sha256"] = "changed"
+    fresh["remote_readback"]["evidence_coverage"] = {"changed": True}
+
+    compare_errors = compare_wechat_published_audio_receipts(
+        stored,
+        fresh,
+        expected_wechat_url=url,
+    )
+
+    assert any("article_id" in error for error in compare_errors)
+    assert any("证据覆盖链" in error for error in compare_errors)
+    assert any("已发布正文" in error for error in compare_errors)
+
+
+def test_default_published_reader_pages_then_rechecks_exact_article(
+    tmp_path, monkeypatch
+):
+    from scripts import release_to_draft
+
+    url = "https://mp.weixin.qq.com/s/x"
+    calls = []
+    monkeypatch.setattr(release_to_draft, "_wechat_access_token", lambda cwd: "token")
+
+    def fake_http(endpoint, *, payload=None):
+        calls.append((endpoint, payload))
+        if "freepublish/batchget" in endpoint:
+            offset = payload["offset"]
+            candidate = (
+                "https://mp.weixin.qq.com/s/OTHER"
+                if offset == 0
+                else url
+            )
+            return {
+                "total_count": 2,
+                "item_count": 1,
+                "item": [{
+                    "article_id": f"article-{offset}",
+                    "content": {"news_item": [{"url": candidate}]},
+                }],
+            }
+        assert "freepublish/getarticle" in endpoint
+        assert payload == {"article_id": "article-1"}
+        return {"news_item": [{"url": url, "title": "测试文章"}]}
+
+    monkeypatch.setattr(release_to_draft, "_http_json", fake_http)
+    payload = release_to_draft._default_published_reader(tmp_path)(url, {})
+
+    assert payload["article_id"] == "article-1"
+    assert payload["article"]["url"] == url
+    assert sum("freepublish/batchget" in endpoint for endpoint, _ in calls) == 2
+    assert sum("freepublish/getarticle" in endpoint for endpoint, _ in calls) == 1
+
+
+def test_published_page_payload_chains_only_unobservable_draft_fields(tmp_path):
+    from scripts import release_to_draft
+
+    article = _dual_audio_article(tmp_path)
+    expected, expected_errors = release_to_draft.build_expected_draft(article)
+    assert expected_errors == [] and expected is not None
+    actual = _dual_audio_reader()("draft-media-001", expected)
+    public_content = re.sub(
+        r'\ssrc="([^"]+)"',
+        r' data-src="\1" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yw="',
+        actual["content"],
+    )
+    url = "https://mp.weixin.qq.com/s/x"
+    document = (
+        '<html><head><script>var msg_desc = htmlDecode('
+        + json.dumps(expected["digest"], ensure_ascii=False)
+        + "); var msg_source_url = "
+        + json.dumps(expected["source_url"], ensure_ascii=False)
+        + '; var msg_cdn_url = "https://example.com/cover.jpg";'
+        + "</script></head><body>"
+        + f'<h1 id="activity-name"><span>{expected["title"]}</span></h1>'
+        + f'<span id="js_author_name">{expected["author"]}</span>'
+        + f'<div id="js_content">{public_content}</div>'
+        + "</body></html>"
+    )
+
+    payload = release_to_draft._published_page_payload(
+        article,
+        url,
+        expected,
+        document,
+        final_url=url + "?scene=1",
+    )
+
+    assert payload["readback_mode"] == "public_article_page"
+    assert payload["published_identity"] == url
+    assert payload["article_id"] == ""
+    assert payload["article"]["content"].count("data:image/gif") == 0
+    assert release_to_draft._image_sources(payload["article"]["content"]) == (
+        json.loads((article / "_publish-receipt.json").read_text(encoding="utf-8"))
+        ["remote_readback"]["image_sources"]
+    )
+    coverage = payload["evidence_coverage"]
+    assert "audio_components" in coverage["published_page"]
+    assert set(coverage["chained_draft_receipt"]) == {
+        "thumb_media_id",
+        "article_author",
+        "need_open_comment",
+        "only_fans_can_comment",
+    }
+
+
+def test_default_published_reader_falls_back_to_official_page_only_on_48001(
+    tmp_path, monkeypatch
+):
+    from scripts import release_to_draft
+
+    url = "https://mp.weixin.qq.com/s/x"
+    fallback = {"readback_mode": "public_article_page"}
+    calls = []
+    monkeypatch.setattr(release_to_draft, "_wechat_access_token", lambda cwd: "token")
+    monkeypatch.setattr(
+        release_to_draft,
+        "_http_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("WeChat API 错误 48001：api unauthorized")
+        ),
+    )
+    monkeypatch.setattr(
+        release_to_draft,
+        "_read_published_page",
+        lambda cwd, canonical, expected: calls.append((cwd, canonical, expected))
+        or fallback,
+    )
+
+    payload = release_to_draft._default_published_reader(tmp_path)(url, {"x": 1})
+
+    assert payload is fallback
+    assert calls == [(tmp_path, url, {"x": 1})]
+
+
+def test_default_published_reader_does_not_hide_other_api_failures(
+    tmp_path, monkeypatch
+):
+    from scripts import release_to_draft
+
+    monkeypatch.setattr(release_to_draft, "_wechat_access_token", lambda cwd: "token")
+    monkeypatch.setattr(
+        release_to_draft,
+        "_http_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("WeChat API 错误 40013：invalid appid")
+        ),
+    )
+    monkeypatch.setattr(
+        release_to_draft,
+        "_read_published_page",
+        lambda *args, **kwargs: pytest.fail("非 48001 不得降级公开页"),
+    )
+
+    with pytest.raises(RuntimeError, match="40013"):
+        release_to_draft._default_published_reader(tmp_path)(
+            "https://mp.weixin.qq.com/s/x",
+            {},
+        )
 
 
 def test_dual_audio_readback_requires_explicit_remote_audition(tmp_path):

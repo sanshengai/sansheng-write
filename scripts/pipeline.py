@@ -21,6 +21,8 @@ pipeline.py — 微信公众号写作流水线管理器
   python SKILL/scripts/pipeline.py reset <stage>            重置阶段为 pending
   python SKILL/scripts/pipeline.py log <stage> <tool> ...   记录生图来源到 .gen-log.jsonl
   python SKILL/scripts/pipeline.py release-to-draft         唯一草稿发布事务
+  python SKILL/scripts/pipeline.py wechat-published-audio-check <wechat_url> --confirm-audition
+                                                            草稿被回收后的正式文章补验
   python SKILL/scripts/pipeline.py archive                  发布归档：写解析后的作品库 + 刷新派生视图
   python SKILL/scripts/pipeline.py finalize <wechat_url>    正式发布收尾：登记链接 + 归档 + 验证
   python SKILL/scripts/pipeline.py history                  [DEPRECATED] 改用 archive
@@ -94,7 +96,7 @@ from profile_config import brand  # noqa: E402
 # ── 常量 ──────────────────────────────────────────────────────
 STATE_FILE = ".state.json"
 FINALIZE_STATE_FILE = "_finalize-state.json"
-FINALIZE_STATE_SCHEMA = 1
+FINALIZE_STATE_SCHEMA = 2
 SKILL_DIR = Path(__file__).resolve().parent.parent   # 本 skill 根目录
 # (HISTORY_FILE 常量已随 cmd_history 死代码一并移除 2026-06-20；history.yaml 已被 works.yaml 取代，
 #  仅 migrate_to_works.py 一次性迁移工具读它、且自带独立路径)
@@ -1016,15 +1018,39 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
         if _distribute_audio.podcast_wechat_embed_enabled():
             from release_to_draft import (
                 AUDIO_RECEIPT_FILE,
+                PUBLISHED_AUDIO_RECEIPT_FILE,
                 compare_wechat_audio_receipts,
+                compare_wechat_published_audio_receipts,
                 verify_wechat_audio,
+                verify_wechat_published_audio,
             )
+            published_receipt_path = cwd / PUBLISHED_AUDIO_RECEIPT_FILE
             receipt_path = cwd / AUDIO_RECEIPT_FILE
-            if not receipt_path.is_file():
+            if published_receipt_path.is_file():
+                try:
+                    published_receipt = json.loads(
+                        published_receipt_path.read_text(encoding="utf-8")
+                    )
+                    fresh_receipt, fresh_errors = verify_wechat_published_audio(
+                        cwd, wechat_url, persist=False
+                    )
+                    errors.extend(
+                        f"正式文章远端复核失败：{error}" for error in fresh_errors
+                    )
+                    if fresh_receipt is not None:
+                        errors.extend(compare_wechat_published_audio_receipts(
+                            published_receipt,
+                            fresh_receipt,
+                            expected_wechat_url=wechat_url,
+                        ))
+                except (json.JSONDecodeError, OSError) as exc:
+                    errors.append(f"正式文章双音频凭证损坏：{exc}")
+            elif not receipt_path.is_file():
                 errors.append(
-                    "双音频草稿尚无官方读回凭证；请在微信编辑器插入主题曲与播客音频、"
-                    "保存并完成首尾试听后运行 pipeline.py wechat-audio-check "
-                    "--confirm-audition，再正式发布"
+                    "双音频尚无官方读回凭证；草稿仍存在时运行 pipeline.py "
+                    "wechat-audio-check --confirm-audition；若文章已正式发布、草稿已被回收，"
+                    f"运行 pipeline.py wechat-published-audio-check {wechat_url} "
+                    "--confirm-audition"
                 )
             else:
                 try:
@@ -1033,9 +1059,15 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
                         (state.get("stages", {}).get("publish", {}) or {}).get("draft_media_id") or ""
                     )
                     fresh_receipt, fresh_errors = verify_wechat_audio(cwd, persist=False)
-                    errors.extend(
-                        f"正式发布前远端复核失败：{error}" for error in fresh_errors
-                    )
+                    for error in fresh_errors:
+                        detail = f"正式发布前远端复核失败：{error}"
+                        if "40007" in str(error) or "invalid media_id" in str(error):
+                            detail += (
+                                "；草稿已被微信回收时，改用 pipeline.py "
+                                f"wechat-published-audio-check {wechat_url} "
+                                "--confirm-audition"
+                            )
+                        errors.append(detail)
                     if fresh_receipt is not None:
                         errors.extend(compare_wechat_audio_receipts(
                             audio_receipt,
@@ -2948,6 +2980,8 @@ def _finalize_input_digest(cwd: Path, wechat_url: str) -> str:
         "定稿.md",
         "定稿.html",
         PUBLISH_RECEIPT_FILE,
+        "_wechat-audio-receipt.json",
+        "_wechat-published-audio-receipt.json",
     ]
     files = {
         rel: sha256_file(cwd / rel) if (cwd / rel).is_file() else ""
@@ -3840,6 +3874,39 @@ def cmd_wechat_audio_check(cwd: Path, *, confirm_audition: bool = False) -> None
     )
 
 
+def cmd_wechat_published_audio_check(
+    cwd: Path,
+    wechat_url: str,
+    *,
+    confirm_audition: bool = False,
+) -> None:
+    """草稿已回收时，从官方已发表内容接口生成独立补验凭证。"""
+    from release_to_draft import verify_wechat_published_audio
+
+    receipt, errors = verify_wechat_published_audio(
+        cwd,
+        wechat_url,
+        audition_confirmed=confirm_audition,
+    )
+    if errors or receipt is None:
+        _log_audio_event(
+            cwd, "wechat_published_audio_readback", "fail",
+            f"errors={len(errors)}", error_count=len(errors),
+        )
+        print("❌ 微信正式文章双音频补验未通过：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    _log_audio_event(
+        cwd, "wechat_published_audio_readback", "ok",
+        f"article_id={receipt['published_article_id']}",
+    )
+    print(
+        f"✅ 微信正式文章双音频补验通过：{receipt['audio_count']} 个原生音频组件，"
+        "已用独立的正式文章凭证绑定永久链接、播放器身份与人工首尾试听。"
+    )
+
+
 # 🔴 铁律 stage：不允许 skip（iron-rules.md 强约束）
 # 曾踩坑：infographic 被 skip 后整篇文章漏了整组贯穿全文信息图
 NEVER_SKIP_STAGES = {
@@ -4115,6 +4182,19 @@ def main():
         action="store_true",
         help="确认已在微信预览分别试听两条音频的开头 10 秒和结尾 10 秒",
     )
+    p_wechat_published_audio = sub.add_parser(
+        "wechat-published-audio-check",
+        help="草稿已发布回收后，用官方已发表内容接口补验双音频",
+    )
+    p_wechat_published_audio.add_argument(
+        "wechat_url",
+        help="已正式发布的公众号永久链接",
+    )
+    p_wechat_published_audio.add_argument(
+        "--confirm-audition",
+        action="store_true",
+        help="确认已在正式文章分别试听两条音频的开头 10 秒和结尾 10 秒",
+    )
 
     p_s = sub.add_parser("skip",  help="跳过某阶段")
     p_s.add_argument("stage", choices=STAGE_ORDER)
@@ -4167,6 +4247,12 @@ def main():
     elif args.cmd == "wechat-audio-check":
         cmd_wechat_audio_check(
             cwd,
+            confirm_audition=getattr(args, "confirm_audition", False),
+        )
+    elif args.cmd == "wechat-published-audio-check":
+        cmd_wechat_published_audio_check(
+            cwd,
+            args.wechat_url,
             confirm_audition=getattr(args, "confirm_audition", False),
         )
     elif args.cmd == "init":

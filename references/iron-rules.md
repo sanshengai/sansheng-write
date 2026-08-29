@@ -7,7 +7,7 @@
 1. 新文章必须经过 pipeline；不得手改 `.state.json`。
 2. 作者定稿进入机械链时先 `adopt-final`，不得伪造前半程审稿文件。
 3. BGM 是发布硬门；缺 MP3 或 AUDIO-CARD 就没完成，`skip bgm` 被拒绝。
-4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与草稿人工插入后的官方读回凭证同为发布硬门；缺一项不得推草稿或 `finalize`。
+4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与人工插入后的官方读回凭证同为发布硬门；正常路径认 `draft/get` 草稿凭证。仅当文章已正式发布且草稿被回收时，才可用永久链接生成独立正式文章补验凭证：优先 `freepublish/batchget` + `freepublish/getarticle`；只有已发表内容 API 返回 `48001` 才可改用同一微信官方公开页 + 原官方草稿回执的显式证据链。两条路径都必须绑定双播放器身份、本地音频哈希与人工首尾试听，缺一项不得 `finalize`，也不得拿正式文章凭证冒充草稿凭证。
 5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
 6. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
 7. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。

@@ -35,8 +35,10 @@ ATTEMPT_FILE = "_release-attempt.json"
 RECEIPT_FILE = "_publish-receipt.json"
 AUDIO_HANDOFF_FILE = "_wechat-audio-handoff.json"
 AUDIO_RECEIPT_FILE = "_wechat-audio-receipt.json"
+PUBLISHED_AUDIO_RECEIPT_FILE = "_wechat-published-audio-receipt.json"
 Publisher = Callable[[dict[str, Any]], dict[str, Any]]
 Reader = Callable[[str, dict[str, Any]], dict[str, Any]]
+PublishedReader = Callable[[str, dict[str, Any]], dict[str, Any]]
 Preflight = Callable[[Path], tuple[dict[str, Any] | None, list[str]]]
 AUDIO_TAG = r"(?:mpvoice|mpaudio|mp-common-mpaudio)"
 
@@ -564,6 +566,363 @@ def compare_wechat_audio_receipts(
     return errors
 
 
+def _canonical_published_url(value: str) -> str:
+    """Return a stable identity for a public WeChat article URL."""
+    raw = html_lib.unescape(str(value or "")).strip()
+    try:
+        parsed = urllib.parse.urlsplit(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return ""
+    if (parsed.hostname or "").lower() != "mp.weixin.qq.com":
+        return ""
+    path = re.sub(r"/+", "/", parsed.path or "").rstrip("/")
+    if path.startswith("/s/") and len(path) > 3:
+        return f"https://mp.weixin.qq.com{path}"
+    if path == "/s":
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        identity = [
+            (key, query.get(key, [""])[0])
+            for key in ("__biz", "mid", "idx", "sn")
+            if query.get(key, [""])[0]
+        ]
+        if identity:
+            return "https://mp.weixin.qq.com/s?" + urllib.parse.urlencode(identity)
+    return ""
+
+
+def _published_urls_match(left: str, right: str) -> bool:
+    left_id = _canonical_published_url(left)
+    right_id = _canonical_published_url(right)
+    return bool(left_id and right_id and left_id == right_id)
+
+
+def _element_inner_by_id(document: str, element_id: str) -> str:
+    """Extract one balanced HTML element without depending on optional parsers."""
+    start_tags = re.compile(
+        r"<(?P<tag>[A-Za-z][\w:-]*)\b(?P<attrs>[^>]*)>",
+        re.I | re.S,
+    )
+    opening = None
+    tag_name = ""
+    for match in start_tags.finditer(str(document or "")):
+        attrs = {
+            name.lower(): html_lib.unescape(value)
+            for name, _, value in re.findall(
+                r"([:\w-]+)\s*=\s*([\"'])(.*?)\2",
+                match.group("attrs"),
+                flags=re.S,
+            )
+        }
+        if attrs.get("id") == element_id:
+            opening = match
+            tag_name = match.group("tag")
+            break
+    if opening is None:
+        return ""
+
+    depth = 1
+    tokens = re.compile(
+        rf"<{re.escape(tag_name)}\b[^>]*>|</{re.escape(tag_name)}\s*>",
+        re.I | re.S,
+    )
+    for token in tokens.finditer(document, opening.end()):
+        value = token.group(0)
+        if value.lower().startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return document[opening.end() : token.start()]
+        elif not value.rstrip().endswith("/>"):
+            depth += 1
+    return ""
+
+
+def _decode_js_string(value: str) -> str:
+    """Decode the small JavaScript string-escape subset used by article pages."""
+    def replace_escape(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if token.startswith("x") and len(token) == 3:
+            return chr(int(token[1:], 16))
+        if token.startswith("u") and len(token) == 5:
+            return chr(int(token[1:], 16))
+        return {
+            "n": "\n",
+            "r": "\r",
+            "t": "\t",
+            "b": "\b",
+            "f": "\f",
+            "/": "/",
+            "\\": "\\",
+            "\"": "\"",
+            "'": "'",
+        }.get(token, token)
+
+    decoded = re.sub(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|.)", replace_escape, value)
+    return html_lib.unescape(decoded)
+
+
+def _js_string_value(document: str, name: str) -> str:
+    """Read a quoted JS assignment/object field while respecting escaped quotes."""
+    match = re.search(
+        rf"\b{re.escape(name)}\b\s*(?:=|:)\s*(?:htmlDecode\s*\(\s*)?",
+        str(document or ""),
+        flags=re.I,
+    )
+    if not match:
+        return ""
+    cursor = match.end()
+    while cursor < len(document) and document[cursor].isspace():
+        cursor += 1
+    if cursor >= len(document) or document[cursor] not in "\"'":
+        return ""
+    quote = document[cursor]
+    cursor += 1
+    start = cursor
+    escaped = False
+    while cursor < len(document):
+        char = document[cursor]
+        if char == quote and not escaped:
+            return _decode_js_string(document[start:cursor])
+        if char == "\\" and not escaped:
+            escaped = True
+        else:
+            escaped = False
+        cursor += 1
+    return ""
+
+
+def _normalize_public_page_content(content: str) -> str:
+    """Make WeChat lazy-loaded images comparable with the earlier draft receipt."""
+    def normalize_img(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        data_src = re.search(
+            r"\sdata-src\s*=\s*([\"'])(.*?)\1",
+            tag,
+            flags=re.I | re.S,
+        )
+        if not data_src:
+            return tag
+        source = html_lib.unescape(data_src.group(2).strip())
+        cleaned = re.sub(
+            r"\s+(?:data-src|src)\s*=\s*([\"']).*?\1",
+            "",
+            tag,
+            flags=re.I | re.S,
+        )
+        suffix = "/>" if cleaned.rstrip().endswith("/>") else ">"
+        cleaned = cleaned.rstrip()
+        cleaned = cleaned[:-2] if suffix == "/>" else cleaned[:-1]
+        escaped_source = html_lib.escape(source, quote=True)
+        return f'{cleaned} src="{escaped_source}"{suffix}'
+
+    return re.sub(r"<img\b[^>]*>", normalize_img, str(content or ""), flags=re.I | re.S)
+
+
+def _published_page_payload(
+    cwd: Path,
+    canonical_url: str,
+    expected: dict[str, Any],
+    document: str,
+    *,
+    final_url: str,
+) -> dict[str, Any]:
+    """Build an auditable payload from the exact official WeChat public page."""
+    if not _published_urls_match(final_url, canonical_url):
+        raise RuntimeError("公众号公开页最终 URL 与指定永久链接不一致")
+    content = _normalize_public_page_content(
+        _element_inner_by_id(document, "js_content")
+    )
+    title = _visible_text(_element_inner_by_id(document, "activity-name")).strip()
+    account_author = _visible_text(
+        _element_inner_by_id(document, "js_author_name")
+    ).strip()
+    digest = _js_string_value(document, "msg_desc")
+    source_url = (
+        _js_string_value(document, "msg_source_url")
+        or _js_string_value(document, "source_url")
+    )
+    cover_url = _js_string_value(document, "msg_cdn_url")
+    missing = [
+        name
+        for name, value in {
+            "js_content": content,
+            "title": title,
+            "account_author": account_author,
+            "msg_desc": digest,
+            "msg_source_url": source_url,
+            "msg_cdn_url": cover_url,
+        }.items()
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"公众号公开页缺可核验字段：{missing}")
+
+    receipt_path = cwd / RECEIPT_FILE
+    try:
+        baseline = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"缺 {RECEIPT_FILE}；无法建立正式页与原官方草稿证据链") from exc
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"{RECEIPT_FILE} 损坏：{exc}") from exc
+    baseline_readback = baseline.get("remote_readback") or {}
+    baseline_checks = baseline_readback.get("checks") or {}
+    if not baseline.get("remote_verified") or not baseline_checks or not all(
+        baseline_checks.values()
+    ):
+        raise RuntimeError(f"{RECEIPT_FILE} 不是完整通过的官方草稿回读凭证")
+    cover_media_id = str(
+        baseline_readback.get("thumb_media_id")
+        or baseline.get("cover_media_id")
+        or ""
+    ).strip()
+    if not cover_media_id:
+        raise RuntimeError(f"{RECEIPT_FILE} 缺封面 media_id")
+
+    article = {
+        "title": title,
+        "digest": digest,
+        "author": expected["author"],
+        "content": content,
+        "content_source_url": source_url,
+        "thumb_media_id": cover_media_id,
+        "need_open_comment": expected["need_open_comment"],
+        "only_fans_can_comment": expected["only_fans_can_comment"],
+        "url": canonical_url,
+    }
+    page_facts = {
+        "wechat_url": canonical_url,
+        "title": title,
+        "digest": digest,
+        "account_author": account_author,
+        "source_url": source_url,
+        "cover_url": cover_url,
+        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    }
+    return {
+        "article_id": "",
+        "listed_url": canonical_url,
+        "article": article,
+        "readback_mode": "public_article_page",
+        "published_identity": canonical_url,
+        "published_surface_sha256": stable_digest(page_facts),
+        "evidence_coverage": {
+            "published_page": [
+                "permanent_url",
+                "title",
+                "digest",
+                "account_identity",
+                "content_source_url",
+                "cover_url",
+                "body_and_image_identity",
+                "audio_components",
+            ],
+            "chained_draft_receipt": [
+                "thumb_media_id",
+                "article_author",
+                "need_open_comment",
+                "only_fans_can_comment",
+            ],
+            "baseline_receipt": RECEIPT_FILE,
+            "baseline_remote_digest": baseline_readback.get("remote_digest"),
+        },
+    }
+
+
+def _read_published_page(
+    cwd: Path,
+    canonical_url: str,
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    """Read the exact official public page when freepublish is unauthorized."""
+    request = urllib.request.Request(
+        canonical_url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 Chrome/140.0 Safari/537.36"
+            ),
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            final_url = str(response.geturl() or canonical_url)
+            raw = response.read(8 * 1024 * 1024 + 1)
+            if len(raw) > 8 * 1024 * 1024:
+                raise RuntimeError("公众号公开页超过 8 MiB 安全上限")
+            charset = response.headers.get_content_charset() or "utf-8"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"公众号公开页请求失败：{exc}") from exc
+    document = raw.decode(charset, errors="replace")
+    return _published_page_payload(
+        cwd,
+        canonical_url,
+        expected,
+        document,
+        final_url=final_url,
+    )
+
+
+def compare_wechat_published_audio_receipts(
+    stored: dict[str, Any],
+    fresh: dict[str, Any],
+    *,
+    expected_wechat_url: str,
+) -> list[str]:
+    """Bind a human audition to a fresh official published-article readback."""
+    errors: list[str] = []
+    if stored.get("proof_kind") != "wechat_published_article_audio":
+        errors.append("正式文章双音频凭证 proof_kind 不正确")
+    if not stored.get("remote_verified"):
+        errors.append("正式文章双音频凭证未标 remote_verified=true")
+    if not _published_urls_match(
+        str(stored.get("wechat_url") or ""), expected_wechat_url
+    ):
+        errors.append("正式文章双音频凭证与本次永久链接不一致")
+    if set(stored.get("roles") or []) != {"theme", "podcast"}:
+        errors.append("正式文章双音频凭证未同时覆盖 theme 与 podcast")
+    audition = stored.get("audition") or {}
+    if (
+        not audition.get("confirmed")
+        or audition.get("surface") != "wechat_published_article"
+        or set(audition.get("roles") or []) != {"theme", "podcast"}
+        or set(audition.get("segments") or [])
+        != {"first_10_seconds", "last_10_seconds"}
+    ):
+        errors.append(
+            "正式文章双音频凭证缺人工试听证明；需在正式文章分别试听两条音频的"
+            "开头/结尾 10 秒后重跑 wechat-published-audio-check --confirm-audition"
+        )
+    if stored.get("readback_mode") != fresh.get("readback_mode"):
+        errors.append("正式文章双音频凭证已过期：官方回读模式发生变化")
+    if not stored.get("published_identity") or (
+        stored.get("published_identity") != fresh.get("published_identity")
+    ):
+        errors.append("正式文章双音频凭证已过期：正式文章身份发生变化")
+    if (
+        stored.get("readback_mode") == "freepublish_api"
+        and stored.get("published_article_id") != fresh.get("published_article_id")
+    ):
+        errors.append("正式文章双音频凭证已过期：article_id 发生变化")
+    if stored.get("published_surface_sha256") != fresh.get("published_surface_sha256"):
+        errors.append("正式文章双音频凭证已过期：正式文章公开面字段发生变化")
+    if (
+        (stored.get("remote_readback") or {}).get("evidence_coverage")
+        != (fresh.get("remote_readback") or {}).get("evidence_coverage")
+    ):
+        errors.append("正式文章双音频凭证已过期：证据覆盖链发生变化")
+    if stored.get("handoff_digest") != fresh.get("handoff_digest"):
+        errors.append("正式文章双音频凭证已过期：交接单在上次核验后变化")
+    if stored.get("local_audio_sha256") != fresh.get("local_audio_sha256"):
+        errors.append("正式文章双音频凭证已过期：本地音频在上次核验后变化")
+    if stored.get("remote_audio_components") != fresh.get("remote_audio_components"):
+        errors.append("正式文章双音频凭证已过期：远端播放器身份在上次核验后变化")
+    if stored.get("remote_content_sha256") != fresh.get("remote_content_sha256"):
+        errors.append("正式文章双音频凭证已过期：已发布正文在上次核验后变化")
+    return errors
+
+
 # 微信 media/uploadimg 只认 jpg / png，其余一律 40005 invalid file type。
 _WECHAT_UNSUPPORTED_SUFFIX = (".webp", ".avif", ".heic", ".heif", ".bmp", ".tiff", ".tif")
 
@@ -827,7 +1186,7 @@ def _wechat_credentials(cwd: Path) -> tuple[str, str]:
         if app_id and secret:
             return app_id, secret
     raise RuntimeError(
-        "draft/get 缺 WECHAT_APP_ID / WECHAT_APP_SECRET；"
+        "微信官方 API 缺 WECHAT_APP_ID / WECHAT_APP_SECRET；"
         "请配置环境变量、文章目录 .baoyu-skills/.env 或 ~/.baoyu-skills/.env"
     )
 
@@ -856,6 +1215,23 @@ def _http_json(
             f"WeChat API 错误 {result.get('errcode')}：{result.get('errmsg')}"
         )
     return result
+
+
+def _wechat_access_token(cwd: Path) -> str:
+    app_id, secret = _wechat_credentials(cwd)
+    query = urllib.parse.urlencode(
+        {
+            "grant_type": "client_credential",
+            "appid": app_id,
+            "secret": secret,
+        }
+    )
+    token = _http_json(
+        f"https://api.weixin.qq.com/cgi-bin/token?{query}"
+    ).get("access_token")
+    if not token:
+        raise RuntimeError("WeChat token 响应缺 access_token")
+    return str(token)
 
 
 def _external_reader_command() -> list[str] | None:
@@ -895,19 +1271,7 @@ def _default_reader(cwd: Path) -> Reader:
         return read_external
 
     def read_official(media_id: str, expected: dict[str, Any]) -> dict[str, Any]:
-        app_id, secret = _wechat_credentials(cwd)
-        query = urllib.parse.urlencode(
-            {
-                "grant_type": "client_credential",
-                "appid": app_id,
-                "secret": secret,
-            }
-        )
-        token = _http_json(
-            f"https://api.weixin.qq.com/cgi-bin/token?{query}"
-        ).get("access_token")
-        if not token:
-            raise RuntimeError("WeChat token 响应缺 access_token")
+        token = _wechat_access_token(cwd)
         response = _http_json(
             "https://api.weixin.qq.com/cgi-bin/draft/get?"
             + urllib.parse.urlencode({"access_token": token}),
@@ -921,6 +1285,229 @@ def _default_reader(cwd: Path) -> Reader:
         return articles[0]
 
     return read_official
+
+
+def _default_published_reader(cwd: Path) -> PublishedReader:
+    """Use freepublish APIs, or the exact official page only on API 48001."""
+
+    def read_published(
+        wechat_url: str, expected: dict[str, Any]
+    ) -> dict[str, Any]:
+        canonical = _canonical_published_url(wechat_url)
+        if not canonical:
+            raise RuntimeError(f"不是合法公众号永久链接：{wechat_url!r}")
+        token = _wechat_access_token(cwd)
+        token_query = urllib.parse.urlencode({"access_token": token})
+        article_id = ""
+        listed_url = ""
+        offset = 0
+        total_count: int | None = None
+        while total_count is None or offset < total_count:
+            try:
+                response = _http_json(
+                    "https://api.weixin.qq.com/cgi-bin/freepublish/batchget?"
+                    + token_query,
+                    payload={"offset": offset, "count": 20, "no_content": 0},
+                )
+            except RuntimeError as exc:
+                if not re.search(r"WeChat API 错误\s+48001\b", str(exc)):
+                    raise
+                return _read_published_page(cwd, canonical, expected)
+            items = response.get("item")
+            if not isinstance(items, list):
+                raise RuntimeError("freepublish/batchget 返回的 item 不是列表")
+            try:
+                total_count = int(response.get("total_count") or len(items))
+            except (TypeError, ValueError):
+                total_count = len(items)
+            for record in items:
+                record_id = str((record or {}).get("article_id") or "").strip()
+                news_items = ((record or {}).get("content") or {}).get("news_item") or []
+                if not record_id or not isinstance(news_items, list):
+                    continue
+                for article in news_items:
+                    candidate_url = str((article or {}).get("url") or "").strip()
+                    if _published_urls_match(candidate_url, canonical):
+                        article_id = record_id
+                        listed_url = candidate_url
+                        break
+                if article_id:
+                    break
+            if article_id:
+                break
+            if not items:
+                break
+            offset += len(items)
+        if not article_id:
+            raise RuntimeError(
+                "freepublish/batchget 未找到该永久链接；请确认链接属于当前公众号，"
+                "且账号具备已发布内容接口权限"
+            )
+
+        try:
+            response = _http_json(
+                "https://api.weixin.qq.com/cgi-bin/freepublish/getarticle?"
+                + token_query,
+                payload={"article_id": article_id},
+            )
+        except RuntimeError as exc:
+            if not re.search(r"WeChat API 错误\s+48001\b", str(exc)):
+                raise
+            return _read_published_page(cwd, canonical, expected)
+        news_items = response.get("news_item")
+        if not isinstance(news_items, list) or not news_items:
+            raise RuntimeError("freepublish/getarticle 未返回 news_item")
+        matches = [
+            article
+            for article in news_items
+            if _published_urls_match(str((article or {}).get("url") or ""), canonical)
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"freepublish/getarticle 对该永久链接命中 {len(matches)} 篇，应恰好为 1 篇"
+            )
+        article = matches[0]
+        if article.get("is_deleted"):
+            raise RuntimeError("freepublish/getarticle 显示该文章已删除")
+        return {
+            "article_id": article_id,
+            "listed_url": listed_url,
+            "article": article,
+            "readback_mode": "freepublish_api",
+            "published_identity": article_id,
+            "published_surface_sha256": stable_digest({
+                "wechat_url": canonical,
+                "article_id": article_id,
+                "title": article.get("title"),
+                "digest": article.get("digest"),
+                "author": article.get("author"),
+                "source_url": article.get("content_source_url"),
+                "content_sha256": hashlib.sha256(
+                    str(article.get("content") or "").encode("utf-8")
+                ).hexdigest(),
+            }),
+            "evidence_coverage": {
+                "published_api": [
+                    "freepublish/batchget",
+                    "freepublish/getarticle",
+                ],
+                "chained_draft_receipt": [],
+            },
+        }
+
+    return read_published
+
+
+def verify_wechat_published_audio(
+    cwd: Path,
+    wechat_url: str,
+    *,
+    reader: PublishedReader | None = None,
+    persist: bool = True,
+    audition_confirmed: bool = False,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Recover proof from an official API or its strict 48001 public-page fallback."""
+    canonical = _canonical_published_url(wechat_url)
+    if not canonical:
+        return None, [f"不是合法公众号永久链接：{wechat_url!r}"]
+    if persist and not audition_confirmed:
+        return None, [
+            "请先在正式文章分别试听主题曲和播客的开头 10 秒、结尾 10 秒，"
+            "再用 --confirm-audition 重新核验"
+        ]
+
+    published: dict[str, Any] = {}
+
+    def published_as_draft(
+        media_id: str, expected: dict[str, Any]
+    ) -> dict[str, Any]:
+        del media_id
+        payload = (reader or _default_published_reader(cwd))(wechat_url, expected)
+        article = payload.get("article") if isinstance(payload, dict) else None
+        if not isinstance(article, dict):
+            raise RuntimeError("已发布内容读取器未返回 article 对象")
+        published.update(payload)
+        return article
+
+    draft_receipt, errors = verify_wechat_audio(
+        cwd,
+        reader=published_as_draft,
+        persist=False,
+        audition_confirmed=audition_confirmed,
+    )
+    surface_name = (
+        "公众号正式文章公开页"
+        if published.get("readback_mode") == "public_article_page"
+        else "freepublish/getarticle"
+    )
+    errors = [str(error).replace("draft/get", surface_name) for error in errors]
+    if errors or draft_receipt is None:
+        return None, errors
+
+    article = published.get("article") or {}
+    remote_url = str(article.get("url") or published.get("listed_url") or "")
+    if not _published_urls_match(remote_url, canonical):
+        return None, [f"{surface_name} 返回的文章 URL 与指定永久链接不一致"]
+    readback_mode = str(published.get("readback_mode") or "freepublish_api")
+    article_id = str(published.get("article_id") or "").strip()
+    published_identity = str(published.get("published_identity") or article_id).strip()
+    published_surface_sha256 = str(
+        published.get("published_surface_sha256") or ""
+    ).strip()
+    if readback_mode == "freepublish_api" and not article_id:
+        return None, ["freepublish/getarticle 补验缺 article_id"]
+    if not published_identity:
+        return None, ["正式文章补验缺 published_identity"]
+    if not published_surface_sha256:
+        return None, ["正式文章补验缺 published_surface_sha256"]
+
+    receipt = {
+        "schema_version": 2,
+        "proof_kind": "wechat_published_article_audio",
+        "verified_at": _now(),
+        "wechat_url": canonical,
+        "readback_mode": readback_mode,
+        "published_identity": published_identity,
+        "published_article_id": article_id or None,
+        "published_surface_sha256": published_surface_sha256,
+        "source_draft_media_id": draft_receipt.get("draft_media_id"),
+        "roles": draft_receipt.get("roles"),
+        "audio_count": draft_receipt.get("audio_count"),
+        "handoff_digest": draft_receipt.get("handoff_digest"),
+        "local_audio_sha256": draft_receipt.get("local_audio_sha256"),
+        "remote_content_sha256": draft_receipt.get("remote_content_sha256"),
+        "remote_audio_components": draft_receipt.get("remote_audio_components"),
+        "remote_readback": {
+            "apis": (
+                ["freepublish/batchget", "freepublish/getarticle"]
+                if readback_mode == "freepublish_api"
+                else []
+            ),
+            "surface": (
+                "https://mp.weixin.qq.com/s/..."
+                if readback_mode == "public_article_page"
+                else "freepublish/getarticle"
+            ),
+            "evidence_coverage": published.get("evidence_coverage") or {},
+            "checks": (draft_receipt.get("remote_readback") or {}).get("checks"),
+        },
+        "remote_verified": True,
+    }
+    if audition_confirmed:
+        receipt["audition"] = {
+            "confirmed": True,
+            "confirmed_at": _now(),
+            "surface": "wechat_published_article",
+            "roles": draft_receipt.get("roles"),
+            "segments": ["first_10_seconds", "last_10_seconds"],
+            "attestation": "the two published players match their labelled local audio roles",
+        }
+    if persist:
+        (cwd / PUBLISHED_AUDIO_RECEIPT_FILE).write_text(
+            json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return receipt, []
 
 
 def _compare_readback(
