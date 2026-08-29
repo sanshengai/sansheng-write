@@ -11,7 +11,7 @@
 > - 2026-08-21 **查明当年的 404 是端点形态用错**——Lyria 3 走 `interactions`，不是 `:predict`；
 >   换对后实测跑通中文女声整首歌（176s）。**现引擎：Lyria 3 Pro `lyria-3-pro-preview`**。
 >
-> 现引擎特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 4 种舒缓系；
+> 现引擎特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 5 种舒缓系；
 > ③ 自动写词，且**歌词随响应返回**（落 `{歌名}-歌词.txt`，旧引擎「词不可控、看不到文本」的代价消失）；
 > ④ 时长约 3 分钟；⑤ 计费 $0.08/首，走 Cloud，$300 赠金可覆盖。
 
@@ -26,14 +26,15 @@
 | 维度 | 约束 |
 |------|------|
 | 默认能量级别 | calm（10 分制 3-4 分），**绝不欢快、无强节奏感** |
-| BPM | 全部锁 62-72（舒缓空灵区），不超过 75 |
-| 风格倾向 | 环境浮声 / 氛围钢琴 / 空灵；prompt 统一带 `no driving beat / beatless` |
+| BPM | 全部锁 55-68（舒缓区），不超过 70 |
+| 风格倾向 | 环境浮声 / 氛围钢琴 / 空灵 / 温暖怀旧；默认 `beatless`，`shanghai_jazz_soul` 只允许非推进型轻刷鼓 |
 
 > 🔴 **必须含中文演唱**--人声唱出文章内容，让读者直觉感到"这首歌是专为这篇文章创作的"，与文字内容一一呼应、有专属感与震撼感。纯器乐辨识度太低、给不了这种呼应，**不采用纯器乐**。
 
 ### prompt 关键词（研究固化）
 
-- **必带**：`ambient / ethereal / serene / gentle / spacious / lush reverb / soft dynamics / minimalist`、具体软音色（felt piano / ambient pad / glockenspiel）、明确 BPM
+- **默认必带**：`ambient / ethereal / serene / gentle / spacious / lush reverb / soft dynamics / minimalist`、具体软音色（felt piano / ambient pad / glockenspiel）、明确 BPM
+- **海派爵士灵魂例外**：改用 `classic Shanghai jazz / gentle soul / vintage room / restrained phrasing / feather-light brushed drums`，结构写明「怀旧主歌 → 柔和发亮副歌」
 - **禁用**：`energetic / upbeat / fast tempo / driving beat / heavy bass / EDM / rock / aggressive / festive / cheerful pop`
 
 ---
@@ -52,31 +53,34 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 
 # 参数优先级：CLI > article-meta.yaml music 块 > 规则兜底
 #   --theme-brief  不传则用 frontmatter digest/description 兜底（音色不如诗意提炼空灵，会警告）
-#   --style  ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal（默认 ethereal_folk）
-#   --gender 默认按序号奇偶交替（奇女偶男）；--model 默认 lyria-3-pro-preview
+#   --style  ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal|shanghai_jazz_soul（默认 ethereal_folk）
+#   --gender 默认按序号奇偶交替（奇女偶男）；shanghai_jazz_soul 例外默认女声
+#   --model 默认 lyria-3-pro-preview
 ```
 
 前置：已装 gcloud 并跑过 `gcloud auth application-default login` + `gcloud config set project <PROJECT>`（脚本用 ADC 取 OAuth token；**不需要 API Key**，缺凭证 exit 2 阻断发布链）。封面（可选，失败不阻塞）另需 `GOOGLE_API_KEY`（gen_img.py 的 Vertex Express key，与本阶段凭证不是同一套）。
 
 ---
 
-## 风格池（4 种舒缓系，与 generate_article_bgm.py 的 STYLE_POOL 同步）
+## 风格池（5 种舒缓系，与 generate_article_bgm.py 的 STYLE_POOL 同步）
 
 | 风格 Key | 名称 | BPM | 适合文章类型 |
 |----------|------|-----|------------|
-| `ethereal_folk` | 空灵民谣 | 70 | 深度思考 / 观点输出 / 人物说理 |
-| `ambient_vocal` | 环境浮声 | 62 | 科技探索 / 未来想象 / AI工具对比 / 前沿趋势 |
-| `ambient_piano` | 氛围钢琴 | 66 | 哲思文章 / 行业反思 / 年度盘点 / 收尾感悟 |
-| `cinematic_vocal` | 影视人声 | 72 | 长文特稿 / 行业深度分析 / 重磅专题 / 年终总结 |
+| `ethereal_folk` | 空灵民谣 | 60 | 深度思考 / 观点输出 / 人物说理 |
+| `ambient_vocal` | 环境浮声 | 55 | 科技探索 / 未来想象 / AI工具对比 / 前沿趋势 |
+| `ambient_piano` | 氛围钢琴 | 58 | 哲思文章 / 行业反思 / 年度盘点 / 收尾感悟 |
+| `cinematic_vocal` | 影视人声 | 64 | 长文特稿 / 行业深度分析 / 重磅专题 / 年终总结 |
+| `shanghai_jazz_soul` | 海派爵士灵魂 | 68 | 人物往事 / 城市记忆 / 怀旧叙事 / 温柔纪实 |
 
-> 已砍掉原 `light_pop`（欢快）/ `lofi_vocal`（节拍）/ `warm_ballad`（叙事节奏）。
+> 仍停用原 `light_pop`（欢快）/ `lofi_vocal`（通用节拍）/ `warm_ballad`（叙事节奏）。
+> `shanghai_jazz_soul` 不是恢复通用 lo-fi 节拍：它只在 68 BPM 下允许轻刷鼓作呼吸脉冲，明确禁止 driving beat、鼓 fill 和大乐队式炒作。
 > 风格回避：脚本读 `<数据目录>/articles.md` 近 3 篇「音乐风格」字段，强制避开重复。
 
 ### 人声交替（防审美疲劳）
 
 | 维度 | 规范 |
 |------|------|
-| 交替规则 | 奇数篇=女声，偶数篇=男声（按目录序号） |
+| 交替规则 | 默认奇数篇=女声，偶数篇=男声（按目录序号）；`shanghai_jazz_soul` 无显式设置时默认亲密女声 |
 | 女声 | 空灵、气声、偏高音区（温柔一面） |
 | 男声 | 温暖、中低音、叙述感 |
 
@@ -91,10 +95,10 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 | **theme_brief** | 提炼成**虚无缥缈的诗意意象一句**（留白、柔美、有画面），**不是信息性概括**。<br>例（睡眠主题文）：❌「睡眠是大脑的免费夜班」 ✅「夜里有人替你点一盏灯，收走一天的尘埃」 |
 | **imagery** | 2-3 个**柔美具体画面词**（薄雾/潮汐/微光/晨光/星河）；**禁抽象大词**（智慧/治愈/未来/科技） |
 | **song_name** | 🔴 **既诗意又点题文章主题**--让读者一看歌名就联想到文章讲什么。<br>例（睡眠文）：❌《替你点灯》(看不出讲睡眠) ✅《替你值夜》《大脑的夜班》(点题"睡眠/夜班"+诗意) |
-| **style** | 4 选 1：哲思/治愈/盘点→`ambient_piano`；科技/未来→`ambient_vocal`；深度/观点→`ethereal_folk`；长文特稿→`cinematic_vocal` |
-| **gender** | 默认按序号奇偶交替（奇女偶男），防审美疲劳 |
+| **style** | 5 选 1：哲思/治愈/盘点→`ambient_piano`；科技/未来→`ambient_vocal`；深度/观点→`ethereal_folk`；长文特稿→`cinematic_vocal`；人物往事/城市记忆/怀旧叙事→`shanghai_jazz_soul` |
+| **gender** | 默认按序号奇偶交替（奇女偶男）；`shanghai_jazz_soul` 默认女声；CLI / meta 显式设置始终优先 |
 
-脚本据此拼 V2 空灵 prompt（`aria`/`echoing`/`resonant` + 配器极简 + 物理声学 `airy high freq`/`long reverb tail`/`shimmering overtones` + 人声呼吸感 + 55-64 BPM）。
+脚本据此拼 V2 prompt：前 4 种沿用空灵极简体系（`aria`/`echoing`/`resonant` + 物理声学质感）；`shanghai_jazz_soul` 单独走亲密人声、轻刷鼓和 vintage room 体系，避免与 `beatless` / 禁鼓约束自相矛盾。
 
 > 词不可控/看不到文本是方法A 的固有代价；质量靠**诗意提炼 + V2 空灵 prompt + 必要时换 `--style` 重生成**。
 
@@ -156,4 +160,4 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 
 ---
 
-*引擎 Lyria 3 Pro（Vertex interactions + OAuth），自动写词并回传歌词，风格池收窄 4 种舒缓系。*
+*引擎 Lyria 3 Pro（Vertex interactions + OAuth），自动写词并回传歌词，风格池为 5 种舒缓系。*

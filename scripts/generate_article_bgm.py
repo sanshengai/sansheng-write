@@ -21,18 +21,18 @@
       --theme-brief  "虚无缥缈的诗意主旨叙事（一句，方法A 据此自动写词）"
       --imagery      "柔美画面词,逗号分隔,如 晨光,薄雾,潮汐"
       --song-name    "诗意短歌名"
-      --style        ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal
+      --style        ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal|shanghai_jazz_soul
       --gender       female|male（默认按序号奇偶交替）
     脚本退化为纯执行器：拼 V2 空灵 prompt → Lyria 3 写词+生成 → 落地 → 封面 → 插卡。
     未传 --theme-brief 时用 frontmatter 规则兜底（音色通常不如 Agent 提炼空灵，会警告）。
 
-🔴 V2 空灵升级（基于 Suno/MiniMax 时代实测研究，Lyria 3 沿用同一套空灵体系）：
+🔴 V2 默认空灵体系（基于 Suno/MiniMax 时代实测研究，现用于前 4 种风格）：
     ① 最大杠杆=主旨叙事写成诗意意象（自动写词模式下歌词决定音色空灵度）
     ② 空灵专用词 aria/echoing/resonant/distant
     ③ 配器极简（2-3 件 + minimal/sparse backing，凸显空气感）
     ④ 物理声学质感 airy high frequencies/long reverb tail/shimmering overtones
     ⑤ 人声呼吸感 breathy/intimate/gentle vibrato/sighing（去机械感）
-    ⑥ BPM 降到 55-64（空灵冥想区）
+    ⑥ BPM 保持 55-68（舒缓区）
 
 使用方法:
     # autopilot 主路径（宿主 Agent 提炼后传参）：
@@ -82,10 +82,10 @@ except (AttributeError, ValueError):
 
 
 # ============================================================
-# 🎵 音乐风格偏好配置（V2：4 种舒缓系，BPM 降 55-64，配器收窄 2-3 件）
+# 🎵 音乐风格偏好配置（V2：5 种舒缓系，BPM 55-68）
 # ============================================================
-# 硬约束：所有 BGM 必须【舒缓·空灵·环境浮声/氛围钢琴】，绝不欢快、无强节奏感。
-# V2 收窄乐器为 2-3 件核心（配器极简凸显空气感）；空灵专用词与物理声学质感统一在 build_music_prompt 公共段加。
+# 硬约束：所有 BGM 必须温暖、克制、舒缓，绝不欢快、无强节奏感。
+# 前 4 种保持空灵极简的 2-3 件核心配器；海派爵士灵魂是唯一的轻微脉冲例外，刷鼓不得形成推进型节拍。
 STYLE_POOL = {
     "ethereal_folk": {
         "name": "空灵民谣", "bpm": "60",
@@ -110,6 +110,14 @@ STYLE_POOL = {
         "description": "calm and intimate cinematic vocal, tender and emotional, never epic or aggressive",
         "instruments": "soft sustained strings and piano with gentle choir-like backing pads",
         "best_for": ["长文特稿", "行业深度分析", "重磅专题", "年终总结"],
+    },
+    "shanghai_jazz_soul": {
+        "name": "海派爵士灵魂", "bpm": "68",
+        "description": "classic Shanghai jazz and gentle soul with tender nostalgia and soft lo-fi warmth",
+        "instruments": "mellow piano, upright bass, feather-light brushed drums, and sparse warm brass accents",
+        "best_for": ["人物往事", "城市记忆", "怀旧叙事", "温柔纪实"],
+        "prompt_profile": "vintage_room",
+        "preferred_gender": "female",
     },
 }
 
@@ -234,6 +242,23 @@ def determine_vocal_gender(article_dir: Path) -> str:
         return "female"
 
 
+def resolve_vocal_gender(cli_gender: str | None, meta_gender: str | None,
+                         article_dir: Path, style_key: str) -> tuple[str, str]:
+    """解析人声与来源标签。
+
+    显式 CLI / meta 永远优先；只有没有显式值时，风格默认才能覆盖奇偶交替。
+    """
+    explicit = cli_gender or meta_gender
+    if explicit in VOCAL_STYLES:
+        return explicit, "显式指定"
+
+    preferred = STYLE_POOL.get(style_key, {}).get("preferred_gender")
+    if preferred in VOCAL_STYLES:
+        return preferred, "风格默认"
+
+    return determine_vocal_gender(article_dir), "奇偶交替"
+
+
 def _yaml_scalar_without_comment(raw: str) -> str:
     """解析轻量 YAML 标量，并忽略引号外的行尾注释。"""
     value = raw.strip()
@@ -308,15 +333,14 @@ def article_title(article_file: Path, article_dir: Path) -> str:
 
 
 # ============================================================
-# 🎼 音乐 prompt 构建（V2 空灵升级 · Lyria 3 自动写词）
+# 🎼 音乐 prompt 构建（V2 默认空灵 + vintage room 例外 · Lyria 3 自动写词）
 # ============================================================
 def build_music_prompt(theme_brief: str, imagery: list, style_key: str, gender: str) -> str:
-    """构建 Lyria 3 的 V2 prompt（空灵升级 + 自动写词）。
+    """构建 Lyria 3 的 V2 prompt（自动写词）。
 
     theme_brief：Claude 提炼的诗意主旨叙事（虚无缥缈意象一句，Lyria 3 据此自动写词）。
     imagery    ：核心意象 list（柔美画面词）。
-    空灵升级：aria/echoing/resonant + 配器极简 + 物理声学(airy/reverb tail/overtones)
-            + 人声呼吸感 + 低 BPM；整句叙事写法。
+    前 4 种风格用空灵极简体系；海派爵士灵魂单独用 vintage room 体系。
     🔴 必须显式要求**简体中文**歌词：Lyria 3 不加约束时默认写繁体（实测），
        公众号读者看到繁体会出戏。
     """
@@ -325,6 +349,25 @@ def build_music_prompt(theme_brief: str, imagery: list, style_key: str, gender: 
     imagery_str = "、".join([x for x in imagery[:3] if x])
     img_clause = f"，意象是{imagery_str}" if imagery_str else ""
     brief = (theme_brief or "").strip()
+    if style.get("prompt_profile") == "vintage_room":
+        return (
+            f"A tender, nostalgic classic Shanghai jazz and gentle soul song at a slow {style['bpm']} BPM, "
+            f"with soft lo-fi warmth and understated elegance. "
+            f"Vocal: an intimate {gender} voice singing softly in Mandarin Chinese, close-miked, "
+            f"with restrained conversational phrasing in the verses, gentle vibrato, and no belting. "
+            f"Structure: tender nostalgic verses unfold naturally into a softly radiant chorus; "
+            f"the lift should feel like warm light entering the room, never like a pop climax. "
+            f"Instrumentation: {style['instruments']}. "
+            f"Keep the brushed drums feather-light and non-driving, with the upright bass warm and rounded; "
+            f"brass appears only as brief, mellow answers between vocal phrases. "
+            f"Mix: cohesive vintage room ambience, gently softened transients, subtle tape-like patina, "
+            f"close and human rather than wide, glossy or cinematic. "
+            f"关于「{brief}」{img_clause}。"
+            f"Lyrics: write the lyrics yourself in **Simplified Chinese** (简体中文, NOT traditional), "
+            f"poetic and restrained, echoing the theme above line by line. "
+            f"Avoid: energetic, upbeat, fast tempo, driving beat, heavy kick, drum fills, heavy bass, "
+            f"big-band swing, busy solos, EDM, rock, aggressive, festive, cheerful pop, glossy modern production."
+        )
     return (
         f"An extremely serene, ethereal and weightless Chinese Mandarin song at a slow {style['bpm']} BPM, "
         f"{style['description']}. "
@@ -606,26 +649,26 @@ def main():
     print(f"📰 标题: {article_title(article_file, article_dir)}")
 
     model = resolve_model(args.model, meta_music.get("model"))
-    gender = args.gender or meta_music.get("gender") or determine_vocal_gender(article_dir)
-    if gender not in VOCAL_STYLES:
-        gender = determine_vocal_gender(article_dir)
-    vocal_info = VOCAL_STYLES[gender]
-
     style_key = args.style or meta_music.get("style")
     if not style_key or style_key not in STYLE_POOL:
         style_key = "ethereal_folk"
     style_info = STYLE_POOL[style_key]
+
+    gender, gender_source = resolve_vocal_gender(
+        args.gender, meta_music.get("gender"), article_dir, style_key
+    )
+    vocal_info = VOCAL_STYLES[gender]
 
     imagery = [x.strip() for x in args.imagery.split(",")] if args.imagery else []
     theme_brief = (args.theme_brief or "").strip()
     if not theme_brief:
         theme_brief = fallback_brief(article_dir, article_file)
         print("⚠️  未传 --theme-brief，用 frontmatter 规则兜底。")
-        print("   （建议由 Claude 提炼【虚无缥缈的诗意意象】传入，方法A 下歌词更空灵→音色更柔美）")
+        print("   （建议由宿主 Agent 提炼【诗意意象 + 文章落点】传入，让歌词与文章呼应更紧）")
 
     song_name = args.song_name or meta_music.get("song_name") or article_title(article_file, article_dir)[:10] or "无名之歌"
 
-    print(f"🎤 人声: {vocal_info['label']}（奇偶交替）")
+    print(f"🎤 人声: {vocal_info['label']}（{gender_source}）")
     print(f"🎵 风格: {style_info['name']}（{style_info['bpm']} BPM）")
     print(f"🎵 歌名: {song_name}")
     print(f"💭 主旨: {theme_brief}")
