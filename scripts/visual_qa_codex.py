@@ -218,6 +218,7 @@ def _build_prompt(asset: dict[str, Any]) -> str:
     palette = contract.get("palette") or {}
     required_checks = asset.get("required_checks") or []
     metrics = asset.get("pixel_metrics") or {}
+    source_layers = asset.get("authorized_source_layers") or []
 
     lines = [
         "你是一名独立的视觉验收员。附件里是一张待验收的图，请逐项如实核对。",
@@ -234,9 +235,34 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         "白名单内的产品名、公司名或账号署名不是违规。",
         "右下角由后处理添加的官方品牌 Logo 作为一个完整图形标识验收：其中固定的"
         "中文名、Sansheng 字样与 AI 缩写均已在白名单内；不要因其极小字号无法逐字 OCR "
-        "而判 no_unexpected_text=false。此例外只限右下角官方 Logo，本图其他位置的"
-        "微小、模糊或未知文字仍必须判为违规。",
+        "而判 no_unexpected_text=false。此例外只限右下角官方 Logo。",
     ]
+    if source_layers:
+        lines += [
+            "",
+            "## 已授权的来源图层（authorized_source_layers）",
+            "下列图层是已核实来源和许可的真实证据，不是生图模型产物。"
+            "它只调整对应区域的验收边界，不放宽画面其他区域。",
+        ]
+        for index, layer in enumerate(source_layers, 1):
+            lines += [
+                f"{index}. 类型：{layer.get('type')}",
+                f"   作用与区域：{layer.get('role')}",
+                f"   来源：{layer.get('source')}",
+                f"   许可：{layer.get('license')}",
+                f"   复核边界：{layer.get('review_scope')}",
+            ]
+        lines += [
+            "对这些图层：只有你真正能读出的字符才算文字，仍须转写并与白名单核对；"
+            "来源画作中无法辨识成字符的原生笔触、纸面线条或颜料痕迹是图像内容，"
+            "不得猜成文字，也不因此单独判 no_unexpected_text=false。",
+            "已声明的真实来源图层是证据层，不要强迫它匹配生成画布的材质；"
+            "style_contract_match 按下方已适配的 required_visual_traits 逐条验收。",
+        ]
+    else:
+        lines += [
+            "本图其他位置的微小、模糊或未知文字仍必须判为违规。"
+        ]
     expected = asset.get("expected_text") or []
     if expected:
         lines += [f"{i}. {t}" for i, t in enumerate(expected, 1)]

@@ -26,7 +26,7 @@ def test_slash_joined_cover_tags_pass():
 
 
 def test_various_template_separators_pass():
-    for joined in ("选型·盘点", "选型、盘点", "选型|盘点", "选型-盘点", "选型：盘点"):
+    for joined in ("选型·盘点", "选型、盘点", "选型|盘点", "选型｜盘点", "选型-盘点", "选型：盘点"):
         assert _fully_segmented_by_allowed(joined, COVER_TAGS), joined
 
 

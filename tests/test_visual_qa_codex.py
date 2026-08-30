@@ -169,6 +169,39 @@ def test_visual_evidence_must_copy_every_trait_verbatim():
     assert "trait 字段原样复制" in text
 
 
+def test_prompt_scopes_declared_portrait_source_without_weakening_other_regions():
+    asset = {
+        "stage": "cover",
+        "target_style": "montage-evidence+portrait-bleed",
+        "expected_text": ["拿破仑"],
+        "required_checks": list(visual_qa_codex.CHECK_DEFINITIONS),
+        "pixel_metrics": {"width": 1923, "height": 818},
+        "style_contract": {
+            "layout": "left-50-gap-6-right-portrait-bleed",
+            "palette": {},
+            "required_visual_traits": ["declared historical portrait on the right"],
+            "forbidden_visual_traits": ["AI-redrawn face"],
+        },
+        "authorized_source_layers": [
+            {
+                "type": "public-domain-historical-portrait",
+                "role": "right-side portrait-bleed",
+                "source": "museum record",
+                "license": "Public domain",
+                "review_scope": "deterministically composited, not AI-redrawn",
+            }
+        ],
+    }
+
+    text = visual_qa_codex._build_prompt(asset)
+
+    assert "authorized_source_layers" in text
+    assert "无法辨识成字符的原生笔触" in text
+    assert "只有你真正能读出的字符才算文字" in text
+    assert "不放宽画面其他区域" in text
+    assert "不要强迫它匹配生成画布的材质" in text
+
+
 # ---------- ④ 后处理留痕 ----------
 
 def _write_log(article: Path, output: str, sha: str) -> None:

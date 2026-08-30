@@ -70,7 +70,7 @@ def _normalized_text(value: object) -> str:
 # 有时读成两项（"选型"、"盘点"）—— 后者能过、前者被判「白名单外文字」，
 # 同一张合规封面的成败取决于转写员当次怎么断句。2026-08-14 第 89 篇实测暴露。
 # 这里只放行「纯分隔符」，模型真编出来的字仍然照抓。
-_TEMPLATE_SEPARATORS = frozenset("/|·、，,；;：:-–—~～")
+_TEMPLATE_SEPARATORS = frozenset("/|｜·、，,；;：:-–—~～")
 
 
 def _fully_segmented_by_allowed(value: str, allowed: set[str]) -> bool:
@@ -304,11 +304,91 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
         value for value in cover_contract["forbidden_visual_traits"]
         if value != "people, faces or hands"
     ]
+    portrait = meta.get("cover_portrait") or {}
+    portrait_source_layers: list[dict[str, Any]] = []
+    if portrait:
+        if not isinstance(portrait, dict):
+            return {}, ["cover_portrait 必须是映射，无法建立真实肖像验收合同"]
+        try:
+            from .cover_portrait import validate as validate_cover_portrait
+        except ImportError:  # pragma: no cover - direct script execution
+            from cover_portrait import validate as validate_cover_portrait
+        portrait_errors = validate_cover_portrait(portrait, cwd)
+        if portrait_errors:
+            return {}, [
+                f"cover_portrait 声明不完整，无法建立真实肖像验收合同：{error}"
+                for error in portrait_errors
+            ]
+        portrait_path = Path(str(portrait["file"]))
+        if not portrait_path.is_absolute():
+            portrait_path = cwd / portrait_path
+        portrait_source_layers = [
+            {
+                "type": "public-domain-historical-portrait",
+                "role": "deterministic portrait-bleed evidence layer on the right side",
+                "file": str(portrait["file"]),
+                "source_sha256": sha256_file(portrait_path),
+                "source": str(portrait["source"]),
+                "license": str(portrait["license"]),
+                "credit": str(portrait.get("credit") or ""),
+                "review_scope": (
+                    "The declared source painting is deterministically composited and tone-adjusted, "
+                    "not AI-redrawn. Non-readable source-native brushstrokes or paper marks inside "
+                    "this right-side layer are pictorial evidence rather than generated text; any "
+                    "actually legible character anywhere must still be transcribed and checked."
+                ),
+            }
+        ]
+        old_profile_sha = cover_contract["visual_profile_sha256"]
+        required_traits = list(cover_contract["required_visual_traits"])
+        replacements = {
+            "left text area and right evidence collage": (
+                "left text area, quiet middle gap, and one declared historical portrait bleeding "
+                "to the top, right and bottom edges"
+            ),
+            (
+                "one dominant emblematic object attributable to this article's subject at thumbnail "
+                "size, with two or three smaller evidence badges"
+            ): (
+                "one attributable real historical portrait on the right as the sole evidence subject; "
+                "the left generated field remains abstract and does not redraw the person"
+            ),
+        }
+        cover_contract["required_visual_traits"] = [
+            replacements.get(value, value) for value in required_traits
+        ]
+        cover_contract["forbidden_visual_traits"] = [
+            (
+                "bright or unrelated photographic collage outside the declared portrait source layer"
+                if value == "bright or photographic collage"
+                else value
+            )
+            for value in cover_contract["forbidden_visual_traits"]
+        ]
+        cover_contract["layout"] = "left-50-gap-6-right-portrait-bleed"
+        cover_contract["visual_profile"] = "montage-evidence+portrait-bleed"
+        cover_contract["base_visual_profile_sha256"] = old_profile_sha
+        cover_contract["visual_profile_sha256"] = stable_digest(
+            {
+                key: value
+                for key, value in cover_contract.items()
+                if key not in {"visual_profile_sha256", "base_visual_profile_sha256"}
+            }
+        )
     contracts = {
         "cover": {
-            "target_style": "montage-evidence",
+            "target_style": (
+                "montage-evidence+portrait-bleed"
+                if portrait_source_layers
+                else "montage-evidence"
+            ),
             "required_checks": list(COVER_REQUIRED_CHECKS),
             "style_contract": cover_contract,
+            **(
+                {"authorized_source_layers": portrait_source_layers}
+                if portrait_source_layers
+                else {}
+            ),
         },
         "hero": {
             "target_style": style,
