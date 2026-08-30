@@ -7,7 +7,7 @@ pipeline.py — 微信公众号写作流水线管理器
 
 流程顺序：
   outline → writing+title → cover → infographic → bgm → layout → logo → publish → archive
-(2026-08-21: BGM 引擎 MiniMax→Lyria 3 Pro, 走 Vertex interactions; 见 references/music.md)
+  BGM 以文章本地 _music-manifest.json 为来源真源；自动生成、网页生成和复用成品共用同一硬门。
   writing 阶段内部还含 prep_writing→开头盲选→内容增强→磨稿→冷读外审 五个无状态子步骤，
   不在 STAGE_ORDER 记账，详见 autopilot.md。
 
@@ -112,14 +112,12 @@ STAGE_ORDER = [
     "publish",
     "archive",
 ]
-# 2026-08-21: 'bgm' 引擎切 Lyria 3 Pro (lyria-3-pro-preview, Vertex interactions + OAuth, 自动写词)
-
 STAGE_LABELS = {
     "outline":     "选题 + 大纲",
     "writing":     "正文写作 + 标题锻造",
     "cover":       "视觉任务单 + 封面（sansheng-write.visual-planner）",
     "infographic": "Hero + 信息图 ≥ 4 张（visual planner 编译，baoyu-image-gen 渲染）",
-    "bgm":         "主题音乐（generate_article_bgm.py · Lyria 3 Pro）",
+    "bgm":         "主题音乐（_music-manifest.json 绑定真实来源）",
     "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
     "publish":     "草稿事务（预检 + draft/add + 官方 draft/get 读回）",
@@ -151,9 +149,9 @@ STAGE_HINTS = {
         "  完成后：pipeline.py verify infographic"
     ),
     "bgm": (
-        f'python "{_skill_path("scripts/generate_article_bgm.py")}" .\n'
-        "  （Lyria 3 Pro：从定稿提炼诗意意象 → 自动写词 → 生成中文人声主题曲，歌词随响应返回\n"
-        "   舒缓空灵 4 风格 / 男女声奇偶交替 / 自动插 AUDIO-CARD 引导卡片。不需图片输入）\n"
+        "读取 references/music.md 选择真实通道：Lyria 可自动生成；网页生成或复用成品\n"
+        "  用 music_manifest.py create 绑定实际文件、provider/model/mode 与注册表引用。\n"
+        "  已有 manifest 时先 verify --probe-duration；不得按文件名、时间戳或候选 MP3 猜来源。\n"
         "  🔴 必须在 layout（MD→HTML）之前跑：先插卡进 定稿.md，排版才会渲染出音频卡片。\n"
         "  完成后：pipeline.py verify bgm"
     ),
@@ -196,6 +194,7 @@ STATUS_ICON = {
     "failed":  "❌",
     "dirty":   "🟡",
     "adopted": "📥",
+    "waiting_author": "⏸ ",
 }
 
 # ── 生图路由白名单 ─────────────────────────────────────────────
@@ -1780,6 +1779,7 @@ def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
     if upstream_errors:
         raise ValueError("；".join(upstream_errors))
     info = state["stages"].setdefault(stage, {})
+    previous_status = str(info.get("status") or "pending")
     now = _now_iso()
     digest = _stage_artifact_digest(cwd, stage)
     old_digest = str(info.get("artifact_digest") or "")
@@ -1795,6 +1795,102 @@ def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
     info["attempt_count"] = int(info.get("attempt_count") or 0) + 1
     info["artifact_digest"] = digest
     info["fail_count"] = 0
+    for key in (
+        "waiting_since",
+        "last_waiting_at",
+        "waiting_checkpoint",
+        "waiting_reason",
+        "required_author_action",
+    ):
+        info.pop(key, None)
+    if previous_status == "waiting_author":
+        _log_stage_transition(
+            cwd,
+            stage,
+            previous_status,
+            "done",
+            "作者拍板证据已验证，阶段恢复完成",
+        )
+
+
+def _checkpoint_wait(errors: list) -> bool:
+    """Only a human checkpoint may be a wait; mixed errors remain failures."""
+    return bool(errors) and all(
+        isinstance(error, str) and error.startswith("checkpoint:")
+        for error in errors
+    )
+
+
+def _checkpoint_names(errors: list) -> list[str]:
+    names: list[str] = []
+    for error in errors:
+        match = re.match(r"checkpoint:([\w-]+)", str(error))
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    return names
+
+
+def _log_stage_transition(
+    cwd: Path,
+    stage: str,
+    previous_status: str,
+    next_status: str,
+    detail: str,
+) -> None:
+    """Record state transitions without making telemetry critical-path."""
+    try:
+        from contracts import log_observation
+
+        log_observation(
+            f"verify_{stage}",
+            "stage_state_transition",
+            "waiting_author" if next_status == "waiting_author" else "ok",
+            f"from={previous_status} to={next_status}; {detail}",
+            cwd.name,
+            issue_codes=(
+                ["workflow.checkpoint.waiting_author"]
+                if next_status == "waiting_author"
+                else []
+            ),
+            metrics={
+                "waiting_author": 1 if next_status == "waiting_author" else 0,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _record_stage_waiting_author(
+    cwd: Path, state: dict, stage: str, errors: list[str]
+) -> None:
+    """Persist an author-action wait without manufacturing a failed attempt."""
+    info = state["stages"].setdefault(stage, {})
+    previous_status = str(info.get("status") or "pending")
+    now = _now_iso()
+    checkpoints = _checkpoint_names(errors)
+    reason = "；".join(str(error) for error in errors)
+    info["status"] = "waiting_author"
+    info.setdefault("waiting_since", now)
+    info["last_waiting_at"] = now
+    info["waiting_checkpoint"] = checkpoints
+    info["waiting_reason"] = reason
+    info["required_author_action"] = (
+        "请作者完成拍板并把结论写入审批锚点，再执行 approve 与 verify"
+    )
+    # A checkpoint wait terminates any consecutive machine-failure streak.  This
+    # also repairs old state files where a missing author approval was counted as
+    # a failed retry.
+    info["fail_count"] = 0
+    info.pop("last_failed_at", None)
+    _invalidate_downstream(state, stage, f"上游 {stage} 正等待作者拍板")
+    save_state(cwd, state)
+    _log_stage_transition(
+        cwd,
+        stage,
+        previous_status,
+        "waiting_author",
+        f"checkpoints={','.join(checkpoints) or 'unknown'}",
+    )
 
 
 def _reconcile_artifact_drift(cwd: Path, state: dict) -> bool:
@@ -1837,6 +1933,25 @@ def cmd_status(cwd: Path):
         extra = ""
         if s == "writing" and info.get("title_final"):
             extra = f"  「{info['title_final']}」"
+        if s == "bgm":
+            manifest_path = cwd / "_music-manifest.json"
+            if manifest_path.is_file():
+                try:
+                    music_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    theme = music_payload.get("theme") or {}
+                    origin = theme.get("origin") or {}
+                    music_parts = [
+                        str(value).strip()
+                        for value in (origin.get("provider"), origin.get("model"))
+                        if str(value or "").strip()
+                    ]
+                    music_name = str(theme.get("title") or "").strip()
+                    if music_name or music_parts:
+                        extra = "  " + (
+                            f"《{music_name}》 · " if music_name else ""
+                        ) + " / ".join(music_parts)
+                except (OSError, json.JSONDecodeError, AttributeError):
+                    pass
         if s == "publish" and info.get("wechat_url"):
             url = info["wechat_url"]
             extra = f"  {url[:45]}{'...' if len(url) > 45 else ''}"
@@ -1847,7 +1962,7 @@ def cmd_status(cwd: Path):
         elif fc >= 1:
             extra += f"  失败 {fc} 次"
         print(f"  {icon} {s:<13} {STAGE_LABELS[s]}{extra}")
-        if status in ("pending", "failed", "dirty") and next_stage is None:
+        if status in ("pending", "failed", "dirty", "waiting_author") and next_stage is None:
             next_stage = s
     print("─" * 55)
 
@@ -1870,6 +1985,12 @@ def cmd_status(cwd: Path):
 
     if next_stage == "archive" and pub.get("draft_media_id") and not pub.get("wechat_url"):
         print("\n⏸ 下一步等待作者在微信后台正式发布并补 wechat_url；当前不可 archive。\n")
+    elif next_stage and state["stages"].get(next_stage, {}).get("status") == "waiting_author":
+        waiting = state["stages"].get(next_stage, {})
+        print(f"\n⏸ 下一步：等待作者拍板（{STAGE_LABELS[next_stage]}）")
+        print(f"   {waiting.get('required_author_action', '请作者完成检查点拍板后再继续。')}")
+        if waiting.get("waiting_reason"):
+            print(f"   当前卡点：{waiting['waiting_reason']}\n")
     elif next_stage:
         print(f"\n▶ 下一步：{next_stage}\n  {STAGE_HINTS[next_stage]}\n")
     else:
@@ -1882,10 +2003,18 @@ def cmd_next(cwd: Path):
     _reconcile_artifact_drift(cwd, state)
     for s in STAGE_ORDER:
         status = state["stages"].get(s, {}).get("status", "pending")
-        if status in ("pending", "failed", "dirty"):
+        if status in ("pending", "failed", "dirty", "waiting_author"):
             pub = state["stages"].get("publish", {})
             if s == "archive" and pub.get("draft_media_id") and not pub.get("wechat_url"):
                 print("⏸ 当前是微信草稿态；正式发布并补 wechat_url 后才能 archive。")
+                return
+            if status == "waiting_author":
+                info = state["stages"].get(s, {})
+                print(f"\n⏸ 下一阶段等待作者拍板：{s} — {STAGE_LABELS[s]}")
+                print(f"  {info.get('required_author_action', '请作者完成检查点拍板后再继续。')}")
+                if info.get("waiting_reason"):
+                    print(f"  当前卡点：{info['waiting_reason']}")
+                print()
                 return
             print(f"\n▶ 下一阶段：{s} — {STAGE_LABELS[s]}\n")
             print(f"  {STAGE_HINTS[s]}\n")
@@ -1995,6 +2124,7 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
     state = load_state(cwd)
     _t0 = time.perf_counter()
     passed, errors = verify_stage(stage, cwd, state, legacy=legacy)
+    waiting_author = (not passed) and _checkpoint_wait(errors)
     # 每条 verify 命令记一笔整体耗时（2026-08-16 审计：观察日志从不记耗时，
     # 阶段耗时画像只能靠 mtime 考古）。失败静默由 log_observation 自身保证。
     try:
@@ -2002,8 +2132,16 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
         from contracts import log_observation as _logobs_elapsed
         _logobs_elapsed(
             f"verify_{stage}", "verify_stage_elapsed",
-            "ok" if passed else "fail",
+            "ok" if passed else ("waiting_author" if waiting_author else "fail"),
             f"errors={len(errors)}", cwd.name,
+            metrics={
+                "errors": len(errors),
+                "stage_status": (
+                    "done" if passed else
+                    "waiting_author" if waiting_author else
+                    "failed"
+                ),
+            },
             elapsed_ms=(time.perf_counter() - _t0) * 1000,
         )
     except Exception:
@@ -2012,6 +2150,12 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
         _record_stage_success(cwd, state, stage)
         save_state(cwd, state)
         print(f"✅ {stage} 验证通过，已标记 done")
+    elif waiting_author:
+        _record_stage_waiting_author(cwd, state, stage, errors)
+        print(f"⏸ {stage} 已进入 waiting_author；这不是内容失败，也不累计失败次数：")
+        for e in errors:
+            print(f"   • {e}")
+        raise SystemExit(2)
     else:
         state["stages"][stage]["status"] = "failed"
         state["stages"][stage]["last_failed_at"] = _now_iso()
@@ -2204,6 +2348,12 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
     passed, errors = verify_stage(stage, cwd, candidate, legacy=legacy)
     if not passed:
         restore_publish_receipt()
+        if _checkpoint_wait(errors):
+            _record_stage_waiting_author(cwd, state, stage, errors)
+            print(f"⏸ {stage} 已进入 waiting_author；这不是内容失败，也不累计失败次数：")
+            for e in errors:
+                print(f"   • {e}")
+            raise SystemExit(2)
         print(f"⚠️  {stage} 自动检查未全部通过：")
         for e in errors:
             print(f"   • {e}")
@@ -4173,6 +4323,20 @@ def main():
         "release-to-draft",
         help="唯一草稿发布入口：预检 → draft/add → draft/get → 远端凭证",
     )
+    p_handoff = sub.add_parser(
+        "handoff-assets",
+        help="从正式回执导出封面、主题曲及可选播客的可验证手工上传包",
+    )
+    p_handoff.add_argument(
+        "--target-root",
+        default="",
+        help="覆盖 SANSHENG_WRITE_HANDOFF_DIR / .env 中的浅层交接根目录",
+    )
+    p_handoff.add_argument(
+        "--revision",
+        default="",
+        help="目标已有不同快照时使用新的 revision 标识，如 r2",
+    )
     p_wechat_audio = sub.add_parser(
         "wechat-audio-check",
         help="人工插入主题曲/播客音频后，用官方 draft/get 复核再允许正式发布",
@@ -4237,6 +4401,13 @@ def main():
     cwd = Path(selected_dir).expanduser().resolve() if selected_dir else Path.cwd()
     if not cwd.is_dir():
         parser.error(f"文章目录不存在：{cwd}")
+    # 路径配置可能使用 @workspace/...。必须等文章目录确定后再绑定，
+    # 且要早于 distribute 等延迟 import，避免同一进程把数据静默写回 main。
+    import profile_config as _profile_config
+    try:
+        _profile_config.bind_workspace(cwd)
+    except _profile_config.WorkspaceBindingError as exc:
+        parser.error(str(exc))
 
     if args.cmd == "distribute":
         import distribute
@@ -4324,6 +4495,24 @@ def main():
         cmd_render_stats(cwd)
     elif args.cmd == "release-to-draft":
         cmd_release_to_draft(cwd)
+    elif args.cmd == "handoff-assets":
+        from handoff_assets import export_handoff_assets
+
+        target, status, errors = export_handoff_assets(
+            cwd,
+            target_root=(
+                Path(args.target_root).expanduser()
+                if getattr(args, "target_root", "")
+                else None
+            ),
+            revision=getattr(args, "revision", "") or "",
+        )
+        if errors or target is None:
+            print("❌ 手工上传包导出失败：")
+            for error in errors:
+                print(f"   • {error}")
+            sys.exit(2)
+        print(f"✅ 手工上传包{('已创建' if status == 'created' else '未变化')}：{target}")
     elif args.cmd == "skip":
         cmd_skip(args.stage, cwd, force=getattr(args, "force", False))
     elif args.cmd == "reset":

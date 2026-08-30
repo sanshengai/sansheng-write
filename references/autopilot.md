@@ -69,9 +69,10 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 
 这不是伪造写作历史，而是显式进入 `release-from-final` 模式。
 
-⚠️ **`adopt-final` 会把 `_draft-approval.md` 覆写成机器接管块**（绑定定稿 SHA）。
-作者拍板时说的话、以及当时定下的取舍，要写在**另一个文件**里（如
-`_draft-decisions.md`），否则接管一跑就没了。
+🔴 `adopt-final` **没有作者审批权**。运行前必须已有真实 `_draft-approval.md`，
+且结论行明确写 `审批结论：通过`；缺失、拒绝或尚未确认都会原子失败，不写
+state、release job 或 checkpoint receipt。接管只读取并绑定审批文件 SHA 与
+定稿 subject，绝不改写审批文件；作者原话、返工原因和取舍记录继续留在原处。
 
 ## 合同门要求 subagent，但当前运行时不给 subagent 时
 
@@ -90,6 +91,9 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 - 非零合同门经同因重试三次仍失败。
 
 除此之外不因“下一步可能费时”停顿，也不把失败 stage 标成 done。
+检查点是唯一错误时，pipeline 记为 `waiting_author`（⏸），不记 `failed`、
+不累计 `fail_count`；`status` / `next` 会直接显示所需作者动作。拍板凭证通过后，
+状态自动转为 `done` 并清理等待字段。
 
 ## 并行
 

@@ -201,6 +201,11 @@ def main():
         if not sp.exists():
             print(f"❌ SVG 不存在: {sp}", file=sys.stderr)
             return 1
+    try:
+        _pc.bind_workspace(svg_paths[0].expanduser().resolve())
+    except _pc.WorkspaceBindingError as exc:
+        print(f"❌ 工作区绑定失败: {exc}", file=sys.stderr)
+        return 2
 
     # 品牌色校验（多文件时全跑一遍，任一不通过即失败）
     if args.check_brand:

@@ -8,6 +8,8 @@
 import os
 import sys
 import html as _html
+import argparse
+from pathlib import Path
 
 try:  # Windows GBK 控制台兜底，避免 print emoji 抛 UnicodeEncodeError
     sys.stdout.reconfigure(encoding="utf-8")
@@ -16,22 +18,33 @@ except Exception:
     pass
 
 sys.path.insert(0, os.path.dirname(__file__))
-from works_registry import load_works, WORKS_FILE
+from works_registry import load_works, works_path
+import profile_config as pc
 
-try:
-    from profile_config import brand as _brand, colors as _colors
-    _PRIMARY = _colors().get("primary") or "#2F6F8F"
-    _BRAND_NAME = _brand().get("name") or "作品库"
-except Exception:
-    _PRIMARY, _BRAND_NAME = "#2F6F8F", "作品库"
 
-DASHBOARD_FILE = WORKS_FILE.parent / "works-dashboard.html"
+def dashboard_path():
+    """当前 workspace 的只读看板路径。"""
+    return works_path().parent / "works-dashboard.html"
+
+
+DASHBOARD_FILE = pc.dynamic_path(dashboard_path)
 
 CATEGORY_CN = {"AIT": "实测", "TUT": "教程", "OBS": "观察", "ROB": "硬件", "KID": "育儿", "ESS": "随笔"}
-CATEGORY_COLOR = {"AIT": _PRIMARY, "TUT": "#2563eb", "OBS": "#b45309",
-                  "ROB": "#7c3aed", "KID": "#db2777", "ESS": "#475569"}
-GREEN = _PRIMARY  # 看板主强调色 = profile 主题色（默认中性 slate）
 CATS = ["AIT", "TUT", "OBS", "ROB", "KID", "ESS"]
+
+
+def _theme():
+    """调用时读取品牌，避免先 import 看板、后绑定文章目录造成主题串树。"""
+    try:
+        primary = pc.colors().get("primary") or "#2F6F8F"
+        brand_name = pc.brand().get("name") or "作品库"
+    except Exception:
+        primary, brand_name = "#2F6F8F", "作品库"
+    category_colors = {
+        "AIT": primary, "TUT": "#2563eb", "OBS": "#b45309",
+        "ROB": "#7c3aed", "KID": "#db2777", "ESS": "#475569",
+    }
+    return primary, brand_name, category_colors
 
 
 def cover_src(cover):
@@ -42,10 +55,12 @@ def cover_src(cover):
     return cover[len(prefix):] if cover.startswith(prefix) else cover
 
 
-def _card(w):
+def _card(w, category_colors=None):
+    if category_colors is None:
+        category_colors = _theme()[2]
     cat = w.get("category") or ""
     cn = CATEGORY_CN.get(cat, cat or "未分类")
-    color = CATEGORY_COLOR.get(cat, "#475569")
+    color = category_colors.get(cat, "#475569")
     code = w.get("code") or "草稿"
     title = _html.escape(w.get("title") or "(无标题)")
     date = w.get("date") or "未发布"
@@ -77,6 +92,7 @@ def _card(w):
 
 
 def build_html(works):
+    green, brand_name, category_colors = _theme()
     pub = sorted([w for w in works if w.get("date")], key=lambda w: w["date"], reverse=True)
     draft = [w for w in works if not w.get("date")]
     ordered = pub + draft
@@ -87,13 +103,13 @@ def build_html(works):
     filters = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{c}">{CATEGORY_CN[c]} {cat_counts[c]}</button>' for c in CATS
     )
-    cards = "\n".join(_card(w) for w in ordered)
+    cards = "\n".join(_card(w, category_colors) for w in ordered)
     return f'''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_BRAND_NAME}作品库</title>
+<title>{brand_name}作品库</title>
 <style>
-:root{{--green:{GREEN}}}
+:root{{--green:{green}}}
 *{{box-sizing:border-box}}
 body{{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f7;color:#1c1c1c}}
 header{{background:#fff;border-bottom:3px solid var(--green);padding:18px 24px;position:sticky;top:0;z-index:10}}
@@ -126,7 +142,7 @@ header h1 .g{{color:var(--green)}}
 footer{{text-align:center;color:#aaa;font-size:12px;padding:16px}}
 </style></head><body>
 <header>
-  <h1>{_BRAND_NAME}<span class="g">作品库</span></h1>
+  <h1>{brand_name}<span class="g">作品库</span></h1>
   <div class="stats">
     <span class="pill">总数 {total}</span>
     <span class="pill">已发布 {npub}</span>
@@ -151,7 +167,23 @@ btns.forEach(b=>b.addEventListener('click',()=>{{
 </body></html>'''
 
 
-if __name__ == "__main__":
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="由作品库重建 HTML 作品看板")
+    parser.add_argument("--dir", default=".", help="文章目录，用于绑定当前 worktree")
+    args = parser.parse_args(argv)
+    article_dir = Path(args.dir).expanduser().resolve()
+    if not article_dir.is_dir():
+        parser.error(f"文章目录不存在：{article_dir}")
+    try:
+        pc.bind_workspace(article_dir)
+    except pc.WorkspaceBindingError as exc:
+        parser.error(str(exc))
     works = load_works()
-    DASHBOARD_FILE.write_text(build_html(works), encoding="utf-8")
-    print(f"✅ 作品看板 → {DASHBOARD_FILE}  ({len(works)} 条)")
+    output = Path(DASHBOARD_FILE)
+    output.write_text(build_html(works), encoding="utf-8")
+    print(f"✅ 作品看板 → {output}  ({len(works)} 条)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

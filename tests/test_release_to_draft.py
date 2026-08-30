@@ -199,6 +199,7 @@ def test_semantic_body_digest_ignores_markup_inside_sanitized_title_attribute():
 
 def _dual_audio_article(root: Path) -> Path:
     from scripts.audio_cards import render_card
+    from scripts.music_manifest import write_music_manifest
     from scripts.release_to_draft import release_to_draft, write_audio_handoff
 
     article = _article(root)
@@ -214,7 +215,19 @@ def _dual_audio_article(root: Path) -> Path:
         f"{theme_card}{podcast_card}</section></body></html>",
         encoding="utf-8",
     )
-    (article / "主题曲.mp3").write_bytes(b"theme-audio")
+    theme_audio = article / "主题曲.mp3"
+    theme_audio.write_bytes(b"theme-audio")
+    write_music_manifest(
+        article,
+        theme_audio,
+        title="主题曲",
+        duration_seconds=200.0,
+        provider="example-provider",
+        model="example-model",
+        mode="web_manual",
+        registry_reference="article-meta.yaml#music",
+        registry_entry="theme",
+    )
     (article / "dist/podcast").mkdir(parents=True)
     (article / "dist/podcast/audio.mp3").write_bytes(b"podcast-audio")
     receipt, release_errors = release_to_draft(

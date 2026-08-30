@@ -51,12 +51,9 @@ except ImportError:
 #
 #  设计参考：references/design-tokens.md
 # ============================================================
-try:
-    from profile_config import brand as _brand, colors as _colors
-    _C = _colors()
-    _R = _brand().get("radius", {})
-except Exception:  # profile_config 不可用时纯用默认值，绝不因主题问题卡住排版
-    _C, _R = {}, {}
+# 导入模块时只装载中性默认值。真实 profile 依赖文章所在 worktree，必须等
+# run() 已拿到目标 HTML 后绑定并刷新，不能在 import 阶段把错误 cwd 的主题冻结。
+_C, _R = {}, {}
 
 
 def _c(key: str, default: str) -> str:
@@ -114,26 +111,73 @@ def _primary_alpha(fmt: str, default: str) -> str:
 # 模板里写死的默认值 → 当前主题值 的映射（process_theme 用；值相同则整体 no-op）
 # 🔴 全量令牌：13 色令牌 12 个在此（TEXT_FAINT #b0b6bb 设计上不随主题，刻意不映射），
 #    另加 4 个「主色衍生 alpha」装饰值。新增模板硬编码色值前先想清楚归哪一行。
-_THEME_DEFAULTS = {
-    "#2F6F8F": BRAND_PRIMARY,
-    "#7FB0C4": BRAND_SECONDARY,
-    "#245a75": _c("primary_deep", "#245a75"),
-    "#4a6b7a": _c("text_link", "#4a6b7a"),
-    "#f2f7f9": TINT_SOFT,
-    "#eaf1f5": TINT_INSET,
-    "#d7e3ea": BORDER_CARD,
-    "#eef0f2": BORDER_HAIR,   # surface：内分隔线 / 表格行分隔（深读条目线等）
-    "#26333a": TEXT_TITLE,
-    "#8a929a": TEXT_MUTED,
-    "#333333": TEXT_BODY,     # text_strong：正文 / PART 标题行 / 时间线正文
-    "rgba(47, 111, 143,0.05)": TINT_CARD,
-    "rgba(47, 111, 143,0.03)": TINT_ROW,
-    # 主色衍生 alpha（随 primary 换算，非独立令牌）：
-    "rgba(47, 111, 143,0.12)": _primary_alpha("rgba({r}, {g}, {b},0.12)", "rgba(47, 111, 143,0.12)"),    # H2 PART 底部分节线
-    "rgba(47, 111, 143,0.3)": _primary_alpha("rgba({r}, {g}, {b},0.3)", "rgba(47, 111, 143,0.3)"),       # H2 PART 编号右竖线
-    "rgba(47, 111, 143,0.14)": _primary_alpha("rgba({r}, {g}, {b},0.14)", "rgba(47, 111, 143,0.14)"),    # 金句卡出处发丝分隔线
-    "rgba(47, 111, 143, 0.05)": _primary_alpha("rgba({r}, {g}, {b}, 0.05)", "rgba(47, 111, 143, 0.05)"), # process_colors 引用块底（历史带空格写法）
-}
+def _build_theme_defaults() -> dict[str, str]:
+    return {
+        "#2F6F8F": BRAND_PRIMARY,
+        "#7FB0C4": BRAND_SECONDARY,
+        "#245a75": _c("primary_deep", "#245a75"),
+        "#4a6b7a": _c("text_link", "#4a6b7a"),
+        "#f2f7f9": TINT_SOFT,
+        "#eaf1f5": TINT_INSET,
+        "#d7e3ea": BORDER_CARD,
+        "#eef0f2": BORDER_HAIR,   # surface：内分隔线 / 表格行分隔（深读条目线等）
+        "#26333a": TEXT_TITLE,
+        "#8a929a": TEXT_MUTED,
+        "#333333": TEXT_BODY,     # text_strong：正文 / PART 标题行 / 时间线正文
+        "rgba(47, 111, 143,0.05)": TINT_CARD,
+        "rgba(47, 111, 143,0.03)": TINT_ROW,
+        # 主色衍生 alpha（随 primary 换算，非独立令牌）：
+        "rgba(47, 111, 143,0.12)": _primary_alpha("rgba({r}, {g}, {b},0.12)", "rgba(47, 111, 143,0.12)"),    # H2 PART 底部分节线
+        "rgba(47, 111, 143,0.3)": _primary_alpha("rgba({r}, {g}, {b},0.3)", "rgba(47, 111, 143,0.3)"),       # H2 PART 编号右竖线
+        "rgba(47, 111, 143,0.14)": _primary_alpha("rgba({r}, {g}, {b},0.14)", "rgba(47, 111, 143,0.14)"),    # 金句卡出处发丝分隔线
+        "rgba(47, 111, 143, 0.05)": _primary_alpha("rgba({r}, {g}, {b}, 0.05)", "rgba(47, 111, 143, 0.05)"), # process_colors 引用块底（历史带空格写法）
+    }
+
+
+_THEME_DEFAULTS = _build_theme_defaults()
+
+
+def _refresh_theme_tokens() -> None:
+    """在 workspace 绑定后读取 profile，并原子刷新本模块全部派生令牌。"""
+    global _C, _R
+    global BRAND_PRIMARY, BRAND_SECONDARY
+    global RADIUS_SM, RADIUS_MEDIA, RADIUS_CARD, RADIUS_MODULE, RADIUS_PILL
+    global TINT_CARD, TINT_SOFT, TINT_INSET, TINT_ROW
+    global BORDER_CARD, BORDER_HAIR
+    global TEXT_BODY, TEXT_TITLE, TEXT_MUTED
+    global _THEME_DEFAULTS
+
+    import profile_config as _pc
+
+    _C = dict(_pc.colors() or {})
+    _R = dict((_pc.brand() or {}).get("radius", {}) or {})
+    BRAND_PRIMARY = _c("primary", "#2F6F8F")
+    BRAND_SECONDARY = _c("secondary", "#7FB0C4")
+    RADIUS_SM = _r("sm", "6px")
+    RADIUS_MEDIA = _r("media", "8px")
+    RADIUS_CARD = _r("card", "10px")
+    RADIUS_MODULE = _r("module", "12px")
+    RADIUS_PILL = _r("pill", "999px")
+    TINT_CARD = _c("primary_soft", "rgba(47, 111, 143,0.05)")
+    TINT_SOFT = _c("surface_soft", "#f2f7f9")
+    TINT_INSET = _c("surface_inset", "#eaf1f5")
+    TINT_ROW = _c("row_tint", "rgba(47, 111, 143,0.03)")
+    BORDER_CARD = _c("border_card", "#d7e3ea")
+    BORDER_HAIR = _c("surface", "#eef0f2")
+    TEXT_BODY = _c("text_strong", "#333333")
+    TEXT_TITLE = _c("text_title", "#26333a")
+    TEXT_MUTED = _c("text_mute", "#8a929a")
+    _THEME_DEFAULTS = _build_theme_defaults()
+
+
+def _bind_layout_workspace(target: str | os.PathLike[str]) -> Path | None:
+    """按目标 HTML 所在文章目录绑定，再加载该 worktree 的品牌令牌。"""
+    import profile_config as _pc
+
+    target_path = Path(target).expanduser().resolve()
+    root = _pc.bind_workspace(target_path.parent)
+    _refresh_theme_tokens()
+    return root
 
 
 def process_theme(html: str) -> str:
@@ -2189,6 +2233,8 @@ def run(args):
     if not os.path.exists(target):
         log(f"❌ 文件不存在: {target}")
         sys.exit(1)
+
+    _bind_layout_workspace(target)
 
     cwd = os.getcwd()
 

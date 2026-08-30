@@ -18,7 +18,7 @@
 观察日志路径由 `scripts/profile_config.py::observations_file()` 解析：配置 profile 时位于
 `<profile>/flywheel/_skill-observations.jsonl`，未配置才回退仓根。每篇文章运行时，由
 `contracts.py` / `format_layout.py` / `pipeline.py` 自动追加「门判定记录」。**禁止只看仓根同名旧文件**。
-每行一个 v2 JSON，核心字段：`record_id/run_id/recorded_at/article_uid/stage/event/attempt/passed/severity/issue_codes/metrics/artifact_digest/source`；同时保留 v1 的 `ts/article/verdict/detail` 兼容旧工具。
+每行一个 v2 JSON，核心字段：`record_id/run_id/recorded_at/article_uid/stage/event/attempt/passed/severity/issue_codes/metrics/artifact_digest/source/workspace_root/workspace_uid`；同时保留 v1 的 `ts/article/verdict/detail` 兼容旧工具。pipeline 已绑定文章工作树时，`workspace_root` 记录解析后的绝对路径、`workspace_uid` 记录稳定短哈希；独立调用方尚未绑定时两者为空。
 
 - `stage`：format_layout / verify_writing / archive
 - `event`：门名或归档事件（verify_bold_density / verify_cjk_punctuation / registry_write / verify_closed_loop / ...）
@@ -34,10 +34,10 @@
 
 ### 第 2 步 · 统计模式
 
-按 `event`（门名）做**两套口径**：A. 原始 attempts（看恢复成本）；B. 每篇文章 `article_uid + event` 只取最新一条（看最终失败率）。重跑不能在最终口径里重复计权。
+按 `stage + event`（阶段 + 门名）做**两套口径**：A. 原始 attempts（看恢复成本）；B. 每篇文章 `article_uid + stage + event` 只取最新一条（看最终失败率）。同名 event 若出现在不同 stage 必须分开统计，重跑不能在最终口径里重复计权。
 
-| 门 | 原始尝试数 | 最新样本篇数 | 首次失败篇数 | 最终失败篇数 | 平均尝试次数 | 高频 issue_codes |
-|---|---|---|---|---|
+| 阶段 / 门 | 原始尝试数 | 最新样本篇数 | 首次失败篇数 | 最终失败篇数 | 平均尝试次数 | 高频 issue_codes |
+|---|---:|---:|---:|---:|---:|---|
 
 重点找四类信号：
 - **反复出问题的门**：某门在多篇最终 fail → skill 规则有缺陷，或写作总踩同一个坑
@@ -50,6 +50,18 @@
 **🕸 织网两指标（数据源看各篇 `article-meta.yaml` + `profile/brand-net.md`）：**
 - **织网执行率**：近 N 篇里 `weave:` 三问真答了几篇（含"不织:理由"也算答）；空着/没这字段 = 步骤 7.5 被跳，查原因
 - **承诺兑现率**：brand-net.md §四台账里超过 1 个月仍 ⏳ 的愿有几条 → 列出排期或公开调整口径，**不许烂尾**
+
+### 门的分类与放宽判据
+
+复核时先判断门保护的是什么，不能只看“它拦了几次”：
+
+- **内容真实性 / 权利 / 作者拍板 / 正式发布回读**：属于不可替代证据，继续硬拦；服务商暂时不可用也不能改写旧资产出身，作者检查点也不能由机器代签。
+- **作者在场检查点**：证据缺失时状态应是 `waiting_author`，不是内容 `failed`，不累计失败次数；这是等待态建模，不是放宽审批。
+- **服务商与执行通道**：门校验“最终文件 + 真实来源 manifest”，不绑定某一家厂商。Google、网页手工生成或复用既有成品都可通过同一合同。
+- **路径、缓存、派生视图等运行环境**：应自动绑定当前工作区、给出可恢复错误；不得因为主仓路径被导入时冻结而制造假失败。
+- **候选的放宽条件**：只有跨篇数据显示高误判、被拦样本经独立复核均合格，且放宽后仍有等价证据时才改。单篇觉得麻烦、第三方冻结或处理耗时都不是放宽理由。
+
+复盘报告必须把结论写成“保留 / 改状态语义 / 改证据合同 / 删除”四类之一，避免把所有不顺畅都笼统归因于“闸门太严”。
 
 ### 第 3 步 · 派旁观者 agent 找模式 + 给建议
 

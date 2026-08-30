@@ -2836,7 +2836,9 @@ def log_observation(stage: str, event: str, verdict: str,
     """追加一条运行观察到 `_skill-observations.jsonl`（仅本地文件，**不联网**）。
 
     这份日志给「复核 skill」用：攒够若干篇之后，可以让它读这份日志，
-    看看哪些质量门在反复报警，从而知道该改哪条规则。
+    看看哪些质量门在反复报警，从而知道该改哪条规则。attempt 与最新结果的
+    聚合键固定为 ``article_uid + stage + event``；同名 event 出现在不同阶段时
+    必须分开统计。
 
     :param stage: 阶段（如 format_layout / verify_writing）
     :param event: 事件 = 门名（如 verify_bold_density / verify_cjk_punctuation）
@@ -2866,12 +2868,18 @@ def log_observation(stage: str, event: str, verdict: str,
     try:
         # 观察日志归飞轮目录（profile 配置时在 <profile>/flywheel/，未配置回退仓根）
         try:
-            from .profile_config import observations_file
+            from .profile_config import observations_file, workspace_root
         except ImportError:  # pipeline.py 以 scripts/ 作为 sys.path 根时的兼容路径
             import sys as _sys
             _sys.path.insert(0, str(Path(__file__).resolve().parent))
-            from profile_config import observations_file
+            from profile_config import observations_file, workspace_root
         log_path = observations_file()
+        bound_workspace = workspace_root()
+        workspace_path = str(bound_workspace.resolve()) if bound_workspace else ''
+        workspace_uid = (
+            'w-' + hashlib.sha256(os.path.normcase(workspace_path).encode('utf-8')).hexdigest()[:10]
+            if workspace_path else ''
+        )
         raw_article = article or Path.cwd().name
         article = raw_article
         if os.environ.get('SANSHENG_WRITE_LOG_TITLES', '').strip() not in {'1', 'true', 'yes'}:
@@ -2949,6 +2957,10 @@ def log_observation(stage: str, event: str, verdict: str,
             'metrics': metric_map,
             'artifact_digest': artifact_digest,
             'source': source,
+            # pipeline 解析完 --dir 后会先 bind_workspace；把实际工作树同时记进
+            # 本地观察日志，避免多 worktree 运行记录被误认成同一份输入。
+            'workspace_root': workspace_path,
+            'workspace_uid': workspace_uid,
             # v1 兼容字段：旧聚合脚本仍可读取。
             'ts': now.strftime('%Y-%m-%dT%H:%M'),
             'article': article,

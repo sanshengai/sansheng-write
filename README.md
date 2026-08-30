@@ -152,11 +152,11 @@ cp .env.example .env              # 填你自己的 key
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
 | **baoyu-skills 插件** | ② 起硬依赖 | md→HTML、像素渲染与微信 API 适配不可用 | 安装 `JimLiu/baoyu-skills`；provider 与微信 key 配在它自己的 `~/.baoyu-skills/` |
 | 已配置的 image provider | ③ | `render-visuals` 非零退出 | 按 `baoyu-image-gen` 配置 provider/model；业务视觉规则仍由本 Skill 编译 |
-| gcloud ADC（Vertex OAuth） | ③ | BGM 硬门失败，不能推草稿 | `gcloud auth application-default login` + `gcloud config set project <P>`；BGM 走 Lyria 3，**不用 API Key** |
+| gcloud ADC（Vertex OAuth） | ③，且选择 Lyria 自动生成时 | Lyria 生成不可用；已用显式 manifest 绑定的网页生成或既有主题曲不受影响 | `gcloud auth application-default login` + `gcloud config set project <P>`；Lyria **不用 API Key** |
 | 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
 | playwright / matplotlib | ③ 可选 | 独立精确图表的 SVG 转 PNG、数据图画不了；不用于封面/Hero/信息图补字 | `pip install playwright matplotlib` |
 
-低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出。封面文字、品牌色、粘土配图方法、必备文字恰好一次与 renderer 都有机器校验；错字只允许同 prompt 单张重渲，不提供 SVG/后期叠字、`force`、`legacy`、跳过预检、人工豁免或自定义生图命令。
+低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出。BGM 硬门校验的是 `_music-manifest.json` 绑定的真实文件与来源，不强迫使用特定厂商：自动生成、网页手工生成和复用既有成品都可走同一合同。封面文字、品牌色、粘土配图方法、必备文字恰好一次与 renderer 都有机器校验；错字只允许同 prompt 单张重渲，不提供 SVG/后期叠字、`force`、`legacy`、跳过预检、人工豁免或自定义生图命令。
 
 ---
 
@@ -253,6 +253,11 @@ cp .env.example .env                                # 填生图 key；微信凭�
 
 不配 profile 也能跑 -- 自动回退到仓内 `profile.example/`（中性配色 + 占位署名）。
 这是正常路径，不是错误。
+
+多 worktree 场景不要把路径钉死在 `main`：`.env` 中可把 profile、数据目录、
+作品库、飞轮与金句库写成 `@workspace/...`。`pipeline.py --dir <文章目录>` 会先
+绑定承载该文章的 Git 工作树，再解析这些路径；同一进程切到另一棵树时也会重新
+求值。非 Git 目录可用绝对路径，或显式配置 `SANSHENG_WRITE_WORKSPACE_DIR`。
 
 **换主题一行搞定**（`profile/brand.yaml`）：
 

@@ -33,8 +33,14 @@ sys.path.insert(0, os.path.dirname(__file__))
 from works_registry import load_works
 import profile_config as pc
 
-# 旧数据源（保留用于新旧产出一致性校验；推荐卡已切换为读 works_file() 解析出的作品库）
-ARTICLES_DB_PATH = pc.data_dir() / "articles.md"
+def articles_db_path() -> Path:
+    """旧一致性校验视图路径；调用时按当前 workspace 解析。"""
+    return pc.data_dir() / "articles.md"
+
+
+# 旧数据源（保留用于新旧产出一致性校验；推荐卡已切换为读 works_file()
+# 解析出的作品库）。代理保留旧公开名字但不在 import 时锁死路径。
+ARTICLES_DB_PATH = pc.dynamic_path(articles_db_path)
 
 
 def resolve_cover(cv: str) -> str:
@@ -301,7 +307,15 @@ def main(argv=None):
         help="html=写入数据目录；copy=复制到剪贴板（默认）；stdout=输出 HTML",
     )
     parser.add_argument("--output", type=Path, help="自定义 HTML 输出路径（隐含 html 模式）")
+    parser.add_argument("--dir", default=".", help="文章目录，用于绑定当前 worktree（默认当前目录）")
     args = parser.parse_args(argv)
+    article_dir = Path(args.dir).expanduser().resolve()
+    if not article_dir.is_dir():
+        parser.error(f"文章目录不存在：{article_dir}")
+    try:
+        pc.bind_workspace(article_dir)
+    except pc.WorkspaceBindingError as exc:
+        parser.error(str(exc))
     output_format = "html" if args.output else args.output_format
 
     print("🔄 正在生成推荐文章 HTML...")

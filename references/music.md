@@ -1,4 +1,4 @@
-# 文章音乐生成（BGM / 主题曲）· Lyria 3 版
+# 文章音乐（BGM / 主题曲）· 通道中性来源合同
 
 > 从文章内容提炼主旨、生成**中文人声主题曲**、嵌入微信文章的完整 SOP。
 > **可从任意步骤开始**--每步均自包含。本阶段由编排器单线程执行（契约见 references/orchestration.md）。
@@ -9,11 +9,17 @@
 > - 2026-08-20 MiniMax 音乐 API 对非历史付费用户关停（HTTP 410 / `status_code 2153`）。
 >   按量计费 Key、订阅 Key、网页声贝三条通道实测全灭，充值升套餐均无法解锁。
 > - 2026-08-21 **查明当年的 404 是端点形态用错**——Lyria 3 走 `interactions`，不是 `:predict`；
->   换对后实测跑通中文女声整首歌（176s）。**现引擎：Lyria 3 Pro `lyria-3-pro-preview`**。
+>   换对后实测跑通中文女声整首歌（176s）。Lyria 3 Pro `lyria-3-pro-preview`
+>   是默认自动生成通道，不是发布硬门唯一允许的来源。
 >
-> 现引擎特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 5 种舒缓系；
+> Lyria 自动通道特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 5 种舒缓系；
 > ③ 自动写词，且**歌词随响应返回**（落 `{歌名}-歌词.txt`，旧引擎「词不可控、看不到文本」的代价消失）；
 > ④ 时长约 3 分钟；⑤ 计费 $0.08/首，走 Cloud，$300 赠金可覆盖。
+
+发布硬门只认文章本地 `_music-manifest.json`：它必须绑定实际播放文件的 SHA-256、
+字节数、时长，以及真实 `provider / model / mode` 与注册表引用。自动生成、外部网页
+生成和复用既有主题曲都允许；任何通道切换都不得改写旧歌出身，也不得从同名 MP3、
+时间戳或“最新候选”推断来源。
 
 ---
 
@@ -39,7 +45,7 @@
 
 ---
 
-## 核心脚本（V2：Claude 提炼诗意意象 → 传参）
+## 自动生成通道（Lyria 3）
 
 > 🔴 **提炼环节不调任何模型**：由 **Claude 在 BGM 阶段按下面《Claude 提炼标准》提炼**，作为参数传给脚本；脚本是纯执行器（拼 V2 空灵 prompt → Lyria 3 写词生成）。
 > （生成环节本身走 Google Vertex；这与「提炼不调模型」不冲突，别再沿用旧文档里"不碰 Google"的说法。）
@@ -56,6 +62,41 @@ python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
 #   --style  ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal|shanghai_jazz_soul（默认 ethereal_folk）
 #   --gender 默认按序号奇偶交替（奇女偶男）；shanghai_jazz_soul 例外默认女声
 #   --model 默认 lyria-3-pro-preview
+```
+
+## 网页生成或复用既有主题曲
+
+先把确认过来源的实际播放文件放进文章目录，再显式创建 manifest；下列字段必须按
+真实出身填写，不能把当前临时通道或未来计划中的通道倒灌给旧成品：
+
+```bash
+python "$SKILL/scripts/music_manifest.py" create "<文章目录>" \
+  --audio "素材/主题曲.mp3" --title "歌名" --duration-seconds 206.2 \
+  --provider "MiniMax" --model "Music 3.0" --mode "web-ui" \
+  --registry-ref "人物主题曲注册表.json" --registry-entry "人物ID"
+python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-duration
+```
+
+随后用 `audio_cards.py` 的共享模板把主题曲卡片收口到 `定稿.md` 文末，再进入排版；
+卡片歌名、manifest 歌名和权威注册表必须一致。
+
+### 主题曲来源契约
+
+新文章必须在文章目录保存 `_music-manifest.json`。它是选定播放文件和来源署名的唯一真源，
+必须绑定精确的相对路径、SHA-256、字节数、时长，以及显式的
+`origin.provider/model/mode` 和 `registry.reference/entry`。禁止通过 MP3 文件名、
+修改时间或「最新」 sidecar 推断当前主题曲及其出身。用户可见标签保持通道中性；
+真实 provider/model 只写入来源字段。
+
+Lyria 生成器会自动写契约。外部网页或其他引擎生成的成品，必须用显式来源补建：
+
+```bash
+python "$SKILL/scripts/music_manifest.py" create "<文章目录>" \
+  --audio "<MP3 相对路径>" --title "<歌名>" --duration-seconds 180 \
+  --provider "<provider>" --model "<model>" --mode "web-ui" \
+  --registry-ref "<权威注册表引用>" --registry-entry "<条目 ID>"
+
+python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-duration
 ```
 
 前置：已装 gcloud 并跑过 `gcloud auth application-default login` + `gcloud config set project <PROJECT>`（脚本用 ADC 取 OAuth token；**不需要 API Key**，缺凭证 exit 2 阻断发布链）。封面（可选，失败不阻塞）另需 `GOOGLE_API_KEY`（gen_img.py 的 Vertex Express key，与本阶段凭证不是同一套）。
@@ -135,11 +176,26 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 > 🔴 **位置铁律**：脚本先把 `AUDIO-CARD` 与可选 `PODCAST-CARD` 机器块收口到 `定稿.md` **最末尾**；`format_layout.py --all` 再按「导读 → 主题曲 → 播客 → 正文」前置。严禁直接写在开头（会被 baoyu-md 误吞进 `<meta description>` 导致 head 崩坏）。
 
 脚本会自动：
-1. 生成 `{歌名}.mp3` + `{歌名}.json`（元数据）
+1. 生成 `{歌名}.mp3` + `{歌名}.json`（生成元数据）+ `_music-manifest.json`（发布来源契约）
 2. 调 `gen_img.py` 生成 1:1 主题曲封面 `素材/bgm_cover.png`（不打水印）
 3. 用 `audio_cards.py` 的共享模板写入「🎵 阅读配乐｜本文主题曲」卡片
 
 若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后从微信预览分别试听两条音频的开头/结尾 10 秒，再跑 `pipeline.py wechat-audio-check --confirm-audition`。
+
+需要把人工上传所需资产导出到浅层目录时，先配置
+`SANSHENG_WRITE_HANDOFF_DIR`，再运行：
+
+```bash
+python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
+# 目标已有不同快照时不覆盖；显式建新版：
+python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets --revision r2
+# 临时覆盖 .env 目标也可显式传：
+python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets --target-root "<浅层目录>"
+```
+
+命令只会取已封存视觉凭证的封面、主题曲 manifest 绑定文件，以及可选的播客
+manifest 绑定文件。逐项验证后通过同级临时目录原子落盘；同快照幂等，
+不同快照拒绝覆盖，交接凭证不写时间戳以保持可重现。
 
 ### 卡片设计规范
 
@@ -152,7 +208,7 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 
 ## 发布检查
 
-- ☐ BGM 已生成（**排版之前**）：`{歌名}.mp3` + `素材/bgm_cover.png`
+- ☐ BGM 已生成（**排版之前**）：`{歌名}.mp3` + `_music-manifest.json` + `素材/bgm_cover.png`
 - ☐ `定稿.md` 含 AUDIO-CARD；开启嵌入时还含 PODCAST-CARD 与同源播客 MP3
 - ☐ 已重新走排版管线，固定顺序为导读 → 主题曲 → 播客 → 正文
 - ☐ 两份 MP3 已插入各自卡片并删除占位文字
@@ -160,4 +216,4 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 
 ---
 
-*引擎 Lyria 3 Pro（Vertex interactions + OAuth），自动写词并回传歌词，风格池为 5 种舒缓系。*
+*来源合同通道中性；Lyria 3 Pro 是默认自动生成器，网页生成与既有成品必须保留各自真实署名。*

@@ -16,3 +16,4 @@ os.environ["SANSHENG_WRITE_DATA_DIR"] = _TEST_DATA
 # ⚠ 必须钉**非空实路径**：空串挡不住解析器（os env 为空会继续回落 .env）。
 os.environ["SANSHENG_WRITE_WORKS_FILE"] = str(Path(_TEST_DATA) / "works.yaml")
 os.environ["SANSHENG_WRITE_FLYWHEEL_DIR"] = _TEST_DATA
+os.environ["SANSHENG_WRITE_GOLDEN_LINES_FILE"] = str(Path(_TEST_DATA) / "golden-lines.md")

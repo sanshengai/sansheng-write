@@ -13,7 +13,13 @@ from pathlib import Path
 import yaml
 
 from assemble_release import author_content_sha256
-from evidence import sha256_file, stable_digest, write_checkpoint_receipt
+from evidence import (
+    CHECKPOINT_RECEIPT_FILE,
+    checkpoint_artifact,
+    sha256_file,
+    stable_digest,
+    write_checkpoint_receipt,
+)
 from works_registry import CATEGORY_CODES, OUTWARD_CATEGORIES, TAG_VOCAB
 
 
@@ -150,6 +156,36 @@ def adopt_final(
     if validate_errors:
         return None, validate_errors
 
+    # `adopt-final` is a release handoff, not an approval authority.  Validate a
+    # pre-existing author record before loading or writing any mutable runtime
+    # state.  Missing/rejected/pending approval therefore leaves state, job and
+    # receipt byte-for-byte untouched.
+    approval_path = cwd / "_draft-approval.md"
+    if not approval_path.exists():
+        return None, [
+            "缺 _draft-approval.md：adopt-final 不得替作者自签；"
+            "请先把作者真实拍板记录写入该文件（审批结论：通过）"
+        ]
+    try:
+        approval_bytes = approval_path.read_bytes()
+        approval_artifact, approval_errors = checkpoint_artifact(
+            cwd, "draft", source_mode="author-provided-final"
+        )
+    except (OSError, UnicodeError) as exc:
+        return None, [f"_draft-approval.md 无法读取：{exc}"]
+    if approval_errors:
+        return None, approval_errors
+    approval_anchor = approval_artifact.get("approval_anchor") or {}
+    approval_decision = str(approval_anchor.get("decision") or "unknown")
+    if approval_decision != "approved":
+        return None, [
+            "_draft-approval.md 尚无有效通过结论"
+            f"（当前={approval_decision}）；adopt-final 不得代替作者拍板"
+        ]
+    approval_sha256 = sha256_file(approval_path)
+    if approval_sha256 != str(approval_anchor.get("sha256") or ""):
+        return None, ["_draft-approval.md 在校验期间发生变化，请确认后重试"]
+
     # Imported lazily to avoid a module import cycle: pipeline imports this module
     # only from its command handlers.
     import pipeline
@@ -190,52 +226,49 @@ def adopt_final(
             carried["carried_over_by"] = "adopt-final"
             state["stages"][stage] = carried
 
-    approval = cwd / "_draft-approval.md"
-    # 🔴 2026-08-14 第 89 篇实跑教训：这里的覆写会把作者拍板时说的话、当时定下的
-    #    取舍、几轮返工的原因整份冲掉 —— 那一次是人工发现后手抄回来的。
-    #    文档虽然提醒过「要写在另一个文件里」，但提醒挡不住既成事实：
-    #    走完整流程的文章，作者审读记录本来就写在 _draft-approval.md 里，
-    #    到 adopt-final 这一步才被覆盖，作者根本没有机会「提前写到别处」。
-    #    改为：覆写前若检测到非机器块内容，自动落存一份，绝不静默丢弃。
-    if approval.exists():
-        try:
-            previous = approval.read_text(encoding="utf-8")
-        except OSError:
-            previous = ""
-        if previous.strip() and "# 作者定稿接管" not in previous:
-            backup = cwd / "_draft-decisions.md"
-            stamp = _now_iso()
-            header = (
-                f"\n\n---\n\n"
-                f"## 自动存档：adopt-final 覆写前的 _draft-approval.md（{stamp}）\n\n"
-            )
-            with backup.open("a", encoding="utf-8") as handle:
-                handle.write(header + previous.rstrip() + "\n")
-
-    approval.write_text(
-        "# 作者定稿接管\n\n"
-        "审批结论：通过\n"
-        "来源：作者提供定稿\n"
-        f"定稿 SHA-256：{sha256_file(final)}\n"
-        f"接管时间：{_now_iso()}\n"
-        "\n> 原 _draft-approval.md 若含作者拍板记录，已自动存档到 _draft-decisions.md。\n",
-        encoding="utf-8",
-    )
+    # Preserve the author's exact bytes.  The receipt binds this immutable
+    # evidence to the approved content subject; it never rewrites the evidence.
+    final_rel = final.relative_to(cwd).as_posix()
+    meta_rel = meta_file.relative_to(cwd).as_posix()
+    approval_subject = {
+        "kind": "author-approved-final",
+        "title": str(meta.get("title") or ""),
+        "final_path": final_rel,
+        "semantic_sha256": str(approval_artifact.get("semantic_sha256") or ""),
+        "meta_sha256": sha256_file(meta_file),
+    }
+    approval_evidence = {
+        "path": "_draft-approval.md",
+        "sha256": approval_sha256,
+        "decision": approval_decision,
+        "subject": approval_subject,
+        "subject_digest": stable_digest(approval_subject),
+    }
+    if approval_path.read_bytes() != approval_bytes:
+        return None, ["_draft-approval.md 在接管准备期间发生变化，请确认后重试"]
     checkpoint, checkpoint_errors = write_checkpoint_receipt(
         cwd,
         "draft",
         "author-provided-final",
-        "作者确认的定稿直接接入发布后端；不伪造写作期审查产物。",
+        "读取既有作者拍板记录接入发布后端；不代签、不改写审批证据。",
     )
     if checkpoint_errors:
-        approval.unlink(missing_ok=True)
         return None, checkpoint_errors
 
+    # Make the approval SHA and its exact subject explicit in the checkpoint
+    # receipt (the legacy artifact fields remain for existing verifiers).
+    receipt_path = cwd / CHECKPOINT_RECEIPT_FILE
+    receipt_payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    checkpoint = receipt_payload["checkpoints"]["draft"]
+    checkpoint["approval_evidence"] = approval_evidence
+    receipt_path.write_text(
+        json.dumps(receipt_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
     pipeline.save_state(cwd, state)
-    final_rel = final.relative_to(cwd).as_posix()
-    meta_rel = meta_file.relative_to(cwd).as_posix()
     job = {
-        "schema_version": 2,
+        "schema_version": 3,
         "job_id": str(uuid.uuid4()),
         "created_at": _now_iso(),
         "scope": RELEASE_SCOPE,
@@ -248,6 +281,7 @@ def adopt_final(
         "meta_path": meta_rel,
         "meta_sha256": sha256_file(meta_file),
         "checkpoint_digest": checkpoint["artifact_digest"],
+        "approval_evidence": approval_evidence,
         "state_run_id": state["run_id"],
         "required_terminal_state": "wechat-draft-verified",
         "formal_publish": False,
@@ -283,6 +317,31 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
         errors.append("release job 自身摘要不一致")
     if Path(str(job.get("article_dir") or "")).resolve() != cwd:
         errors.append("release job 的 article_dir 与当前目录不一致")
+    if int(job.get("schema_version") or 1) >= 3:
+        approval = job.get("approval_evidence")
+        if not isinstance(approval, dict):
+            errors.append("release job 缺作者审批证据")
+        else:
+            approval_rel = str(approval.get("path") or "")
+            approval_path = cwd / Path(approval_rel)
+            if approval_rel != "_draft-approval.md":
+                errors.append("release job 审批证据路径非法")
+            elif not approval_path.exists():
+                errors.append("作者审批证据 _draft-approval.md 已缺失")
+            elif sha256_file(approval_path) != str(approval.get("sha256") or ""):
+                errors.append("作者审批证据已变化，旧 release job 失效；需重新 adopt-final")
+            if approval.get("decision") != "approved":
+                errors.append("release job 绑定的作者审批结论不是 approved")
+            subject = approval.get("subject")
+            if not isinstance(subject, dict):
+                errors.append("release job 缺作者审批 subject")
+            elif stable_digest(subject) != str(approval.get("subject_digest") or ""):
+                errors.append("release job 作者审批 subject 摘要不一致")
+            else:
+                if str(subject.get("final_path") or "") != str(job.get("final_path") or ""):
+                    errors.append("作者审批 subject 与 release job 定稿路径不一致")
+                if str(subject.get("meta_sha256") or "") != str(job.get("meta_sha256") or ""):
+                    errors.append("作者审批 subject 与 release job meta 摘要不一致")
     for label, path_key, hash_key in (
         ("定稿", "final_path", "final_sha256"),
         ("article-meta", "meta_path", "meta_sha256"),

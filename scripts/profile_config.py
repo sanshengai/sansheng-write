@@ -15,6 +15,10 @@
   1. 环境变量 SANSHENG_WRITE_DATA_DIR
   2. 回退 <仓根>/data/
 
+路径配置支持 ``@workspace/...`` 占位符。流水线拿到文章目录后先调用
+``bind_workspace(article_dir)``，占位符便会解析到**承载该文章的当前 Git
+工作树**，而不是启动 Agent 时碰巧所在的主仓。
+
 单键缺失时用 profile.example 的同名键兜底，不崩；整个目录指错才明确报错。
 密钥永远不进 profile —— 那是 .env 的事（见 load_secret）。
 
@@ -28,7 +32,7 @@ import os
 import sys
 import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     from .visual_contracts import signature_visual_profile
@@ -48,8 +52,190 @@ ENV_DATA = "SANSHENG_WRITE_DATA_DIR"
 ENV_WORKS = "SANSHENG_WRITE_WORKS_FILE"
 ENV_FLYWHEEL = "SANSHENG_WRITE_FLYWHEEL_DIR"
 ENV_GOLDEN_LINES = "SANSHENG_WRITE_GOLDEN_LINES_FILE"
+ENV_WORKSPACE = "SANSHENG_WRITE_WORKSPACE_DIR"
+# 仅供当前 pipeline 及其子进程传播已经校验过的绑定；不从 .env 读取，也不作为
+# 用户配置入口。ENV_WORKSPACE 负责“选哪棵树”，本键只负责“把选择传给子进程”。
+ENV_ACTIVE_WORKSPACE = "SANSHENG_WRITE_ACTIVE_WORKSPACE"
 
 _cache: dict[str, Any] = {}
+_workspace: Path | None = None
+
+
+# 历史上 pipeline 把 scripts/ 放进 sys.path 后按 ``profile_config`` 导入，pytest
+# 和包式调用则按 ``scripts.profile_config`` 导入。两套名字若各加载一遍，会各有一份
+# _workspace/_cache。尽早给当前实例登记别名；即使宿主已经先加载了两份实例，下面的
+# active-workspace 同步仍会桥接它们的运行时状态。
+_this_module = sys.modules[__name__]
+if __name__ == "profile_config":
+    sys.modules.setdefault("scripts.profile_config", _this_module)
+elif __name__ == "scripts.profile_config":
+    sys.modules.setdefault("profile_config", _this_module)
+
+
+class WorkspaceBindingError(RuntimeError):
+    """``@workspace`` 被使用但文章所在工作树尚未绑定。"""
+
+
+def _nearest_git_root(start: Path) -> Path | None:
+    """返回 ``start`` 所在的最近 Git 工作树根（兼容 .git 文件与目录）。"""
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _validated_absolute_workspace(raw: str, *, setting: str) -> Path:
+    """校验一个显式/继承的工作区根；相对路径不能随 cwd 漂移。"""
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise WorkspaceBindingError(f"{setting} 必须是绝对路径：{raw!r}")
+    root = candidate.resolve()
+    if not root.is_dir():
+        raise WorkspaceBindingError(f"{setting} 指向的目录不存在：{root}")
+    return root
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _set_workspace(root: Path | None, *, propagate: bool) -> None:
+    global _workspace
+    if root != _workspace:
+        _workspace = root
+        _cache.clear()
+    if propagate:
+        if root is None:
+            os.environ.pop(ENV_ACTIVE_WORKSPACE, None)
+        else:
+            os.environ[ENV_ACTIVE_WORKSPACE] = str(root)
+
+
+def _sync_inherited_workspace() -> Path | None:
+    """从父进程恢复已校验绑定，并同步可能并存的另一模块实例。"""
+    raw = os.environ.get(ENV_ACTIVE_WORKSPACE, "").strip()
+    if not raw:
+        return _workspace
+    root = _validated_absolute_workspace(raw, setting=ENV_ACTIVE_WORKSPACE)
+    _set_workspace(root, propagate=False)
+    return root
+
+
+def bind_workspace(article_dir: str | os.PathLike[str]) -> Path | None:
+    """把路径占位符绑定到承载 ``article_dir`` 的当前工作树。
+
+    Git 仓内从文章目录向上找最近的 ``.git``；非 Git 数据目录可显式配置
+    ``SANSHENG_WRITE_WORKSPACE_DIR``。找不到时不妄猜层级，绝对路径配置仍能
+    正常使用，只有真正解析 ``@workspace`` 时才会给出可操作错误。
+
+    重复绑定另一个工作树会清掉品牌等派生缓存，确保同一 Python 进程不把上
+    一棵工作树的 profile 带进下一篇文章。
+    """
+    article = Path(article_dir).expanduser().resolve()
+    explicit = _env_or_dotenv(ENV_WORKSPACE)
+    if explicit:
+        if explicit.lower().startswith("@workspace"):
+            raise WorkspaceBindingError(
+                f"{ENV_WORKSPACE} 不能引用自身 @workspace；请给绝对路径"
+            )
+        root = _validated_absolute_workspace(explicit, setting=ENV_WORKSPACE)
+        if not _is_within(article, root):
+            raise WorkspaceBindingError(
+                f"{ENV_WORKSPACE} 必须包含当前文章目录：{article}；当前配置为 {root}"
+            )
+    else:
+        root = _nearest_git_root(article)
+    _set_workspace(root, propagate=True)
+    return root
+
+
+def workspace_root() -> Path | None:
+    """返回当前已绑定工作树；未绑定或文章不在 Git 工作树时返回 ``None``。"""
+    return _sync_inherited_workspace()
+
+
+def resolve_config_path(value: str, *, setting: str = "路径配置") -> Path:
+    """解析普通路径或 ``@workspace/...``，并拒绝 ``..`` 逃出工作树。"""
+    raw = str(value or "").strip()
+    is_workspace = raw == "@workspace" or raw.startswith(("@workspace/", "@workspace\\"))
+    if raw.lower().startswith("@workspace") and not is_workspace:
+        raise WorkspaceBindingError(
+            f"{setting} 的 @workspace 占位符格式非法：{raw!r}；"
+            "只允许 @workspace 或 @workspace/<相对路径>"
+        )
+    if not is_workspace:
+        return Path(raw).expanduser()
+    root = _sync_inherited_workspace()
+    if root is None:
+        raise WorkspaceBindingError(
+            f"{setting} 使用了 {raw!r}，但尚未绑定文章工作树；"
+            "请在文章目录确定后先调用 profile_config.bind_workspace(article_dir)"
+        )
+    suffix = raw[len("@workspace"):]
+    if suffix:
+        # 上面的合法性判断已保证第一字符是分隔符；只移除这一字符，保留后续
+        # anchor/drive 供检查，避免 ``@workspace/C:/...`` 或 UNC 被悄悄重解释。
+        suffix = suffix[1:]
+    suffix_path = Path(suffix)
+    if suffix_path.anchor:
+        raise WorkspaceBindingError(
+            f"{setting} 的 @workspace 后只能接相对路径：{raw!r}"
+        )
+    parts = [part for part in suffix.replace("\\", "/").split("/") if part]
+    resolved = root.joinpath(*parts).resolve()
+    if not _is_within(resolved, root):
+        raise WorkspaceBindingError(
+            f"{setting} 不能逃出当前工作树：{raw!r} → {resolved}"
+        )
+    return resolved
+
+
+class DynamicPath(os.PathLike[str]):
+    """兼容旧常量 API、但每次使用都重新求值的 PathLike 代理。
+
+    ``WORKS_FILE`` 等公开名字曾是导入时冻结的 ``Path``。保留这些名字能避免
+    破坏调用方，同时 ``Path(proxy)``、``open(proxy)``、``proxy.write_text()``
+    都会读取当前 workspace 的真实路径。
+    """
+
+    def __init__(self, resolver: Callable[[], Path]):
+        self._resolver = resolver
+
+    def current(self) -> Path:
+        return Path(self._resolver())
+
+    def __fspath__(self) -> str:
+        return os.fspath(self.current())
+
+    def __str__(self) -> str:
+        return str(self.current())
+
+    def __repr__(self) -> str:
+        return f"DynamicPath({self.current()!r})"
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.current(), name)
+
+    def __truediv__(self, other: str | os.PathLike[str]) -> Path:
+        return self.current() / other
+
+    def __eq__(self, other: object) -> bool:
+        try:
+            return self.current() == Path(other)  # type: ignore[arg-type]
+        except TypeError:
+            return False
+
+
+def dynamic_path(resolver: Callable[[], Path]) -> DynamicPath:
+    """创建一个延迟求值的 PathLike；供兼容既有模块级路径名使用。"""
+    return DynamicPath(resolver)
 
 
 def _env_or_dotenv(name: str) -> str:
@@ -67,7 +253,7 @@ def profile_dir() -> Path:
     """返回生效的 profile 目录。未配置 env 时回退 profile.example（正常路径）。"""
     p = _env_or_dotenv(ENV_PROFILE)
     if p:
-        d = Path(p).expanduser()
+        d = resolve_config_path(p, setting=ENV_PROFILE)
         if not d.is_dir():
             sys.exit(
                 f"[profile] {ENV_PROFILE} 指向的目录不存在：{d}\n"
@@ -85,7 +271,7 @@ def using_example_profile() -> bool:
 def data_dir() -> Path:
     """文章与作品库所在目录。缺省 <仓根>/data/，首次使用自动创建。"""
     p = _env_or_dotenv(ENV_DATA)
-    d = Path(p).expanduser() if p else SKILL_DIR / "data"
+    d = resolve_config_path(p, setting=ENV_DATA) if p else SKILL_DIR / "data"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -100,7 +286,7 @@ def works_file() -> Path:
     """
     p = _env_or_dotenv(ENV_WORKS)
     if p:
-        return Path(p).expanduser()
+        return resolve_config_path(p, setting=ENV_WORKS)
     return data_dir() / "works.yaml"
 
 
@@ -227,7 +413,7 @@ def workflow_checkpoints() -> list:
 def flywheel_dir() -> Path:
     p = _env_or_dotenv(ENV_FLYWHEEL)
     if p:
-        d = Path(p).expanduser()
+        d = resolve_config_path(p, setting=ENV_FLYWHEEL)
     elif not using_example_profile():
         d = profile_dir() / "flywheel"
     else:
@@ -265,7 +451,7 @@ def golden_lines_file() -> Path:
     """
     p = _env_or_dotenv(ENV_GOLDEN_LINES)
     if p:
-        return Path(p).expanduser()
+        return resolve_config_path(p, setting=ENV_GOLDEN_LINES)
     return corpus_dir() / "golden-lines.md"
 
 
@@ -330,10 +516,14 @@ def redact(text: str) -> str:
 
 
 def _reset_cache_for_tests() -> None:
+    global _workspace
     _cache.clear()
+    _workspace = None
+    os.environ.pop(ENV_ACTIVE_WORKSPACE, None)
 
 
 if __name__ == "__main__":
+    bind_workspace(Path.cwd())
     print(f"profile   : {profile_dir()}{'  (示例，未配置 ' + ENV_PROFILE + ')' if using_example_profile() else ''}")
     print(f"data      : {data_dir()}")
     print(f"works     : {works_file()}")

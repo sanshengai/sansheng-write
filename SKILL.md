@@ -23,7 +23,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 1. **品牌上下文** `profile/context.md`（品牌身份/人设/风格路由/对话约定）；未配置 profile 时回退仓内 `profile.example/context.md`（中性默认，正常路径不是错误）；皆无则兜底本文件「品牌身份 fallback」节。
 2. **品牌织网（可选）** `profile/brand-net.md`（阵地地图/伏笔池/承诺台账）。存在时大纲阶段**步骤 7.5 织网三问必答**（联动已发文/推自有阵地/埋伏笔），答案落 `article-meta.yaml` 的 `weave:`（细则进 outline.md 步骤 7.5）；归档把本篇许的愿登进 brand-net.md §四。**文件不存在则跳过织网环节，不报错**（织网是可选玩法）。
 
-> profile 目录由环境变量 `SANSHENG_WRITE_PROFILE_DIR` 指定（未配置则回退仓内 `profile.example/`），解析入口 `scripts/profile_config.py`。多阶段任务：完成一阶段再读下一个，勿一次性全读。
+> profile 目录由环境变量 `SANSHENG_WRITE_PROFILE_DIR` 指定（未配置则回退仓内 `profile.example/`），解析入口 `scripts/profile_config.py`。多 worktree 可在 `.env` 写 `@workspace/...`；pipeline 必须在文章目录确定后先 `bind_workspace(article_dir)`，禁止把数据与 profile 静默解析到 main。多阶段任务：完成一阶段再读下一个，勿一次性全读。
 
 ## 🔁 恢复协议（元指令）
 
@@ -69,7 +69,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 改任何颜色/圆角前必读（视觉 SSOT，改一处全局生效） | design-tokens.md |
 | 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
-| 生成音乐 / BGM / 主题曲（Lyria 3 Pro `lyria-3-pro-preview`） | music.md |
+| 生成音乐 / BGM / 主题曲（Lyria 自动生成、网页生成或复用既有成品） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
@@ -113,7 +113,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → 人工插入双音频并在微信预览试听首尾 → `wechat-audio-check --confirm-audition` → `finalize`）。若正式发布后草稿已被微信回收、`draft/get` 返回 `40007`，不得伪造草稿凭证；按 release-runtime.md 改用永久链接执行 `wechat-published-audio-check <wechat_url> --confirm-audition`，优先走官方已发表内容 API；账号对该 API 返回 `48001` 时，严格降级为同一微信官方公开页与原官方草稿回执的证据链，生成独立补验凭证。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 导出浅层人工上传包 → 人工插入双音频并在微信预览试听首尾 → `wechat-audio-check --confirm-audition` → `finalize`）。若正式发布后草稿已被微信回收、`draft/get` 返回 `40007`，不得伪造草稿凭证；按 release-runtime.md 改用永久链接执行 `wechat-published-audio-check <wechat_url> --confirm-audition`，优先走官方已发表内容 API；账号对该 API 返回 `48001` 时，严格降级为同一微信官方公开页与原官方草稿回执的证据链，生成独立补验凭证。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

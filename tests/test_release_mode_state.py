@@ -27,6 +27,10 @@ def _article(tmp_path: Path) -> Path:
         '  tag1: "标签"\n  tag2: "分类"\n',
         encoding="utf-8",
     )
+    (art / "_draft-approval.md").write_text(
+        "# 作者审读\n\n审批结论：通过\n作者意见：按此定稿发布。\n",
+        encoding="utf-8",
+    )
     return art
 
 

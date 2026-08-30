@@ -36,3 +36,50 @@ def test_observation_v2_has_ids_attempt_and_machine_fields(tmp_path, monkeypatch
         monkeypatch.delenv("SANSHENG_WRITE_PROFILE_DIR", raising=False)
         monkeypatch.delenv("SANSHENG_WRITE_RUN_ID", raising=False)
         profile_config._reset_cache_for_tests()
+
+
+def test_observation_attempt_key_includes_stage(tmp_path, monkeypatch):
+    flywheel = tmp_path / "flywheel"
+    monkeypatch.setenv("SANSHENG_WRITE_FLYWHEEL_DIR", str(flywheel))
+    profile_config._reset_cache_for_tests()
+    try:
+        log_observation("verify_writing", "verify_stage_elapsed", "ok", article="文章甲")
+        log_observation("verify_layout", "verify_stage_elapsed", "ok", article="文章甲")
+        log_observation("verify_writing", "verify_stage_elapsed", "ok", article="文章甲")
+
+        rows = [
+            json.loads(line)
+            for line in profile_config.observations_file().read_text(encoding="utf-8").splitlines()
+        ]
+        assert [row["stage"] for row in rows] == [
+            "verify_writing",
+            "verify_layout",
+            "verify_writing",
+        ]
+        assert [row["attempt"] for row in rows] == [1, 1, 2]
+    finally:
+        monkeypatch.delenv("SANSHENG_WRITE_FLYWHEEL_DIR", raising=False)
+        profile_config._reset_cache_for_tests()
+
+
+def test_observation_records_bound_workspace(tmp_path, monkeypatch):
+    workspace = tmp_path / "worktree"
+    article = workspace / "data" / "01-fixture"
+    article.mkdir(parents=True)
+    (workspace / ".git").mkdir()
+    flywheel = tmp_path / "flywheel"
+    monkeypatch.setenv("SANSHENG_WRITE_FLYWHEEL_DIR", str(flywheel))
+    profile_config._reset_cache_for_tests()
+    try:
+        assert profile_config.bind_workspace(article) == workspace.resolve()
+        log_observation("verify_writing", "verify_stage_elapsed", "ok", article="文章甲")
+
+        row = json.loads(
+            profile_config.observations_file().read_text(encoding="utf-8").splitlines()[-1]
+        )
+        assert row["workspace_root"] == str(workspace.resolve())
+        assert row["workspace_uid"].startswith("w-")
+        assert len(row["workspace_uid"]) == 12
+    finally:
+        monkeypatch.delenv("SANSHENG_WRITE_FLYWHEEL_DIR", raising=False)
+        profile_config._reset_cache_for_tests()

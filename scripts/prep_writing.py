@@ -58,6 +58,7 @@ except (AttributeError, ValueError):
 
 SKILL_DIR = Path(__file__).resolve().parent.parent          # 本 skill 根目录
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
+import profile_config as pc  # noqa: E402
 from profile_config import corpus_dir, authors_dir, author_compact  # noqa: E402
 
 # 作者名单不再硬编码 -- 从 profile/corpus/authors/ 里现有的 *.compact.md 动态发现。
@@ -754,6 +755,11 @@ def main():
     if not cwd.is_dir():
         print(f"ERROR: 目录不存在：{cwd}", file=sys.stderr)
         sys.exit(1)
+    try:
+        pc.bind_workspace(cwd)
+    except pc.WorkspaceBindingError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     content, missing = build_prep_context(cwd)
     out = cwd / "_prep-context.md"

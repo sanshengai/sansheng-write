@@ -8,6 +8,7 @@ import pytest
 from scripts import pipeline
 from scripts.baoyu_contract import build_anchors
 from scripts.evidence import (
+    build_publish_manifest,
     seal_visual_receipt,
     stable_digest,
     sha256_file,
@@ -192,6 +193,44 @@ def test_visual_receipt_binds_final_bytes(tmp_path):
     _png(article / "素材/cover.png", size=(1200, 510), color=(10, 20, 30))
     _, errors = verify_visual_receipt(article)
     assert any("旧 visual receipt 失效" in e for e in errors), errors
+
+
+def test_publish_manifest_binds_theme_origin_and_registry(tmp_path):
+    from scripts.audio_cards import render_card
+    from scripts.music_manifest import write_music_manifest
+
+    article = _visual_bundle(tmp_path)
+    md = article / "定稿.md"
+    md.write_text(
+        md.read_text(encoding="utf-8") + "\n" + render_card("theme", "AI 生成") + "\n",
+        encoding="utf-8",
+    )
+    theme = article / "边界之歌.mp3"
+    theme.write_bytes(b"theme-audio")
+    write_music_manifest(
+        article,
+        theme,
+        title="边界之歌",
+        duration_seconds=206.2,
+        provider="example-provider",
+        model="music-v3",
+        mode="web_manual",
+        registry_reference="catalog/theme-songs.json",
+        registry_entry="bio-example",
+    )
+    assert seal_visual_receipt(article)[1] == []
+
+    manifest, errors = build_publish_manifest(article)
+
+    assert errors == []
+    audio = next(item for item in manifest["files"] if item.get("role") == "theme-audio")
+    assert audio["origin"] == {
+        "provider": "example-provider",
+        "model": "music-v3",
+        "mode": "web_manual",
+    }
+    assert audio["registry"]["entry"] == "bio-example"
+    assert len(audio["music_manifest_digest"]) == 64
 
 
 def test_visual_receipt_binds_visual_profile_trace(tmp_path):

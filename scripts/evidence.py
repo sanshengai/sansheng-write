@@ -394,17 +394,24 @@ def build_publish_manifest(cwd: Path) -> tuple[dict, list[str]]:
     md_text = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
     if "<!-- AUDIO-CARD-START -->" in md_text:
         try:
-            from .audio_cards import locate_theme_audio
+            from .audio_cards import locate_theme_audio_record
         except ImportError:  # pragma: no cover - direct script execution
-            from audio_cards import locate_theme_audio
-        theme = locate_theme_audio(cwd)
+            from audio_cards import locate_theme_audio_record
+        theme, theme_errors = locate_theme_audio_record(cwd)
+        errors.extend(theme_errors)
         if theme is None:
-            errors.append("无法唯一定位主题曲 mp3，不能封存微信双音频包")
+            if not theme_errors:
+                errors.append("无法从 _music-manifest.json 定位主题曲，不能封存发布包")
         else:
             files.append({
-                "path": theme.relative_to(cwd).as_posix(),
-                "sha256": sha256_file(theme),
-                "bytes": theme.stat().st_size,
+                "path": theme.relative_path,
+                "sha256": theme.sha256,
+                "bytes": theme.bytes,
+                "duration_seconds": theme.duration_seconds,
+                "title": theme.title,
+                "origin": theme.origin,
+                "registry": theme.registry,
+                "music_manifest_digest": theme.manifest_digest,
                 "role": "theme-audio",
             })
     if "<!-- PODCAST-CARD-START -->" in md_text:
@@ -419,7 +426,7 @@ def build_publish_manifest(cwd: Path) -> tuple[dict, list[str]]:
                 "role": "podcast-audio",
             })
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "visual_manifest_digest": (receipt or {}).get("manifest_digest", ""),
         "files": files,
     }

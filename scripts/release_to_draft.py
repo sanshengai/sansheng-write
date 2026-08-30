@@ -22,11 +22,11 @@ from typing import Any, Callable
 import yaml
 
 try:
-    from .audio_cards import locate_theme_audio
+    from .audio_cards import locate_theme_audio_record
     from .evidence import stable_digest
     from .profile_config import brand
 except ImportError:  # pragma: no cover - direct script execution
-    from audio_cards import locate_theme_audio
+    from audio_cards import locate_theme_audio_record
     from evidence import stable_digest
     from profile_config import brand
 
@@ -187,15 +187,23 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
     roles: list[dict[str, Any]] = []
     errors: list[str] = []
     if "<!-- AUDIO-CARD-START -->" in text:
-        theme = locate_theme_audio(cwd)
+        theme, theme_errors = locate_theme_audio_record(cwd)
+        errors.extend(theme_errors)
         if theme is None:
-            errors.append("无法唯一定位主题曲 mp3；请清理歧义或保留带生成 sidecar 的文件")
+            if not theme_errors:
+                errors.append("无法从 _music-manifest.json 定位主题曲")
         else:
             roles.append({
                 "role": "theme",
                 "label": "🎵 阅读配乐｜本文主题曲",
-                "source": _relative(theme, cwd),
-                "sha256": hashlib.sha256(theme.read_bytes()).hexdigest(),
+                "title": theme.title,
+                "source": theme.relative_path,
+                "sha256": theme.sha256,
+                "bytes": theme.bytes,
+                "duration_seconds": theme.duration_seconds,
+                "origin": theme.origin,
+                "registry": theme.registry,
+                "music_manifest_digest": theme.manifest_digest,
                 "placeholder": "（👉 删除本段文字，并插入主题曲音频）",
             })
     if "<!-- PODCAST-CARD-START -->" in text:
@@ -213,7 +221,7 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
     if errors:
         return None, errors
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "created_at": _now(),
         "draft_media_id": media_id,
         "status": "manual_insert_required",
@@ -396,6 +404,27 @@ def verify_wechat_audio(
                 f"{role.get('label') or role.get('role')} 已在草稿交接后变化；"
                 "请重新运行 release-to-draft 生成交接单"
             )
+        expected_bytes = role.get("bytes")
+        if expected_bytes is not None:
+            try:
+                bytes_match = int(expected_bytes) == local.stat().st_size
+            except (TypeError, ValueError):
+                bytes_match = False
+            if not bytes_match:
+                errors.append(
+                    f"{role.get('label') or role.get('role')} 文件大小已在草稿交接后变化；"
+                    "请重新运行 release-to-draft 生成交接单"
+                )
+        if role.get("role") == "theme":
+            current_theme, manifest_errors = locate_theme_audio_record(cwd)
+            errors.extend(manifest_errors)
+            if current_theme is not None:
+                if current_theme.relative_path != source:
+                    errors.append("主题曲 manifest 的 playback.path 已在草稿交接后变化")
+                if current_theme.manifest_digest != str(
+                    role.get("music_manifest_digest") or ""
+                ):
+                    errors.append("主题曲来源 manifest 已在草稿交接后变化")
     expected, expected_errors = build_expected_draft(cwd)
     errors.extend(expected_errors)
     attempt_path = cwd / ATTEMPT_FILE

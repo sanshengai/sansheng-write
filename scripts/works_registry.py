@@ -17,7 +17,15 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 import profile_config as pc
 
-WORKS_FILE = pc.works_file()
+
+def works_path() -> Path:
+    """返回当前 workspace 的作品库路径（调用时解析，不在 import 时冻结）。"""
+    return pc.works_file()
+
+
+# 向后兼容 pipeline / 外部调用方曾经 import 的公开名字；它是延迟求值代理，
+# ``Path(WORKS_FILE)`` 与 ``WORKS_FILE.write_text(...)`` 均会落到当前 workspace。
+WORKS_FILE = pc.dynamic_path(works_path)
 
 # 受控分类码词表（5 主码 + ESS 软内容）；晨报不进库
 CATEGORY_CODES = {"AIT", "TUT", "OBS", "ROB", "KID", "ESS"}
@@ -69,7 +77,7 @@ WORK_STATUS = {"draft", "published", "unpublished"}
 
 def load_works(path=None):
     """读 works.yaml，返回 work 记录列表（文件或 works 键缺失则空列表）。"""
-    p = Path(path or WORKS_FILE)
+    p = Path(path) if path is not None else Path(WORKS_FILE)
     if not p.exists():
         return []
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
@@ -78,7 +86,8 @@ def load_works(path=None):
 
 def save_works(works, path=None):
     """写回 works.yaml，沿用仓库 yaml.dump 约定（中文不转义、不排序、块风格）。"""
-    Path(path or WORKS_FILE).write_text(
+    p = Path(path) if path is not None else Path(WORKS_FILE)
+    p.write_text(
         yaml.dump({"works": works}, allow_unicode=True, sort_keys=False,
                   default_flow_style=False),
         encoding="utf-8",

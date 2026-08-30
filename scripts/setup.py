@@ -129,6 +129,11 @@ def _print_module(m: dict, enabled: bool) -> None:
 
 
 def main() -> int:
+    try:
+        pc.bind_workspace(Path.cwd())
+    except pc.WorkspaceBindingError as exc:
+        print(f"  ❌ 工作区绑定失败：{exc}")
+        return 2
     print("=" * 64)
     print("  sansheng-write 配置引导")
     print("=" * 64)

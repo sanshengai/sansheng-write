@@ -9,7 +9,7 @@
 - 模型只产出 `visual-plan.json` 候选与独立视觉 QA；控制器单写者串行执行 pipeline、renderer、BGM、排版和微信事务。模型不得拥有长命令或发布命令。
 - 微信草稿只允许通过 `pipeline.py release-to-draft` 创建。不得拆开预检、推送、登记 ID。
 - 任一命令非零退出就停在当前步骤修复；禁止手工补状态、伪造凭证或调用低层发布脚本绕过。
-- BGM 是发布硬门；新文章不可 `skip bgm`。
+- BGM 是发布硬门；新文章不可 `skip bgm`。硬门认 `_music-manifest.json` 绑定的文件与真实来源，不要求特定厂商；网页手工生成或复用既有主题曲同样可用，但不得按文件名猜来源或把旧歌改写成新引擎出身。
 
 下文命令均在文章目录执行，`$SKILL` 指本 Skill 根目录。
 
@@ -21,7 +21,7 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
-`adopt-final` 同时绑定原始文件字节与作者正文摘要，不伪造事实复核或审稿记录。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；作者正文、meta 或 state 漂移仍会令 `_release-job.json` 失效。
+先把作者真实拍板记录保存在 `_draft-approval.md`，结论行明确为 `审批结论：通过`；`adopt-final` 只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录。缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。
 
 ## 1. 生成受限视觉任务单
 

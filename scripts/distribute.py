@@ -41,6 +41,7 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import profile_config as pc  # noqa: E402
 from profile_config import (  # noqa: E402
     distribute_channel,
     distribute_config,
@@ -942,6 +943,11 @@ def main(argv: list[str] | None = None) -> int:
     article_dir = Path(args.dir).resolve()
     if not article_dir.is_dir():
         print(f"[distribute] ✗ 目录不存在：{article_dir}", file=sys.stderr)
+        return 2
+    try:
+        pc.bind_workspace(article_dir)
+    except pc.WorkspaceBindingError as exc:
+        print(f"[distribute] ✗ {exc}", file=sys.stderr)
         return 2
 
     if args.cmd == "status":

@@ -36,6 +36,29 @@ def test_elapsed_ms_lands_in_metrics(tmp_path, monkeypatch):
     assert rec["metrics"]["elapsed_ms"] == 1234.6
 
 
+def test_elapsed_keeps_explicit_stage_status(tmp_path, monkeypatch):
+    fw = _fresh_flywheel(tmp_path, monkeypatch)
+    from contracts import log_observation
+
+    log_observation(
+        "verify_writing",
+        "verify_stage_elapsed",
+        "waiting_author",
+        "errors=1",
+        "测试文章",
+        metrics={"errors": 1, "stage_status": "waiting_author"},
+        elapsed_ms=25,
+    )
+    rec = _last_record(fw)
+    assert rec["verdict"] == "waiting_author"
+    assert rec["passed"] is None
+    assert rec["metrics"] == {
+        "errors": 1,
+        "stage_status": "waiting_author",
+        "elapsed_ms": 25.0,
+    }
+
+
 def test_omitting_elapsed_keeps_old_shape(tmp_path, monkeypatch):
     fw = _fresh_flywheel(tmp_path, monkeypatch)
     from contracts import log_observation

@@ -8,9 +8,13 @@
 from __future__ import annotations
 
 import html
-import json
 import re
 from pathlib import Path
+
+try:
+    from .music_manifest import ThemeAsset, validate_music_manifest
+except ImportError:  # pragma: no cover - direct script execution
+    from music_manifest import ThemeAsset, validate_music_manifest
 
 
 ROLE_ORDER = ("theme", "podcast")
@@ -91,25 +95,18 @@ def marker_count(text: str, role: str) -> int:
     return text.count(MARKERS[role][0])
 
 
+def locate_theme_audio_record(
+    article_dir: Path,
+) -> tuple[ThemeAsset | None, list[str]]:
+    """Resolve the exact theme asset from the article-local manifest only."""
+    return validate_music_manifest(Path(article_dir))
+
+
 def locate_theme_audio(article_dir: Path) -> Path | None:
-    """定位本轮主题曲；优先生成 sidecar，旧文章仅在候选唯一时退回。"""
-    candidates = sorted(
-        [
-            *article_dir.glob("*.mp3"),
-            *((article_dir / "素材").glob("*.mp3") if (article_dir / "素材").is_dir() else []),
-        ]
-    )
-    matches: list[tuple[str, Path]] = []
-    for mp3 in candidates:
-        sidecar = mp3.with_suffix(".json")
-        if not sidecar.is_file():
-            continue
-        try:
-            data = json.loads(sidecar.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        if data.get("prompt_version") and data.get("song_name"):
-            matches.append((str(data.get("generated_at") or ""), mp3))
-    if matches:
-        return max(matches, key=lambda item: item[0])[1]
-    return candidates[0] if len(candidates) == 1 else None
+    """Compatibility wrapper returning only the manifest-bound playback path.
+
+    Deliberately do not scan MP3 files or generator sidecars.  Callers that need
+    diagnostics should use :func:`locate_theme_audio_record`.
+    """
+    asset, errors = locate_theme_audio_record(article_dir)
+    return asset.path if asset is not None and not errors else None

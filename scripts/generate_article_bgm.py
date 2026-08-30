@@ -67,8 +67,10 @@ from pathlib import Path
 
 try:
     from .audio_cards import upsert_card
+    from .music_manifest import probe_audio_duration, write_music_manifest
 except ImportError:  # pragma: no cover - direct script execution
     from audio_cards import upsert_card
+    from music_manifest import probe_audio_duration, write_music_manifest
 from datetime import datetime
 
 # Windows GBK 控制台下 print 含 emoji/全角会 UnicodeEncodeError（成功路径也会崩、退出码非0）。
@@ -612,6 +614,16 @@ def main():
                              "🔴 固定 lyria-3-pro-preview，除非你明确知道在做什么，否则不要传")
     parser.add_argument("--output", default=None, help="输出 MP3 文件路径")
     parser.add_argument(
+        "--registry-ref",
+        default="article-meta.yaml#music",
+        help="主题曲身份注册表的逻辑引用（默认 article-meta.yaml#music）",
+    )
+    parser.add_argument(
+        "--registry-entry",
+        default=None,
+        help="注册表条目标识（默认使用歌名）",
+    )
+    parser.add_argument(
         "--skip-cover",
         action="store_true",
         help="只生成主题曲与 AUDIO-CARD，不调用 Google 生成 bgm_cover.png",
@@ -696,6 +708,30 @@ def main():
           f"{style_info['name']} · {vocal_info['label']}")
     print(f"{'=' * 60}")
 
+    declared_duration = float(extra.get("music_duration") or 0) / 1000
+    measured_duration, _probe_error = probe_audio_duration(output_path)
+    duration_seconds = measured_duration or declared_duration
+    if duration_seconds <= 0:
+        print("❌ 无法取得主题曲正时长，不能写 _music-manifest.json。")
+        print("   请安装 ffprobe 后重试；禁止只凭 MP3 文件名或 sidecar 继续发布。")
+        sys.exit(2)
+
+    try:
+        manifest_path = write_music_manifest(
+            article_dir,
+            output_path,
+            title=song_name,
+            duration_seconds=duration_seconds,
+            provider="google-vertex",
+            model=model,
+            mode="api",
+            registry_reference=args.registry_ref,
+            registry_entry=args.registry_entry or song_name,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"❌ 无法写入主题曲来源契约：{exc}")
+        sys.exit(2)
+
     meta = {
         "article": str(article_file), "engine": "lyria3", "model": model,
         "endpoint": VERTEX_INTERACTIONS.format(project=args.project),
@@ -705,10 +741,14 @@ def main():
         "theme_brief": theme_brief, "imagery": imagery, "song_name": song_name,
         "prompt": music_prompt, "output": str(output_path),
         "extra_info": extra, "generated_at": timestamp,
+        "music_manifest_required": True,
+        "music_manifest": manifest_path.name,
+        "origin": {"provider": "google-vertex", "model": model, "mode": "api"},
     }
     output_path.with_suffix(".json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"  📋 元数据: {output_path.with_suffix('.json').name}")
+    print(f"  🔒 来源契约: {manifest_path.name}")
 
     # 歌词单独落一份纯文本，便于人工校对（旧 MiniMax 引擎拿不到歌词，这是 Lyria 3 新增能力）
     if extra.get("lyrics"):

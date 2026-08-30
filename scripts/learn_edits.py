@@ -44,15 +44,15 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from profile_config import corpus_dir, lessons_file, playbook_file  # noqa: E402
+import profile_config as pc  # noqa: E402
 # 飞轮状态归 profile 层（配置了 profile 时在 <profile>/flywheel/，随私有仓版本化；
 # 未配置时回退仓根空壳——复核 B-4：个人数据不写 git 跟踪文件、不再依赖 skip-worktree）
-LESSONS_FILE = lessons_file()
-PLAYBOOK_FILE = playbook_file()
+LESSONS_FILE = pc.dynamic_path(pc.lessons_file)
+PLAYBOOK_FILE = pc.dynamic_path(pc.playbook_file)
 # 声纹库落盘走 profile 覆盖层（未配置 SANSHENG_WRITE_PROFILE_DIR 时回退
 # profile.example/corpus/voice-samples.md）。prep_writing.py §一·声 读同一个文件，
 # 确保写=读同一处。
-VOICE_CORPUS_FILE = corpus_dir() / "voice-samples.md"
+VOICE_CORPUS_FILE = pc.dynamic_path(lambda: pc.corpus_dir() / "voice-samples.md")
 
 _VOICE_HEADER = (
     "# 作者声纹样本库\n"
@@ -416,6 +416,14 @@ if __name__ == "__main__":
     ap_group.add_argument("--file", help="从文件读取段落正文（整文件内容作为一段）")
 
     args = parser.parse_args()
+
+    # pipeline 会以子进程运行本脚本；final 所在文章目录既能独立绑定，也会与
+    # 父进程通过 SANSHENG_WRITE_ACTIVE_WORKSPACE 传播的根互相校验。
+    binding_source = Path(args.final).expanduser().resolve() if args.command == "diff" else Path.cwd()
+    try:
+        pc.bind_workspace(binding_source)
+    except pc.WorkspaceBindingError as exc:
+        parser.error(str(exc))
 
     if args.command == "diff":
         diff_files(args.draft, args.final, promote_voice=args.promote_voice)

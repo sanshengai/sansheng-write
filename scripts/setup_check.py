@@ -90,6 +90,12 @@ def _check_optional_distribute() -> None:
 
 
 def main() -> int:
+    import profile_config as pc
+    try:
+        pc.bind_workspace(Path.cwd())
+    except pc.WorkspaceBindingError as exc:
+        print(f"  ❌ 工作区绑定失败：{exc}")
+        return 1
     print("=" * 62)
     print("  sansheng-write 环境体检")
     print("=" * 62)
