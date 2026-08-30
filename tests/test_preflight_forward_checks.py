@@ -88,6 +88,12 @@ def test_anchor_at_paragraph_end_passes(tmp_path):
     assert not _fails(pipeline._preflight_checks(d), "锚点")
 
 
+def test_anchor_wrapped_by_inline_tag_at_paragraph_end_passes(tmp_path):
+    body = "开头。\n\n<mark>读者读到的是你，不是模型。</mark>\n\n下一段。\n"
+    d = _article(tmp_path, body, _plan("读者读到的是你，不是模型。"))
+    assert not _fails(pipeline._preflight_checks(d), "锚点")
+
+
 def test_anchor_not_unique_is_caught(tmp_path):
     body = "同一句话。\n\n中间段。\n\n同一句话。\n"
     d = _article(tmp_path, body, _plan("同一句话。"))

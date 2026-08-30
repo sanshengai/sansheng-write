@@ -33,6 +33,9 @@ PODCAST_AUDIO_BLOCK_RE = re.compile(
     r"(?:\r?\n)?"
 )
 AUDIO_BLOCK_RES = (THEME_AUDIO_BLOCK_RE, PODCAST_AUDIO_BLOCK_RE)
+INLINE_CLOSING_TAGS_RE = re.compile(
+    r"(?i)(?:[ \t]*</(?:a|b|cite|code|del|em|i|ins|kbd|mark|q|s|small|span|strong|sub|sup|u)>)*[ \t]*"
+)
 LEGACY_VISUAL_REF_RE = re.compile(
     r"(?m)^[ \t]*!\[[^\]\r\n]*\]"
     r"\((?:\./)?素材/infographic-?\d+\.png(?:\s+[\"'][^\"']*[\"'])?\)"
@@ -55,6 +58,24 @@ def strip_machine_assembly(text: str) -> str:
 
 def author_content_sha256(text: str) -> str:
     return hashlib.sha256(strip_machine_assembly(text).encode("utf-8")).hexdigest()
+
+
+def safe_anchor_insertion_index(text: str, match: re.Match[str]) -> int | None:
+    """Return the paragraph-end insertion point after harmless inline closers.
+
+    Visual anchors are authored as visible prose.  When the prose is wrapped in
+    inline HTML such as ``<mark>…</mark>``, the closing tag is not part of the
+    visible anchor.  Inserting at ``match.end()`` would split that tag pair and
+    make machine-block removal change the author-controlled Markdown.
+    """
+    start = match.end()
+    boundary = re.search(r"\n[ \t]*\n|\Z", text[start:])
+    if boundary is None:  # defensive; the \Z branch should always match
+        return None
+    trailing = text[start : start + boundary.start()]
+    if INLINE_CLOSING_TAGS_RE.fullmatch(trailing) is None:
+        return None
+    return start + len(trailing)
 
 
 def _visual_block(item: dict[str, Any]) -> str:
@@ -129,7 +150,13 @@ def assemble_release_markdown(
                 f"信息图 {item.get('id')} 的 anchor 必须在定稿.md 作者正文中唯一命中 1 次；"
                 f"当前命中 {len(hits)} 次：{anchor!r}"
             ]
-        add(hits[0].end(), item)
+        insertion_index = safe_anchor_insertion_index(body, hits[0])
+        if insertion_index is None:
+            return None, [
+                f"信息图 {item.get('id')} 的 anchor 必须落在段末；"
+                f"当前锚句后仍有可见正文：{anchor!r}"
+            ]
+        add(insertion_index, item)
 
     assembled = body
     for index in sorted(insertions, reverse=True):

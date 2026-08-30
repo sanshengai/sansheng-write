@@ -550,6 +550,35 @@ def test_release_markdown_assembly_is_idempotent_and_references_every_infographi
     assert text.index("infographic-04.png") > text.index("结尾锚点")
 
 
+def test_release_markdown_assembly_places_visual_after_inline_closing_tag(tmp_path):
+    from scripts.assemble_release import assemble_release_markdown
+
+    article = _article(tmp_path)
+    draft = article / "定稿.md"
+    original = draft.read_text(encoding="utf-8")
+    draft.write_text(
+        original.replace(
+            "# 教程 | 视觉合同\n\n",
+            "# 教程 | 视觉合同\n\n<mark>开篇锚点</mark>\n\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    plan = _plan()
+    plan["infographics"][0]["anchor"] = "开篇锚点"
+    (article / "visual-plan.json").write_text(
+        json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    result, errors = assemble_release_markdown(article)
+
+    assert errors == []
+    assert result is not None
+    text = draft.read_text(encoding="utf-8")
+    assert "<mark>开篇锚点</mark>\n\n<!-- SANSHENG-VISUAL-START:01 -->" in text
+
+
 def test_release_markdown_assembly_removes_legacy_unsealed_infographic_refs(
     tmp_path,
 ):

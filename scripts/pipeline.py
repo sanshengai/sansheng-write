@@ -3479,6 +3479,8 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     #        装配会把整段劈成两半，判定为「改变作者正文」而拒绝写入）---
     if text and plan_path.exists():
         try:
+            from assemble_release import safe_anchor_insertion_index
+
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
             bad = []
             for item in plan.get("infographics") or []:
@@ -3489,12 +3491,10 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
                 if len(hits) != 1:
                     bad.append(f"{item.get('id')}:命中{len(hits)}次")
                     continue
-                end = hits[0].end()
-                tail = text[end:end + 2]
-                if tail and not tail.startswith("\n\n") and tail.strip():
+                if safe_anchor_insertion_index(text, hits[0]) is None:
                     bad.append(f"{item.get('id')}:锚点在段落中间")
             add("ok" if not bad else "fail", "信息图锚点",
-                "全部唯一且落在段末" if not bad
+                "全部唯一且落在安全段末" if not bad
                 else f"{'、'.join(bad)} —— assemble-release 会拒绝装配（改变作者正文）")
         except Exception as exc:
             add("warn", "信息图锚点", f"检查异常：{exc}")
