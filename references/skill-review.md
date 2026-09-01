@@ -21,7 +21,7 @@
 每行一个 v2 JSON，核心字段：`record_id/run_id/recorded_at/article_uid/stage/event/attempt/passed/severity/issue_codes/metrics/artifact_digest/source/workspace_root/workspace_uid`；同时保留 v1 的 `ts/article/verdict/detail` 兼容旧工具。pipeline 已绑定文章工作树时，`workspace_root` 记录解析后的绝对路径、`workspace_uid` 记录稳定短哈希；独立调用方尚未绑定时两者为空。
 
 - `stage`：format_layout / verify_writing / archive
-- `event`：门名或归档事件（verify_bold_density / verify_cjk_punctuation / registry_write / verify_closed_loop / ...）
+- `event`：门名或归档事件（verify_bold_density / verify_cjk_punctuation / registry_write / verify_closed_loop / copy_plan / copy_verify / source_cleanup / ...）
 - `verdict`：该门这次的判定（ok / fail / warning / blocked / suspicious ...）
 - `detail`：简短事实（命中几处、ratio 多少），**不含判断**
 
@@ -46,6 +46,7 @@
 - **疑似误判门**：某门几乎每篇 fail → 规则可能太严
 - **字段不足**：observation 现有字段是否够支撑判断 → 要不要让脚本多记点
 - **发布闭环异常**：`archive` 的 `registry_write` / `verify_closed_loop` 是否反复失败或重试 → 区分元数据问题、派生视图漂移与作品库写入故障
+- **实体归档异常**：`copy_plan` / `copy_verify` / `source_cleanup` 是否失败 → 区分未配置永久根、目标冲突、复制期仍有写者、哈希复验失败与源目录清理失败；作品库登记成功不能证明文件已经移出 worktree
 
 **🕸 织网两指标（数据源看各篇 `article-meta.yaml` + `profile/brand-net.md`）：**
 - **织网执行率**：近 N 篇里 `weave:` 三问真答了几篇（含"不织:理由"也算答）；空着/没这字段 = 步骤 7.5 被跳，查原因

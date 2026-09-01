@@ -25,6 +25,8 @@ pipeline.py — 微信公众号写作流水线管理器
                                                             草稿被回收后的正式文章补验
   python SKILL/scripts/pipeline.py archive                  发布归档：写解析后的作品库 + 刷新派生视图
   python SKILL/scripts/pipeline.py finalize <wechat_url>    正式发布收尾：登记链接 + 归档 + 验证
+  python SKILL/scripts/pipeline.py physical-archive --delete-source
+                                                            全部写者退出后实体归档文章目录
   python SKILL/scripts/pipeline.py history                  [DEPRECATED] 改用 archive
   python SKILL/scripts/pipeline.py orchestrator on|off      切换编排器并行/串行（默认 on）
 
@@ -2706,6 +2708,68 @@ def cmd_archive(cwd: Path, extras: list) -> bool:
     return True
 
 
+def cmd_physical_archive(
+    cwd: Path,
+    *,
+    archive_root: str = "",
+    delete_source: bool = False,
+) -> bool:
+    """把文章目录交付到独立永久归档根；不属于网站/Skill 发布流程。"""
+    from physical_archive import PhysicalArchiveError, archive_article
+    from profile_config import physical_archive_dir
+
+    state = load_state(cwd)
+    passed, errors = verify_stage("archive", cwd, state)
+    if not passed:
+        _log_archive_event(
+            cwd,
+            "copy_plan",
+            "fail",
+            f"archive_verify_errors={len(errors)}",
+            error_count=len(errors),
+        )
+        print("❌ 实体归档前必须先完成并验证作品库 archive：")
+        for error in errors:
+            print(f"   • {error}")
+        return False
+
+    try:
+        root = Path(archive_root).expanduser() if archive_root else physical_archive_dir()
+    except Exception as exc:
+        print(f"❌ 实体归档配置无效：{exc}")
+        return False
+    if root is None:
+        print("❌ 未配置 SANSHENG_WRITE_ARCHIVE_DIR；它必须指向已存在的绝对永久归档根目录。")
+        return False
+
+    _log_archive_event(cwd, "copy_plan", "ok", f"target={Path(root) / cwd.name}")
+    try:
+        receipt = archive_article(cwd, root, delete_source=delete_source)
+    except PhysicalArchiveError as exc:
+        _log_archive_event(cwd, "copy_verify", "fail", str(exc), error_count=1)
+        print(f"❌ 实体归档失败：{exc}")
+        return False
+
+    _log_archive_event(
+        cwd,
+        "copy_verify",
+        "ok",
+        f"files={receipt['source_file_count']} bytes={receipt['source_bytes']}",
+    )
+    _log_archive_event(
+        cwd,
+        "source_cleanup",
+        "ok" if receipt["source_deleted"] else "warning",
+        "deleted=true" if receipt["source_deleted"] else "deleted=false",
+    )
+    print(f"✅ 实体归档完成：{receipt['target']}")
+    print(
+        f"   已核对 {receipt['source_file_count']} 个文件 / {receipt['source_bytes']} 字节；"
+        f"源目录{'已删除' if receipt['source_deleted'] else '仍保留'}。"
+    )
+    return True
+
+
 def _archived_code(cwd: Path) -> str:
     """Read CODE from this worktree's 作品库.yaml. Fail closed.
 
@@ -4258,6 +4322,21 @@ def main():
     p_f = sub.add_parser("finalize", help="正式发布收尾：登记永久链接 + 归档 + 验证")
     p_f.add_argument("wechat_url", help="微信永久链接，如 https://mp.weixin.qq.com/s/xxx")
 
+    p_pa = sub.add_parser(
+        "physical-archive",
+        help="全部文章写者退出后，把整篇目录安全移入独立永久归档根",
+    )
+    p_pa.add_argument(
+        "--archive-root",
+        default="",
+        help="临时覆盖 SANSHENG_WRITE_ARCHIVE_DIR；必须是已存在的绝对路径",
+    )
+    p_pa.add_argument(
+        "--delete-source",
+        action="store_true",
+        help="SHA-256 复验完成后删除当前工作树中的源目录",
+    )
+
     sub.add_parser(
         "moments-copy",
         help="只生成朋友圈文案；不查网、不归档、不部署、不调用 finalize",
@@ -4467,6 +4546,13 @@ def main():
         # 让上游 `&&`/退出码判断能检测归档失败（cmd_archive 返回 False 即 abort）。
         if not cmd_archive(cwd, getattr(args, "extras", [])):
             sys.exit(1)
+    elif args.cmd == "physical-archive":
+        if not cmd_physical_archive(
+            cwd,
+            archive_root=getattr(args, "archive_root", "") or "",
+            delete_source=getattr(args, "delete_source", False),
+        ):
+            sys.exit(2)
     elif args.cmd == "finalize":
         cmd_finalize(args.wechat_url, cwd)
     elif args.cmd == "moments-copy":

@@ -16,6 +16,8 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 > ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
 
+> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`SANSHENG_WRITE_HANDOFF_DIR` 仅是人工上传临时包，禁止拿它当成品归档。
+
 ## 🟢 启动前必读（元指令，先于任何阶段）
 
 进任一阶段**第一件事按序读两份共享上下文**，读完不再问已知信息（主题色/账号名/创作者背景），只追问本任务才变的参数（风格/受众/字数）：
@@ -72,6 +74,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 生成音乐 / BGM / 主题曲（Lyria 自动生成、网页生成或复用既有成品） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
+| 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
 | 转图文 / 拆图文（**低频能力**；仅按篇显式要求时用；图片也是文章，先定唯一传播命题） | xhs-storyboard.md |
 | 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭且不随正式链接自动触发**；小红书 3:4、微博 1:1 分别生图） | distribute.md |
@@ -121,13 +124,16 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 - **`prep_writing.py` 写作前自动聚合进 `_prep-context.md`（不必手翻）：** profile 语料池的 风格示例库 / 金句库（按主题）/ 反例对照库 / voice 语料（gate：>200 字≈2-3 段即注入）+ `profile/corpus/authors/{X}.compact.md`（用户自备的作者风格手册；无自备手册时注入仓内原创的 `profile/corpus/voice-samples.md` 做基础人味兜底）。金句库路径只认 `profile_config.py::golden_lines_file()`；已有库在别处时用 `SANSHENG_WRITE_GOLDEN_LINES_FILE` 直指，禁止复制第二份。
 - **按主题人工挑读（非自动）：** 若 profile 自带精选样本库 `profile/corpus/samples/{作者}/`，写作前可按当前风格路由抽读 2-3 篇（无对应作者回退 `profile/corpus/voice-samples.md`）。按需查 profile 里的品牌规范 / 选题储备文件。
 
-## 成品输出目录
+## 过程输出与永久归档目录
 
 ```
 {数据目录}/{N}-{选题名}/
   ├── 大纲.md ← 大纲   ├── 定稿.md ← 写作   ├── 定稿.html ← 排版   └── 素材/ ← 所有 AI 生成图片
+
+{SANSHENG_WRITE_ARCHIVE_DIR}/{N}-{选题名}/
+  └── 全部流程完成后的永久成品；含 _physical-archive-receipt.json
 ```
-编号按 `{数据目录}/` 下已有最大序号递增。
+编号按 `{数据目录}/` 下已有最大序号递增。第一处是工作区过程目录，第二处才是长期存档；实体归档后默认不在两处保留重复副本。
 
 ## 品牌身份（fallback 兜底 — 正常优先读 `profile/context.md`）
 
@@ -153,5 +159,5 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 ## references 三级分层（按加载时机分层）
 
 - **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。真正每次开局无条件读的是 `profile/context.md` + 可选 `profile/brand-net.md`。
-- **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
+- **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列，含实体归档 `physical-archive.md`）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
 - **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / visual-qa（接复核器 + 视觉闸三种静默失效）/ orchestration / agent-contracts / learn-edits / skill-review / `_archive/候补技法池.md`（技法池候补备料，craft-techniques 主池不够时才翻）。

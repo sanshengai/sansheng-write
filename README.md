@@ -229,6 +229,7 @@ python scripts/setup_check.py                       # 1. 体检：告诉你能�
 cp -r profile.example ~/my-writing-profile          # 2. 复制一份 profile
 export SANSHENG_WRITE_PROFILE_DIR=~/my-writing-profile
 export SANSHENG_WRITE_DATA_DIR=~/my-articles        # 3. 文章存哪
+export SANSHENG_WRITE_ARCHIVE_DIR=~/article-archive # 全部流程结束后的永久成品根（绝对路径）
 $EDITOR ~/my-writing-profile/context.md             # 4. 告诉它你是谁（写给谁、怎么说话）
 $EDITOR ~/my-writing-profile/brand.yaml             # 5. 署名 + 主题 + 身份卡（发公众号才需要）
 
@@ -258,6 +259,8 @@ cp .env.example .env                                # 填生图 key；微信凭�
 作品库、飞轮与金句库写成 `@workspace/...`。`pipeline.py --dir <文章目录>` 会先
 绑定承载该文章的 Git 工作树，再解析这些路径；同一进程切到另一棵树时也会重新
 求值。非 Git 目录可用绝对路径，或显式配置 `SANSHENG_WRITE_WORKSPACE_DIR`。
+
+文章先在当前工作树的 `SANSHENG_WRITE_DATA_DIR` 中生产。所有会继续写该目录的任务结束后，用 `pipeline.py --dir <文章目录> physical-archive --delete-source` 搬到 `SANSHENG_WRITE_ARCHIVE_DIR`；永久根必须是已存在的绝对路径，不能写 `@workspace`。`pipeline.py archive` 只是作品库登记，`SANSHENG_WRITE_HANDOFF_DIR` 只是人工上传临时包，二者都不会替你完成整篇文件归档。
 
 **换主题一行搞定**（`profile/brand.yaml`）：
 

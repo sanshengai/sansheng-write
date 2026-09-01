@@ -177,7 +177,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 `finalize` 在任何写盘前还会再次读回远端证据源：正常路径读草稿，恢复路径读绑定永久链接的正式文章；本地音频、远端播放器身份、正文或交接哈希任一变化，旧凭证立即失效。公众号、官网与 RSS 复用同一个 `dist/podcast/audio.mp3`，禁止各自重生成一份。新生成音频另有 `dist/podcast/audio.manifest.json` 绑定语义输入、生成参数、字节哈希、编码与时长；存量无 manifest 的音频继续兼容，但下次重生成会自动升级。
 
 - 播客配置 `auto_after_finalize: true` 时必须继续 `generate → publish --confirm` 到 receipt；同源 receipt 幂等跳过。**NotebookLM 登录失效时 `podcast_episode.py` 会自动拉起 `nlm login` 弹浏览器授权（2026-07-30 起），探测恢复后继续原流程**；只有自动登录失败才提示人工 `nlm login`（无人值守环境用 `SANSHENG_NLM_NO_AUTOLOGIN=1` 关回纯提示）。不得误说成“音频只能手动生成”。
-- 小红书与微博不随 `finalize` 自动规划。用户明确点名某篇要「转小红书 / 发微博」后，才运行 `distribute.py plan --only ...`，分别制作 3:4 与 1:1 专属图片并预填发布页。
+- 小红书与微博不随 `finalize` 自动规划。用户明确点名某篇要「转小红书 / 发微博」后，才运行 `distribute.py plan --only ...`，分别制作 3:4 与 1:1 专属图片并预填发布页。所有会继续写文章目录的任务结束后，再按 `physical-archive.md` 做永久文件交付；它不属于 `finalize`、作品库 `archive` 或人工上传 handoff。
 - **播客音频同时上官网「听全文」（2026-07-30 拍板规则）**：`finalize` 必须先执行自动播客的 `generate → publish --confirm`，确认 `dist/podcast/audio.mp3` 与 RSS receipt 都存在之后，才能同步官网；不得先部署一个只有主题曲的版本。把该音频随文章目录一起 commit，官网构建时 `prepare-songs.py` 自动复制为 `public/song-assets/{code}/podcast.mp3`，文章页主题曲卡下出现「🎧 听全文 · 播客版」播放器（全站单例播放器，天然互斥暂停），文章列表标题旁出现「🎧 有音频」标记。部署走 `publish-to-website.sh {code}`（`-ArticleCodesCsv` 放行 song-assets）。设计口径：主题曲=配乐读、播客=代替读，两卡并存不做选择 UI；列表只放标记不放播放按钮。
 - 朋友圈状态先放 commentary；final 只逐字输出 `_moments-copy.md`，首字符为 emoji，前后不得混入解释。
 

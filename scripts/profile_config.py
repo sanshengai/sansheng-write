@@ -53,6 +53,7 @@ ENV_WORKS = "SANSHENG_WRITE_WORKS_FILE"
 ENV_FLYWHEEL = "SANSHENG_WRITE_FLYWHEEL_DIR"
 ENV_GOLDEN_LINES = "SANSHENG_WRITE_GOLDEN_LINES_FILE"
 ENV_WORKSPACE = "SANSHENG_WRITE_WORKSPACE_DIR"
+ENV_ARCHIVE = "SANSHENG_WRITE_ARCHIVE_DIR"
 # 仅供当前 pipeline 及其子进程传播已经校验过的绑定；不从 .env 读取，也不作为
 # 用户配置入口。ENV_WORKSPACE 负责“选哪棵树”，本键只负责“把选择传给子进程”。
 ENV_ACTIVE_WORKSPACE = "SANSHENG_WRITE_ACTIVE_WORKSPACE"
@@ -288,6 +289,26 @@ def works_file() -> Path:
     if p:
         return resolve_config_path(p, setting=ENV_WORKS)
     return data_dir() / "works.yaml"
+
+
+def physical_archive_dir() -> Path | None:
+    """永久实体归档根目录；与当前文章工作树故意分离。
+
+    该目录用于完成全部写作/发布/分发后的最终文件搬运，不能写成
+    ``@workspace``，否则会再次把成品留在当前 ORCA 子工作树。未配置时返回
+    ``None``，由调用方明确提示，不做隐式猜测。
+    """
+    raw = _env_or_dotenv(ENV_ARCHIVE)
+    if not raw:
+        return None
+    if raw.lower().startswith("@workspace"):
+        raise WorkspaceBindingError(
+            f"{ENV_ARCHIVE} 必须是独立于工作树的绝对路径，不能使用 @workspace"
+        )
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise WorkspaceBindingError(f"{ENV_ARCHIVE} 必须是绝对路径：{raw!r}")
+    return candidate.resolve()
 
 
 # ===== 【第 2 节】品牌 token（E-1：一处改完，全局换皮） =====
@@ -527,6 +548,7 @@ if __name__ == "__main__":
     print(f"profile   : {profile_dir()}{'  (示例，未配置 ' + ENV_PROFILE + ')' if using_example_profile() else ''}")
     print(f"data      : {data_dir()}")
     print(f"works     : {works_file()}")
+    print(f"archive   : {physical_archive_dir() or '(未配置)'}")
     print(f"golden    : {golden_lines_file()}")
     print(f"flywheel  : {flywheel_dir()}  (playbook / lessons / observations)")
     b = brand()

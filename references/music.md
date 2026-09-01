@@ -185,6 +185,8 @@ Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色
 需要把人工上传所需资产导出到浅层目录时，先配置
 `SANSHENG_WRITE_HANDOFF_DIR`，再运行：
 
+> 这里的 handoff 是给微信后台手工上传的临时资产包，不是文章永久归档目录；整篇成品必须按 `physical-archive.md` 走 `physical-archive`。
+
 ```bash
 python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
 # 目标已有不同快照时不覆盖；显式建新版：
