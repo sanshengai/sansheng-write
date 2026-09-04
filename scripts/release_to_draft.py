@@ -242,8 +242,10 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
 def _without_audio_slots(html: str) -> str:
     """Remove only the two intentional manual-insert deltas before readback diff."""
     value = str(html or "")
-    value = value.replace("（👉 删除本段文字，并插入主题曲音频）", "")
-    value = value.replace("（👉 删除本段文字，并插入播客音频）", "")
+    # 手动插入占位文案有多种历史变体：通用版、含时长的主题曲版（如「插入 206.2 秒主题曲音频」）、
+    # 以及旧版「请将光标定位于此」提示语。统一按「👉 … 删除本段文字 …」整段剥除，
+    # 否则占位残留在期望侧会让 body_digest 与已删除占位的正式文章误判不一致。
+    value = re.sub(r"（👉[^）]*删除本段文字[^）]*）", "", value)
     return re.sub(
         rf"(?is)<{AUDIO_TAG}\b[^>]*(?:>.*?</{AUDIO_TAG}\s*>|/>)",
         "",

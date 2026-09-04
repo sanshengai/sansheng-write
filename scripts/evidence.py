@@ -380,6 +380,21 @@ def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     return receipt, errors
 
 
+def _publish_manifest_assets_equivalent(sealed: dict, current: dict) -> bool:
+    """旧版（schema 1）封存的 publish manifest 只记录音频的 path/sha256/bytes；当前版本会
+    补 title/origin/registry/duration 等元数据并升到 schema 2，使整表 stable_digest 变化。
+    发布回执/就绪回执的本意是「HTML/hero/视觉/音频字节有没有被改」，因此按资产身份不变量比对：
+    每个文件的 (path, sha256, bytes) 集合 + visual_manifest_digest 完全一致即视为未变，
+    纯 schema / 元数据升级不误判；任何真实字节、路径或视觉摘要变化仍会被拦下。"""
+    def identity(m):
+        files = frozenset(
+            (f.get("path"), f.get("sha256"), int(f.get("bytes") or 0))
+            for f in (m.get("files") or [])
+        )
+        return files, str(m.get("visual_manifest_digest") or "")
+    return identity(sealed or {}) == identity(current or {})
+
+
 def build_publish_manifest(cwd: Path) -> tuple[dict, list[str]]:
     cwd = Path(cwd)
     receipt, errors = verify_visual_receipt(cwd)
@@ -463,7 +478,9 @@ def verify_publish_ready(cwd: Path) -> tuple[dict | None, list[str]]:
     except Exception as exc:
         return None, [f"{PUBLISH_READY_FILE} 解析失败：{exc}"]
     manifest, errors = build_publish_manifest(cwd)
-    if receipt.get("manifest_digest") != stable_digest(manifest):
+    if receipt.get("manifest_digest") != stable_digest(manifest) and not (
+        _publish_manifest_assets_equivalent(receipt.get("manifest") or {}, manifest)
+    ):
         errors.append("publish-ready 后本地产物已变化；必须重新跑 verify publish --pre")
     return receipt, errors
 
@@ -502,7 +519,9 @@ def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None,
     manifest, errors = build_publish_manifest(cwd)
     if receipt.get("draft_media_id") != draft_media_id:
         errors.append("publish receipt 的 draft_media_id 与 state 不一致")
-    if receipt.get("manifest_digest") != stable_digest(manifest):
+    if receipt.get("manifest_digest") != stable_digest(manifest) and not (
+        _publish_manifest_assets_equivalent(receipt.get("manifest") or {}, manifest)
+    ):
         errors.append("HTML/hero/视觉资产已在推草稿后变化，publish receipt 失效，必须重推")
     if int(receipt.get("schema_version") or 1) >= 2:
         if receipt.get("scope") != "wechat-draft" or receipt.get("formal_publish") is not False:
