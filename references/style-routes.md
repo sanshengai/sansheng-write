@@ -22,7 +22,7 @@
 
 **本仓库不预置任何真实作者的风格手册。** 风格路由的执行细节全部来自你自建的 profile 语料层：
 
-- 手册路径：`profile/corpus/authors/<name>.compact.md`（约 500 字的执行手册：招式 + 句式 + 反例）
+- 手册路径：`profile/corpus/authors/<name>.compact.md`（招式索引 ≤800 字 + 段落实例库另算；必有「他从不做什么 / 核心命题 / 选题不写什么 / opt-out」）
 - 示例：仓内自带 `profile/corpus/authors/example-author.compact.md`（虚构作者，演示手册结构，可直接照抄改写）
 - 建法：见 [profile/corpus/authors/README.md](../profile.example/corpus/authors/README.md) 的 HOW-TO -- 讲清一份 compact 手册该有哪些字段（激活条件 / noise-filter / 节奏特征 / 开篇技法 / opt-out 豁免清单 / 节奏示例）
 - 无自备手册时：不挂主路由，写作退回仓内原创的基础人味兜底样本（`profile/corpus/voice-samples.md`），保证文章不至于是纯 AI 腔。
@@ -58,7 +58,7 @@
 
 大纲挂了 `[目标风格：<name>]`，但 `profile/corpus/authors/<name>.compact.md` **不存在**时，`prep_writing.py` 会在「缺失项」清单 + `_prep-context.md` 正文里标记「未找到 compact」。此时**必须显式停止，不得用相邻手册顶替**，二选一：
 
-1. **创建对应手册**（照 README HOW-TO 产出 500 字执行手册）；
+1. **创建对应手册**（照 README HOW-TO：招式索引 ≤800 字，段落实例库另算）；
 2. **显式切换到另一路由**（改大纲顶部 `[目标风格：X]` 标签 + 同步改 `article-meta.yaml` 的 `style` 字段）。
 
 **严禁主 agent 自行 fallback 到相邻手册**（如「A 手册缺 → 用 B 手册顶」）-- 三标签风格契约要求路由、手册、产出三者严格对齐，任何静默替换都视为契约违反，旁观者复盘会判失败。

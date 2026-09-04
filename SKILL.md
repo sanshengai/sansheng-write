@@ -2,7 +2,7 @@
 name: sansheng-write
 description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文；触发词：写文章、帮我写、改稿、定稿、公众号文章、转小红书、发微博、一稿多投。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 metadata:
-  version: "2.0.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
+  version: "2.1.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp__doubao_search__web_search, mcp__tavily__tavily_search, mcp__datapro_search__dataPro_search, WebSearch, WebFetch, Agent, TodoWrite]
 ---
 
@@ -62,7 +62,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 想标题（内联出 5 候选+排序） | title.md |
 | 写作技法 / 开篇结尾 / 金句 | craft-techniques.md |
 | 文体专属（教程/方法论清单/技术解读，仅这三类加载；文体三选一的**选定**在 outline Step 3） | writing-genres.md |
-| 去 AI 味 / 磨稿 | anti-ai-filter.md |
+| 去 AI 味 / 磨稿 | polish-whitelist.md + anti-ai-filter.md |
 | 冷读外审（磨稿后排版前派**不同模型族** subagent，产 `_stutter-list.md`，与事实复核同窗口并行） | semantic-review.md |
 | 事实复核 / 数据版本价格核验（磨稿后排版前派**无上下文** subagent，产 `_fact-check.md`，preflight 硬断言 exit 2） | fact-check.md |
 | 排版 / 转HTML / 导读栏 / 文末继续阅读与信息来源卡 | layout.md |
@@ -91,7 +91,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 > 🔴 本节只是指针目录、**非可单独执行的「够用版」**--摘要在场模型会跳过正文（已知失败模式）。写作期真正内化 `_prep-context.md`（`prep_writing.py` 渲染，§〇 四原则置顶），磨稿期按每条指针**进对应章节逐条打卡**，别只看目录。
 > 🟡 诚实边界：七条主要靠「写前喂料 + 写后语义审查」；`exit 2` 硬门只拦正则/计数抓得到的表层指纹。`audit_quant_signals` 对部分句式风险只发软提示，不能证明材料真实或因果成立；语义层靠异模型评审 + 事实复核，别当已机器全自动落地。
 
-> 🔴 **三条直球守则先于本节七条**：① 简洁（每个字都得挣到位置）② 结论先行（先给判断和总结，再给推理过程与分步骤，核心结论落第一屏）③ 不用小说技法（不设悬念、不埋倒钩、不延迟揭示）。全类型通用、任何风格路由不豁免，正文细则 → writing.md §三条直球守则；**标题另有唯一公式**（`分类标签 | 关键词锚点：一句由正文主干兑现的话`，冒号后按「原话型 > 具象型 > 处境型 > 定位型（配额）」四选一）→ title.md §唯一公式。
+> 🔴 **三条直球守则先于本节七条**：① 简洁（每个字都得挣到位置）② 结论先行（资讯/成果：第一句下判；深度随笔：手册可 opt-out 第一句，核心判断须在第一个 H2 之前）③ 不用小说技法（不设悬念、不埋倒钩、不延迟揭示到文末）。①③ 任何风格路由不豁免；② 按开篇策略 + compact opt-out。正文细则 → writing.md §三条直球守则 / §规则冲突优先级；磨稿减法 → polish-whitelist.md；**标题另有唯一公式**（`分类标签 | 关键词锚点：一句由正文主干兑现的话`，冒号后按「原话型 > 具象型 > 处境型 > 定位型（配额）」四选一）→ title.md §唯一公式。
 
 1. **材料先承重**（每个核心 H2 映射真实材料，材料不足就补/缩/停）→ material-integrity.md
 2. **来源不过界**（事实、自述、转述、推断、未知分开；顺序≠因果≠动机）→ material-integrity.md + fact-check.md

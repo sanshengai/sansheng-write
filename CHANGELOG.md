@@ -6,7 +6,17 @@
 
 ### 新增
 
+- **白名单减法磨稿**：新增 `references/polish-whitelist.md`（信息守恒、11 类可定位改写）。写作期不注入 `_prep-context.md`；磨稿顺序改为读出声 → 白名单减法 → `verify writing` + `audit_quant_signals` → anti-ai 语义层 → 冷读。句首「说白了 / 说穿了 / 先说结论」、正文翻案腔、段首零回指、空转冒号进入 `_BLACKLIST_SOFT`（warning，不阻塞）；只读扫描脚本 `scripts/scan_polish_signals.py`。
 - **工作树过程目录与永久成品归档拆分**：新增 `SANSHENG_WRITE_ARCHIVE_DIR` 与 `pipeline.py physical-archive --delete-source`。命令在所有文章写者退出后执行：先验证作品库闭环，再以同盘临时目录复制并逐文件核对相对路径、字节数和 SHA-256；目标同路径内容不同、复制期源目录变化或复验失败都会保留源目录。成功后写 `_physical-archive-receipt.json`，显式请求时才删除工作树副本。`archive` 继续只表示作品库登记，`HANDOFF_DIR` 明确只用于人工上传临时包。
+
+### 变更
+
+- **三条直球拆核**：简洁、不延迟揭示到文末永不豁免；「第一句必须是判断」按开篇策略 + compact opt-out（深度随笔可声明第一句不亮观点，核心判断仍须在第一个 H2 之前）。冲突优先级写入 `writing.md`。收尾升维 / 「让我们…」一律禁。
+- **磨稿从加法改回减法**：删除「口语化推荐表达」表；维度随机化压成近 3 篇 dimensions 去重；编辑锚点只标作者才能补的亲历空位，不再用 token 指纹当理由。收尾类型改为菜单，取消「近 3 篇必须不同类型」。工具箱自嘲从 A 层降到 B 层（立硬观点且有真素材才触发）。句长/段长均匀度不再当病。
+
+### 致谢
+
+- 白名单减法的方法受 [lieflat-less-ai-tone](https://github.com/larashero3-dotcom/lieflat-less-ai-tone)（MIT）启发；规则按本 skill 口径独立重写，未复制原文。
 
 ## [2.0.0] -- 2026-08-30
 

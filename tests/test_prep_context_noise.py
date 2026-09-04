@@ -64,9 +64,15 @@ def test_toolbox_body_passthrough_without_marker():
 
 def test_real_toolbox_file_gets_stripped():
     tf = Path(__file__).resolve().parents[1] / "references" / "反 AI 写作工具箱.md"
-    body = _toolbox_body(tf.read_text(encoding="utf-8").strip())
+    raw = tf.read_text(encoding="utf-8").strip()
+    body = _toolbox_body(raw)
     assert "## A 层" in body and "## B 层" in body and "## C 层" in body
     assert "与 iron-rules.md 的关系" not in body
+    a_idx, b_idx, c_idx = raw.find("## A 层"), raw.find("## B 层"), raw.find("## C 层")
+    assert a_idx >= 0 and b_idx > a_idx and c_idx > b_idx
+    assert "### B2" in raw[b_idx:c_idx]
+    assert "自嘲" in raw[b_idx:c_idx]
+    assert "### A2" not in raw[a_idx:b_idx]
 
 
 # ── ② 缺料段整节不输出（集成：走真实 build_prep_context） ────────────────────

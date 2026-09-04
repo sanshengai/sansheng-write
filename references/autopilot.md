@@ -49,7 +49,7 @@ python "$SKILL/scripts/pipeline.py" status
      开篇标识迟 3 个阶段才报、金句库来源标记迟 5 个阶段，
      导致 `verify_layout` 反复 6 轮、`verify_publish` 反复 8 轮。）
 4. **磨稿与双复核**
-   - 运行反 AI 磨稿。
+   - 运行反 AI 磨稿：读出声 → [polish-whitelist.md](polish-whitelist.md) 白名单减法 → `pipeline.py verify writing` + `audit_quant_signals` → anti-ai-filter 语义层 → 冷读/事实复核。不为像人加料。
    - 事实复核与语义冷读使用独立上下文，产出结构化记录。
    - 配置 draft 检查点时等待作者确认并执行 `approve draft`。
 5. **定稿后的机械链**

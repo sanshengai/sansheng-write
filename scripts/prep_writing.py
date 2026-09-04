@@ -26,7 +26,7 @@ profile.example/，这是正常路径）：
     2. 反 AI 写作工具箱（跨作者通用 self-check，全文写完后统一扫）
     3. 金句库（写作声音锚点 + 金句锻造句式 + 按文章主题匹配的 1 个主题 section）
     4. 风格 few-shot 示例（风格示例库.md 中匹配本路由作者的最佳段落）
-    5. AI 腔写作禁区（直接从 contracts._BLACKLIST_HARD 渲染——与写后 B-主门同源）
+    5. AI 腔写作禁区（HARD 硬拦 + SOFT warning，与写后 B-主门同源）
 
     （词汇温度池配额表不再注入——配额化选词是新的公式化，黑名单已由机器 grep
     兜底（B-主门）。）
@@ -450,17 +450,23 @@ def render_top_principles(meta: dict) -> str:
 
 
 def render_blacklist() -> str:
-    """从 contracts._BLACKLIST_HARD 渲染人类可读的「写作禁区清单」。
+    """从 contracts HARD + SOFT 渲染人类可读的「写作禁区清单」。
     与写后 B-主门 verify_anti_ai_blacklist 同源——写前提示 + 写后检查闭环。
+    polish-whitelist 全文不在此注入（避免写作期 CSO）。
     """
     try:
         sys.path.insert(0, str(SKILL_DIR / "scripts"))
-        from contracts import _BLACKLIST_HARD
+        from contracts import _BLACKLIST_HARD, _BLACKLIST_SOFT
     except Exception as e:
-        return f"（无法加载 contracts._BLACKLIST_HARD：{e}）"
+        return f"（无法加载 contracts 黑名单：{e}）"
     lines = ["以下固定套话**写了会被排版阶段 B-主门硬拦**（exit 2），写作时直接绕开：", ""]
     for _pattern, label, fix in _BLACKLIST_HARD:
         lines.append(f"- ❌ {label} → ✅ {fix}")
+    lines.append("")
+    lines.append("以下形态磨稿期会 **warning、不阻塞**（句首元话语 / 翻案腔 / 空转冒号等）；句中术语转译「说白了就是」不在此列：")
+    lines.append("")
+    for _pattern, label, fix in _BLACKLIST_SOFT:
+        lines.append(f"- ⚠️ {label} → {fix}")
     return "\n".join(lines)
 
 
@@ -642,7 +648,7 @@ def build_prep_context(cwd: Path) -> tuple[str, list]:
     # 1-bis. 反 AI 写作工具箱（A/B/C 三层 self-check 配方，跨作者通用）
     parts.append("## 一·补、反 AI 写作工具箱（跨作者通用 self-check）")
     parts.append("")
-    parts.append("> 🟢 **本节是 self-check 的「第一层」**：先扫 A 层 3 条无条件铁律 → 段落属性触发 B 层 → 整篇定稿后看 C 层激活。")
+    parts.append("> 🟢 **本节是 self-check 的「第一层」**：先扫 A 层 2 条无条件铁律 → 段落属性触发 B 层（B1 人物动作 / B2 自嘲） → 整篇定稿后看 C 层激活。")
     parts.append("> 与上面作者 compact 的「作者特有招式」**互不掩盖**，避免「同条规则跨作者砸 3 次」的虚假高分幻觉。")
     parts.append("")
     tf = SKILL_DIR / "references" / "反 AI 写作工具箱.md"

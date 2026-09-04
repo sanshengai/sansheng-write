@@ -2018,6 +2018,8 @@ _AI_ARTIFACT_HARD = [
 ]
 
 # B 档：命中只 warning（不阻塞）。有上下文误杀风险。
+# 2026-09-03：句首元话语 / 翻案腔 / 空转冒号先入软门；句中「说白了就是」不锚，
+# 避免误杀卡兹克术语转译。职业人格喻体只在 polish-whitelist 人工条，不进机器门。
 _BLACKLIST_SOFT = [
     (r'不[只仅](?:是|仅是)[^，。\n]{1,20}[，,][^，。\n]{0,4}(?:更|还|而)是', '负向平行「不只是 X 更是 Y」', '排比要挂具体场景或带反转'),
     (r'从[^，。\n]{1,8}到[^，。\n]{1,8}[，,]\s*从[^，。\n]{1,8}到', '「从 X 到 Y」连用', '用精确数字+具体动作替代'),
@@ -2025,7 +2027,39 @@ _BLACKLIST_SOFT = [
     (r'(?:调查|数据|研究)显示|(?:行业|业内人士)(?:普遍)?认为|专家(?:指出|表示)', '可能数据无源', '给具名信源：年份/期刊/姓名/可复核'),
     (r'显而易见|众所周知|方方面面', '陈词（显而易见/众所周知）', '若非反讽路由，改具体表达'),
     (r'面临[^。\n]{0,30}挑战[，,。][^。\n]{0,20}但[^。\n]{0,8}相信', '「面临挑战但相信」三段式', '硬切金句作结，不给免责声明'),
+    (r'(?m)^[ \t]*(?:说白了|说穿了|先说结论)[，,：:]', '句首元话语「说白了/说穿了/先说结论」', '删提示语，直接给判断；句中术语转译不在此列'),
+    (r'看似[^。\n]{1,30}其实', '翻案腔「看似…其实」', '直接从正面下判断；真有自我修正过程才写，不套公式'),
+    (r'你以为[^。\n]{0,30}其实', '翻案腔「你以为…其实」', '直接从正面下判断'),
+    (r'(?:核心是|关键在于|通常包括|一句话总结|我见过的几种)[：:]\s*\n\s*(?:[-*] |\d+\.|[一二三四五六七八九十]、)', '空转提示语冒号引出列表', '删空转提示语，或把该行写成有内容的判断'),
 ]
+
+
+_ZERO_ANAPHORA_STARTERS = (
+    "听起来", "看起来", "值得注意的是", "更重要的是", "关键在于", "问题在于", "不难看出",
+)
+_ZERO_ANAPHORA_BACKREF = ("这", "那", "其", "上述", "上面")
+
+
+def _soft_zero_anaphora_warnings(text: str) -> list:
+    """非首段以评论套话起句且句内无回指 → warning。听起来有点抽象仍走导游腔 HARD。"""
+    import re
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(paras) < 2:
+        return []
+    out = []
+    for para in paras[1:]:
+        first = para.split("\n", 1)[0].strip()
+        if not any(first.startswith(s) for s in _ZERO_ANAPHORA_STARTERS):
+            continue
+        sent = re.split(r"[。！？\n]", first, maxsplit=1)[0]
+        if any(tok in sent for tok in _ZERO_ANAPHORA_BACKREF):
+            continue
+        loc = text.find(para)
+        line_no = text[:loc].count("\n") + 1 if loc >= 0 else 0
+        out.append(
+            f"[L~{line_no}] 段首零回指「{sent[:24]}」→ 建议：补「这/那/其/上述」，或改成有对象的判断"
+        )
+    return out
 
 
 def verify_anti_ai_blacklist(article_path: str) -> dict:
@@ -2094,6 +2128,8 @@ def verify_anti_ai_blacklist(article_path: str) -> dict:
         for m in re.finditer(pattern, text):
             line_no = text[:m.start()].count('\n') + 1
             warnings.append(f'[L~{line_no}] {label}：命中「{m.group(0)}」→ 建议：{fix}')
+
+    warnings.extend(_soft_zero_anaphora_warnings(text))
 
     excl = text.count('！') + text.count('!')
     if excl > 5:

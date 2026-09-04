@@ -1628,6 +1628,72 @@ def test_ai_artifact_clean_text_passes(tmp_path):
     assert art_hits == []
 
 
+# --- 2026-09-03 polish 软门（句首元话语 / 翻案腔 / 段首零回指；不阻塞）---
+
+def test_soft_sentence_initial_shuo_bai_le_warns(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = "说白了，这件事没有捷径。\n\n先说结论：别买。\n"
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    assert r["verdict"] == "ok"
+    assert any("说白了" in w for w in r["warnings"])
+    assert any("先说结论" in w for w in r["warnings"])
+
+
+def test_soft_mid_sentence_shuo_bai_le_does_not_warn(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = "流体智力，说白了就是悟性。意思就是你得自己开窍。\n"
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    assert r["verdict"] == "ok"
+    assert not any("说白了" in w for w in r["warnings"])
+
+
+def test_soft_fan_an_qiang_warns(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = "看似在降价，其实是在收会员费。\n\n你以为这是福利，其实是锁客。\n"
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    assert r["verdict"] == "ok"
+    assert any("看似" in w for w in r["warnings"])
+    assert any("你以为" in w for w in r["warnings"])
+
+
+def test_soft_zero_anaphora_skips_first_para_and_backref(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = (
+        "听起来这像一件小事。\n\n"
+        "更重要的是没有对象。\n\n"
+        "看起来这已经够清楚了。\n"
+    )
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    zero = [w for w in r["warnings"] if "段首零回指" in w]
+    assert any("更重要的是" in w for w in zero)
+    assert not any("听起来这像" in w for w in zero)
+    assert not any("看起来这已经" in w for w in zero)
+
+
+def test_meta_discourse_ting_qi_lai_still_hard(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = "听起来有点抽象。给个例子就明白了。\n"
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    assert r["verdict"] == "fail"
+    assert any("听起来有点抽象" in e for e in r["errors"])
+
+
+def test_soft_clean_short_article_has_no_new_soft_hits(tmp_path):
+    from scripts.contracts import verify_anti_ai_blacklist
+    body = (
+        "微信想动的，是你自己点的那一步。\n\n"
+        "点单页面本来就是小程序。小程序跑在微信自己的地盘上，这件事最关键。\n\n"
+        "传输比特，那就是流量费。\n"
+    )
+    r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
+    assert r["verdict"] == "ok"
+    polish = [
+        w for w in r["warnings"]
+        if any(k in w for k in ("说白了", "看似", "你以为", "段首零回指", "空转提示语"))
+    ]
+    assert polish == []
+
+
 # --- 2026-06-10 P1-6 量化体检报告（永不阻塞,verdict 恒 info）---
 
 def test_audit_quant_signals_reports_info(tmp_path):
