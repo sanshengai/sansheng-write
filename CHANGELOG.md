@@ -6,7 +6,7 @@
 
 ### 新增
 
-- **白名单减法磨稿**：新增 `references/polish-whitelist.md`（信息守恒、11 类可定位改写）。写作期不注入 `_prep-context.md`；磨稿顺序改为读出声 → 白名单减法 → `verify writing` + `audit_quant_signals` → anti-ai 语义层 → 冷读。句首「说白了 / 说穿了 / 先说结论」、正文翻案腔、段首零回指、空转冒号进入 `_BLACKLIST_SOFT`（warning，不阻塞）；只读扫描脚本 `scripts/scan_polish_signals.py`。
+- **白名单减法磨稿**：新增 `references/polish-whitelist.md`（信息守恒、11 类可定位改写）。写作期不注入 `_prep-context.md`；磨稿顺序改为读出声 → 白名单减法 → `verify writing` + `audit_quant_signals` → anti-ai 语义层 → 冷读。正文翻案腔、段首零回指、空转冒号进入 `_BLACKLIST_SOFT`；句首「说白了 / 说穿了 / 先说结论」升 `_META_DISCOURSE_HARD`（句中术语转译不命中）；只读扫描脚本 `scripts/scan_polish_signals.py`。
 - **工作树过程目录与永久成品归档拆分**：新增 `SANSHENG_WRITE_ARCHIVE_DIR` 与 `pipeline.py physical-archive --delete-source`。命令在所有文章写者退出后执行：先验证作品库闭环，再以同盘临时目录复制并逐文件核对相对路径、字节数和 SHA-256；目标同路径内容不同、复制期源目录变化或复验失败都会保留源目录。成功后写 `_physical-archive-receipt.json`，显式请求时才删除工作树副本。`archive` 继续只表示作品库登记，`HANDOFF_DIR` 明确只用于人工上传临时包。
 
 ### 变更

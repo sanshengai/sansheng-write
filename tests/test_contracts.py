@@ -1630,13 +1630,13 @@ def test_ai_artifact_clean_text_passes(tmp_path):
 
 # --- 2026-09-03 polish 软门（句首元话语 / 翻案腔 / 段首零回指；不阻塞）---
 
-def test_soft_sentence_initial_shuo_bai_le_warns(tmp_path):
+def test_hard_sentence_initial_shuo_bai_le_fails(tmp_path):
     from scripts.contracts import verify_anti_ai_blacklist
     body = "说白了，这件事没有捷径。\n\n先说结论：别买。\n"
     r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
-    assert r["verdict"] == "ok"
-    assert any("说白了" in w for w in r["warnings"])
-    assert any("先说结论" in w for w in r["warnings"])
+    assert r["verdict"] == "fail"
+    hits = [e for e in r["errors"] if "说白了" in e or "先说结论" in e]
+    assert len(hits) >= 2
 
 
 def test_soft_mid_sentence_shuo_bai_le_does_not_warn(tmp_path):
@@ -1645,6 +1645,7 @@ def test_soft_mid_sentence_shuo_bai_le_does_not_warn(tmp_path):
     r = verify_anti_ai_blacklist(_write_md(tmp_path, body))
     assert r["verdict"] == "ok"
     assert not any("说白了" in w for w in r["warnings"])
+    assert not any("说白了" in e for e in r["errors"])
 
 
 def test_soft_fan_an_qiang_warns(tmp_path):

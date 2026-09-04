@@ -463,7 +463,7 @@ def render_blacklist() -> str:
     for _pattern, label, fix in _BLACKLIST_HARD:
         lines.append(f"- ❌ {label} → ✅ {fix}")
     lines.append("")
-    lines.append("以下形态磨稿期会 **warning、不阻塞**（句首元话语 / 翻案腔 / 空转冒号等）；句中术语转译「说白了就是」不在此列：")
+    lines.append("以下形态磨稿期会 **warning、不阻塞**（翻案腔 / 空转冒号等）。句首「说白了/先说结论」已进硬拦；句中术语转译不在硬拦之列：")
     lines.append("")
     for _pattern, label, fix in _BLACKLIST_SOFT:
         lines.append(f"- ⚠️ {label} → {fix}")
