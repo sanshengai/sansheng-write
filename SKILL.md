@@ -16,7 +16,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 > ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
 
-> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`handoff-assets` 默认把上传用的主题曲、播客和封面放在文章文件夹第一层；不另建“手工上传”目录，不等同于永久归档。
+> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`handoff-assets` 默认把上传用的主题曲、播客和封面放在文章文件夹第一层；不另建“手工上传”目录，不等同于永久归档。 若在 Git worktree 中制作，最终交付前须按项目规则同步到主仓成品目录并复验，再给主仓可点击路径；不能只交付 worktree 中的过程副本。
 
 ## 🟢 按任务读取共享上下文
 
