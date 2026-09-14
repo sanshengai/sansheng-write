@@ -75,6 +75,24 @@ def test_generate_short_circuits_on_fresh_pregen(tmp_path, monkeypatch):
     assert pe.cmd_generate(art) == 0
 
 
+def test_finalize_plan_reuses_the_already_verified_podcast(tmp_path, monkeypatch):
+    art = _pregen_article(tmp_path, with_url=True)
+    config = _podcast_cfg(art)
+    monkeypatch.setattr(pe, "cfg", lambda: config)
+    monkeypatch.setattr(distribute, "channel_config", lambda channel: config)
+    monkeypatch.setattr(distribute, "channel_enabled", lambda channel: True)
+    mp3 = distribute.channel_dir(art, "podcast") / "audio.mp3"
+    original = mp3.read_bytes()
+    pe._write_audio_manifest(art, mp3, config, {"codec_name": "mp3", "duration_seconds": 123.5})
+    assert distribute.cmd_plan(art, only="podcast") == 0
+    assert distribute.get_status(art, "podcast") == "planned"
+    _forbid_nlm(monkeypatch)
+    assert pe.cmd_generate(art) == 0
+    assert distribute.get_status(art, "podcast") == "drafted"
+    assert mp3.read_bytes() == original
+    assert pe.generation_is_fresh(art, config)
+
+
 def test_short_circuit_backfills_wechat_url(tmp_path, monkeypatch):
     art = _pregen_article(tmp_path, with_url=True)
     monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))

@@ -291,7 +291,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     # 🔴 2026-08-16 预生成短路（审计 P4）：`pipeline.py podcast-pregen` 允许在
     #    定稿冻结点就后台生成音频（NotebookLM 实测 ~18 分钟，是 finalize 串行链
     #    里最大的阻塞项，89 篇它一失败官网同步跟着晚了 5 小时）。finalize 到点
-    #    再调本函数时，只要「音频在 + 状态已 drafted/dispatched + source_digest
+    #    再调本函数时，只要「音频在 + 同源生成凭证有效 + source_digest
     #    与当前定稿一致」就直接取件：不重进 NotebookLM，只把预生成时还拿不到的
     #    永久链接补进 sidecar/shownotes。定稿在预生成后又被改过（digest 漂移）
     #    则照常走完整生成——短路永远不会拿旧音频配新定稿。
@@ -300,12 +300,15 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     if (
         mp3.is_file()
         and mp3.with_suffix(".json").is_file()
-        and distribute.get_status(article_dir, "podcast") in {"drafted", "dispatched"}
         and generation_is_fresh(article_dir, c)
     ):
         log("✓ 已有与当前定稿一致的预生成音频，跳过生成（取件模式）")
         refresh_sidecar_url(article_dir, mp3,
                             smax=int(c.get("shownotes_max") or 800))
+        # finalize's plan may reset the workflow label to planned. The verified
+        # audio manifest remains authoritative; planning must not regenerate it.
+        if distribute.get_status(article_dir, "podcast") != "dispatched":
+            distribute.set_status(article_dir, "podcast", "drafted")
         return 0
 
     prompt_path = Path(str(c.get("focus_prompt") or "")).expanduser()
