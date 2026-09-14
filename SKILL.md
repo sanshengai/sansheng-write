@@ -1,6 +1,6 @@
 ---
 name: sansheng-write
-description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文；触发词：写文章、帮我写、改稿、定稿、公众号文章、转小红书、发微博、一稿多投。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
+description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文；触发对象为中文长文或公众号文章的创作、改稿、排版及按篇社媒分发；普通短回复、代码/规则文档修改不触发。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
 metadata:
   version: "2.1.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp__doubao_search__web_search, mcp__tavily__tavily_search, mcp__datapro_search__dataPro_search, WebSearch, WebFetch, Agent, TodoWrite]
@@ -12,15 +12,15 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `xxx.md` 一律指 `references/xxx.md`**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
-> 🔴 **默认 = 全自动一路到草稿箱**：新文章按 autopilot.md；作者已给确认定稿时直接按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。显式配置 `podcast.wechat_embed: true` 时，公众号固定为「导读 → 主题曲卡 → 播客卡 → 正文」，两卡同级、同宽、上下排列；音频必须在草稿前生成。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
+> **先确定本轮终点**：完整新文章任务按 autopilot.md 的自动主链推进；用户只要正文、大纲、局部改稿或排版时，完成指定产物即止，不进入后续生图、音频、归档或草稿箱事务。作者给确认定稿且要求制作发布材料/提交草稿箱时，才按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。显式配置 `podcast.wechat_embed: true` 时，公众号固定为「导读 → 主题曲卡 → 播客卡 → 正文」，两卡同级、同宽、上下排列；音频必须在草稿前生成。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
 
 > ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
 
 > 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`SANSHENG_WRITE_HANDOFF_DIR` 仅是人工上传临时包，禁止拿它当成品归档。
 
-## 🟢 启动前必读（元指令，先于任何阶段）
+## 🟢 按任务读取共享上下文
 
-进任一阶段**第一件事按序读两份共享上下文**，读完不再问已知信息（主题色/账号名/创作者背景），只追问本任务才变的参数（风格/受众/字数）：
+创作或调整品牌表达时，读取相关共享上下文；同会话已加载且未变化时复用。局部校字、标题微调或机械排版不重读创作背景。风格、受众沿用已知选择；只问影响结果且无法推断的缺项，不把字数、风格、受众当固定问卷：
 
 1. **品牌上下文** `profile/context.md`（品牌身份/人设/风格路由/对话约定）；未配置 profile 时回退仓内 `profile.example/context.md`（中性默认，正常路径不是错误）；皆无则兜底本文件「品牌身份 fallback」节。
 2. **品牌织网（可选）** `profile/brand-net.md`（阵地地图/伏笔池/承诺台账）。存在时大纲阶段**步骤 7.5 织网三问必答**（联动已发文/推自有阵地/埋伏笔），答案落 `article-meta.yaml` 的 `weave:`（细则进 outline.md 步骤 7.5）；归档把本篇许的愿登进 brand-net.md §四。**文件不存在则跳过织网环节，不报错**（织网是可选玩法）。
@@ -29,7 +29,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 ## 🔁 恢复协议（元指令）
 
-进任何 `{数据目录}/{N}-{选题名}/` 目录**第一件事**跑 `python "$SKILL/scripts/pipeline.py" status`。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
+接管、执行或恢复文章流水线时，先跑 `python "$SKILL/scripts/pipeline.py" status`；只读查看或独立的局部文案修改不因进入文章目录就启动流水线。局部改稿完成后不自行重跑下游，下一次恢复时由摘要检测变化并重验。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
 
 **长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段与预计耗时；命令是阻塞式调用，返回前无法插播——命令返回后（或分批调用间隙）报告进度，进行中状态可查 `素材/.render-attempt-*.json` 与 `.gen-log.jsonl` 增量。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
 
@@ -104,7 +104,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 ## 特殊约定（每轮解析对话都用）
 
 - **「」批注：** 「」内是批注非正文--指令类直接执行，参考类作上下文。**「素材」标记：** 归入素材分拣表。**「入囊」标记：** 自动沉淀 profile 的选题储备文件对应分类作选题储备。
-- **素材自动读取：** 对话开始检查工作目录 `素材/`，有内容一并读；发现**音频文件**（mp3/m4a/wav 等）先跑 `scripts/transcribe_audio.py` 转写，再按 transcribe.md 做**口述梳理**（产 `<同名>.梳理.md`） -- 大纲吃梳理稿，不直接拿转写稿写文章。**事实验证：** 需核实的事实/数据直接搜，不问创作者。
+- **素材按需读取：** 只读取本轮指定或与当前内容相关的素材；本轮需要把**音频文件**（mp3/m4a/wav 等）作为写作输入时，才跑 `scripts/transcribe_audio.py` 转写，再按 transcribe.md 做**口述梳理**（产 `<同名>.梳理.md`） -- 大纲吃梳理稿，不直接拿转写稿写文章。**事实验证：** 需核实的事实/数据直接搜，不问创作者。
 - **🔴 破折号统一 `--`：** 给读者的文字里所有破折号用两个英文连字符 `--`，禁全角。
 - **🔴 铁律总纲 iron-rules.md：** 硬约束一页索引，按 发布主链/视觉/排版/内容与归档/失败语义 五节组织（**不可 skip 的 stage**/生图后端与 QA 硬门/**金句卡禁装饰引号**/音乐卡位置/数据图防幻觉/文末 SOURCES 固定顺序/敏感议题用词防下架 等）。**进入发布/排版/生图前必读。**
 
@@ -120,7 +120,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 
-- **统一作品库 SSOT：** 实际路径只认 `scripts/profile_config.py::works_file()`（默认 `{数据目录}/works.yaml`，可由 `SANSHENG_WRITE_WORKS_FILE` 重命名）；文章+视频每篇一条。写作/配图前**先读近 3 篇**做维度/收尾/风格去重；发布后 `archive` 写入。`articles.md` 与 `works-dashboard.html` 是自动渲染视图（🔴 禁手改）；命令输出必须打印解析后的真实绝对路径，旧 `history.yaml` 已冻结。
+- **统一作品库 SSOT：** 实际路径只认 `scripts/profile_config.py::works_file()`（默认 `{数据目录}/works.yaml`，可由 `SANSHENG_WRITE_WORKS_FILE` 重命名）；文章+视频每篇一条。新文章构思或新配图方案前读取近 3 篇的相关摘要做维度/收尾/风格去重；局部校字、既定图片替换不重跑创作去重；发布后 `archive` 写入。`articles.md` 与 `works-dashboard.html` 是自动渲染视图（🔴 禁手改）；命令输出必须打印解析后的真实绝对路径，旧 `history.yaml` 已冻结。
 - **`prep_writing.py` 写作前自动聚合进 `_prep-context.md`（不必手翻）：** profile 语料池的 风格示例库 / 金句库（按主题）/ 反例对照库 / voice 语料（gate：>200 字≈2-3 段即注入）+ `profile/corpus/authors/{X}.compact.md`（用户自备的作者风格手册；无自备手册时注入仓内原创的 `profile/corpus/voice-samples.md` 做基础人味兜底）。金句库路径只认 `profile_config.py::golden_lines_file()`；已有库在别处时用 `SANSHENG_WRITE_GOLDEN_LINES_FILE` 直指，禁止复制第二份。
 - **按主题人工挑读（非自动）：** 若 profile 自带精选样本库 `profile/corpus/samples/{作者}/`，写作前可按当前风格路由抽读 2-3 篇（无对应作者回退 `profile/corpus/voice-samples.md`）。按需查 profile 里的品牌规范 / 选题储备文件。
 
@@ -154,10 +154,10 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 通用中文写作（不需要品牌约束）| 原生写作即可 | 品牌约束会污染通用写作 |
 | 英文内容 / 纯代码 / Git 同步 / 环境配置 | 默认流程 | 本 skill 专为中文长文设计 |
 
-**衔接规则 · 选题/找素材调研分流：** **轻素材**（核一事实/补一数字/查一名词/确认时间价格）→ 自己 WebSearch **直接搜**，不起调研工具；**深素材**（有争议/多平台口碑/交叉验证去伪/国内外都看/成体系背景时间线，或用户说"查清楚/各方怎么说/是不是真的/交叉验证"）→ **委派你惯用的调研工具**，写时手动引其事实底座与信源--**不自动注入**素材、不预填 meta。拿不准默认轻素材自己搜。
+**衔接规则 · 选题/找素材调研分流：** **轻素材**（核一事实/补一数字/查一名词/确认时间价格）→ 按宿主共享搜索路由做定向查询；**深素材**（有争议、多来源核验或成体系背景研究）→ 按任务需要组织研究，独立复核有明确收益且宿主允许时才委派，写时手动引其事实底座与信源--**不自动注入**素材、不预填 meta。拿不准默认轻素材自己搜。
 
 ## references 三级分层（按加载时机分层）
 
-- **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。真正每次开局无条件读的是 `profile/context.md` + 可选 `profile/brand-net.md`。
+- **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。`profile/context.md` 按创作/品牌任务读取，`profile/brand-net.md` 仅用于启用织网的大纲或归档阶段；已加载且未变化的内容不重复读取。
 - **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列，含实体归档 `physical-archive.md`）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
 - **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / visual-qa（接复核器 + 视觉闸三种静默失效）/ orchestration / agent-contracts / learn-edits / skill-review / `_archive/候补技法池.md`（技法池候补备料，craft-techniques 主池不够时才翻）。
