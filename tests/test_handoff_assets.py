@@ -160,3 +160,63 @@ def test_handoff_rejects_unmanifested_podcast(tmp_path: Path):
     )
     assert target is None
     assert any("必须同时存在" in error for error in errors)
+
+
+def test_default_handoff_stays_in_article_and_ignores_legacy_env(tmp_path, monkeypatch):
+    article, verify_visual, probe = _article(tmp_path, podcast=True)
+    legacy = tmp_path / "legacy-handoff"
+    monkeypatch.setenv("SANSHENG_WRITE_HANDOFF_DIR", str(legacy))
+    manuscript = article / "定稿.md"
+    manuscript.write_text("作者原稿", encoding="utf-8")
+    before = {p: p.read_bytes() for p in article.rglob("*") if p.is_file()}
+    kwargs = dict(duration_probe=probe, visual_verifier=verify_visual)
+    target, status, errors = export_handoff_assets(article, **kwargs)
+    assert (target, status, errors) == (article, "created", [])
+    assert not legacy.exists()
+    assert (article / "podcast.mp3").read_bytes() == (article / "dist/podcast/audio.mp3").read_bytes()
+    assert (article / "cover.png").read_bytes() == (article / "素材/cover.png").read_bytes()
+    assert not (article / "theme-边界之歌.mp3").exists()
+    assert all(p.read_bytes() == data for p, data in before.items())
+    assert export_handoff_assets(article, **kwargs) == (article, "unchanged", [])
+
+
+def test_default_handoff_rejects_collision_before_any_write(tmp_path):
+    article, verify_visual, probe = _article(tmp_path, podcast=True)
+    (article / "podcast.mp3").write_bytes(b"authors-unrelated-recording")
+    before = {p: p.read_bytes() for p in article.rglob("*") if p.is_file()}
+    target, _, errors = export_handoff_assets(article, duration_probe=probe, visual_verifier=verify_visual)
+    assert target is None and any("未覆盖" in error for error in errors)
+    assert {p: p.read_bytes() for p in article.rglob("*") if p.is_file()} == before
+
+
+def test_default_handoff_rejects_empty_article(tmp_path):
+    target, _, errors = export_handoff_assets(tmp_path)
+    assert target is None and errors
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_default_handoff_does_not_accept_corrupted_copy(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, verify_visual, probe = _article(tmp_path, podcast=True)
+    monkeypatch.setattr(handoff.shutil, "copyfile", lambda source, dest: Path(dest).write_bytes(b"corrupted"))
+    target, _, errors = export_handoff_assets(article, duration_probe=probe, visual_verifier=verify_visual)
+    assert target is None and any("复制后校验失败" in error for error in errors)
+    assert not (article / "cover.png").exists()
+    assert not (article / "_handoff-receipt.json").exists()
+    assert not list(article.glob(".handoff-tmp-*"))
+
+
+def test_default_handoff_preserves_concurrent_writer_and_rolls_back_own_files(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, verify_visual, probe = _article(tmp_path, podcast=True)
+    link = handoff.os.link
+    def racing_link(source, destination):
+        if destination.name == "podcast.mp3":
+            destination.write_bytes(b"concurrent-writer")
+        return link(source, destination)
+    monkeypatch.setattr(handoff.os, "link", racing_link)
+    target, _, errors = export_handoff_assets(article, duration_probe=probe, visual_verifier=verify_visual)
+    assert target is None and errors
+    assert (article / "podcast.mp3").read_bytes() == b"concurrent-writer"
+    assert not (article / "cover.png").exists()
+    assert not (article / "_handoff-receipt.json").exists()

@@ -4406,12 +4406,12 @@ def main():
     )
     p_handoff = sub.add_parser(
         "handoff-assets",
-        help="从正式回执导出封面、主题曲及可选播客的可验证手工上传包",
+        help="从正式回执将封面、主题曲及可选播客交付到文章目录第一层",
     )
     p_handoff.add_argument(
         "--target-root",
         default="",
-        help="覆盖 SANSHENG_WRITE_HANDOFF_DIR / .env 中的浅层交接根目录",
+        help="仅在明确需要独立副本时指定导出根目录；默认直接放在文章目录",
     )
     p_handoff.add_argument(
         "--revision",
@@ -4600,7 +4600,7 @@ def main():
             for error in errors:
                 print(f"   • {error}")
             sys.exit(2)
-        print(f"✅ 手工上传包{('已创建' if status == 'created' else '未变化')}：{target}")
+        print(f"✅ 上传文件{('已创建' if status == 'created' else '未变化')}：{target}")
     elif args.cmd == "skip":
         cmd_skip(args.stage, cwd, force=getattr(args, "force", False))
     elif args.cmd == "reset":

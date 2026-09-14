@@ -91,22 +91,19 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后从微信预览分别试听两条音频的开头/结尾 10 秒，再跑 `pipeline.py wechat-audio-check --confirm-audition`。
 
-需要把人工上传所需资产导出到浅层目录时，先配置
-`SANSHENG_WRITE_HANDOFF_DIR`，再运行：
+### 上传文件统一放在文章文件夹
 
-> 这里的 handoff 是给微信后台手工上传的临时资产包，不是文章永久归档目录；整篇成品必须按 `physical-archive.md` 走 `physical-archive`。
+运行以下命令，把人工上传用的主题曲、播客和封面放在本篇文章目录第一层（例如 `100-AI帮自己搬家/`），交付时直接给这个目录及其中音频的可点击路径，不另建“手工上传”文件夹：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
-# 目标已有不同快照时不覆盖；显式建新版：
-python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets --revision r2
-# 临时覆盖 .env 目标也可显式传：
-python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets --target-root "<浅层目录>"
 ```
 
-命令只会取已封存视觉凭证的封面、主题曲 manifest 绑定文件，以及可选的播客
-manifest 绑定文件。逐项验证后通过同级临时目录原子落盘；同快照幂等，
-不同快照拒绝覆盖，交接凭证不写时间戳以保持可重现。
+主题曲保留原文件名（已经在第一层就直接复用），播客为 `podcast.mp3`，封面为 `cover.png`。源文件 `dist/podcast/audio.mp3`、`素材/cover.png` 及其回执继续服务生成和发布流程；根目录提供经 SHA-256 与大小验证的上传副本，不为方便查找移走源文件。
+
+命令只读取封存视觉凭证和音频 manifest 指定的文件，验证后才交付，根目录写 `_handoff-receipt.json`；同一快照可重复运行，现有同名不同内容文件会报错，不静默覆盖正文或其他资产。旧 `SANSHENG_WRITE_HANDOFF_DIR` 配置不再自动生效。只有作者明确要求独立导出时才使用 `--target-root <目录>`，此模式保留 `--revision r2` 的版本快照能力。
+
+这里的交付不等于永久归档；整篇成品归档仍按 `physical-archive.md` 执行。
 
 ### 卡片设计规范
 

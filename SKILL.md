@@ -16,7 +16,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 > ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
 
-> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`SANSHENG_WRITE_HANDOFF_DIR` 仅是人工上传临时包，禁止拿它当成品归档。
+> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`handoff-assets` 默认把上传用的主题曲、播客和封面放在文章文件夹第一层；不另建“手工上传”目录，不等同于永久归档。
 
 ## 🟢 按任务读取共享上下文
 
@@ -116,7 +116,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 导出浅层人工上传包 → 人工插入双音频并在微信预览试听首尾 → `wechat-audio-check --confirm-audition` → `finalize`）。若正式发布后草稿已被微信回收、`draft/get` 返回 `40007`，不得伪造草稿凭证；按 release-runtime.md 改用永久链接执行 `wechat-published-audio-check <wechat_url> --confirm-audition`，优先走官方已发表内容 API；账号对该 API 返回 `48001` 时，严格降级为同一微信官方公开页与原官方草稿回执的证据链，生成独立补验凭证。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 将上传文件放在文章目录第一层 → 人工插入双音频并在微信预览试听首尾 → `wechat-audio-check --confirm-audition` → `finalize`）。若正式发布后草稿已被微信回收、`draft/get` 返回 `40007`，不得伪造草稿凭证；按 release-runtime.md 改用永久链接执行 `wechat-published-audio-check <wechat_url> --confirm-audition`，优先走官方已发表内容 API；账号对该 API 返回 `48001` 时，严格降级为同一微信官方公开页与原官方草稿回执的证据链，生成独立补验凭证。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

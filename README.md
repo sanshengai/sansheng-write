@@ -260,7 +260,7 @@ cp .env.example .env                                # 填生图 key；微信凭�
 绑定承载该文章的 Git 工作树，再解析这些路径；同一进程切到另一棵树时也会重新
 求值。非 Git 目录可用绝对路径，或显式配置 `SANSHENG_WRITE_WORKSPACE_DIR`。
 
-文章先在当前工作树的 `SANSHENG_WRITE_DATA_DIR` 中生产。所有会继续写该目录的任务结束后，用 `pipeline.py --dir <文章目录> physical-archive --delete-source` 搬到 `SANSHENG_WRITE_ARCHIVE_DIR`；永久根必须是已存在的绝对路径，不能写 `@workspace`。`pipeline.py archive` 只是作品库登记，`SANSHENG_WRITE_HANDOFF_DIR` 只是人工上传临时包，二者都不会替你完成整篇文件归档。
+文章先在当前工作树的 `SANSHENG_WRITE_DATA_DIR` 中生产。所有会继续写该目录的任务结束后，用 `pipeline.py --dir <文章目录> physical-archive --delete-source` 搬到 `SANSHENG_WRITE_ARCHIVE_DIR`；永久根必须是已存在的绝对路径，不能写 `@workspace`。`pipeline.py archive` 只是作品库登记，`handoff-assets` 只把上传文件汇齐到文章目录第一层，二者都不会替你完成整篇文件归档。
 
 **换主题一行搞定**（`profile/brand.yaml`）：
 

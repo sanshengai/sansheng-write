@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Export only receipt-bound assets for manual upload.
+"""Expose receipt-bound upload assets at the article folder's top level.
 
 The export is a deterministic, immutable snapshot.  It never searches for
 plausible files: cover comes from the sealed visual receipt, theme playback
@@ -11,6 +11,7 @@ audio manifest.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -23,7 +24,6 @@ from typing import Any, Callable
 
 try:
     from .evidence import sha256_file, stable_digest, verify_visual_receipt
-    from .profile_config import load_secret
     from .music_manifest import (
         MUSIC_MANIFEST_FILE,
         ThemeAsset,
@@ -33,7 +33,6 @@ try:
     )
 except ImportError:  # pragma: no cover - direct script execution
     from evidence import sha256_file, stable_digest, verify_visual_receipt
-    from profile_config import load_secret
     from music_manifest import (
         MUSIC_MANIFEST_FILE,
         ThemeAsset,
@@ -43,7 +42,6 @@ except ImportError:  # pragma: no cover - direct script execution
     )
 
 
-HANDOFF_DIR_ENV = "SANSHENG_WRITE_HANDOFF_DIR"
 HANDOFF_RECEIPT_FILE = "_handoff-receipt.json"
 HANDOFF_SCHEMA = 1
 PODCAST_AUDIO = Path("dist/podcast/audio.mp3")
@@ -354,17 +352,11 @@ def export_handoff_assets(
     duration_probe: DurationProbe = probe_audio_duration,
     visual_verifier: VisualVerifier = verify_visual_receipt,
 ) -> tuple[Path | None, str, list[str]]:
-    """Copy a verified snapshot through a sibling temp dir and atomic rename."""
+    """Default to the article itself; a separate export requires target_root."""
     article_dir = Path(article_dir).resolve()
-    raw_root = str(
-        target_root
-        or os.environ.get(HANDOFF_DIR_ENV, "").strip()
-        or load_secret(HANDOFF_DIR_ENV, required=False)
-    ).strip()
-    if not raw_root:
-        return None, "", [f"未配置 {HANDOFF_DIR_ENV}"]
-    root = Path(raw_root).expanduser().resolve()
     revision_value = str(revision or "").strip()
+    if revision_value and target_root is None:
+        return None, "", ["--revision 仅用于显式 --target-root 的独立导出"]
     if revision_value and not re.fullmatch(r"[A-Za-z0-9._-]+", revision_value):
         return None, "", ["--revision 只允许字母、数字、点、下划线与连字符"]
     receipt, specs, errors = build_handoff_snapshot(
@@ -375,6 +367,9 @@ def export_handoff_assets(
     )
     if errors or receipt is None:
         return None, "", errors
+    if target_root is None:
+        return _export_in_article(article_dir, receipt, specs)
+    root = Path(target_root).expanduser().resolve()
     folder = _safe_name(article_dir.name, fallback="article")
     if revision_value:
         folder += f"--{revision_value}"
@@ -411,16 +406,77 @@ def export_handoff_assets(
                 shutil.rmtree(resolved)
 
 
+def _export_in_article(
+    article_dir: Path, receipt: dict[str, Any], specs: list[CopySpec]
+) -> tuple[Path | None, str, list[str]]:
+    """Preserve all article files; never overwrite a conflicting upload asset."""
+    flat_specs = []
+    for entry, spec in zip(receipt["assets"], specs):
+        # An existing root-level song already has a useful name; do not make a
+        # second theme-prefixed copy beside it. Nested songs keep their basename.
+        name = spec.source.name if spec.role == "theme" else spec.destination
+        entry["handoff"]["path"] = name
+        flat_specs.append(CopySpec(spec.role, spec.source, name, spec.sha256, spec.bytes))
+    names = [spec.destination for spec in flat_specs]
+    if len({name.casefold() for name in names}) != len(names) or HANDOFF_RECEIPT_FILE in names:
+        return None, "", ["上传资产同名，无法放在文章第一层；请先区分源文件名称"]
+    payloads = {spec.destination: (spec.bytes, spec.sha256) for spec in flat_specs}
+    receipt_bytes = _canonical_json(receipt)
+    payloads[HANDOFF_RECEIPT_FILE] = (len(receipt_bytes), hashlib.sha256(receipt_bytes).hexdigest())
+    # Check the complete set before creating anything, including the receipt.
+    missing = []
+    for name, (size, digest) in payloads.items():
+        destination = article_dir / name
+        if destination.is_symlink():
+            return None, "", [f"文章第一层目标是符号链接，拒绝写入：{name}"]
+        if not destination.exists():
+            missing.append(name)
+        elif not destination.is_file() or destination.stat().st_size != size or sha256_file(destination) != digest:
+            return None, "", [f"文章第一层已有不同内容，未覆盖：{name}；请核实旧文件后再处理"]
+    if not missing:
+        return article_dir, "unchanged", []
+    temp = Path(tempfile.mkdtemp(prefix=".handoff-tmp-", dir=article_dir))
+    created: list[tuple[Path, int]] = []
+    try:
+        for spec in flat_specs:
+            if spec.destination not in missing:
+                continue
+            staged = temp / spec.destination
+            shutil.copyfile(spec.source, staged)
+            if staged.stat().st_size != spec.bytes or sha256_file(staged) != spec.sha256:
+                raise HandoffError(f"复制后校验失败：{spec.destination}")
+        if HANDOFF_RECEIPT_FILE in missing:
+            (temp / HANDOFF_RECEIPT_FILE).write_bytes(receipt_bytes)
+        # link() atomically installs a new file without replacing concurrent
+        # writes; assets come first, the receipt is installed last.
+        for name in missing:
+            destination = article_dir / name
+            os.link(temp / name, destination)
+            created.append((destination, destination.stat().st_ino))
+        return article_dir, "created", []
+    except (OSError, HandoffError) as exc:
+        for destination, inode in reversed(created):
+            size, digest = payloads[destination.name]
+            if (not destination.is_symlink() and destination.is_file()
+                    and destination.stat().st_ino == inode
+                    and destination.stat().st_size == size
+                    and sha256_file(destination) == digest):
+                destination.unlink()
+        return None, "", [str(exc)]
+    finally:
+        shutil.rmtree(temp)
+
+
 def _main() -> int:
     _configure_stdio()
     parser = argparse.ArgumentParser(
-        description="导出封面、主题曲及可选播客的可验证手工上传包"
+        description="将封面、主题曲及可选播客交付到文章目录第一层"
     )
     parser.add_argument("article_dir")
     parser.add_argument(
         "--target-root",
         default="",
-        help=f"覆盖 {HANDOFF_DIR_ENV} / .env 中的交接根目录",
+        help="仅在明确需要独立副本时指定导出根目录；默认直接放在文章目录",
     )
     parser.add_argument(
         "--revision",

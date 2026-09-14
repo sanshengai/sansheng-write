@@ -5,7 +5,7 @@
 ## 两类归档不要混用
 
 - `pipeline.py archive`：只登记作品库、刷新派生视图与推荐卡，不搬文件。
-- `pipeline.py handoff-assets`：只导出给人工上传使用的浅层临时资产包，不是文章长期存档。
+- `pipeline.py handoff-assets`：只把给人工上传使用的文件汇齐到文章目录第一层，不是文章长期存档。
 - `pipeline.py physical-archive`：复制并校验整篇文章目录，负责永久文件交付。
 
 ## 前置条件
