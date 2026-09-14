@@ -1388,7 +1388,10 @@ def process_footer(html):
     if gen_script.exists():
         log("正在调用 generate_recommend_html.py 生成最新推荐...")
         result = subprocess.run(
-            [sys.executable, str(gen_script), "html"],
+            # 🔴 必须把文章目录传给子进程：它默认按自己的 cwd（SCRIPT_DIR）绑定
+            # workspace，在子 worktree 里会绑到 skill 自身目录 → 作品库找不到 →
+            # 「未找到任何文章」→ 推荐卡与关注卡整段跳过（2026-09-14 第 99 篇实证）。
+            [sys.executable, str(gen_script), "html", "--dir", os.getcwd()],
             capture_output=True,
             text=True,
             encoding="utf-8",
