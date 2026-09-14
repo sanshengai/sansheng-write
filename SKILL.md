@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 # 中文长文写作系统
 
-运行要求：Python 3.10+、Node.js 18+ 与 baoyu-skills；BGM/各 renderer 的凭证按 `music.md` / `image-routing.md` 配置，只从环境变量读取。
+运行要求：Python 3.10+、Node.js 18+ 与 baoyu-skills；renderer 凭证按 `image-routing.md` 配置。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `xxx.md` 一律指 `references/xxx.md`**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
@@ -55,7 +55,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 |---|---|
 | 新选题 / 写篇文章 / 聊方向 | outline.md |
 | 展开正文 / 继续写 / 改稿（写前先跑 `prep_writing.py` 聚合 `_prep-context.md` 再走 7 步准备） | writing.md + style-routes.md 对应章 + profile/corpus/authors/{X}.compact.md |
-| 给几版开头盲选 / 挑开头 / 换开头（2-3 版钩子 A/B/C 盲选不给理由，**autopilot 唯一法定停顿点**） | writing.md §开头候选盲选 |
+| 给几版开头盲选 / 挑开头 / 换开头（2-3 版钩子 A/B/C 盲选不给理由，**创作阶段的盲选停顿点；主题曲另有手动交接等待，见 music.md**） | writing.md §开头候选盲选 |
 | 内容增强 / 素材不够尖（4 套策略，**大纲后写作前**） | content-enhance.md |
 | 材料够不够 / 来源边界 / 现实写作能写到哪一步 | material-integrity.md |
 | 丢录音 / 口述想法转文字 / 音频转写（转写 → **口述梳理** → 梳理稿当大纲主输入） | transcribe.md |
@@ -71,7 +71,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 改任何颜色/圆角前必读（视觉 SSOT，改一处全局生效） | design-tokens.md |
 | 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
-| 生成音乐 / BGM / 主题曲（Lyria 自动生成、网页生成或复用既有成品） | music.md |
+| 生成音乐 / BGM / 主题曲（先交付 MiniMax 手动生成单，接收 MP3 后继续；Lyria 暂停） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |

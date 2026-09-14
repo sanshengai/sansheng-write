@@ -151,7 +151,9 @@ STAGE_HINTS = {
         "  完成后：pipeline.py verify infographic"
     ),
     "bgm": (
-        "读取 references/music.md 选择真实通道：Lyria 可自动生成；网页生成或复用成品\n"
+        "读取 references/music.md，先交付 MiniMax-主题曲生成单.md（歌名、主题、风格、完整歌词、导出要求）。\n"
+        "  默认由作者在 MiniMax 网页手动生成，等待 MP3；Lyria 暂停，不调用或要求配置 Google Cloud。\n"
+        "  收到音频后核实实际来源；作者指定复用既有成品时保留原来源。\n"
         "  用 music_manifest.py create 绑定实际文件、provider/model/mode 与注册表引用。\n"
         "  已有 manifest 时先 verify --probe-duration；不得按文件名、时间戳或候选 MP3 猜来源。\n"
         "  🔴 必须在 layout（MD→HTML）之前跑：先插卡进 定稿.md，排版才会渲染出音频卡片。\n"
@@ -1123,7 +1125,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
             errors.extend(_checkpoint_errors("writing", cwd))
 
         # ⚠️ 非阻断 WARNING（2026-06-20 审查 B-2）：开头盲选锚点 _opening-choice.md 是
-        # autopilot 唯一法定停顿点，但它不在 STAGE_ORDER 记账、无 verify 硬门。跨会话恢复时
+        # 创作阶段的盲选停顿点，但它不在 STAGE_ORDER 记账、无 verify 硬门。跨会话恢复时
         # 新会话见 writing=done 即直奔配图，盲选停顿被静默跳过。这里只提醒、不 fail——
         # 历史文章无此文件，加硬门会破坏既有 verify/golden 测试。
         if not legacy and not (cwd / "_opening-choice.md").exists():

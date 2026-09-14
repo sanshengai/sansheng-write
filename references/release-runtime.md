@@ -90,7 +90,7 @@ Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后�
 ```bash
 python "$SKILL/scripts/pipeline.py" assemble-release
 ```
-2. 运行 `generate_article_bgm.py`，生成 MP3 并插入主题曲 AUDIO-CARD。
+2. 按 `music.md` 与 `templates/minimax-music-brief.template.md` 交付文章目录内的 `MiniMax-主题曲生成单.md`，给作者可点击路径。默认由作者在 MiniMax 网页手动生成；Lyria 暂停，不调用 `generate_article_bgm.py` 或要求 Google Cloud 登录。收到 MP3 后核实来源、创建并验证 `_music-manifest.json`，再用 `audio_cards.py` 插入 AUDIO-CARD。等待 MP3 时继续图片等独立工作，不伪造完成状态。
 3. 若 profile 显式配置 `podcast.wechat_embed: true`，立即运行 `pipeline.py podcast-pregen`：先插入同级 PODCAST-CARD，再生成 `dist/podcast/audio.mp3`。这是草稿前硬门，不得留到 `finalize`；未显式配置时保持历史主题曲单卡。
 4. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
 5. 运行：

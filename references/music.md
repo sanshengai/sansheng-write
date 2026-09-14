@@ -1,27 +1,39 @@
-# 文章音乐（BGM / 主题曲）· 通道中性来源合同
+# 文章音乐（BGM / 主题曲）
 
-> 从文章内容提炼主旨、生成**中文人声主题曲**、嵌入微信文章的完整 SOP。
-> **可从任意步骤开始**--每步均自包含。本阶段由编排器单线程执行（契约见 references/orchestration.md）。
+## 当前执行方式：MiniMax 网页手动生成
 
-> ### 📌 引擎沿革
-> - 2026-04 初版：Google Lyria 3 Pro（多模态图文输入）。
-> - 2026-05-29 因 Vertex 全路径 404 **误判**为「项目白名单不开放」而废弃 → 切 MiniMax `music-2.6-free`。
-> - 2026-08-20 MiniMax 音乐 API 对非历史付费用户关停（HTTP 410 / `status_code 2153`）。
->   按量计费 Key、订阅 Key、网页声贝三条通道实测全灭，充值升套餐均无法解锁。
-> - 2026-08-21 **查明当年的 404 是端点形态用错**——Lyria 3 走 `interactions`，不是 `:predict`；
->   换对后实测跑通中文女声整首歌（176s）。Lyria 3 Pro `lyria-3-pro-preview`
->   是默认自动生成通道，不是发布硬门唯一允许的来源。
->
-> Lyria 自动通道特征：① 仅文字 prompt（图片输入未在本管线启用）；② 风格池 5 种舒缓系；
-> ③ 自动写词，且**歌词随响应返回**（落 `{歌名}-歌词.txt`，旧引擎「词不可控、看不到文本」的代价消失）；
-> ④ 时长约 3 分钟；⑤ 计费 $0.08/首，走 Cloud，$300 赠金可覆盖。
+默认由作者在 MiniMax 网页生成中文人声主题曲。Lyria 自动通道目前暂停，直到作者明确要求恢复；不运行自动生成器，不为推进文章要求作者登录 Google Cloud、配置 ADC、项目或 API Key，也不改走 MiniMax API。暂停的是自动生成通道，主题曲本身仍是发布必需素材。
 
-发布硬门只认文章本地 `_music-manifest.json`：它必须绑定实际播放文件的 SHA-256、
-字节数、时长，以及真实 `provider / model / mode` 与注册表引用。自动生成、外部网页
-生成和复用既有主题曲都允许；任何通道切换都不得改写旧歌出身，也不得从同名 MP3、
-时间戳或“最新候选”推断来源。
+Agent 必须先完成可直接使用的 `MiniMax-主题曲生成单.md`，再请求作者操作。不能只说“去生成一首歌”，也不能只给主题而缺完整歌词。模板见 `../templates/minimax-music-brief.template.md`。
 
----
+### 1. 交付生成单
+
+从已确认正文提炼，文件保存在本篇文章目录，并给可点击的绝对路径。必含：
+
+- 歌名：与文章主题有关，适合唱出，不照搬整条文章标题。
+- 主题与情绪：用具体生活画面说明要唱什么、情绪怎样变化，避免把技术说明直接塞进歌词。
+- 可直接复制的音乐风格提示词：人声、语言、BPM、配器、氛围、段落结构、目标时长及应避免的唱法。
+- 完整简体中文歌词：按主歌、副歌、桥段、尾声等实际结构写全，风格和歌词分开，便于分别复制。
+- 导出与回传要求：MP3 文件名、放置目录；保留网页实际显示的模型名称或生成记录，便于登记来源。不要把建议时长或计划模型当成成品事实。
+
+作者已有歌名、风格或歌词选择时沿用。新歌按下方品牌音乐 DNA 与风格池编写；已审批正文及 meta 不因制作生成单而改写。
+
+### 2. 等待 MP3 时
+
+给出完整生成单后，等待作者提供实际音频，继续可独立完成的配图、核对等工作。此时 BGM 仍待完成，不标失败、不 `skip`、不造 MP3 或来源凭证、不承诺草稿已提交。收到音频后直接续做，不重新要求正文审批。
+
+### 3. 接收音频与来源登记
+
+核实可播放文件与实际时长、来源后，使用 `music_manifest.py` 创建 `_music-manifest.json`，绑定文件 SHA-256、字节数、时长以及真实 `provider/model/mode`。文件名、时间戳、生成单里的计划字段和“最新候选”均不能证明实际来源。
+
+若没有既有歌曲注册表，可先在本篇建立 `主题曲来源记录.md`，以独立条目记下作者交付事实、实际模型和文件；manifest 引用该文件和条目。已有注册表时复用，不复制另一份。模型名称不明时向作者核实，不硬填某个 MiniMax 版本。
+
+```bash
+python "$SKILL/scripts/music_manifest.py" create "<文章目录>" --audio "<实际 MP3 相对路径>" --title "<歌名>" --duration-seconds <探测时长> --provider "MiniMax" --model "<网页实际模型>" --mode "web-ui" --registry-ref "主题曲来源记录.md" --registry-entry "<实际条目 ID>"
+python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-duration
+```
+
+发布硬门保持通道中性：作者明确指定复用既有歌曲或其他来源时保留真实出身，不把旧歌改写成 MiniMax 新生成。
 
 ## 品牌音乐 DNA
 
@@ -45,64 +57,6 @@
 
 ---
 
-## 自动生成通道（Lyria 3）
-
-> 🔴 **提炼环节不调任何模型**：由 **Claude 在 BGM 阶段按下面《Claude 提炼标准》提炼**，作为参数传给脚本；脚本是纯执行器（拼 V2 空灵 prompt → Lyria 3 写词生成）。
-> （生成环节本身走 Google Vertex；这与「提炼不调模型」不冲突，别再沿用旧文档里"不碰 Google"的说法。）
-
-```bash
-python "$SKILL/scripts/generate_article_bgm.py" "<文章目录>" \
-    --theme-brief "虚无缥缈的诗意主旨叙事（一句，方法A 据此自动写词）" \
-    --imagery "柔美画面词,逗号分隔,如 薄雾,潮汐,微光" \
-    --song-name "既诗意又点题文章主题的短歌名" \
-    --style ambient_piano --gender male
-
-# 参数优先级：CLI > article-meta.yaml music 块 > 规则兜底
-#   --theme-brief  不传则用 frontmatter digest/description 兜底（音色不如诗意提炼空灵，会警告）
-#   --style  ethereal_folk|ambient_vocal|ambient_piano|cinematic_vocal|shanghai_jazz_soul（默认 ethereal_folk）
-#   --gender 默认按序号奇偶交替（奇女偶男）；shanghai_jazz_soul 例外默认女声
-#   --model 默认 lyria-3-pro-preview
-```
-
-## 网页生成或复用既有主题曲
-
-先把确认过来源的实际播放文件放进文章目录，再显式创建 manifest；下列字段必须按
-真实出身填写，不能把当前临时通道或未来计划中的通道倒灌给旧成品：
-
-```bash
-python "$SKILL/scripts/music_manifest.py" create "<文章目录>" \
-  --audio "素材/主题曲.mp3" --title "歌名" --duration-seconds 206.2 \
-  --provider "MiniMax" --model "Music 3.0" --mode "web-ui" \
-  --registry-ref "人物主题曲注册表.json" --registry-entry "人物ID"
-python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-duration
-```
-
-随后用 `audio_cards.py` 的共享模板把主题曲卡片收口到 `定稿.md` 文末，再进入排版；
-卡片歌名、manifest 歌名和权威注册表必须一致。
-
-### 主题曲来源契约
-
-新文章必须在文章目录保存 `_music-manifest.json`。它是选定播放文件和来源署名的唯一真源，
-必须绑定精确的相对路径、SHA-256、字节数、时长，以及显式的
-`origin.provider/model/mode` 和 `registry.reference/entry`。禁止通过 MP3 文件名、
-修改时间或「最新」 sidecar 推断当前主题曲及其出身。用户可见标签保持通道中性；
-真实 provider/model 只写入来源字段。
-
-Lyria 生成器会自动写契约。外部网页或其他引擎生成的成品，必须用显式来源补建：
-
-```bash
-python "$SKILL/scripts/music_manifest.py" create "<文章目录>" \
-  --audio "<MP3 相对路径>" --title "<歌名>" --duration-seconds 180 \
-  --provider "<provider>" --model "<model>" --mode "web-ui" \
-  --registry-ref "<权威注册表引用>" --registry-entry "<条目 ID>"
-
-python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-duration
-```
-
-前置：已装 gcloud 并跑过 `gcloud auth application-default login` + `gcloud config set project <PROJECT>`（脚本用 ADC 取 OAuth token；**不需要 API Key**，缺凭证 exit 2 阻断发布链）。封面（可选，失败不阻塞）另需 `GOOGLE_API_KEY`（gen_img.py 的 Vertex Express key，与本阶段凭证不是同一套）。
-
----
-
 ## 风格池（5 种舒缓系，与 generate_article_bgm.py 的 STYLE_POOL 同步）
 
 | 风格 Key | 名称 | BPM | 适合文章类型 |
@@ -115,7 +69,7 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 > 仍停用原 `light_pop`（欢快）/ `lofi_vocal`（通用节拍）/ `warm_ballad`（叙事节奏）。
 > `shanghai_jazz_soul` 不是恢复通用 lo-fi 节拍：它只在 68 BPM 下允许轻刷鼓作呼吸脉冲，明确禁止 driving beat、鼓 fill 和大乐队式炒作。
-> 风格回避：脚本读 `<数据目录>/articles.md` 近 3 篇「音乐风格」字段，强制避开重复。
+> 风格回避：Agent 读 `<数据目录>/articles.md` 近 3 篇「音乐风格」字段，强制避开重复。
 
 ### 人声交替（防审美疲劳）
 
@@ -127,58 +81,13 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 ---
 
-## 🔴 Claude 提炼标准（自动写词的最大杠杆）
+## 主题与歌词写法
 
-Lyria 3 按 `theme_brief` **自动写词**，而**歌词内容直接决定音色空灵度**（实测：模型按歌词语义决定配器与唱法）。所以 Claude 提炼时务必：
+主旨先落到具体动作和物件，再写可唱的句子。选两三个与本文有关的意象，保持歌词内在连贯；副歌可以重复文章最想留下的感受。中文人声必须与本文呼应，但不要求把软件名、命令和参数唱出来。由当前 Agent 写完整歌词，不把此步骤交给尚未启动的 Lyria。
 
-| 要素 | 标准 |
-|---|---|
-| **theme_brief** | 提炼成**虚无缥缈的诗意意象一句**（留白、柔美、有画面），**不是信息性概括**。<br>例（睡眠主题文）：❌「睡眠是大脑的免费夜班」 ✅「夜里有人替你点一盏灯，收走一天的尘埃」 |
-| **imagery** | 2-3 个**柔美具体画面词**（薄雾/潮汐/微光/晨光/星河）；**禁抽象大词**（智慧/治愈/未来/科技） |
-| **song_name** | 🔴 **既诗意又点题文章主题**--让读者一看歌名就联想到文章讲什么。<br>例（睡眠文）：❌《替你点灯》(看不出讲睡眠) ✅《替你值夜》《大脑的夜班》(点题"睡眠/夜班"+诗意) |
-| **style** | 5 选 1：哲思/治愈/盘点→`ambient_piano`；科技/未来→`ambient_vocal`；深度/观点→`ethereal_folk`；长文特稿→`cinematic_vocal`；人物往事/城市记忆/怀旧叙事→`shanghai_jazz_soul` |
-| **gender** | 默认按序号奇偶交替（奇女偶男）；`shanghai_jazz_soul` 默认女声；CLI / meta 显式设置始终优先 |
+## 接入微信文章
 
-脚本据此拼 V2 prompt：前 4 种沿用空灵极简体系（`aria`/`echoing`/`resonant` + 物理声学质感）；`shanghai_jazz_soul` 单独走亲密人声、轻刷鼓和 vintage room 体系，避免与 `beatless` / 禁鼓约束自相矛盾。
-
-> 词不可控/看不到文本是方法A 的固有代价；质量靠**诗意提炼 + V2 空灵 prompt + 必要时换 `--style` 重生成**。
-
----
-
-## API 调用要点（Vertex Lyria 3 · interactions）
-
-| 项 | 值 |
-|----|----|
-| 端点 | `POST https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions` |
-| 鉴权 | `Authorization: Bearer $(gcloud auth application-default print-access-token)` |
-| 模型 | `lyria-3-pro-preview` — 本管线**固定用这一个**，不要换 |
-| 入参 | `{"model": "...", "input": "<自然语言描述，含风格/人声/配器/主旨/简体中文歌词要求>"}` |
-| 返回 | 同步；`outputs[]` 含 `type=audio`（**内联 base64 mp3**，无链接过期问题）、`type=text`×2（歌词 / caption） |
-| 计费 | $0.08/首（Clip $0.04）。走 `aiplatform.googleapis.com` = Cloud 计费，**$300 赠金覆盖** |
-
-### 🔴 三个坑（错任一个都报错，且报错措辞会把人带偏）
-
-| 现象 | 真正原因 |
-|------|----------|
-| **404** `not found or your project does not have access` | 用了 `publishers/google/models/{M}:predict`——那是旧版音乐模型的端点形态，对 Lyria 3 必然 404。**不是**没白名单（public preview 无需 allowlist），社区里大批人卡在这个误判上，本管线 2026-05 也栽在这里 |
-| **401** `API keys are not supported by this API` | interactions 只认 OAuth2。`.env` 里那把 `AQ.` 开头的 Vertex Express key 用不了（它是给 `gen_img.py` 的） |
-| **403** `Permission 'aiplatform.interactions.create' denied` | project 选错。必须用**当前 ADC 账号自己有权限**的 project，别拿 `.env` 里的 `GOOGLE_VERTEX_PROJECT` |
-
-> 🔴 **歌词默认出繁体**——prompt 必须显式写「Simplified Chinese（简体中文，NOT traditional）」，
-> `build_music_prompt()` 已内置该约束，改 prompt 时不要删掉。
-> 🔴 **只用 `lyria-3-pro-preview`**。Google 还有别的音乐模型，但要么纯器乐没人声、要么只出 30 秒片段，都顶不了主题曲——本管线不提供切换选项，避免选错。
-
----
-
-## 微信文章插入（同级双音频卡）
-
-> 🔴 **顺序铁律**：`generate_article_bgm.py` 必须在 MD→HTML 排版**之前**执行（先生成 mp3 + 把卡片写入 定稿.md，排版才渲染出卡片）。
-> 🔴 **位置铁律**：脚本先把 `AUDIO-CARD` 与可选 `PODCAST-CARD` 机器块收口到 `定稿.md` **最末尾**；`format_layout.py --all` 再按「导读 → 主题曲 → 播客 → 正文」前置。严禁直接写在开头（会被 baoyu-md 误吞进 `<meta description>` 导致 head 崩坏）。
-
-脚本会自动：
-1. 生成 `{歌名}.mp3` + `{歌名}.json`（生成元数据）+ `_music-manifest.json`（发布来源契约）
-2. 调 `gen_img.py` 生成 1:1 主题曲封面 `素材/bgm_cover.png`（不打水印）
-3. 用 `audio_cards.py` 的共享模板写入「🎵 阅读配乐｜本文主题曲」卡片
+音频文件与 manifest 验证通过后，用 `audio_cards.py::upsert_card` 的共享模板写入主题曲卡片。必须在 MD→HTML 排版之前完成；AUDIO-CARD 与可选 PODCAST-CARD 机器块先收口到 `定稿.md` 最末尾，再由 `format_layout.py --all` 按「导读 → 主题曲 → 播客 → 正文」前置。不得改动已审批的作者正文。主题曲封面按既有视觉流程处理；封面不能证明音频已经生成。
 
 若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后从微信预览分别试听两条音频的开头/结尾 10 秒，再跑 `pipeline.py wechat-audio-check --confirm-audition`。
 
@@ -210,12 +119,11 @@ manifest 绑定文件。逐项验证后通过同级临时目录原子落盘；�
 
 ## 发布检查
 
-- ☐ BGM 已生成（**排版之前**）：`{歌名}.mp3` + `_music-manifest.json` + `素材/bgm_cover.png`
-- ☐ `定稿.md` 含 AUDIO-CARD；开启嵌入时还含 PODCAST-CARD 与同源播客 MP3
-- ☐ 已重新走排版管线，固定顺序为导读 → 主题曲 → 播客 → 正文
-- ☐ 两份 MP3 已插入各自卡片并删除占位文字
-- ☐ `wechat-audio-check --confirm-audition` 官方全文回读通过，微信预览已分别试听两条音频的开头/结尾 10 秒
+- 实际 MP3 与 `_music-manifest.json` 已验证，生成单不能替代成品。
+- `定稿.md` 含 AUDIO-CARD；开启嵌入时还有 PODCAST-CARD 与同源播客 MP3。
+- 排版顺序为导读 → 主题曲 → 播客 → 正文。
+- 作者在微信后台插入两份实际音频、移除占位文字，分别试听首尾后，按原流程完成官方回读检查。
 
----
+## 暂停通道的维护资料
 
-*来源合同通道中性；Lyria 3 Pro 是默认自动生成器，网页生成与既有成品必须保留各自真实署名。*
+只有作者明确要求恢复或排查 Lyria 时才读 `music-lyria-paused.md`。保留历史实现和脚本便于未来恢复，不把它列为当前默认步骤。
