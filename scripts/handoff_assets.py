@@ -275,6 +275,48 @@ def _podcast_from_manifest(
     return entry, spec, []
 
 
+THEME_COVER = Path("素材/bgm_cover.png")
+PODCAST_COVER = Path("素材/podcast_cover.png")
+
+
+def _audio_covers(
+    article_dir: Path,
+    *,
+    podcast_present: bool,
+) -> tuple[list[dict[str, Any]], list[CopySpec], list[str]]:
+    """主题曲封面必交付；播客封面在本篇有播客时必交付。
+
+    两张图由 ``audio_covers.ensure_audio_covers`` 在 handoff 前生成（pipeline
+    ``handoff-assets`` 已串好）；这里只认已存在的文件，缺了就报错而不是静默少给——
+    作者是在微信编辑器里逐条插音频时才发现少封面的，事后补比事前拦贵得多。
+    """
+    wanted: list[tuple[str, str, Path, str]] = [
+        ("theme_cover", "主题曲封面", THEME_COVER, "theme-cover.png"),
+    ]
+    if podcast_present:
+        wanted.append(("podcast_cover", "播客封面", PODCAST_COVER, "podcast-cover.png"))
+    entries: list[dict[str, Any]] = []
+    specs: list[CopySpec] = []
+    errors: list[str] = []
+    for role, label, relative, destination in wanted:
+        source = article_dir / relative
+        if not source.is_file() or source.stat().st_size == 0:
+            errors.append(
+                f"缺{label}：{relative.as_posix()}；先运行 audio_covers.py 生成"
+            )
+            continue
+        digest = sha256_file(source)
+        size = source.stat().st_size
+        specs.append(CopySpec(role, source, destination, digest, size))
+        entries.append({
+            "role": role,
+            "label": label,
+            "source": {"path": relative.as_posix(), "sha256": digest, "bytes": size},
+            "handoff": {"path": destination, "sha256": digest, "bytes": size},
+        })
+    return entries, specs, errors
+
+
 def build_handoff_snapshot(
     article_dir: Path,
     *,
@@ -308,6 +350,13 @@ def build_handoff_snapshot(
     if podcast_entry is not None and podcast_spec is not None:
         entries.append(podcast_entry)
         specs.append(podcast_spec)
+    cover_entries, cover_specs, cover_errors = _audio_covers(
+        article_dir,
+        podcast_present=(article_dir / PODCAST_MANIFEST).is_file(),
+    )
+    errors.extend(cover_errors)
+    entries.extend(cover_entries)
+    specs.extend(cover_specs)
     if errors:
         return None, [], errors
     payload = {

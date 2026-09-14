@@ -99,7 +99,7 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
 ```
 
-主题曲保留原文件名（已经在第一层就直接复用），播客为 `podcast.mp3`，封面为 `cover.png`。源文件 `dist/podcast/audio.mp3`、`素材/cover.png` 及其回执继续服务生成和发布流程；根目录提供经 SHA-256 与大小验证的上传副本，不为方便查找移走源文件。
+主题曲保留原文件名（已经在第一层就直接复用），播客为 `podcast.mp3`，封面为 `cover.png`；🔴 **两条音频各配一张 1:1 封面一起交付**：主题曲封面 `theme-cover.png`（源 `素材/bgm_cover.png`）、播客封面 `podcast-cover.png`（源 `素材/podcast_cover.png`，仅本篇有播客时）。`handoff-assets` 先跑 `audio_covers.py` 缺哪张生成哪张（走 `renderer-policy.json` 同一条 baoyu-image-gen 链，不加水印，`--regenerate-covers` 才重生成），缺封面直接拒绝交付——2026-09-14 前连续两篇发布后才发现作者在微信编辑器里没封面可传，这一步就是为它设的。源文件 `dist/podcast/audio.mp3`、`素材/cover.png` 及其回执继续服务生成和发布流程；根目录提供经 SHA-256 与大小验证的上传副本，不为方便查找移走源文件。
 
 命令只读取封存视觉凭证和音频 manifest 指定的文件，验证后才交付，根目录写 `_handoff-receipt.json`；同一快照可重复运行，现有同名不同内容文件会报错，不静默覆盖正文或其他资产。旧 `SANSHENG_WRITE_HANDOFF_DIR` 配置不再自动生效。只有作者明确要求独立导出时才使用 `--target-root <目录>`，此模式保留 `--revision r2` 的版本快照能力。
 

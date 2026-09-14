@@ -4418,6 +4418,11 @@ def main():
         default="",
         help="目标已有不同快照时使用新的 revision 标识，如 r2",
     )
+    p_handoff.add_argument(
+        "--regenerate-covers",
+        action="store_true",
+        help="主题曲/播客封面已存在也重新生成（默认缺哪张生成哪张）",
+    )
     p_wechat_audio = sub.add_parser(
         "wechat-audio-check",
         help="人工插入主题曲/播客音频后，用官方 draft/get 复核再允许正式发布",
@@ -4584,8 +4589,19 @@ def main():
     elif args.cmd == "release-to-draft":
         cmd_release_to_draft(cwd)
     elif args.cmd == "handoff-assets":
+        from audio_covers import ensure_audio_covers
         from handoff_assets import export_handoff_assets
 
+        # 交付前先把主题曲封面 / 播客封面补齐（缺哪张生成哪张），作者在微信编辑器
+        # 插音频时要同时上传封面；2026-09-14 前连续两篇发布后才发现没封面。
+        _ready, cover_errors = ensure_audio_covers(
+            cwd, force=getattr(args, "regenerate_covers", False)
+        )
+        if cover_errors:
+            print("❌ 手工上传包导出失败（音频封面未就绪）：")
+            for error in cover_errors:
+                print(f"   • {error}")
+            sys.exit(2)
         target, status, errors = export_handoff_assets(
             cwd,
             target_root=(

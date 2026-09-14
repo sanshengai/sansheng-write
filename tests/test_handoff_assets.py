@@ -13,6 +13,10 @@ def _article(tmp_path: Path, *, podcast: bool = False):
     materials.mkdir()
     cover = materials / "cover.png"
     cover.write_bytes(b"sealed-cover")
+    # 主题曲封面必交付；播客封面只在有播客时交付（audio_covers.py 负责生成）。
+    (materials / "bgm_cover.png").write_bytes(b"theme-cover")
+    if podcast:
+        (materials / "podcast_cover.png").write_bytes(b"podcast-cover")
     visual_receipt = {
         "schema_version": 1,
         "manifest": {
@@ -79,7 +83,9 @@ def test_handoff_exports_only_receipt_bound_assets_and_is_idempotent(tmp_path: P
     assert sorted(path.name for path in target.iterdir()) == [
         "_handoff-receipt.json",
         "cover.png",
+        "podcast-cover.png",
         "podcast.mp3",
+        "theme-cover.png",
         "theme-边界之歌.mp3",
     ]
     receipt = json.loads((target / "_handoff-receipt.json").read_text(encoding="utf-8"))
@@ -87,6 +93,8 @@ def test_handoff_exports_only_receipt_bound_assets_and_is_idempotent(tmp_path: P
         "cover",
         "theme",
         "podcast",
+        "theme_cover",
+        "podcast_cover",
     ]
     theme = receipt["assets"][1]
     assert theme["origin"]["provider"] == "example-provider"
@@ -175,6 +183,8 @@ def test_default_handoff_stays_in_article_and_ignores_legacy_env(tmp_path, monke
     assert not legacy.exists()
     assert (article / "podcast.mp3").read_bytes() == (article / "dist/podcast/audio.mp3").read_bytes()
     assert (article / "cover.png").read_bytes() == (article / "素材/cover.png").read_bytes()
+    assert (article / "theme-cover.png").read_bytes() == b"theme-cover"
+    assert (article / "podcast-cover.png").read_bytes() == b"podcast-cover"
     assert not (article / "theme-边界之歌.mp3").exists()
     assert all(p.read_bytes() == data for p, data in before.items())
     assert export_handoff_assets(article, **kwargs) == (article, "unchanged", [])
@@ -220,3 +230,27 @@ def test_default_handoff_preserves_concurrent_writer_and_rolls_back_own_files(tm
     assert (article / "podcast.mp3").read_bytes() == b"concurrent-writer"
     assert not (article / "cover.png").exists()
     assert not (article / "_handoff-receipt.json").exists()
+
+
+def test_handoff_requires_theme_cover_and_podcast_cover(tmp_path):
+    article, verify_visual, probe = _article(tmp_path, podcast=True)
+    kwargs = dict(duration_probe=probe, visual_verifier=verify_visual)
+    (article / "素材/podcast_cover.png").unlink()
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("缺播客封面" in error for error in errors)
+    assert not (article / "cover.png").exists()
+
+    (article / "素材/podcast_cover.png").write_bytes(b"podcast-cover")
+    (article / "素材/bgm_cover.png").write_bytes(b"")
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("缺主题曲封面" in error for error in errors)
+
+    # 没有播客的文章不要求播客封面
+    (tmp_path / "plain").mkdir()
+    plain, verify_plain, probe_plain = _article(tmp_path / "plain")
+    target, status, errors = export_handoff_assets(
+        plain, duration_probe=probe_plain, visual_verifier=verify_plain
+    )
+    assert errors == [] and status == "created"
+    assert (plain / "theme-cover.png").exists() and not (plain / "podcast-cover.png").exists()
+
