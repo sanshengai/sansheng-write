@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [2.1.0] -- 2026-09-15
+
 ### 新增
 
 - **作者截图模式 `infographic_mode: author-shots`**：截图密集的教程 / 实录文章在 `article-meta.yaml` 声明后，信息图 ≥4 张的硬门改由「正文引用 ≥4 张作者供图（`素材/作者素材/` 或 `shot-` 前缀）且文件存在」兑现；`visual-plan.json` 的 `infographics` 必须为空，封面与 Hero 照常生成，`assemble-release` 不插图。`verify infographic`、`release-check` / `release-to-draft` 前门、`preflight` 与 `contracts` 软提示都认这个模式，供图不够、文件缺失、任务单仍列信息图或素材里混进 `infographic*.png` 一律拒绝——它是另一种兑现，不是 skip（`NEVER_SKIP_STAGES` 不变）。默认 `generated` 行为一字未改。新增 `scripts/author_shots.py` 与 `tests/test_author_shots_mode.py`。
