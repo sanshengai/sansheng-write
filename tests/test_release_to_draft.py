@@ -947,3 +947,38 @@ def test_compress_images_converts_unsupported_and_rewrites_references(tmp_path):
     assert (art / "素材/01-截图.png").is_file()
     assert not (art / "素材/01-截图.webp").exists(), "原文件必须删掉"
     assert (art / "定稿.md").read_text(encoding="utf-8") == "![图](素材/01-截图.png)"
+
+
+def test_readback_tolerates_small_author_edit_but_not_rewrite(tmp_path):
+    from scripts.release_to_draft import _compare_readback, _published_digest, build_expected_draft
+
+    article = _article(tmp_path)
+    expected, errors = build_expected_draft(article)
+    assert errors == []
+    body = "我记性不大好，字也写得不好看，偏偏计划性又强，所以日程得有个云端的地方管着。" * 20
+    expected["content"] = f"<section><p>{body}</p></section>"
+    expected["image_count"] = 0
+
+    def actual_with(text):
+        return {
+            "title": expected["title"],
+            "author": expected["author"],
+            "digest": _published_digest(expected["digest"]),
+            "content": f"<section><p>{text}</p></section>",
+            "content_source_url": expected["source_url"],
+            "thumb_media_id": "cover-media-001",
+            "need_open_comment": expected["need_open_comment"],
+            "only_fans_can_comment": expected["only_fans_can_comment"],
+        }
+
+    # 改一处字（占比远小于 2%）：放行并留痕
+    small = body.replace("偏偏计划性又强", "但计划性偏强", 1)
+    checks, compare_errors = _compare_readback(expected, actual_with(small), "cover-media-001")
+    assert compare_errors == []
+    assert checks["body_digest"] is True and checks.get("body_drift_tolerated") is True
+
+    # 删掉一半正文：仍然拦
+    checks, compare_errors = _compare_readback(expected, actual_with(body[: len(body) // 2]), "cover-media-001")
+    assert checks["body_digest"] is False
+    assert any("body_digest" in error for error in compare_errors)
+

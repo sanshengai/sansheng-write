@@ -123,6 +123,30 @@ def _semantic_body_digest(html: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+# 作者在微信编辑器里的小幅手改（改几个字、顺一句话）不回传本地也放行：
+# 可见文字相似度 ≥ 此阈值即视为同一篇正文。2026-09-16 第 99 篇实证：作者把首句
+# 「偏偏计划性又强」改成「但计划性偏强」后正式发布，逐字门把整条 finalize 卡死，
+# 而把 7 个字回传本地又会触发播客重生成（与已插进文章的音频不再是同一份）。
+# 阈值 0.98 ≈ 允许 2% 的字符改动；结构性改写（删段、换章）仍会被拦。
+BODY_DRIFT_TOLERANCE = 0.98
+
+
+def _body_drift(expected_html: str, actual_html: str) -> dict[str, Any]:
+    """Return similarity ratio and the first visible-text difference."""
+    import difflib
+
+    left = "".join(_visible_text(expected_html).split())
+    right = "".join(_visible_text(actual_html).split())
+    matcher = difflib.SequenceMatcher(None, left, right, autojunk=False)
+    ratio = matcher.ratio()
+    first = ""
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "equal":
+            first = f"{left[max(0, i1 - 8):i2 + 8]} → {right[max(0, j1 - 8):j2 + 8]}"
+            break
+    return {"ratio": round(ratio, 5), "first_difference": first}
+
+
 def _visible_text(html: str) -> str:
     """Return human-visible text, including copyable plain-text URLs."""
     parser = _VisibleTextParser()
@@ -558,6 +582,8 @@ def verify_wechat_audio(
         "roles": [role.get("role") for role in roles],
         "audio_count": len(audio_positions),
         "handoff_digest": stable_digest(handoff),
+        # 作者在微信编辑器里的小幅手改（相似度 ≥ BODY_DRIFT_TOLERANCE）留痕，不拦。
+        "body_drift": dict(_LAST_BODY_DRIFT) if full_checks.get("body_drift_tolerated") else None,
         "local_audio_sha256": local_audio_sha256,
         "remote_content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         "remote_audio_components": remote_audio_components,
@@ -1563,6 +1589,9 @@ def verify_wechat_published_audio(
     return receipt, []
 
 
+_LAST_BODY_DRIFT: dict[str, Any] = {}
+
+
 def _compare_readback(
     expected: dict[str, Any],
     actual: dict[str, Any],
@@ -1600,6 +1629,14 @@ def _compare_readback(
     checks["body_digest"] = _semantic_body_digest(
         compared_expected
     ) == _semantic_body_digest(compared_content)
+    if not checks["body_digest"]:
+        drift = _body_drift(compared_expected, compared_content)
+        if drift["ratio"] >= BODY_DRIFT_TOLERANCE:
+            # 作者小幅手改：放行，但把漂移记进 checks 供回执留痕。
+            checks["body_digest"] = True
+            checks["body_drift_tolerated"] = True
+            _LAST_BODY_DRIFT.clear()
+            _LAST_BODY_DRIFT.update(drift)
     checks["image_count"] = expected["image_count"] == _image_count(content)
     unuploaded = _unuploaded_images(content)
     checks["image_src_uploaded"] = not unuploaded
