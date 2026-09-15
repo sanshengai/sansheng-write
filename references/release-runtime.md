@@ -29,7 +29,7 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。
-- 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。
+- 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。例外：`article-meta.yaml` 声明 `infographic_mode: author-shots`（作者截图模式）时 `infographics` 必须为 `[]`，视觉切分由正文引用的 ≥4 张作者供图兑现（`素材/作者素材/` 或 `shot-` 前缀，文件必须存在）；`verify infographic` / `release-check` 改验这一条，`assemble-release` 不插图。
 - 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout_type`、`layout`、`anchor`、`expected_text`、`facts`。`layout_type` 必须是已登记的 Baoyu 布局类型。
 - `anchor` 是定稿作者正文中唯一命中的原文片段；装配器把该图插在锚句之后，找不到或命中多次即失败，禁止再按 H2 数量猜图位。
 - 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，

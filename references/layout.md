@@ -8,7 +8,7 @@
 - `article-meta.yaml`
 - `素材/cover.png`
 - `素材/hero.png`
-- 至少 4 张 `素材/infographic-*.png`
+- 至少 4 张 `素材/infographic-*.png`（`infographic_mode: author-shots` 时改为正文引用的 ≥4 张作者供图，信息图 0 张）
 - BGM MP3 与定稿中的 AUDIO-CARD
 - 显式启用 `podcast.wechat_embed` 时：`dist/podcast/audio.mp3` 与 PODCAST-CARD
 

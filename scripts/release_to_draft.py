@@ -21,6 +21,24 @@ from typing import Any, Callable
 
 import yaml
 
+# 微信公众号 API 校验调用方 IP 白名单：请求必须从作者自己的出口直连，不能经过
+# 任何 HTTP 代理（2026-09-15 实测：Agent 固定代理出口是海外节点，draft/add 直接
+# 40164 invalid ip）。这里不改写用户的代理配置，只把微信域名加进 NO_PROXY，
+# 本进程的 urllib 与 baoyu-post-to-wechat 子进程（NODE_USE_ENV_PROXY）都会遵守。
+WECHAT_NO_PROXY_HOSTS = ("weixin.qq.com",)
+
+
+def ensure_wechat_proxy_bypass(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Append WeChat hosts to NO_PROXY / no_proxy; returns the (possibly shared) env."""
+    target = os.environ if env is None else env
+    for key in ("NO_PROXY", "no_proxy"):
+        entries = [e.strip() for e in str(target.get(key) or "").split(",") if e.strip()]
+        for host in WECHAT_NO_PROXY_HOSTS:
+            if host not in entries:
+                entries.append(host)
+        target[key] = ",".join(entries)
+    return target
+
 try:
     from .audio_cards import locate_theme_audio_record
     from .evidence import stable_digest
@@ -876,6 +894,7 @@ def _read_published_page(
             "Accept-Language": "zh-CN,zh;q=0.9",
         },
     )
+    ensure_wechat_proxy_bypass()
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             final_url = str(response.geturl() or canonical_url)
@@ -1165,6 +1184,7 @@ def _default_publisher(cwd: Path) -> Publisher:
             errors="replace",
             timeout=900,
             check=False,
+            env=ensure_wechat_proxy_bypass(dict(os.environ)),
         )
         payload = _parse_json_stdout(completed.stdout)
         if completed.returncode != 0 or not payload or not payload.get("media_id"):
@@ -1236,6 +1256,7 @@ def _http_json(
         headers={"Content-Type": "application/json"} if data is not None else {},
         method="POST" if data is not None else "GET",
     )
+    ensure_wechat_proxy_bypass()
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             result = json.loads(response.read().decode("utf-8"))
@@ -1290,6 +1311,7 @@ def _default_reader(cwd: Path) -> Reader:
                 errors="replace",
                 timeout=120,
                 check=False,
+                env=ensure_wechat_proxy_bypass(dict(os.environ)),
             )
             payload = _parse_json_stdout(completed.stdout)
             if completed.returncode != 0 or not payload:

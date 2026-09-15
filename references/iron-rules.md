@@ -9,7 +9,7 @@
    `adopt-final`；接管只读并绑定审批 SHA/subject，禁止代签、覆写审批或伪造前半程审稿文件。
 3. BGM 是发布硬门；缺 MP3、AUDIO-CARD 或 `_music-manifest.json` 就没完成，`skip bgm` 被拒绝。默认先交付 MiniMax 手动生成单并等待 MP3，Lyria 自动通道暂停；硬门校验文件与真实来源，不绑定厂商；旧歌换播放通道时不得伪造其 provider/model 出身。
 4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与人工插入后的官方读回凭证同为发布硬门；正常路径认 `draft/get` 草稿凭证。仅当文章已正式发布且草稿被回收时，才可用永久链接生成独立正式文章补验凭证：优先 `freepublish/batchget` + `freepublish/getarticle`；只有已发表内容 API 返回 `48001` 才可改用同一微信官方公开页 + 原官方草稿回执的显式证据链。两条路径都必须绑定双播放器身份、本地音频哈希与人工首尾试听，缺一项不得 `finalize`，也不得拿正式文章凭证冒充草稿凭证。
-5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。
+5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。截图密集的文章可在 `article-meta.yaml` 声明 `infographic_mode: author-shots`：信息图 ≥4 的合同改由「正文引用 ≥4 张作者供图且文件存在」兑现，`verify infographic` 仍会拒绝不达标的稿，这不是 skip。
 6. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
 7. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
 8. 公众号首屏固定为「导读 → 主题曲卡 → 播客卡 → 正文」；两卡是同级选项、同宽上下排，不互相从属，也不做左右双栏。
@@ -19,7 +19,7 @@
 ## 视觉
 
 1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 renderer。
-2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。
+2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。`infographic_mode: author-shots` 时信息图为 0 张，`visual-plan.json` 的 `infographics` 必须为空，封面与 Hero 合同不变。
 3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。
    该签名配方只由 `scripts/visual_contracts.py` 定义；Baoyu 负责内容分析和布局，无权覆盖
    色板、材质、字形与明暗阈值，私有 profile 也不得覆盖。

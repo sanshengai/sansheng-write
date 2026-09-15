@@ -12,8 +12,9 @@ from pathlib import Path
 import yaml
 
 try:
-    from . import baoyu_contract
+    from . import author_shots, baoyu_contract
 except ImportError:  # pragma: no cover - direct script execution
+    import author_shots
     import baoyu_contract
 
 try:
@@ -400,7 +401,13 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def validate_visual_plan(plan: dict) -> list[str]:
+def validate_visual_plan(plan: dict, *, infographic_mode: str = "generated") -> list[str]:
+    """校验视觉任务单。
+
+    `infographic_mode="author-shots"`（article-meta.yaml 的 `infographic_mode`）时，
+    信息图 ≥4 的合同改由作者供图兑现（见 author_shots.py），此处要求 `infographics` 为空；
+    默认 `generated` 行为不变。
+    """
     errors: list[str] = []
     if not isinstance(plan, dict):
         return ["visual-plan.json 顶层必须是对象"]
@@ -434,6 +441,13 @@ def validate_visual_plan(plan: dict) -> list[str]:
     images = plan.get("infographics")
     if not isinstance(images, list):
         return errors + ["infographics 必须是列表"]
+    if infographic_mode == "author-shots":
+        if images:
+            errors.append(
+                "infographic_mode=author-shots 时 infographics 必须为空（视觉切分由作者供图兑现）；"
+                "要信息图请把 article-meta.yaml 改回 infographic_mode: generated"
+            )
+        return errors
     if len(images) < 4:
         errors.append("infographics 至少 4 张")
     ids = [str(item.get("id") or "") for item in images if isinstance(item, dict)]
@@ -961,7 +975,10 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     plan, errors = _load_json(cwd / VISUAL_PLAN_FILE, VISUAL_PLAN_FILE)
     meta, meta_errors = _load_meta(cwd)
     errors.extend(meta_errors)
-    errors.extend(validate_visual_plan(plan))
+    errors.extend(author_shots.mode_errors(meta))
+    errors.extend(
+        validate_visual_plan(plan, infographic_mode=author_shots.infographic_mode(meta))
+    )
     _, cover_text_errors = cover_text_contract(meta)
     errors.extend(cover_text_errors)
     recipe, recipe_errors = _recipe(meta)

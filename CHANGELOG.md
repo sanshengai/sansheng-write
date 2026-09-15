@@ -6,6 +6,9 @@
 
 ### 新增
 
+- **作者截图模式 `infographic_mode: author-shots`**：截图密集的教程 / 实录文章在 `article-meta.yaml` 声明后，信息图 ≥4 张的硬门改由「正文引用 ≥4 张作者供图（`素材/作者素材/` 或 `shot-` 前缀）且文件存在」兑现；`visual-plan.json` 的 `infographics` 必须为空，封面与 Hero 照常生成，`assemble-release` 不插图。`verify infographic`、`release-check` / `release-to-draft` 前门、`preflight` 与 `contracts` 软提示都认这个模式，供图不够、文件缺失、任务单仍列信息图或素材里混进 `infographic*.png` 一律拒绝——它是另一种兑现，不是 skip（`NEVER_SKIP_STAGES` 不变）。默认 `generated` 行为一字未改。新增 `scripts/author_shots.py` 与 `tests/test_author_shots_mode.py`。
+- **微信公众号接口固定绕过 HTTP 代理**：`release_to_draft.py` 把 `weixin.qq.com` 加进本进程与 `baoyu-post-to-wechat` 子进程的 `NO_PROXY / no_proxy`。公众号 API 校验调用方 IP 白名单，经代理出口发请求会被 `40164 invalid ip` 拒绝（2026-09-15 实测：Agent 固定海外代理节点）；此改动不改写用户其他代理设置。
+
 - **白名单减法磨稿**：新增 `references/polish-whitelist.md`（信息守恒、11 类可定位改写）。写作期不注入 `_prep-context.md`；磨稿顺序改为读出声 → 白名单减法 → `verify writing` + `audit_quant_signals` → anti-ai 语义层 → 冷读。正文翻案腔、段首零回指、空转冒号进入 `_BLACKLIST_SOFT`；句首「说白了 / 说穿了 / 先说结论」升 `_META_DISCOURSE_HARD`（句中术语转译不命中）；只读扫描脚本 `scripts/scan_polish_signals.py`。
 - **工作树过程目录与永久成品归档拆分**：新增 `SANSHENG_WRITE_ARCHIVE_DIR` 与 `pipeline.py physical-archive --delete-source`。命令在所有文章写者退出后执行：先验证作品库闭环，再以同盘临时目录复制并逐文件核对相对路径、字节数和 SHA-256；目标同路径内容不同、复制期源目录变化或复验失败都会保留源目录。成功后写 `_physical-archive-receipt.json`，显式请求时才删除工作树副本。`archive` 继续只表示作品库登记，`HANDOFF_DIR` 明确只用于人工上传临时包。
 

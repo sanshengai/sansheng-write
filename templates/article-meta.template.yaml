@@ -117,6 +117,10 @@ cover_keywords: ""           # 封面图核心视觉符号关键词
 cover_style: "montage-evidence"  # 新文章固定；历史复刻才允许显式使用旧风格。
 
 # 信息图参数（配图阶段确定）
+# infographic_mode: "generated"（默认）= 粘土信息图 ≥4 张的完整合同；
+#   "author-shots" = 截图密集的文章（教程、实录）：正文引用 ≥4 张作者供图（放 素材/作者素材/ 或 shot- 前缀）
+#   替代信息图，visual-plan.json 的 infographics 必须为空，封面与 Hero 照常生成；仍走 verify，不是 skip。
+# infographic_mode: "author-shots"
 infographic_style: "claymation"      # 固定值，全站统一粘土风。不按题材分流。
                                      # 旧版按 infographic_subject 在 claymation / morandi-journal
                                      # 之间路由，而校验只查两者配不配套、从不查题材判断本身对不对，

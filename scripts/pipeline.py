@@ -434,6 +434,46 @@ def _visual_tone_errors(path: Path, recipe: dict, label: str) -> list[str]:
     ]
 
 
+def _infographic_mode(cwd: Path) -> str:
+    """article-meta.yaml 的 infographic_mode（generated / author-shots）；读不到按 generated。"""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import author_shots
+        meta = {}
+        meta_path = cwd / "article-meta.yaml"
+        if _yaml is not None and meta_path.exists():
+            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        return author_shots.infographic_mode(meta if isinstance(meta, dict) else {})
+    except Exception:
+        return "generated"
+
+
+def _author_shots_errors(cwd: Path) -> list:
+    """作者截图模式的硬门：正文引用 ≥4 张作者供图且存在；生成图目录不得混入信息图。"""
+    sys.path.insert(0, str(Path(__file__).parent))
+    import author_shots
+    draft = cwd / "定稿.md"
+    if not draft.exists():
+        return ["缺 定稿.md，无法核对作者供图"]
+    errors = author_shots.verify_author_shots(cwd, draft.read_text(encoding="utf-8"))
+    mat = cwd / "素材"
+    stray = sorted(mat.glob("infographic*.png")) if mat.exists() else []
+    if stray:
+        errors.append(
+            f"infographic_mode=author-shots 但 素材/ 里有 {len(stray)} 张 infographic*.png；"
+            "要么删掉，要么改回 generated 走完整信息图合同"
+        )
+    plan_path = cwd / "visual-plan.json"
+    if plan_path.exists():
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if plan.get("infographics"):
+                errors.append("infographic_mode=author-shots 但 visual-plan.json 仍列有 infographics")
+        except Exception as exc:
+            errors.append(f"visual-plan.json 解析失败：{exc}")
+    return errors
+
+
 def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
     """校验信息图视觉路由的整条证据链，而不只检查 style 是否在枚举里。
 
@@ -1278,6 +1318,19 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
         if not legacy:
             errors.extend(_cover_route_errors(cwd))
 
+    elif stage == "infographic" and _infographic_mode(cwd) == "author-shots":
+        # 作者截图模式：信息图 ≥4 的合同由作者供图兑现，仍是硬验证、不是 skip。
+        errors.extend(_author_shots_errors(cwd))
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from contracts import log_observation as _logobs_shots
+            _logobs_shots(
+                "verify_infographic", "author_shots",
+                "fail" if errors else "ok", f"errors={len(errors)}", cwd.name,
+            )
+        except Exception:
+            pass
+
     elif stage == "infographic":
         mat = cwd / "素材"
         if not mat.exists():
@@ -2047,7 +2100,9 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     if not (mat / "hero.png").exists():
         errors.append("缺 素材/hero.png（导读栏小图）")
     infos = list(mat.glob("infographic*.png")) if mat.exists() else []
-    if len(infos) < 4:
+    if _infographic_mode(cwd) == "author-shots":
+        errors.extend(_author_shots_errors(cwd))
+    elif len(infos) < 4:
         errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
     if not (cwd / "定稿.html").exists():
         errors.append("缺 定稿.html（先走 layout 阶段）")
@@ -3646,7 +3701,10 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     if plan_path.exists():
         try:
             from visual_workflow import validate_visual_plan
-            errs = validate_visual_plan(json.loads(plan_path.read_text(encoding="utf-8")))
+            errs = validate_visual_plan(
+                json.loads(plan_path.read_text(encoding="utf-8")),
+                infographic_mode=_infographic_mode(cwd),
+            )
             add("ok" if not errs else "fail", "visual-plan.json",
                 "通过" if not errs else f"{len(errs)} 条问题，首条：{errs[0][:110]}")
         except Exception as exc:
@@ -4142,7 +4200,7 @@ def cmd_skip(stage: str, cwd: Path, force: bool = False):
     if stage in NEVER_SKIP_STAGES:
         print(f"🔴 拒绝 skip：`{stage}` 是铁律 stage（详见 references/iron-rules.md）")
         print(f"   - cover/layout/publish 是发布前置硬性产物，不可绕过")
-        print(f"   - infographic 是文末知识图（≥4 张：开篇 9:16 + 中间 16:9 ×N + 结尾 9:16），缺了会被 publish verify 拦截")
+        print(f"   - infographic 是文末知识图（≥4 张：开篇 9:16 + 中间 16:9 ×N + 结尾 9:16），缺了会被 publish verify 拦截；截图密集的文章改用 article-meta.yaml 的 infographic_mode: author-shots（作者供图 ≥4 张替代，仍要 verify）")
         print(f"   - writing 是正文，不可能 skip")
         sys.exit(2)
     state = load_state(cwd)

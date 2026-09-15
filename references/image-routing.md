@@ -81,7 +81,7 @@ prompt frontmatter 与生成日志。Baoyu 仍负责内容分析、结构化与�
 - 中间信息图：至少 2 张，全部 `16:9`。
 - 最后一张信息图：结尾 `9:16`。
 
-信息图总数至少 4 张；同篇统一风格。
+信息图总数至少 4 张；同篇统一风格。作者供图 ≥4 张且正文引用的截图型文章可声明 `infographic_mode: author-shots`（信息图 0 张、封面与 Hero 照常），细则见 `scripts/author_shots.py` 与 release-runtime.md §1。
 
 ## 正文风格：全站统一粘土风，没有路由
 

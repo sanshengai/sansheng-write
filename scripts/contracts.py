@@ -1801,7 +1801,18 @@ def verify_publish_assets(article_dir: str) -> dict:
     # pipeline.py verify infographic 才暴露，41 号曾漏整组直到 publish 后才发现）。
     # 状态感知 + 软提示：仅当 stages.infographic.status == 'done' 时才扫张数，<4 张报
     # warning（不 error）——故意不阻塞，避免误伤无信息图的历史 golden 34/36/40 现有测试。
-    if _stage_status('infographic') == 'done' and src_dir.exists():
+    def _infographic_mode() -> str:
+        # article-meta.yaml 的 infographic_mode=author-shots：信息图由作者供图替代，不发这条软提示
+        try:
+            import yaml as _y
+            mp = base / 'article-meta.yaml'
+            m = _y.safe_load(mp.read_text(encoding='utf-8')) if mp.exists() else {}
+            return str((m or {}).get('infographic_mode') or 'generated')
+        except Exception:
+            return 'generated'
+
+    if (_stage_status('infographic') == 'done' and src_dir.exists()
+            and _infographic_mode() != 'author-shots'):
         info_pngs = [p for p in src_dir.glob('infographic*.png') if not p.name.startswith('_')]
         if len(info_pngs) < 4:
             warnings.append(

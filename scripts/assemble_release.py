@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from . import author_shots
     from .visual_workflow import validate_visual_plan
 except ImportError:  # pragma: no cover - direct script execution
+    import author_shots
     from visual_workflow import validate_visual_plan
 
 
@@ -96,8 +98,21 @@ def _load_plan(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         return None, ["缺 visual-plan.json；先生成并 compile-visuals"]
     except json.JSONDecodeError as exc:
         return None, [f"visual-plan.json 解析失败：{exc}"]
-    errors = validate_visual_plan(plan)
+    errors = validate_visual_plan(plan, infographic_mode=_infographic_mode(cwd))
     return (plan if not errors else None), errors
+
+
+def _infographic_mode(cwd: Path) -> str:
+    meta_path = cwd / "article-meta.yaml"
+    if not meta_path.exists():
+        return author_shots.MODE_GENERATED
+    try:
+        import yaml
+
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return author_shots.MODE_GENERATED
+    return author_shots.infographic_mode(meta if isinstance(meta, dict) else {})
 
 
 def assemble_release_markdown(
@@ -132,8 +147,9 @@ def assemble_release_markdown(
     opening = [item for item in items if item["position"] == "opening"]
     middle = [item for item in items if item["position"] == "middle"]
     closing = [item for item in items if item["position"] == "closing"]
-    if len(opening) != 1 or len(closing) != 1:
+    if items and (len(opening) != 1 or len(closing) != 1):
         return None, ["visual-plan 必须恰有 1 张 opening 与 1 张 closing 信息图"]
+    # 作者截图模式下 items 为空：装配只做「去掉旧机器块、收口音频卡」，不插任何图。
 
     insertions: dict[int, list[str]] = {}
 
