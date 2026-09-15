@@ -76,7 +76,8 @@
 
 | 列宽规则 | 说明 |
 |------|------|
-| **列宽=按内容测算的固定值** | **不要等列宽、也不要依赖脚本自动算**--排版时由大模型扫一眼每列最长内容，测算一组协调的固定百分比，填进 `article-meta.yaml` 的 `table_widths`（见下）。两列参考 38/62、35/65、40/60；三列参考 26/46/28（长内容列给足、短表头列别 starve）。脚本 `_compute_column_widths` 的 sqrt 启发式仅在**没填 table_widths 时兜底**（它把列压得偏接近、显「等宽不协调」，所以能填就填）。横滑模式下 `table_widths` 会按比例转成 px 列宽。 |
+| **列宽跟内容走（脚本按像素需求分配）** | `--table` 先估每列「单行排开」需要的像素宽（汉字=字号、ASCII≈0.6 字号、含 padding，表头按加粗算）：**放得下**就按需求比例铺满 100%；**放不下**先给每列保底（自身需求 / 3 个汉字宽 / 表头单行宽取合适的小值），剩余宽度按「超出保底的部分」比例分给长列——一字列（停/留、3、437 MB）只拿它需要的那点，长文列均摊折行，不会再出现「短列占 1/3、长列拉成十几行」。2026-09-15 起取代旧 sqrt 阻尼 + [15%,52%] 夹断。 |
+| **`table_widths` 手动覆盖** | 觉得脚本分得不协调时，由大模型扫一眼每列最长内容填一组固定百分比进 `article-meta.yaml`（见下），覆盖优先于脚本估算。 |
 
 > 多维度对比现直接用多列表（横滑兜底）；单元格仍尽量精简短语，横滑是防挤压兜底而非纵容长句。唯「术语｜整句释义」交给术语卡承接长文。
 
@@ -89,8 +90,8 @@ table_widths:
   - [26, 46, 28]    # 第 2 个表（三列）
 ```
 
-- `format_layout.py --table` / `--all` 自动读取并把宽度写进**首行单元格** + `table-layout:fixed`（微信安全机制，见「微信兼容表格写法」一节，不会被格式清算）。
-- 某个表不填、或组数/列数对不上 → 该表静默回退 sqrt 兜底，不报错。
+- `format_layout.py --table` / `--all` 自动读取，把宽度写进 **section 版格子**（`display:table-cell; width:X%`，见「微信兼容表格写法」一节——写在 `<td>` 上会被微信清掉）。
+- 某个表不填、或组数/列数对不上 → 该表静默回退脚本的内容需求估算，不报错。
 - 改了表的列数后记得同步改对应那组数字。
 
 ### 二、字体大小
@@ -125,56 +126,34 @@ table_widths:
 
 ## 微信兼容表格写法
 
-> 🔴 **2026-04-06 更新**：必须用 `<table>` + `<colgroup>` + `<col>`，不能用纯 `display:table` 模拟！
+> 🔴 **2026-09-15 现行方案：section 版 CSS 表，不再输出 `<table>`。** `format_layout.py --table` 自动完成，作者照常写 Markdown 表即可。
 >
-> **问题根因**：微信编辑器进入编辑模式时会自动注入 `table-layout: fixed`，导致所有列被强制等宽，忽略 CSS `width` 和 `display:table-cell` 的百分比。
+> **为什么**：微信编辑器保存 / 发布时会把 `<td>` / `<th>` 上的 `width`（inline style 和 `width` 属性一样）整个清掉，再配上它注入的 `table-layout:fixed`，结果永远等宽。证据：2026-09-15 抓 46 / 94 / 100 / 101 号四篇已发布文章，线上 `<td>/<th>` 里 **0 个** 还留着 width（本地发布稿有 12 个）；`draft/add → draft/get` 回读时 width 都还在，说明清洗发生在编辑器保存那一步，不在 API。同一批文章里推荐阅读卡的 `<section style="display:table-cell; width:64%">` 原样存活——列宽只有写在 section 上才到得了读者手机。
 >
-> **解决方案**：`<colgroup>` + `<col>` 标签显式指定每列宽度百分比--即使微信强加 `table-layout: fixed`，只要 `<col>` 有 `width`，浏览器就会按指定比例分配，而非等分。
-
-> 🔴 **更新（覆盖上面的 colgroup 方案 -- "自适应列宽语法被微信过滤"那次）**：实跑发现微信会把 `<colgroup>` 渲染成**表头上方一行空的虚线格子**（空行 bug）。`format_layout.py` 现行做法已改为：**把列宽 `width` 直接写进首行单元格 + table 设 `table-layout: fixed`**--fixed 布局本就按首行单元格宽度定列，微信编辑态注入的 `table-layout:fixed` 反成助力，列宽稳定生效且无空行（**这就是"列宽不会被公众号格式清算"的根治机制，机制本身安全，放心用**）。
->
-> 列宽**值的来源**：**优先用大模型按内容测算、填进 `article-meta.yaml` 的 `table_widths`**（见上「table_widths」小节）--因为脚本 `_compute_column_widths` 的「字符权重平方根阻尼」(clamp [15%,52%]) 会把列压得偏接近、显得等宽不协调；只有**没填 table_widths 时才回退**这个 sqrt 兜底（旧线性版三列表 20/55/22 → sqrt 版 26/46/28）。**下面的 colgroup 代码块保留作历史参考，新文章不用手写--排版脚本自动处理。**
+> 历史：2026-04 的 `<colgroup>` 方案会在表头上方渲染出一行空虚线格（空行 bug）；2026-06-26 的「宽度写进首行单元格 + table-layout:fixed」在草稿箱预览正常，但发布后被清洗，一直没人回头核对线上页。
 
 ```html
-<!-- 外层圆角容器 -->
-<section style="border-radius: 8px; overflow: hidden; border: 1px solid #eef0f2;">
-  <table style="width: 100%; table-layout: auto; border-collapse: separate; border-spacing: 0;">
-    <!-- 列宽控制：必须用 <colgroup>，这是微信 table-layout:fixed 的破解关键 -->
-    <colgroup>
-      <col style="width: 40%;">
-      <col style="width: 60%;">
-    </colgroup>
-    <!-- 表头行 -->
-    <thead>
-      <tr>
-        <td style="background-color: #2F6F8F; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 12px;">列A</td>
-        <td style="background-color: #2F6F8F; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 12px;">列B</td>
-      </tr>
-    </thead>
-    <!-- 数据行（奇数行白色，偶数行极浅色） -->
-    <tbody>
-      <tr>
-        <td style="font-size: 13px; color: #333; padding: 9px 12px; border-bottom: 1px solid #f0f0f0; background-color: #ffffff; font-weight: bold; color: #2F6F8F;">内容A</td>
-        <td style="font-size: 13px; color: #333; padding: 9px 12px; border-bottom: 1px solid #f0f0f0; background-color: #ffffff;">内容B</td>
-      </tr>
-      <tr>
-        <td style="font-size: 13px; color: #333; padding: 9px 12px; border-bottom: 1px solid #f0f0f0; background-color: rgba(47, 111, 143,0.03); font-weight: bold; color: #2F6F8F;">内容C</td>
-        <td style="font-size: 13px; color: #333; padding: 9px 12px; border-bottom: 1px solid #f0f0f0; background-color: rgba(47, 111, 143,0.03);">内容D</td>
-      </tr>
-    </tbody>
-  </table>
+<!-- 每一行是一张 100% 宽的 display:table，各行列宽相同 → 视觉上是一张对齐的表 -->
+<section style="border-radius: 10px; overflow: hidden; border: 1px solid #d7e3ea; margin: 0 8px 0.8em; font-size: 12px; line-height: 1.4;">
+  <section style="display: table; width: 100%; table-layout: fixed; border-collapse: collapse; box-sizing: border-box;">
+    <section style="display: table-cell; vertical-align: middle; box-sizing: border-box; word-wrap: break-word; overflow-wrap: anywhere; width: 38%; padding: 8px 6px; background-color: #2F6F8F; color: #fff; font-size: 13px; text-align: center; font-weight: bold;">列A</section>
+    <section style="display: table-cell; vertical-align: middle; box-sizing: border-box; word-wrap: break-word; overflow-wrap: anywhere; width: 62%; padding: 8px 6px; background-color: #2F6F8F; color: #fff; font-size: 13px; text-align: center; font-weight: bold;">列B</section>
+  </section>
+  <section style="display: table; width: 100%; table-layout: fixed; border-collapse: collapse; box-sizing: border-box;">
+    <section style="display: table-cell; vertical-align: top; box-sizing: border-box; word-wrap: break-word; overflow-wrap: anywhere; width: 38%; padding: 8px 6px; border-bottom: 1px solid #eef0f2; color: #333333; font-size: 12px; text-align: left;">内容A</section>
+    <section style="display: table-cell; vertical-align: top; box-sizing: border-box; word-wrap: break-word; overflow-wrap: anywhere; width: 62%; padding: 8px 6px; border-bottom: 1px solid #eef0f2; color: #333333; font-size: 12px; text-align: left;">内容B</section>
+  </section>
 </section>
 ```
 
 **关键规则**：
 
-- 最多 2 列（手机宽约 360px，3 列及以上必定折叠）
-- 必须有 `<colgroup><col>`，`width` 写在 `<col>` 上
-- 现行默认 `border-spacing: 0`；`border-collapse: collapse` 亦实测可用（见 wechat-compat §1.5），二选一
-- 每行 `td` 的 `width` **不需要**重复设，靠 `<col>` 就够了
-- `table-layout: auto !important;` 显式覆盖微信注入的 `fixed`
-- `align` / `valign` 必须用原生 HTML 属性，CSS 的 `text-align` 会被微信过滤
-- 禁止 `word-break: keep-all`（微信下会导致中日韩文字不断行、单元格无限撑宽）
+- 行用 `display:table`、格用 `display:table-cell`——这两个 display 值在线上有存活证据；`display:table-row` 没有，所以不用行容器，每行各自成表。
+- `width` **每一行的每个格子都写**（各行独立成表，只写首行对不齐）；百分比保留一位小数，和为 100。
+- 横滑表（≥4 列且放不下）：每行 `width` 为固定 px（列宽夹在 72–150px），外层 `overflow-x:auto`。
+- `overflow-wrap: anywhere` 让长 ASCII（命令、URL 片段）在格内折行而不撑宽列；禁止 `word-break: keep-all`（中日韩文字不断行、单元格无限撑宽）。
+- 空格子填 `&nbsp;` 占位，否则该格塌陷。
+- 格子样式顺序里 `display: table-cell;` 后面不能紧跟 `width:`——`display: table-cell; width: 64%` 是导读栏检测的签名。
 
 ### 多列表格列宽分配参考（≥3 列，供 `table_widths` 填值参考；横滑模式会按比例转 px）
 
@@ -237,21 +216,19 @@ table_widths:
 
 > 实际执行逻辑在 `scripts/format_layout.py` 的 `process_table()` 函数，以下为处理要点：
 
-0. **路由分派**（2026-07-07）：`inject_colgroup_and_wrapper` 先数列数 → **2 列且 `_is_term_table`**（左短术语/右长释义，无 `table_widths` 覆盖时）走 `_render_term_cards` 出术语卡；**≥3 列** 走横滑分支（`_scroll_col_px` 算 px 列宽，总和 ≤`_TABLE_BODY_PX`=345 则 `width:100%`+`overflow:hidden`、否则固定 px 宽 +`overflow-x:auto`，字号统一降到 11px/th12px、padding 收到 `6px 7px`）；**其余 2 列** 走改良表分支（下 1-2 条的 13px/12px）。
-1. **th 重写**（2 列改良表）：`padding: 8px 6px; background-color: #2F6F8F; color: #fff; font-size: 13px; font-weight: bold;` -- **13px 加粗、不加 border**（≥3 列横滑表由路由降为 12px + `padding: 6px 7px`）
-2. **td 重写**（2 列改良表）：`padding: 8px 6px; border-bottom: 1px solid #eef0f2; font-size: 12px;` -- **12px（比表头小一号）、只有底部分隔线**（≥3 列横滑表降为 11px）
-3. **交替行色**：tbody 偶数行 td 追加 `background-color: rgba(47, 111, 143,0.03)`
-4. **清理 thead**：移除 `<thead>` 上的多余 inline style（baoyu 转换器误加）
-5. **列宽注入**：`table_widths`（article-meta.yaml，大模型测算）优先；无则 `_compute_column_widths` sqrt 兜底（横滑表用 `_scroll_col_px` 转 px）。宽度写进**首行单元格** + `table-layout:fixed`（不用 colgroup，避空行 bug）
-6. **外层圆角容器**：`<section style="border-radius: 10px; overflow: hidden|overflow-x: auto; border: 1px solid #d7e3ea; margin: 0 8px 0.8em;">`（横滑时 `overflow-x:auto`）
-7. **空行修复**：移除 baoyu 生成的多余 wrapper section（其 `line-height: 1.75` + 空白字符会渲染出空行）
-8. **术语卡**（2 列术语｜释义）：`_render_term_cards` 出「左竖条 + 加粗术语(15px) + 全宽释义(14px)」，仅用 design-tokens，theme-ready
+0. **解析**：`_parse_table_rows` 把 `<thead><th>…</th></thead>`（无 tr）/ `<thead><tr>…` / 无 thead 但首行全 th 三种形态统一拆成表头 + 数据行，格子保留 inner HTML（`<strong>` / `<code>` / `<br>`）。
+1. **路由分派**（2026-07-07）：**2 列且 `_is_term_table`**（左短术语/右长释义，无 `table_widths` 覆盖时）走 `_render_term_cards` 出术语卡；**≥3 列** 用 11px / 表头 12px、padding `6px 7px`；**其余 2 列** 用 12px / 表头 13px、padding `8px 6px`。
+2. **列宽**（2026-09-15）：`table_widths` 优先；否则 `_column_needs_px` 估每列单行所需像素（汉字=字号、ASCII≈0.6 字号、表头加粗 +5%、含 padding、各留 4px 余量），`_fit_widths_px` 压进 `_TABLE_BODY_PX`=345：放得下按比例铺满；放不下先给保底（自身需求 / 3 汉字宽 / 表头单行宽），余量按超出保底的部分分给长列。**≥4 列且放不下** → 每列夹 [72,150]px、每行固定 px 宽 + 外层 `overflow-x:auto` 横滑。
+3. **渲染**：`_render_section_table` 输出 section 版 CSS 表——每行 `display:table; width:100%|Npx; table-layout:fixed`，每格 `display:table-cell` 带 `width`；表头 主题色底 + 白字 + 居中加粗 + `vertical-align:middle`，数据格 只有 `border-bottom` 分隔线 + `vertical-align:top`，偶数行格子追加 `background-color: rgba(47, 111, 143,0.03)`；空格子填 `&nbsp;`。
+4. **外层圆角容器**：`<section class="sw-table" style="border-radius: 10px; overflow: hidden|overflow-x: auto; border: 1px solid #d7e3ea; margin: 0 8px 0.8em;">`。
+5. **空行修复**：移除 baoyu 生成的多余 wrapper section（其 `line-height: 1.75` + 空白字符会渲染出空行）。输出里不再有 `<table>`，重复跑天然幂等。
+6. **术语卡**（2 列术语｜释义）：`_render_term_cards` 出「左竖条 + 加粗术语(15px) + 全宽释义(14px)」，仅用 design-tokens，theme-ready。
 
 ### 已知问题备忘
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| 编辑模式下列等宽 | 微信注入 table-layout: fixed | colgroup + auto !important |
+| 发布后列等宽 | 编辑器清掉 td/th 的 width 再注入 table-layout: fixed | 不输出 `<table>`，列宽写在 `display:table-cell` 的 section 上（2026-09-15） |
 | 编辑模式下文字变大 | 微信重置 font-size 为 16px | 每个 td/th 强制 font-size: 13px |
 | 编辑模式下推荐阅读变蓝 | `<a>` 标签被微信还原为默认蓝色 | 显式 `color: #333333` |
 | 关注卡片变窄 | 编辑器假预览中有额外 padding | 非编辑模式和手机端正常，不影响最终效果 |

@@ -26,7 +26,7 @@ grep -n "# ===== 【第" scripts/contracts.py
 | 2-3 | log / article-meta 读取 | meta 值覆盖 argparse 命名空间 |
 | 4 | 模块10 预发布自检 `--check` | 铁律0 / 品牌色 / 组件完整性 |
 | 5 | 模块1 H2/H3 转换 | H2→PART 编号、H3→时间线 |
-| 6 | 模块2 表格品牌化 | 绿头 / 列宽计算 / 横滑 / 术语卡 |
+| 6 | 模块2 表格品牌化 | 绿头 / 按内容算列宽 / section 版 CSS 表 / 横滑 / 术语卡 |
 | 7 | 模块3 导读栏注入 | purge 旧导读 + 孤儿 hero + body h1 后注入 |
 | 8 | 模块4 底部推荐+名片 | |
 | 9 | 模块5 品牌色全局替换 | legacy 蓝/红/灰 → 品牌绿 |
@@ -50,7 +50,7 @@ grep -n "# ===== 【第" scripts/contracts.py
 | 4 | 139 / 265 | `check_all` / `print_check_results` | 公开 |
 | 5 | 290-371 | `_clean_h2_text` `_auto_split_h2_subtitle` `_build_part_h2` `_revert_part_h2` | 私有 |
 | 5 | 417 / 488 | `process_h2` / `process_h3` | 阶段 |
-| 6 | 610-710 | `_char_weight` `_compute_column_widths` `_scroll_col_px` `_is_term_table` `_render_term_cards` | 私有 |
+| 6 | 763-900 | `_char_weight` `_text_px` `_parse_table_rows` `_column_needs_px` `_fit_widths_px` `_is_term_table` `_render_term_cards` `_render_section_table` | 私有 |
 | 6 | 736 | `process_table` | 阶段 |
 | 7 | 1014-1085 | `_purge_existing_lead` `_purge_orphan_hero_in_body` `_strip_body_h1` | 私有 |
 | 7 | 1099 | `process_lead` | 阶段 |

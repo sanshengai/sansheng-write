@@ -24,6 +24,7 @@ format_layout.py — 微信公众号排版自动后处理脚手架
 import os
 import sys
 import re
+import html as html_mod
 import argparse
 import subprocess
 from pathlib import Path
@@ -402,7 +403,10 @@ def check_all(html, cwd, meta=None):
 
     # 8. 表格单元格文字过长（表格内容须大模型精炼、非机械删词）
     long_cells = 0
-    for td in re.findall(r'<td[^>]*>([\s\S]*?)</td>', html):
+    # 处理前是 <td>，处理后是 section 版格子（class="sw-td"），两种都认
+    cells = re.findall(r'<td[^>]*>([\s\S]*?)</td>', html)
+    cells += re.findall(r'<section class="sw-td"[^>]*>([\s\S]*?)</section>', html)
+    for td in cells:
         txt = re.sub(r'<[^>]+>', '', td).strip()
         if len(txt) > 22:
             long_cells += 1
@@ -767,75 +771,104 @@ def _char_weight(text: str) -> int:
     return w
 
 
-def _compute_column_widths(table_body: str, ncols: int) -> list:
-    """按每列最长单元格的字符权重（汉字×2, ASCII×1）分配宽度，clamp 到 [12%, 55%]。
-    兼容 baoyu 输出里 `<thead><th>…</th><th>…</th></thead>`（无 <tr> 包裹）的情况。
+# ---- 表格版面常量（2026-09-15 改为「内容需求 → 列宽」的像素模型）----
+_TABLE_BODY_PX = 345      # 微信正文里表格可用宽度(粗略)：列宽之和 ≤ 此值 → 一屏放得下
+_TABLE_MIN_COL_CHARS = 3  # 需要折行时，任何一列至少保住 3 个汉字宽（含 padding）
+_TABLE_SCROLL_MIN_PX = 72 # 横滑表每列最窄
+_TABLE_SCROLL_MAX_PX = 150  # 横滑表每列最宽（再长就在格内折行）
+_ASCII_EM = 0.6           # ASCII 字符相对字号的平均宽度（数字/小写 ≈0.55，大写 ≈0.65）
+
+
+def _text_px(text: str, font_px: float, *, bold: bool = False) -> float:
+    """估算一段纯文本单行排开需要的像素宽：汉字 = 字号，ASCII ≈ 0.6 字号；加粗 +5%。"""
+    w = 0.0
+    for ch in text:
+        if ch.isspace():
+            w += font_px * 0.3
+        elif ord(ch) > 127:
+            w += font_px
+        else:
+            w += font_px * _ASCII_EM
+    return w * (1.05 if bold else 1.0)
+
+
+def _cell_text(cell_html: str) -> str:
+    text = re.sub(r"<br\s*/?>", " ", cell_html)
+    text = re.sub(r"<[^>]+>", "", text)
+    return html_mod.unescape(text).strip()
+
+
+def _parse_table_rows(table_body: str) -> tuple:
+    """把 baoyu / markdown 转出来的 table 内部拆成 (header_cells, body_rows)。
+    兼容 `<thead><th>…</th></thead>`（无 <tr> 包裹）与 `<thead><tr><th>…` 两种形态；
+    无 <thead> 但首行全是 <th> 时也当表头。单元格取 inner HTML（保留 <strong>/<code>/<br>）。
     """
-    col_max = [0] * ncols
-    # 同时匹配 <thead>…</thead> 与 <tr>…</tr> 两种"一行"的容器
-    for block in re.finditer(
-        r"<thead[^>]*>(.*?)</thead>|<tr[^>]*>(.*?)</tr>",
-        table_body, flags=re.DOTALL,
-    ):
-        inner = block.group(1) if block.group(1) is not None else block.group(2)
-        cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", inner, flags=re.DOTALL)
-        for i, cell in enumerate(cells[:ncols]):
-            text = re.sub(r"<[^>]+>", "", cell).strip()
-            col_max[i] = max(col_max[i], _char_weight(text))
-    if sum(col_max) == 0:
-        base = 100 // ncols
-        widths = [base] * (ncols - 1) + [100 - base * (ncols - 1)]
-        return [f"{w}%" for w in widths]
-    # 平方根阻尼分配（踩坑修正）：
-    # 旧版按字符权重「线性」分配——某一长内容列（如三列表的「怎么考」34 字）会按比例
-    # 独吞 ~55%，把短表头列（「考试」「本质」2 字）starve 到内容挤成 3-4 排。
-    # 改用 sqrt(权重) 压缩列间差距：长列仍稍宽但不霸屏，短列拿到够用的最低宽度。
-    # 实测三列表 28/44/28（旧 20/55/22）、两列表自然落到 ~33/67~40/60，符合规范。
-    import math
-    weights = [math.sqrt(max(w, 1)) for w in col_max]
-    total = sum(weights)
-    raw = [w / total * 100 for w in weights]
-    MIN, MAX = 15, 52
-    clamped = [max(MIN, min(MAX, v)) for v in raw]
-    s = sum(clamped)
-    clamped = [v * 100 / s for v in clamped]
-    widths = [round(v) for v in clamped[:-1]]
-    widths.append(100 - sum(widths))
-    return [f"{w}%" for w in widths]
+    cell_re = re.compile(r"<t([hd])[^>]*>([\s\S]*?)</t\1>", re.DOTALL)
+    header = None
+    rest = table_body
+    m = re.search(r"<thead[^>]*>([\s\S]*?)</thead>", table_body, re.DOTALL)
+    if m:
+        header = [c[1].strip() for c in cell_re.findall(m.group(1))]
+        rest = table_body[: m.start()] + table_body[m.end():]
+    rows = []
+    for tr in re.findall(r"<tr[^>]*>([\s\S]*?)</tr>", rest, re.DOTALL):
+        cells = cell_re.findall(tr)
+        if not cells:
+            continue
+        if header is None and all(kind == "h" for kind, _ in cells):
+            header = [c.strip() for _, c in cells]
+            continue
+        rows.append([c.strip() for _, c in cells])
+    return header, rows
 
 
-# 横滑表模式的版面常量（多列表缩 11px + 一屏放不下则横滑）
-_TABLE_BODY_PX = 345    # 微信正文可用宽度(粗略)：列 px 总和 ≤ 此值 → 放得下、宽 100% 不横滑
-_TABLE_MIN_COL_PX = 88  # 11px 字号下一列的基准宽；决定 3 列放得下、≥4 列触发横滑
+def _column_needs_px(header, rows, ncols: int, *, font_td: float, font_th: float, pad_x: float) -> tuple:
+    """每列「单行排开」所需像素宽（取该列最长单元格，含左右 padding）；同时返回表头单独的需求。"""
+    needs = [0.0] * ncols
+    head_needs = [0.0] * ncols
+    if header:
+        for i, cell in enumerate(header[:ncols]):
+            head_needs[i] = _text_px(_cell_text(cell), font_th, bold=True) + pad_x * 2
+            needs[i] = max(needs[i], head_needs[i])
+    for row in rows:
+        for i, cell in enumerate(row[:ncols]):
+            needs[i] = max(needs[i], _text_px(_cell_text(cell), font_td) + pad_x * 2)
+    # 字宽是估算值，各留 4px 余量，免得「数量」这种刚好卡线的表头被挤成两行
+    needs = [max(n, pad_x * 2 + font_td) + 4 for n in needs]
+    return needs, head_needs
 
 
-def _scroll_col_px(table_body: str, ncols: int, ov=None) -> list:
-    """≥3 列横滑模式的每列像素宽 list[int]。
-    有列宽覆盖(ov, 形如 ['24%','39%',...])则按其比例；否则按各列最长内容的
-    sqrt 权重分配，基准画布 = ncols × _TABLE_MIN_COL_PX（每列 ~88px 起步、长列稍宽）。
-    与 _compute_column_widths 同源思路（sqrt 阻尼），差异仅在输出 px 而非 %。
+def _fit_widths_px(needs, head_needs, avail: float, floor_px: float) -> list:
+    """把各列需求压进可用宽度 avail，返回每列像素宽（和 = avail）。
+
+    - 放得下：各列按需求比例吃掉富余（每格都还是单行）。
+    - 放不下：先给每列保底（自身需求、`floor_px`、表头单行宽三者取合适的小值，
+      短列——如「停/留」「3」——就只拿它真正需要的那点宽），剩下的宽度按「超出保底的部分」
+      比例分给长列，让长列的折行数大致相等，而不是让某一列拉出十几行。
     """
-    import math
-    if ov:
-        try:
-            weights = [float(str(x).replace("%", "").strip()) for x in ov]
-        except (ValueError, TypeError):
-            weights = [1.0] * ncols
-    else:
-        col_max = [0] * ncols
-        for block in re.finditer(
-            r"<thead[^>]*>(.*?)</thead>|<tr[^>]*>(.*?)</tr>",
-            table_body, flags=re.DOTALL,
-        ):
-            inner = block.group(1) if block.group(1) is not None else block.group(2)
-            cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", inner, flags=re.DOTALL)
-            for i, cell in enumerate(cells[:ncols]):
-                text = re.sub(r"<[^>]+>", "", cell).strip()
-                col_max[i] = max(col_max[i], _char_weight(text))
-        weights = [math.sqrt(max(w, 1)) for w in col_max]
-    total_w = sum(weights) or ncols
-    canvas = ncols * _TABLE_MIN_COL_PX
-    return [max(72, round(w / total_w * canvas)) for w in weights]
+    total = sum(needs)
+    if total <= 0:
+        return [avail / len(needs)] * len(needs)
+    if total <= avail:
+        return [n * avail / total for n in needs]
+    floors = [min(n, max(floor_px, h)) for n, h in zip(needs, head_needs)]
+    if sum(floors) > avail:
+        floors = [min(n, floor_px) for n in needs]
+    if sum(floors) >= avail:
+        return [n * avail / total for n in needs]
+    remain = avail - sum(floors)
+    excess = [max(n - f, 0.0) for n, f in zip(needs, floors)]
+    excess_total = sum(excess)
+    if excess_total <= 0:
+        return [f + remain / len(needs) for f in floors]
+    return [f + remain * e / excess_total for f, e in zip(floors, excess)]
+
+
+def _px_to_pct(widths_px) -> list:
+    total = sum(widths_px) or 1.0
+    pct = [round(w * 100 / total, 1) for w in widths_px[:-1]]
+    pct.append(round(100 - sum(pct), 1))
+    return [f"{p:g}%" for p in pct]
 
 
 def _is_term_table(table_body: str) -> bool:
@@ -886,24 +919,81 @@ def _render_term_cards(table_body: str) -> str:
     return f'<section style="margin: 0 8px 0.8em;">{"".join(cards)}</section>'
 
 
+def _render_section_table(header, rows, ncols: int, widths, *, row_width: str,
+                          font_td: int, font_th: int, pad: str, scroll: bool) -> str:
+    """把表格渲染成 section 版 CSS 表：每一行是一个 `display:table` 的 section，
+    每个格子是 `display:table-cell` 并带 `width`。
+
+    🔴 为什么不用 <table>：微信编辑器保存/发布时会把 <td>/<th> 上的 width（inline
+    style 与 width 属性都一样）整个清掉，再配上它自己注入的 table-layout:fixed，
+    结果永远等宽——2026-09-15 抓 3 篇已发布文章核对（46/94/100/101 号），线上 0 个
+    单元格还留着 width。而同一批文章里推荐阅读卡 `section{display:table-cell;width:64%}`
+    原样存活。所以列宽只有写在 section 上才到得了读者手机。
+    行内不用 display:table-row（线上无存活证据），改成每行各自一张 100% 宽的
+    display:table，各行列宽相同，视觉上仍是一张对齐的表。
+    """
+    widths = list(widths) + ["auto"] * (ncols - len(widths))
+    row_style = (
+        f'display: table; width: {row_width}; table-layout: fixed; '
+        'border-collapse: collapse; box-sizing: border-box;'
+    )
+    common = 'box-sizing: border-box; word-wrap: break-word; overflow-wrap: anywhere;'
+
+    def _cell(inner: str, w: str, extra: str, cls: str, valign: str) -> str:
+        # 注意样式顺序：display 后不能紧跟 width，避免撞上导读栏检测用的
+        # `display: table-cell; width: 64%` 签名。
+        inner = inner if inner.strip() else "&nbsp;"
+        return (
+            f'<section class="{cls}" style="display: table-cell; vertical-align: {valign}; '
+            f'{common} width: {w}; {extra}">{inner}</section>'
+        )
+
+    out = []
+    if header:
+        cells = "".join(
+            _cell(
+                c, widths[i],
+                f'padding: {pad}; background-color: {BRAND_PRIMARY}; color: #fff; '
+                f'font-size: {font_th}px; line-height: 1.4; text-align: center; font-weight: bold;',
+                "sw-th", "middle",
+            )
+            for i, c in enumerate((header + [""] * ncols)[:ncols])
+        )
+        out.append(f'<section class="sw-tr" style="{row_style}">{cells}</section>')
+    for idx, row in enumerate(rows, start=1):
+        tint = f"background-color: {TINT_ROW}; " if idx % 2 == 0 else ""
+        cells = "".join(
+            _cell(
+                c, widths[i],
+                f'{tint}padding: {pad}; border-bottom: 1px solid {BORDER_HAIR}; '
+                f'color: {TEXT_BODY}; font-size: {font_td}px; line-height: 1.4; text-align: left;',
+                "sw-td", "top",
+            )
+            for i, c in enumerate((row + [""] * ncols)[:ncols])
+        )
+        out.append(f'<section class="sw-tr" style="{row_style}">{cells}</section>')
+    overflow = "overflow-x: auto" if scroll else "overflow: hidden"
+    return (
+        f'<section class="sw-table" style="border-radius: {RADIUS_CARD}; {overflow}; '
+        f'border: 1px solid {BORDER_CARD}; margin: 0 8px 0.8em; font-size: {font_td}px; '
+        f'line-height: 1.4;">{"".join(out)}</section>'
+    )
+
+
 def process_table(html, table_widths=None):
     """
     完整的表格品牌化处理（对齐 layout.md 规范）：
-    1. 表头 → 主题色背景 + 白字 + 居中（13px 加粗），无单元格边框
-    2. 数据行 → border-bottom 分隔线（非四边框）+ 交替行色（12px，比表头小一号）
-    3. 注入列宽（写进首行单元格，微信安全；优先用大模型测算的 table_widths 覆盖）
-    4. 外层圆角容器（border + border-radius + overflow:hidden）
+    1. 表头 → 主题色背景 + 白字 + 居中（加粗），无单元格边框
+    2. 数据行 → border-bottom 分隔线（非四边框）+ 交替行色（比表头小一号）
+    3. 列宽按内容需求分配（优先用大模型测算的 table_widths 覆盖；否则像素模型：
+       短列只拿自己需要的宽，长列均摊折行）
+    4. 输出 section 版 CSS 表（微信会清掉 <td> 的 width，section 上的能存活）+ 圆角容器
     5. 清理 baoyu 生成的多余 wrapper section（修复空白行）
-    6. 清理 <thead> 上的多余 inline style
 
     Args:
         table_widths: 可选，来自 article-meta.yaml 的「每个内容表一组列宽」列表，
             按表在文中出现顺序对齐，例：[[38,62],[26,46,28]]。
-            列宽改由大模型按内容测算的固定值提供（更协调），
-            脚本 `_compute_column_widths` 的 sqrt 启发式降级为兜底（无覆盖时才用）。
     """
-    changes = 0
-
     # 列宽覆盖：按表在文中出现顺序消费 table_widths 的每一组；归一化为 ['x%',...]
     _tbl_idx = [0]
 
@@ -921,207 +1011,73 @@ def process_table(html, table_widths=None):
         s = sum(nums)
         if s <= 0:
             return None
-        pct = [round(v * 100 / s) for v in nums]
-        pct[-1] = 100 - sum(pct[:-1])  # 末列吸收四舍五入余量，保证和为 100
-        return [f"{p}%" for p in pct]
+        return _px_to_pct(nums)
 
-    # 1. 旧版表头背景色兼容替换
-    html, c = re.subn(
+    # 旧版表头背景色兼容替换
+    html = re.sub(
         r"background:\s*rgba\(0,\s*0,\s*0,\s*0\.05\)",
         f"background-color: {BRAND_PRIMARY}; color: #fff",
         html,
     )
-    changes += c
 
-    # 2. 重写每个 <th>：主题色背景 + 白字，无边框
-    def fix_th(m):
-        tag_content = m.group(0)
-        new_style = (
-            f"padding: 8px 6px; "
-            f"background-color: {BRAND_PRIMARY}; color: #fff; "
-            f"font-size: 13px; line-height: 1.4; text-align: center; font-weight: bold;"
-        )
-        if 'style="' in tag_content:
-            return re.sub(r'style="[^"]*"', f'style="{new_style}"', tag_content)
-        else:
-            return tag_content.replace("<th", f'<th style="{new_style}"', 1)
-
-    # 🔴 正则必须用 `<th(?:\s[^>]*)?>` 而非 `<th[^>]*>`：后者会把 `<thead>` 也匹配上
-    # （`<th`+`ead`+`>`），fix_th 无 style 分支会把它改成 `<th style="绿底">ead>`——
-    # 一个无宽度的幽灵绿 th 挤在真表头行前，渲染成「第一列多出一截、颜色高一阶」的鬼影
-    # （2026-06-26 排查：旧 step5 的 `<thead style=...>` 清理对不上这种坏形，漏网）。
-    # `<th(?:\s[^>]*)?>` 只匹配 `<th>` 与 `<th 属性...>`，不碰 `<thead>`/`<thead style=...>`。
-    html_new = re.sub(r"<th(?:\s[^>]*)?>", fix_th, html)
-    if html_new != html:
-        changes += 1
-    html = html_new
-
-    # 3. 重写每个 <td>：只有 border-bottom 做行分隔
-    def fix_td(m):
-        tag_content = m.group(0)
-        new_style = (
-            "padding: 8px 6px; "
-            f"border-bottom: 1px solid {BORDER_HAIR}; "
-            f"color: {TEXT_BODY}; font-size: 12px; line-height: 1.4; text-align: left;"
-        )
-        if 'style="' in tag_content:
-            return re.sub(r'style="[^"]*"', f'style="{new_style}"', tag_content)
-        else:
-            return tag_content.replace("<td", f'<td style="{new_style}"', 1)
-
-    html_new = re.sub(r"<td[^>]*>", fix_td, html)
-    if html_new != html:
-        changes += 1
-    html = html_new
-
-    # 4. 交替行色：偶数 <tr> 的所有 <td> 加极浅绿背景
-    def add_alternating_rows(table_html):
-        # 优先处理 tbody 区域；若无 tbody 则处理 thead 之后的所有 tr
-        tbody_match = re.search(r"<tbody>(.*?)</tbody>", table_html, re.DOTALL)
-        if not tbody_match:
-            # 无 tbody：跳过 thead 内的行，处理剩余 tr
-            thead_end = re.search(r"</thead>", table_html)
-            if not thead_end:
-                return table_html
-            tbody_start = thead_end.end()
-            tbody_end = len(table_html)
-            tbody_content = table_html[tbody_start:tbody_end]
-        else:
-            tbody_start = tbody_match.start(1)
-            tbody_end = tbody_match.end(1)
-            tbody_content = tbody_match.group(1)
-
-        row_idx = 0
-        def color_row(m):
-            nonlocal row_idx
-            row_idx += 1
-            row_html = m.group(0)
-            if row_idx % 2 == 0:
-                # 偶数行：给每个 td 追加 background-color
-                row_html = re.sub(
-                    r'(<td[^>]*style=")',
-                    rf'\1background-color: {TINT_ROW}; ',
-                    row_html,
-                )
-            return row_html
-
-        new_tbody = re.sub(r"<tr[^>]*>.*?</tr>", color_row, tbody_content, flags=re.DOTALL)
-        return table_html[:tbody_start] + new_tbody + table_html[tbody_end:]
-
-    # 5. 清理 <thead> 上的多余 inline style（baoyu 转换器会把 cell 样式误加到 thead 上）
-    html = re.sub(r'<thead\s+style="[^"]*">', '<thead>', html)
-
-    # 6. 注入列宽 + 外层容器（2026-07-07 按列数/内容路由：术语卡 / 横滑 11px / 改良表 12px）
-    def _inject_first_row_widths(tbody, frow_inner, widths):
-        """把 widths（['x%'..] 或 ['88px'..]）写进首行每个单元格；返回新 table_body。
-        微信忽略/误渲 colgroup 会在表头冒虚线空行，故宽度直接写进首行单元格。"""
-        cells = re.split(r'(</t[hd]>)', frow_inner)
-        new_inner = ""
-        cell_idx = 0
-        for i in range(0, len(cells) - 1, 2):
-            cell_open = cells[i]
-            cell_close = cells[i + 1]
-            w = widths[cell_idx] if cell_idx < len(widths) else "auto"
-            if 'style="' in cell_open:
-                cell_open = re.sub(r'style="([^"]*)"', f'style="width: {w}; \\1"', cell_open)
-            else:
-                cell_open = cell_open.replace(">", f' style="width: {w};">', 1)
-            new_inner += cell_open + cell_close
-            cell_idx += 1
-        new_inner += cells[-1]  # trailing empty string or text
-        return tbody.replace(frow_inner, new_inner, 1)
-
-    def inject_colgroup_and_wrapper(m):
+    def render_table(m):
         full_match = m.group(0)
         table_body = m.group(2)
 
-        # 跳过已处理的表格（外层已有圆角容器）和布局表格（推荐阅读卡片等）
-        # 哨兵值必须与 wrapper 的 RADIUS_CARD 同步，否则二次跑检测不到已处理表→重复包裹
-        if f"border-radius: {RADIUS_CARD}" in full_match or "border: none" in full_match:
+        # 跳过布局表格（推荐阅读卡片等）
+        if "border: none" in full_match:
             return full_match
 
-        # 如已有 colgroup 就跳过注入列宽，但仍需重写 table 样式
-        has_colgroup = "<colgroup" in table_body
-
-        # 统计列数
-        first_row = re.search(r"<tr[^>]*>(.*?)</tr>", table_body, re.DOTALL)
-        if not first_row:
-            return m.group(0)
-        ncols = len(re.findall(r"<t[hd][\s>]", first_row.group(1)))
+        header, rows = _parse_table_rows(table_body)
+        ncols = max([len(header or [])] + [len(r) for r in rows] or [0])
         if ncols < 2:
-            return m.group(0)
+            return full_match
 
-        # 列宽覆盖 + 消费索引：每处理一个内容表按文中顺序消费一组（保持原行为：
-        # 仅在非 colgroup 表上消费/注入宽度）。三条路由都在此点之后分派，索引不重复消费。
-        ov = None
-        if not has_colgroup:
-            ov = _override_widths(ncols)
-            _tbl_idx[0] += 1
+        # 列宽覆盖 + 消费索引：每处理一个内容表按文中顺序消费一组
+        ov = _override_widths(ncols)
+        _tbl_idx[0] += 1
 
         # ---- 路由 A：2 列「术语|释义」型 → 术语卡（绕开表格，2026-07-07 案例二）----
-        # 有列宽覆盖=作者显式要表格呈现，不转卡；colgroup 表不转。
-        if ncols == 2 and not has_colgroup and ov is None and _is_term_table(table_body):
+        # 有列宽覆盖 = 作者显式要表格呈现，不转卡。
+        if ncols == 2 and ov is None and _is_term_table(table_body):
             return _render_term_cards(table_body)
 
-        # ---- 路由 B：≥3 列 → 11px 横滑；能放下宽 100%(不滚)，放不下 overflow-x 横滑
-        #      （2026-07-07 案例一：缩字号 + 一屏尽量多列，列多/内容长则横滑查看）----
+        # ---- 路由 B：≥3 列 → 11px；放得下宽 100%，放不下才横滑 ----
+        # ---- 路由 C：2 列常规 → 12px，宽 100% ----
         if ncols >= 3:
-            col_px = _scroll_col_px(table_body, ncols, ov)
-            total_px = sum(col_px)
-            fits = total_px <= _TABLE_BODY_PX
-            if fits:
-                # 放得下：按 px 比例转 % 填满、表宽 100%（不触发滚动）
-                s = total_px or ncols
-                pct = [round(p * 100 / s) for p in col_px]
-                pct[-1] = 100 - sum(pct[:-1])  # 末列吸收余量，和为 100
-                widths = [f"{p}%" for p in pct]
-                table_width = "100%"
+            font_td, font_th, pad, pad_x = 11, 12, "6px 7px", 7
+        else:
+            font_td, font_th, pad, pad_x = 12, 13, "8px 6px", 6
+        needs, head_needs = _column_needs_px(
+            header, rows, ncols, font_td=font_td, font_th=font_th, pad_x=pad_x
+        )
+        floor_px = pad_x * 2 + font_td * _TABLE_MIN_COL_CHARS
+        scroll = False
+        if ov is not None:
+            widths, row_width = ov, "100%"
+        elif ncols >= 4 and sum(needs) > _TABLE_BODY_PX:
+            # 列多且放不下：每列夹在 [72, 150]px，整表定宽横滑
+            px = [round(min(max(n, _TABLE_SCROLL_MIN_PX), _TABLE_SCROLL_MAX_PX)) for n in needs]
+            if sum(px) > _TABLE_BODY_PX:
+                widths, row_width, scroll = [f"{p}px" for p in px], f"{sum(px)}px", True
             else:
-                widths = [f"{p}px" for p in col_px]
-                table_width = f"{total_px}px"
-            if not has_colgroup:
-                table_body = _inject_first_row_widths(table_body, first_row.group(1), widths)
-            # 缩字号到 11px（td 12→11 先、th 13→12 后，避免 13→12→11 链式误改）+ 收紧 padding
-            table_body = table_body.replace("font-size: 12px", "font-size: 11px")
-            table_body = table_body.replace("font-size: 13px", "font-size: 12px")
-            table_body = table_body.replace("padding: 8px 6px", "padding: 6px 7px")
-            new_table_tag = (
-                f'<table style="width: {table_width}; table-layout: fixed; word-wrap: break-word; '
-                'margin: 0; border-collapse: separate; border-spacing: 0; '
-                'font-size: 11px; line-height: 1.45;">'
-            )
-            inner = add_alternating_rows(f"{new_table_tag}{table_body}</table>")
-            overflow = "overflow-x: auto" if not fits else "overflow: hidden"
-            return (
-                f'<section style="border-radius: {RADIUS_CARD}; {overflow}; '
-                f'border: 1px solid {BORDER_CARD}; margin: 0 8px 0.8em;">'
-                f'{inner}</section>'
-            )
+                widths, row_width = _px_to_pct(_fit_widths_px(needs, head_needs, _TABLE_BODY_PX, floor_px)), "100%"
+        else:
+            widths, row_width = _px_to_pct(_fit_widths_px(needs, head_needs, _TABLE_BODY_PX, floor_px)), "100%"
 
-        # ---- 路由 C：2 列常规 → 保留改良表（12px，百分比宽度填满）----
-        widths = ov or _compute_column_widths(table_body, ncols)
-        if not has_colgroup:
-            table_body = _inject_first_row_widths(table_body, first_row.group(1), widths)
-        new_table_tag = (
-            '<table style="width: 100%; table-layout: fixed; word-wrap: break-word; margin: 0; '
-            'border-collapse: separate; border-spacing: 0; font-size: 12px; line-height: 1.4;">'
-        )
-        inner = add_alternating_rows(f"{new_table_tag}{table_body}</table>")
-        return (
-            f'<section style="border-radius: {RADIUS_CARD}; overflow: hidden; '
-            f'border: 1px solid {BORDER_CARD}; margin: 0 8px 0.8em;">'
-            f'{inner}</section>'
+        return _render_section_table(
+            header, rows, ncols, widths, row_width=row_width,
+            font_td=font_td, font_th=font_th, pad=pad, scroll=scroll,
         )
 
-    # 7. 匹配 baoyu wrapper section + 内部 table，一次性替换
+    # 匹配 baoyu wrapper section + 内部 table，一次性替换
     #    baoyu 会生成：<section style="font-family:...; overflow: auto;"><table ...>...</table></section>
-    #    外层 section 的 line-height:1.75 + 空白字符 → 渲染出空行
-    #    这里直接把 wrapper+table 整体替换为 inject 处理后的结果
+    #    外层 section 的 line-height:1.75 + 空白字符 → 渲染出空行；整体替换掉 wrapper
     def replace_wrapped_table(m):
         table_match = re.search(r"(<table[^>]*>)(.*?)</table>", m.group(1), re.DOTALL)
         if not table_match:
             return m.group(0)
-        return inject_colgroup_and_wrapper(table_match)
+        return render_table(table_match)
 
     html = re.sub(
         r'<section style="font-family:[^"]*overflow:\s*auto;">\s*(.*?)</section>',
@@ -1130,33 +1086,23 @@ def process_table(html, table_widths=None):
         flags=re.DOTALL,
     )
 
-    # 处理未被 baoyu wrapper 包裹的独立 table（兜底）
-    # 需要检查 table 前方是否已有我们的圆角容器，防止二次包裹
-    # 🔴 2026-07-07：must 同时认 `overflow: hidden`(放得下) 与 `overflow-x: auto`(横滑)
-    #    两种 wrapper——否则横滑表经 replace_wrapped_table 包一层后，本兜底因只认
-    #    `overflow: hidden` 漏检、又包一层 → 双 section 双边框（真机暴露过）。
-    #    统一判 `border-radius:10px; overflow`（radius 紧跟 overflow，够specific 防误跳）。
-    def fallback_wrapper(m):
-        start = m.start()
-        preceding = html_snapshot[max(0, start - 120):start]
-        if f"border-radius: {RADIUS_CARD}; overflow" in preceding:
-            return m.group(0)  # 已有外层容器（hidden 或 -x:auto），跳过
-        return inject_colgroup_and_wrapper(m)
-
-    html_snapshot = html  # 闭包引用，用于检查前方上下文
-    html = re.sub(
-        r"(<table[^>]*>)(.*?)</table>",
-        fallback_wrapper,
-        html,
-        flags=re.DOTALL,
+    # 未被 baoyu wrapper 包裹的独立 table（兜底）。输出里不再有 <table>，天然幂等。
+    # 旧版（2026-09-15 前）处理过的 <table> 外面还套着我们的圆角容器：一并吃掉，免得双层边框。
+    old_wrapper = (
+        rf'(?:<section style="border-radius: {re.escape(RADIUS_CARD)}; overflow(?:-x)?: \w+; '
+        r'border: 1px solid [^"]*; margin: 0 8px 0\.8em;">\s*)?'
     )
 
-    if changes > 0 or True:
-        log("✅ 表格品牌化完成（绿头/行分隔线/交替行色/圆角容器/空行修复）")
+    html = re.sub(
+        old_wrapper + r"(<table[^>]*>)(.*?)</table>(?:\s*</section>)?",
+        render_table, html, flags=re.DOTALL,
+    )
+
+    log("✅ 表格品牌化完成（绿头/行分隔线/交替行色/圆角容器/section 版列宽）")
     return html
 
 
-# ========================================
+
 # ===== 【第 7 节】模块3 导读栏注入 =====
 #  模块 3: 导读栏注入
 # ========================================

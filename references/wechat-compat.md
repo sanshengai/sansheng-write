@@ -102,7 +102,7 @@
 | 文字装饰 | `text-decoration` | |
 | 溢出 | `overflow: hidden` | 用于图片尺寸约束的关键属性 |
 | 垂直对齐 | `vertical-align` | |
-| 宽度 | `width`（px 或 %） | 表格列宽用 `<col style="width:X%">` 最稳 |
+| 宽度 | `width`（px 或 %） | `<td>/<th>` 上的 width 发布时会被清掉；表格列宽写在 `display:table-cell` 的 section 上 |
 | 背景渐变 | `background: linear-gradient(...)` | ✅ API 路径实测可用（含渐变细线，2026-07-07，见 §1.5） |
 
 ### 3b. 被过滤/不支持的属性
@@ -134,26 +134,13 @@
 - **最多 2 列**：3 列及以上在手机端严重挤压变形
 - **超过 2 列** → 必须改写为列表、分段卡片或纵向排列
 
-### 4b. 列宽控制（🔴 2026-06-26 现行方案：写进首行单元格，非 colgroup）
+### 4b. 列宽控制（🔴 2026-09-15 现行方案：section 版 CSS 表，列宽写在 `display:table-cell` 上）
 
-微信编辑器进入编辑模式时会自动注入 `table-layout: fixed`，导致所有列被强制等宽。
+微信编辑器保存 / 发布时会**清掉 `<td>` / `<th>` 上的 `width`**（inline style 与 `width` 属性都清），再注入 `table-layout: fixed`，所以 `<table>` 里写的任何列宽到线上都变等宽。2026-09-15 抓 4 篇已发布文章核对：线上单元格 0 个带 width；`draft/get` 回读时还在——清洗在编辑器那一步。同批文章里 `<section style="display:table-cell; width:64%">` 原样存活。
 
-**现行根治方案**：把列宽 `width` **直接写进首行单元格** + table 设 `table-layout:fixed`--fixed 布局本就按首行单元格宽度定列，微信注入的 fixed 反成助力，**列宽稳定生效且不被格式清算**。`format_layout.py --table` 自动完成，无需手写。
+**现行根治方案**：`format_layout.py --table` 不再输出 `<table>`，每行渲染成一张 100% 宽的 `display:table` section，每格 `display:table-cell` 带 `width`（每行都写）。列宽值优先用 `article-meta.yaml` 的 `table_widths`；没填就按内容像素需求分配（短列只拿自己需要的，长列均摊折行）。写法见 [layout-reference.md「微信兼容表格写法」](layout-reference.md)。
 
-> ⚠️ 旧 `<colgroup>` 方案已弃用：实跑发现微信会把 `<colgroup>` 渲染成**表头上方一行空虚线格子**（空行 bug）。下面代码块仅留作历史参考。
-
-```html
-<!-- 现行：宽度写进首行 th（脚本自动） -->
-<table style="width:100%; table-layout:fixed;">
-  <thead><tr>
-    <th style="width:38%; ...">列A</th>
-    <th style="width:62%; ...">列B</th>
-  </tr></thead>
-  <!-- ... -->
-</table>
-```
-
-列宽**值的来源**：优先用大模型按内容测算、填进 `article-meta.yaml` 的 `table_widths`（更协调）；无则脚本 sqrt 启发式兜底。详见 [layout-reference.md §一、列数与宽度](layout-reference.md)。
+> ⚠️ 历史方案都别再用：`<colgroup>`（表头上方冒一行空虚线格）、「宽度写进首行 th/td + table-layout:fixed」（2026-06-26，草稿预览正常、发布后被清成等宽，直到 101 号线上核对才发现）。
 
 ### 4c. 表格样式规范
 
@@ -237,7 +224,7 @@
 | 3 | 布局错乱 | `display:grid`（flex 已实测可用，见 §1.5） | grid 改 `display:table`；flex 可直接用 |
 | 4 | 元素飘到错误位置 | 用了 `position:absolute` | 去掉定位，用文档流 |
 | 5 | ~~白色背景消失~~ | `#ffffff` 已实测正常（见 §1.5，本条作废） | 无需改 `#fefefe` |
-| 6 | 表格列等宽 | 编辑器注入 `table-layout:fixed` | 列宽**写进首行单元格** + `table-layout:fixed`（脚本自动；旧 colgroup 会出空行 bug） |
+| 6 | 表格列等宽 | 编辑器清掉 `<td>/<th>` 的 width 再注入 `table-layout:fixed` | 不输出 `<table>`：section 版 CSS 表，列宽写在 `display:table-cell` 上（脚本自动；见 §4b） |
 | 7 | 多列表格挤成一团 | 手机宽仅 360px | 改写为 ≤2 列或纵向列表 |
 | 8 | 图片间有白缝 | `<img>` 默认 inline | 加 `display:block` |
 | 9 | Logo/图标过大 | 用了 `height`/`max-width` | 容器 `width` + `overflow:hidden` 约束 |
@@ -257,7 +244,7 @@
 - [ ] 无 `<style>` 标签块，所有样式已内联
 - [ ] 无 `position`、`display:grid`、CSS 变量（flex 已实测可用，见 §1.5，不再禁）
 - [ ] 无 `::before`/`::after` 伪元素
-- [ ] 表格 ≤ 2 列，列宽写进首行单元格 + `table-layout:fixed`（脚本自动；优先 `table_widths`）
+- [ ] 表格经 `--table` 转成 section 版 CSS 表，列宽在 `display:table-cell` 上且每行都有（脚本自动；优先 `table_widths`）
 - [ ] 白色背景 `#ffffff` / `#fefefe` 皆可（§1.5 实测 `#ffffff` 正常）
 - [ ] 图片有 `display:block`，无 `height` 属性控制
 - [ ] 固定尺寸图片用容器 `width` + `overflow:hidden`
