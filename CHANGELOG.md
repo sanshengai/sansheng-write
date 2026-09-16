@@ -4,9 +4,11 @@
 
 ## [未发布]
 
+## [2.2.0] -- 2026-09-16
+
 ### 变更
 
-- **封面规范统一：恢复半隐英文 ghost 层，胶囊改 quiet-pill**（2026-09-16 作者对照第 75/76 篇与第 94/98/99 篇复核）。07-28 为解决「ghost 比 L1 大」把整层删掉，之后的封面「特别单一、没有质感」；同一天写下的「胶囊主题色 78%--85% 满铺」又与配方里的 `quiet low-contrast pill` 自相矛盾，生图在亮绿与暗色之间来回漂。现在：① `lead.ghost` 必填（2--3 个全大写词组用 `×` 连接，编译器校验，禁止模型自拟），渲染规格锚定为 ≤ L1 cap height、纯白 8%--14% 不透明；② 胶囊唯一口径 = 近黑半透明 + 主题色细描边 + 白字，第三层最安静的文字；③ `lead.tag3` 可选（只进封面）；④ 视觉 QA 新增封面必过项 `ghost_layer_subdued`（没画、画过头、乱码都不过），ghost 文案进允许文字不进必须文字（OCR 读不全不算错，读错才算）；⑤ `profile.example` 的 `montage-evidence` 配方特征同步改写，`cover-styles.md` / `title.md` / `iron-rules.md` / `image-routing.md` / 模板统一措辞。封面文字契约升到 `montage-cover-text/3`。
+- **封面规范统一：恢复半隐英文 ghost 层，胶囊改 quiet-pill**（2026-09-16 作者对照第 75/76 篇与第 94/98/99 篇复核）。07-28 为解决「ghost 比 L1 大」把整层删掉，之后的封面「特别单一、没有质感」；同一天写下的「胶囊主题色 78%--85% 满铺」又与配方里的 `quiet low-contrast pill` 自相矛盾，生图在亮绿与暗色之间来回漂。现在：① `lead.ghost` 必填（2--3 个全大写词组用 `×` 连接，编译器校验，禁止模型自拟），渲染规格锚定为 ≤ L1 cap height、纯白 8%--14% 不透明；② 胶囊唯一口径 = 近黑半透明 + 主题色细描边 + 白字，第三层最安静的文字；③ `lead.tag3` 可选（只进封面）；④ 视觉 QA 新增封面必过项 `ghost_layer_subdued`（没画、画过头、乱码都不过），ghost 文案进允许文字不进必须文字（OCR 读不全不算错，读错才算）；⑤ `profile.example` 的 `montage-evidence` 配方特征同步改写，`cover-styles.md` / `title.md` / `iron-rules.md` / `image-routing.md` / 模板统一措辞。封面文字契约升到 `montage-cover-text/3`。**升级提示**：已有文章重出封面前需在 `article-meta.yaml:lead` 补 `ghost`，缺了编译直接停。
 
 ### 修复
 
