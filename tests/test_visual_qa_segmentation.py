@@ -73,3 +73,10 @@ def test_separators_only_is_not_a_free_pass_for_content():
     """纯分隔符块本身可放行，但不得因此放行夹带的实义字。"""
     assert _fully_segmented_by_allowed("//", COVER_TAGS)
     assert not _fully_segmented_by_allowed("//促销", COVER_TAGS)
+
+
+def test_ghost_line_read_as_one_block_passes():
+    """ghost 行「RULE × GATE × PROOF」被 OCR 连读成一块时，× 是版式连接符不是杂字。"""
+    allowed = {"rule", "gate", "proof"}
+    assert _fully_segmented_by_allowed("rule×gate×proof", allowed)
+    assert not _fully_segmented_by_allowed("rule×gate×prooz", allowed)

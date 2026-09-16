@@ -1875,6 +1875,7 @@ def verify_article_meta_lead(article_dir: str) -> dict:
     subtitle = lead.get('subtitle') or meta.get('lead_subtitle') or ''
     tag1 = lead.get('tag1') or meta.get('lead_tag1') or ''
     tag2 = lead.get('tag2') or meta.get('lead_tag2') or ''
+    tag3 = lead.get('tag3') or ''  # 可选第三标签：只进封面胶囊，导读栏仍只排两项
 
     missing = []
     if not str(line1).strip():
@@ -1916,7 +1917,7 @@ def verify_article_meta_lead(article_dir: str) -> dict:
         return w
 
     tag_warnings = []
-    for tag_name, tag_value in [('tag1', tag1), ('tag2', tag2)]:
+    for tag_name, tag_value in [('tag1', tag1), ('tag2', tag2), ('tag3', tag3)]:
         if tag_value.strip():
             vw = _visual_width(tag_value)
             if vw > 4.0:

@@ -456,7 +456,7 @@ def render_cover(item: dict[str, Any], output: Path) -> None:
     _save(
         image,
         output,
-        template_id="montage-evidence-v2",
+        template_id="montage-evidence-v3",
         safe_bounds=(42, 34, 982, 402),
         text_boxes=[
             {"role": "line1", "text": line1, "box": list(line1_box)},
@@ -752,11 +752,18 @@ def _cover_item(plan: dict[str, Any], meta: dict[str, Any]) -> dict[str, str]:
         for token in keywords.replace("×", " ").split()
         if token.isascii() and token.replace("-", "").isalpha() and token.upper() == token
     ]
+    tags = [
+        str(lead.get(key) or "").strip()
+        for key in ("tag1", "tag2", "tag3")
+        if str(lead.get(key) or "").strip()
+    ]
     return {
         "line1": str(lead.get("line1") or plan.get("title") or ""),
         "line2": str(lead.get("line2") or plan.get("subtitle") or ""),
-        "descriptor": str(lead.get("subtitle") or ""),
-        "ghost": " × ".join(uppercase[-3:]),
+        # 胶囊只认 tag1/tag2/tag3；lead.subtitle 是文章导读，不进封面（与主渲染器同规）
+        "descriptor": " / ".join(tags) or str(lead.get("subtitle") or ""),
+        # ghost 以显式声明的 lead.ghost 为准；旧文章没有该字段时才退回 cover_keywords 抽词
+        "ghost": str(lead.get("ghost") or "").strip() or " × ".join(uppercase[-3:]),
     }
 
 

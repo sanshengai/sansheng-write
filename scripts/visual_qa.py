@@ -43,7 +43,14 @@ BASE_REQUIRED_CHECKS = (
     "brand_palette_match",
 )
 REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "typography_contract_match")
-COVER_REQUIRED_CHECKS = (*BASE_REQUIRED_CHECKS, "composition_contract_match")
+# 🔴 2026-09-16：封面加 ghost_layer_subdued。标题后方那行半隐英文是 07-28 之前封面
+# 质感的主要来源，删掉后作者反馈「特别单一」；恢复后要防两头：没画（又回到单一）
+# 和画过头（比 L1 还抢眼，正是 07-28 删它的原因）。判据见 visual_qa_codex.CHECK_DEFINITIONS。
+COVER_REQUIRED_CHECKS = (
+    *BASE_REQUIRED_CHECKS,
+    "composition_contract_match",
+    "ghost_layer_subdued",
+)
 # 🔴 2026-08-02 新增：既有检查项全部落在「风格层」（字形、底板、配色、裁切），
 # 拦得住错字与禁用风格，拦不住「画成了另一种东西」。实证：一整批把 layout 写成
 # 场景剧本而生成的单场景插画（人物 + 家具，无并列结构、无信息承载）**全部通过了 QA**，
@@ -70,7 +77,8 @@ def _normalized_text(value: object) -> str:
 # 有时读成两项（"选型"、"盘点"）—— 后者能过、前者被判「白名单外文字」，
 # 同一张合规封面的成败取决于转写员当次怎么断句。2026-08-14 第 89 篇实测暴露。
 # 这里只放行「纯分隔符」，模型真编出来的字仍然照抓。
-_TEMPLATE_SEPARATORS = frozenset("/|｜·、，,；;：:-–—~～")
+# 「×」是 ghost 行的连接符（QUOTA × BURN RATE × DASHBOARD），同样属于版式而非模型编字。
+_TEMPLATE_SEPARATORS = frozenset("/|｜·、，,；;：:-–—~～×")
 
 
 def _fully_segmented_by_allowed(value: str, allowed: set[str]) -> bool:
@@ -141,6 +149,7 @@ def _expected_text_by_path(cwd: Path) -> tuple[dict[str, list[str]], list[str]]:
             lead.get("line2") or cover.get("subtitle"),
             lead.get("tag1"),
             lead.get("tag2"),
+            lead.get("tag3"),
         )
         if str(value or "").strip()
     ]
@@ -174,9 +183,21 @@ def _allowed_text_by_path(cwd: Path, required: dict[str, list[str]]) -> dict[str
         if str(value or "").strip()
     ]
     allowed = {key: list(values) for key, values in required.items()}
+    # ghost 行是允许文字而不是必须文字：它按规范只有 8%-14% 不透明度，OCR 经常
+    # 读不全或只读到被标题遮住一半的片段（"CHANGELOG × 82 RE"）。有没有画、画得
+    # 是否克制交给 ghost_layer_subdued 判；这里只保证读出来的片段不被当成杂字。
+    ghost = str(lead.get("ghost") or "").strip()
+    ghost_variants = []
+    if ghost:
+        ghost_variants = [
+            ghost,
+            ghost.replace("×", "x"),  # OCR 常把 × 读成字母 x
+            *[part.strip() for part in ghost.split("×") if part.strip()],
+        ]
     optional_cover = [
         str(brand_identity.get("nickname") or "").strip(),
         *logo_text,
+        *ghost_variants,
     ]
     allowed["素材/cover.png"].extend(
         str(value).strip() for value in optional_cover if str(value or "").strip()
@@ -197,7 +218,7 @@ def _template_id_by_path(cwd: Path) -> tuple[dict[str, str], list[str]]:
     except json.JSONDecodeError as exc:
         return {}, [f"visual-plan.json 解析失败：{exc}"]
     templates = {
-        "素材/cover.png": "montage-evidence-v2",
+        "素材/cover.png": "montage-evidence-v3",
         "素材/hero.png": "hero-convergence",
     }
     for item in plan.get("infographics") or []:

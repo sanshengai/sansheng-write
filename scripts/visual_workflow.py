@@ -657,6 +657,15 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "expected_text_sha256": _expected_text_digest(expected),
     }
     tags = " / ".join(text["tags"])
+    tag_count = {2: "two", 3: "three"}.get(len(text["tags"]), str(len(text["tags"])))
+    ghost = text.get("ghost") or ""
+    # 肖像满幅出血时右区要被 cover_portrait.py 清场再贴图，ghost 只留在左区；
+    # 常规蒙太奇则允许它像第 76 篇那样横贯到右区拼贴后面。
+    ghost_extent = (
+        "stays inside the left text zone"
+        if wants_portrait(meta)
+        else "may run on under the right collage"
+    )
     background = recipe["background"]
     accent = recipe["accent"]
     accent_hint = (
@@ -684,9 +693,16 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     #    色号 8 处 → 2 处；「写给工具链的话」全部撤掉）。压缩不碰三样东西：
     #    ① 画布锚定的字号规格（12%-14% 等）——2026-07 修过的真 bug，去掉会复发
     #      （第 81 篇 L1 只有画布高 8%，主次颠倒）；测试钉的是锚点契约本身。
-    #    ② 主题色胶囊 78%-85% 不透明 + 哑光磨砂（2026-07-28 定案，辨识度主要来源）。
+    #    ② 胶囊 + ghost 的层级规格（见下），保证三层文字主次分明。
     #    ③ logo 否定式——唯一保留的否定：画出品牌字是法律/品牌风险，宁可无效不可漏写。
     #    banned terms 门（largest / extra-black / ultra-black）依旧有效，改词时避开。
+    # 🔴 2026-09-16 作者复核（对照第 75/76 篇与第 94/98/99 篇）后定案两处：
+    #    ① 恢复标题后方的半隐英文 ghost 层。07-28 因 ghost 比 L1 大而整层删掉，
+    #      结果后续封面「特别单一、没有质感」。现在 ghost 锚定为 ≤ L1 cap height、
+    #      纯白 8%-14% 不透明，文案由 lead.ghost 显式给定。
+    #    ② 胶囊改为 quiet-pill（近黑半透明 + 主题色细描边）。07-28 写的
+    #      「主题色 78%-85% 不透明」与配方里的 quiet low-contrast pill 自相矛盾，
+    #      而且作者反馈亮绿胶囊太显眼、跟 L1 争焦点。胶囊仍是第三层文字，不是装饰条。
     return (
         _frontmatter(fields)
         + "\n\nCreate a polished dark editorial montage for a WeChat article cover.\n\n"
@@ -709,10 +725,16 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         f"- Supporting Chinese subtitle: {subtitle or '(none)'} -- semibold white, one "
         f"line, 58%-64% of the headline cap height; ONLY {accent_hint} is set in the "
         f"accent color {accent}, every headline character stays pure white.\n"
-        f"- Tags {tags} -- exactly these two, in ONE auto-fit pill under the subtitle: "
-        "that same accent fill at 78%-85% opacity, a FLAT MATTE frosted body, matte "
-        "like clay rather than glossy like glass, white tag text at 30%-34% of "
-        "headline cap height with thin dividers.\n"
+        f"- Tags {tags} -- exactly these {tag_count}, in ONE auto-fit QUIET pill under "
+        "the subtitle: near-black translucent body, hairline border in that same accent "
+        "at low opacity, FLAT MATTE frosted body, matte like clay rather than glossy "
+        "like glass, white tag text at 30%-34% of headline cap height with thin slash "
+        "dividers; the softest text layer.\n"
+        f"- Ghost line behind the headline: {ghost} -- ONE line of condensed industrial "
+        "uppercase English, pure white at 8%-14% opacity, cap height 80%-100% of the "
+        "headline cap height, partly overlapped by the Chinese headline block: "
+        f"background texture that {ghost_extent}; the white headline still lands "
+        "first.\n"
         "These are the only visible characters on the canvas; collage, badges and "
         "background stay textless, purely pictorial: abstract lines and low-contrast "
         "shapes.\n\n"

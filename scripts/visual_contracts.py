@@ -13,7 +13,53 @@ import copy
 import re
 
 
-COVER_TEXT_CONTRACT_REVISION = "montage-cover-text/2"
+COVER_TEXT_CONTRACT_REVISION = "montage-cover-text/3"
+
+# 封面 ghost 层：标题后方那行半隐英文。2026-07-28 曾整层删除（当时 ghost 比 L1 还大、
+# 抢走视觉主体），2026-09-16 作者复核后恢复 —— 要的是「低对比背景纹理」，不是删掉。
+# 文案必须显式声明在 lead.ghost，禁止模型自拟（旧版从 cover_keywords 抽词，取不到
+# 就让模型自编，实测编出过重复词）。格式：2--3 个全大写 ASCII 词组，用「×」连接。
+COVER_GHOST_SEPARATOR = "×"
+COVER_GHOST_TERM_RE = re.compile(r"^[A-Z0-9][A-Z0-9 &'-]*$")
+COVER_GHOST_MIN_TERMS = 2
+COVER_GHOST_MAX_TERMS = 3
+COVER_GHOST_TERM_MAX_CHARS = 14
+COVER_GHOST_MAX_CHARS = 32
+# 胶囊标签：2 项必填，第 3 项可选（作者认可的第 75/76 篇封面都是三标签）。
+COVER_TAG_MAX_COUNT = 3
+
+
+def cover_ghost_terms(value: object) -> tuple[list[str], list[str]]:
+    """Split ``lead.ghost`` into its uppercase terms and report contract errors."""
+
+    errors: list[str] = []
+    raw = str(value or "").strip()
+    if not raw:
+        return [], ["lead.ghost 不能为空（封面标题后方的半隐英文，2--3 个全大写词组，用 × 连接）"]
+    terms = [part.strip() for part in raw.split(COVER_GHOST_SEPARATOR)]
+    if any(not term for term in terms):
+        errors.append("lead.ghost 有空的词组（× 两侧都要有内容）")
+        terms = [term for term in terms if term]
+    if not (COVER_GHOST_MIN_TERMS <= len(terms) <= COVER_GHOST_MAX_TERMS):
+        errors.append(
+            f"lead.ghost 必须是 {COVER_GHOST_MIN_TERMS}--{COVER_GHOST_MAX_TERMS} 个词组"
+            f"（用 {COVER_GHOST_SEPARATOR} 连接），当前 {len(terms)} 个"
+        )
+    for term in terms:
+        if not COVER_GHOST_TERM_RE.match(term):
+            errors.append(
+                f"lead.ghost 词组 {term!r} 只能用大写英文字母、数字、空格、& 和连字符"
+            )
+        if len(term) > COVER_GHOST_TERM_MAX_CHARS:
+            errors.append(
+                f"lead.ghost 词组 {term!r} 超过 {COVER_GHOST_TERM_MAX_CHARS} 个字符，单行放不下"
+            )
+    canonical = f" {COVER_GHOST_SEPARATOR} ".join(terms)
+    if len(canonical) > COVER_GHOST_MAX_CHARS:
+        errors.append(
+            f"lead.ghost 整行超过 {COVER_GHOST_MAX_CHARS} 个字符（{len(canonical)}），会被迫折行或缩小"
+        )
+    return terms, errors
 
 
 SIGNATURE_VISUAL_PROFILES = {
@@ -126,7 +172,9 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
     """Resolve and validate the only supported montage-cover text schema.
 
     ``lead.subtitle`` is the article lead subtitle.  It is intentionally not a
-    cover tag.  Cover tags come from ``lead.tag1`` and ``lead.tag2`` only.
+    cover tag.  Cover tags come from ``lead.tag1`` / ``lead.tag2`` (required) and
+    ``lead.tag3`` (optional).  ``lead.ghost`` is the subdued uppercase English
+    line rendered behind the headline; it must be declared, never model-invented.
     """
 
     errors: list[str] = []
@@ -135,7 +183,7 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
         return {}, ["article-meta.yaml 缺 lead，无法建立封面文字合同"]
 
     values: dict[str, str] = {}
-    for key in ("line1", "line2", "accent", "tag1", "tag2"):
+    for key in ("line1", "line2", "accent", "tag1", "tag2", "tag3", "ghost"):
         raw = lead.get(key)
         if raw is not None and not isinstance(raw, str):
             errors.append(f"lead.{key} 必须是字符串")
@@ -165,6 +213,7 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
         "accent": "封面 L2 主题色落点",
         "tag1": "封面胶囊标签 1",
         "tag2": "封面胶囊标签 2",
+        "ghost": "封面标题后方的半隐英文",
     }
     for key, label in required.items():
         if not values[key]:
@@ -185,12 +234,22 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
     ):
         errors.append("lead.accent 必须是 lead.line2 的结尾子串")
 
-    tags = [values["tag1"], values["tag2"]]
+    # tag3 可选：填了就进胶囊，空着就是两标签。
+    tags = [values["tag1"], values["tag2"]] + (
+        [values["tag3"]] if values["tag3"] else []
+    )
     for index, tag in enumerate(tags, start=1):
         if tag and visual_text_width(tag) > 4:
             errors.append(f"lead.tag{index} 超过 4 个汉字位，封面胶囊会失稳")
-    if all(tags) and tags[0] == tags[1]:
-        errors.append("lead.tag1 与 lead.tag2 不得重复")
+    filled = [tag for tag in tags if tag]
+    if len(set(filled)) != len(filled):
+        errors.append("lead.tag1 / tag2 / tag3 不得重复")
+
+    ghost_terms: list[str] = []
+    if values["ghost"]:  # 缺失已由上面的必填检查报过，不重复报
+        ghost_terms, ghost_errors = cover_ghost_terms(values["ghost"])
+        errors.extend(ghost_errors)
+    ghost = f" {COVER_GHOST_SEPARATOR} ".join(ghost_terms) if ghost_terms else ""
 
     return {
         "contract_revision": COVER_TEXT_CONTRACT_REVISION,
@@ -198,4 +257,6 @@ def cover_text_contract(meta: dict) -> tuple[dict, list[str]]:
         "line2": values["line2"],
         "accent_phrase": values["accent"],
         "tags": tags,
+        "ghost": ghost,
+        "ghost_terms": ghost_terms,
     }, errors

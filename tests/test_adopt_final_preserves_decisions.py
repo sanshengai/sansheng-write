@@ -29,7 +29,8 @@ def _make_article(tmp_path: Path, approval_text: str | None) -> Path:
         '  line2: "副标题在这"\n'
         '  accent: "在这"\n'
         '  tag1: "标签"\n'
-        '  tag2: "分类"\n',
+        '  tag2: "分类"\n'
+        '  ghost: "RULE × GATE × PROOF"\n',
         encoding="utf-8",
     )
     if approval_text is not None:

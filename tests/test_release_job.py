@@ -35,6 +35,7 @@ def _article(tmp_path: Path) -> Path:
         '  subtitle: "文章导读"\n'
         '  tag1: "硬门"\n'
         '  tag2: "证据"\n'
+        '  ghost: "RULE × GATE × PROOF"\n'
         'cover_style: "montage-evidence"\n'
         'infographic_subject: "ai-product"\n'
         'infographic_style: "claymation"\n'

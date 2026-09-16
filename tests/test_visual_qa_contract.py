@@ -27,6 +27,7 @@ def _article(root: Path) -> Path:
         '  subtitle: "视觉发布合同"\n'
         '  tag1: "硬门"\n'
         '  tag2: "证据链"\n'
+        '  ghost: "RULE × GATE × PROOF"\n'
         'cover_keywords: "规则 合同 BIRTH CARE CITY"\n'
         'cover_style: "montage-evidence"\n'
         'infographic_subject: "ai-product"\n'
@@ -223,7 +224,16 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert any(asset["stage"] == "hero" for asset in request["assets"])
     info = next(asset for asset in request["assets"] if asset["stage"] == "infographic")
     assert cover["target_style"] == "montage-evidence"
+    # cover_keywords 里的大写词不再被抽成 ghost（旧机制，取不到词模型会自编）
     assert "BIRTH × CARE × CITY" not in cover["expected_text"]
+    # 🔴 lead.ghost 是允许文字不是必须文字：8%-14% 不透明度 OCR 常读不全，
+    #    读到的片段（含 × 被读成 x、单个词组）不能被判成杂字；画没画交给
+    #    ghost_layer_subdued 判。
+    assert "RULE × GATE × PROOF" in cover["expected_text"]
+    assert "RULE x GATE x PROOF" in cover["expected_text"]
+    assert "GATE" in cover["expected_text"]
+    assert "RULE × GATE × PROOF" not in cover["required_text"]
+    assert "ghost_layer_subdued" in cover["required_checks"]
     assert cover["style_contract"]["layout"] == "left-50-gap-6-right-44"
     assert "style_contract_match" in cover["required_checks"]
     assert "text_match" in cover["required_checks"]

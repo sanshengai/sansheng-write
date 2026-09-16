@@ -98,6 +98,7 @@ def _article(tmp_path: Path) -> Path:
         '  subtitle: "确定性视觉合同"\n'
         '  tag1: "规则内建"\n'
         '  tag2: "独立验收"\n'
+        '  ghost: "RULE × GATE × PROOF"\n'
         'infographic_subject: "ai-product"\n'
         'infographic_style: "claymation"\n'
         'visual_profile: "warm-light-clay"\n',
@@ -198,6 +199,7 @@ def test_cover_text_contract_uses_exact_five_fields_and_rejects_drift():
             "subtitle": "文章导读不进封面",
             "tag1": "硬门",
             "tag2": "证据链",
+            "ghost": "RULE × GATE × PROOF",
         }
     }
     contract, errors = cover_text_contract(meta)
@@ -212,6 +214,42 @@ def test_cover_text_contract_uses_exact_five_fields_and_rejects_drift():
     assert any("lead.tag2 不能为空" in error for error in errors)
 
 
+def test_cover_ghost_and_third_tag_contract():
+    """lead.ghost 必填且格式受控；tag3 可选，填了就进胶囊。"""
+    from scripts.visual_contracts import cover_text_contract
+
+    base = {
+        "line1": "额度别再靠猜",
+        "line2": "两端装上，一直看得见",
+        "accent": "看得见",
+        "tag1": "额度",
+        "tag2": "预警",
+    }
+    meta = {"lead": {**base, "ghost": "QUOTA × BURN RATE × DASHBOARD", "tag3": "全中文"}}
+    contract, errors = cover_text_contract(meta)
+    assert errors == []
+    assert contract["tags"] == ["额度", "预警", "全中文"]
+    assert contract["ghost"] == "QUOTA × BURN RATE × DASHBOARD"
+    assert contract["ghost_terms"] == ["QUOTA", "BURN RATE", "DASHBOARD"]
+
+    # 反例逐条：缺失 / 小写 / 中文 / 只有一个词组 / 四个词组 / 整行过长 / tag3 重复
+    _, errors = cover_text_contract({"lead": dict(base)})
+    assert any("lead.ghost 不能为空" in e for e in errors)
+    for ghost, needle in (
+        ("quota × burn rate", "只能用大写"),
+        ("额度 × 预警", "只能用大写"),
+        ("QUOTA", "2--3 个词组"),
+        ("A × B × C × D", "2--3 个词组"),
+        ("ABCDEFGHIJKLMNOP × QRSTUVWXYZABCDE", "超过"),
+    ):
+        _, errors = cover_text_contract({"lead": {**base, "ghost": ghost}})
+        assert any(needle in e for e in errors), (ghost, errors)
+    _, errors = cover_text_contract(
+        {"lead": {**base, "ghost": "QUOTA × ALERT", "tag3": "预警"}}
+    )
+    assert any("不得重复" in e for e in errors)
+
+
 def test_cover_identity_must_be_prominent_not_only_a_small_tag():
     from scripts.visual_contracts import cover_text_contract
 
@@ -223,6 +261,7 @@ def test_cover_identity_must_be_prominent_not_only_a_small_tag():
             "accent": "对成果负责",
             "tag1": "管理",
             "tag2": "德鲁克",
+            "ghost": "DRUCKER × FIVE BOOKS",
         },
     }
     _, errors = cover_text_contract(meta)
@@ -265,10 +304,12 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "slightly smaller right" in cover
     assert "narrow quiet gutter" in cover
     assert "CONDITION × SIGNAL × LEVER" not in cover
-    assert any(
-        "purely pictorial low-contrast background" in trait
-        for trait in visual_profile("montage-evidence")["required_visual_traits"]
-    )
+    # 🔴 2026-09-16：配方特征必须要求 ghost 层存在且克制。07-28 曾把它写成
+    #    「no ghost words」，封面从此没了质感（作者对照第 75/76 与 94/98/99 篇的反馈）。
+    traits = visual_profile("montage-evidence")["required_visual_traits"]
+    assert any("ghost line behind the headline" in trait for trait in traits)
+    assert not any("no ghost" in trait for trait in traits)
+    assert any("quiet near-black" in trait and "pill" in trait for trait in traits)
     # 文字白名单的穷尽性：改成正面陈述（这些是画布上唯一的可见字符）。
     assert "the only visible characters" in cover
     assert "Main Chinese headline: 规则不能丢" in cover
@@ -281,14 +322,21 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "58%-64% of the headline cap height" in cover
     # 主题色只染 L2，L1 靠字号称王 —— 正面表述：主标题每个字都保持纯白。
     assert "stays pure white" in cover
-    # 🔴 品牌胶囊：主题色 78%-85% + 哑光磨砂。满色 100% 会跟 L1 争焦点。
-    #    「磨砂 ≠ 毛玻璃」由正面对比表述承载（matte like clay rather than glossy
-    #    like glass），否定式版本已随 STRICT FORBIDDEN 段一起删除。
-    assert "78%-85% opacity" in cover
+    # 🔴 胶囊：2026-09-16 起是 quiet-pill（近黑半透明 + 主题色细描边），不再是
+    #    主题色 78%-85% 满铺 —— 作者反馈亮绿胶囊太显眼、跟 L1 争焦点，且与配方里
+    #    「quiet low-contrast pill」自相矛盾。「磨砂 ≠ 毛玻璃」由正面对比表述承载。
+    assert "QUIET pill" in cover
+    assert "near-black translucent body" in cover
+    assert "78%-85% opacity" not in cover
     assert "FLAT MATTE frosted body" in cover
     assert "matte like clay" in cover
     assert "exactly these two" in cover
     assert "Tags 规则内建 / 独立验收" in cover
+    # 🔴 ghost 层：文案来自 lead.ghost 显式声明；锚点是「不大于 L1 + 纯白 8%-14%」，
+    #    这两条正是 07-28 删层的病因（当时是 105%-120% of L1、比中文还大）。
+    assert "Ghost line behind the headline: RULE × GATE × PROOF" in cover
+    assert "8%-14% opacity" in cover
+    assert "80%-100% of the headline cap height" in cover
     assert "确定性视觉合同" not in cover
     assert "一份任务单" in cover
     assert "一条发布入口" in cover

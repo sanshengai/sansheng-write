@@ -72,7 +72,7 @@ def test_text_safe_visual_renders_reviewed_templates_and_design_manifests(tmp_pa
     cover_manifest = json.loads(
         cover_path.with_suffix(".design.json").read_text(encoding="utf-8")
     )
-    assert cover_manifest["template_id"] == "montage-evidence-v2"
+    assert cover_manifest["template_id"] == "montage-evidence-v3"
     assert cover_manifest["text_roles"]["line1"] == "primary"
     assert cover_manifest["text_roles"]["line2"] == "secondary"
     assert cover_manifest["font_scale_ratio"]["line2_to_line1"] <= 0.65

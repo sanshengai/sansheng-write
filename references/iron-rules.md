@@ -46,8 +46,9 @@
 14. Hero 与信息图必须分别留下 `baoyu-article-illustrator` / `baoyu-infographic`
     `method_sources` 与对应 SKILL 字节锚点；真实 `producer_chain` 只能是本仓 planner。
     封面走本仓 `montage-evidence`；把方法来源伪装成已执行 producer 同样拒绝发布。
-15. 封面文字只认 `lead.line1/line2/accent/tag1/tag2`：五项必填，accent 必须是 L2 结尾，
-    tag1/tag2 恰好两项。`lead.subtitle` 是文章导读，不得冒充封面标签。
+15. 封面文字只认 `lead.line1/line2/accent/tag1/tag2/ghost`（六项必填）+ `lead.tag3`（可选）：
+    accent 必须是 L2 结尾，胶囊 2--3 项且安静（quiet-pill），ghost 是 2--3 个大写英文词组、
+    不得大于 L1、纯白 8%--14% 不透明。`lead.subtitle` 是文章导读，不得冒充封面标签。
 16. 人物、品牌或作品为主题时填写 `cover_identity`，并把它写入 L1/L2；小标签不算显著出现。
 16. renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
 17. `cover.png`、`hero.png`、`infographic-*.png` 必须是 `baoyu-image-gen` 直接返回的 PNG

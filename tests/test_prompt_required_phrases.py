@@ -132,18 +132,21 @@ def test_facts_never_reach_the_prompt():
 
 COVER_META = {
     "lead": {"line1": "十分钟补齐", "line2": "一个月的模型全在这",
-             "accent": "全在这", "tag1": "选型", "tag2": "盘点"},
+             "accent": "全在这", "tag1": "选型", "tag2": "盘点",
+             "ghost": "MODELS × TEN MINUTES"},
     "title": "十分钟补齐", "cover_style": "montage-evidence",
 }
-# 🔴 visual_facts 刻意与五项文字零重叠：曾用「模型盘点/选型对比」当 fixture，
-#    tag1「选型」是「选型对比」的子串 —— 变异测试当场揭穿五项文字断言被架空
+# 🔴 visual_facts 刻意与封面文字字段零重叠：曾用「模型盘点/选型对比」当 fixture，
+#    tag1「选型」是「选型对比」的子串 —— 变异测试当场揭穿文字字段断言被架空
 #    （把 tags 从 prompt 里删掉，断言靠 facts 的子串照样绿）。
 COVER_ITEM = {"visual_facts": ["八条产品线到货", "评测速览"]}
 
-# 🔴 上限 2400 比信息图的 1700 宽：封面多背一份五项文字排印合同
-#    （三个画布锚定字号 + 胶囊规格 + accent 染色规则），每条都追溯到真 bug
-#    （第 81 篇 L1 只占画布高 8%）。改造后实测正文 ~2220。
-_COVER_MAX_CHARS = 2400
+# 🔴 上限 2750 比信息图的 1700 宽：封面多背一份文字排印合同
+#    （三个画布锚定字号 + 胶囊规格 + accent 染色规则 + ghost 层规格），每条都追溯到
+#    真 bug（第 81 篇 L1 只占画布高 8%；07-28 ghost 比 L1 大）。2026-08-16 精简后
+#    实测正文 ~2220；2026-09-16 恢复 ghost 层（第四层文字，带自己的锚点）+ 胶囊改
+#    quiet-pill 后 ~2700。上限只为这一层放宽，再加东西先想想能不能改。
+_COVER_MAX_CHARS = 2750
 # 色号刻意保留两处（画布底色 + 主题色首次定义）：封面固定走 Banana Pro，
 # 带 hex 的基线首过率 5/6；且实测配方 hex 与文字矛盾时 Pro 听文字的
 # （封面实验误用 warm-light-clay 配方的 #F7F2E9 仍渲出深炭底）。

@@ -37,6 +37,7 @@ def _visual_bundle(root: Path) -> Path:
         "  subtitle: 文章导读\n"
         "  tag1: 硬门\n"
         "  tag2: 证据链\n"
+        "  ghost: RULE × GATE × PROOF\n"
         "infographic_subject: ai-product\ninfographic_style: claymation\n",
         encoding="utf-8",
     )

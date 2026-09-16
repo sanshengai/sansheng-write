@@ -53,9 +53,9 @@ visual:
       required_visual_traits:
         - "unified deep-charcoal canvas"
         - "left text area and right evidence collage"
-        - "purely pictorial low-contrast background with no ghost words or watermark text"
+        - "one subdued uppercase English ghost line behind the headline, white at roughly 8%-14% opacity, no larger than the headline, over a low-contrast abstract background"
         - "one dominant emblematic object attributable to this article's subject at thumbnail size, with two or three smaller evidence badges"
-        - "quiet low-contrast pill for article tags"
+        - "quiet near-black low-contrast pill for article tags with a hairline accent border, clearly softer than headline and subtitle"
       forbidden_visual_traits:
         - "bright or photographic collage"
         - "people, faces or hands"
