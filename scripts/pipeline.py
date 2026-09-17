@@ -3494,7 +3494,14 @@ def cmd_podcast_pregen(cwd: Path):
         raise SystemExit(2)
     text = final_md.read_text(encoding="utf-8")
     gate_missing = []
-    if "<!-- SANSHENG-VISUAL-START:" not in text:
+    # author-shots 模式信息图为 0 张，assemble-release 不写 VISUAL 机器块；
+    # 该模式下改以 author_shots 契约（正文引用 ≥N 张作者供图且文件存在）作为
+    # 视觉链已收口的判据，否则播客预生成会被一个永远不会出现的 marker 卡死。
+    if _infographic_mode(cwd) == "author-shots":
+        shot_errors = _author_shots_errors(cwd)
+        if shot_errors:
+            gate_missing.append("author-shots 作者供图契约：" + "；".join(shot_errors))
+    elif "<!-- SANSHENG-VISUAL-START:" not in text:
         gate_missing.append("assemble-release 的信息图机器块")
     if "<!-- AUDIO-CARD-START -->" not in text:
         gate_missing.append("BGM 的 AUDIO-CARD")

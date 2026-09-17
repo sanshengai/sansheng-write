@@ -226,3 +226,49 @@ def test_invalid_or_stale_generation_manifest_expires_audio(tmp_path):
 
     manifest_path.write_text("{broken", encoding="utf-8")
     assert pe.generation_is_fresh(art, config) is False
+
+
+def _author_shots_article(tmp_path: Path, *, shots: int, with_audio_card: bool) -> Path:
+    """author-shots 模式：信息图 0 张，没有 VISUAL 机器块，视觉链靠作者供图契约收口。"""
+    art = tmp_path / "article"
+    art.mkdir(parents=True)
+    (art / "article-meta.yaml").write_text(
+        'infographic_mode: "author-shots"\n', encoding="utf-8"
+    )
+    shots_dir = art / "素材" / "作者素材"
+    shots_dir.mkdir(parents=True)
+    body = ["# 标题", ""]
+    for i in range(shots):
+        (shots_dir / f"实景-{i}.jpg").write_bytes(b"jpg")
+        body.append(f"![图 {i}](素材/作者素材/实景-{i}.jpg)")
+    if with_audio_card:
+        body.append("<!-- AUDIO-CARD-START -->音乐卡<!-- AUDIO-CARD-END -->")
+    (art / "定稿.md").write_text("\n\n".join(body) + "\n", encoding="utf-8")
+    return art
+
+
+def test_pregen_author_shots_mode_passes_without_visual_marker(tmp_path, monkeypatch):
+    """反例修复：author-shots 模式不存在 VISUAL 机器块，不能因此卡死播客预生成。"""
+    import pipeline
+
+    art = _author_shots_article(tmp_path, shots=4, with_audio_card=True)
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    called = []
+    monkeypatch.setattr(pe, "cmd_generate", lambda cwd: called.append(cwd) or 0)
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_podcast_pregen(art)
+    assert exc.value.code == 0
+    assert called == [art]
+
+
+def test_pregen_author_shots_mode_still_rejects_short_contract(tmp_path, monkeypatch):
+    """能被拒绝的反例：供图不足 / 缺音乐卡时 author-shots 模式仍然拦。"""
+    import pipeline
+
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    monkeypatch.setattr(pe, "cmd_generate", lambda cwd: (_ for _ in ()).throw(AssertionError("不该生成")))
+    for shots, audio in ((2, True), (4, False)):
+        art = _author_shots_article(tmp_path / f"{shots}-{audio}", shots=shots, with_audio_card=audio)
+        with pytest.raises(SystemExit) as exc:
+            pipeline.cmd_podcast_pregen(art)
+        assert exc.value.code == 2
