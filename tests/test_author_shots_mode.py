@@ -134,3 +134,24 @@ def test_assemble_release_with_empty_plan_keeps_author_prose(tmp_path):
     after = (article / "定稿.md").read_text(encoding="utf-8")
     assert "SANSHENG-VISUAL-START" not in after
     assert author_content_sha256(after) == author_content_sha256(before)
+
+
+def test_visual_manifest_author_shots_mode_does_not_demand_four_infographics(tmp_path):
+    """102 篇实测：visual-qa 的证据集合硬要 ≥4 张 infographic*.png，author-shots 模式下
+    永远凑不出来。该模式证据集只收封面 + Hero；混入 infographic*.png 仍要拦。"""
+    from scripts import evidence
+
+    art = tmp_path / "art"
+    (art / "素材").mkdir(parents=True)
+    (art / "article-meta.yaml").write_text('infographic_mode: "author-shots"\n', encoding="utf-8")
+    _, errors = evidence.build_visual_manifest(art, strict=False)
+    assert not any("需 ≥4" in e for e in errors)
+
+    (art / "素材" / "infographic-01.png").write_bytes(_PNG)
+    _, errors = evidence.build_visual_manifest(art, strict=False)
+    assert any("author-shots" in e and "infographic*.png" in e for e in errors)
+
+    # 默认 generated 模式一个字不变
+    (art / "article-meta.yaml").write_text("", encoding="utf-8")
+    _, errors = evidence.build_visual_manifest(art, strict=False)
+    assert any("需 ≥4" in e for e in errors)

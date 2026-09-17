@@ -140,6 +140,21 @@ def _verify_baoyu_anchors(cwd: Path) -> list[str]:
     return baoyu_contract.verify_anchors(batch if isinstance(batch, dict) else {})
 
 
+def _infographic_mode(cwd: Path) -> str:
+    """article-meta.yaml 的 infographic_mode；读不到按 generated（与 pipeline._infographic_mode 同判据）。"""
+    try:
+        import yaml  # type: ignore
+        try:
+            from . import author_shots
+        except ImportError:
+            import author_shots
+        meta_path = Path(cwd) / "article-meta.yaml"
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        return author_shots.infographic_mode(meta if isinstance(meta, dict) else {})
+    except Exception:
+        return "generated"
+
+
 def build_visual_manifest(
     cwd: Path, *, strict: bool = True, allow_postprocessed: bool = False
 ) -> tuple[dict, list[str]]:
@@ -166,7 +181,14 @@ def build_visual_manifest(
         errors.append("缺 素材/cover.png")
 
     infos = sorted((cwd / "素材").glob("infographic*.png"))
-    if len(infos) < 4:
+    if _infographic_mode(cwd) == "author-shots":
+        # 作者供图模式：信息图合同由正文引用的作者供图兑现（publish-ready 另验），
+        # 视觉证据集只收生成式资产（封面 + Hero）；混入 infographic*.png 即违约。
+        if infos:
+            errors.append(
+                f"infographic_mode=author-shots 但 素材/ 里有 {len(infos)} 张 infographic*.png"
+            )
+    elif len(infos) < 4:
         errors.append(f"最终信息图仅 {len(infos)} 张（需 ≥4）")
     for path in infos:
         specs.append(
