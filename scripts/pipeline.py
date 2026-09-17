@@ -2982,6 +2982,41 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
     ]
 
 
+def _git_toplevel(path: Path) -> Path | None:
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if probe.returncode != 0:
+        return None
+    out = (probe.stdout or "").strip()
+    return Path(out).resolve() if out else None
+
+
+def _website_cwd_for_article(cwd: Path, configured_cwd: str) -> Path:
+    """官网同步命令的工作目录：文章所在的那份检出优先于 profile 写死的主仓路径。
+
+    🔴 2026-09-18 第 102 篇实测：profile 写的是主仓 `/Users/sandy/Cowork`，文章却在
+    git worktree 里生产。archive 把作品库/派生视图写进 worktree，主仓那份没有本篇；
+    未提交检查 `git -C 主仓 status -- <worktree 路径>` 因路径不在仓内静默返回空，
+    发布脚本在主仓跑完还回了 returncode 0 —— 一路全绿，文章根本没进官网。
+    规则：文章目录若在某个 git 检出内，且与配置的 cwd 不是同一份检出，就用文章
+    这份；否则按配置。
+    """
+    configured = Path(configured_cwd).expanduser() if configured_cwd else cwd
+    article_top = _git_toplevel(cwd)
+    if article_top is None:
+        return configured
+    configured_top = _git_toplevel(configured) if configured.is_dir() else None
+    if configured_top is not None and configured_top == article_top:
+        return configured
+    print(f"ℹ️ 官网同步改在文章所在检出执行：{article_top}（profile 配置的 {configured} 不是同一份工作树）")
+    return article_top
+
+
 def _run_website_sync(
     cwd: Path,
     wechat_url: str,
@@ -3008,7 +3043,7 @@ def _run_website_sync(
         print("⏭ 官网同步未配置，已记录 skipped（不影响公开 Skill 使用）")
         return True
 
-    website_cwd = Path(configured_cwd).expanduser() if configured_cwd else cwd
+    website_cwd = _website_cwd_for_article(cwd, configured_cwd)
     if not website_cwd.is_dir():
         _append_website_sync_attempt(
             receipt_path,
