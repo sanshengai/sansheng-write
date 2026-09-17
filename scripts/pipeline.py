@@ -4484,6 +4484,11 @@ def main():
         help="目标已有不同快照时使用新的 revision 标识，如 r2",
     )
     p_handoff.add_argument(
+        "--no-mirror",
+        action="store_true",
+        help="不把上传文件/作者供图/视频/播客镜像到 SANSHENG_WRITE_ARCHIVE_DIR 下的同名目录（默认镜像）",
+    )
+    p_handoff.add_argument(
         "--regenerate-covers",
         action="store_true",
         help="主题曲/播客封面已存在也重新生成（默认缺哪张生成哪张）",
@@ -4682,6 +4687,21 @@ def main():
                 print(f"   • {error}")
             sys.exit(2)
         print(f"✅ 上传文件{('已创建' if status == 'created' else '未变化')}：{target}")
+        # 🔴 主仓镜像（2026-09-18）：作者只在主仓 文稿成品/ 找成品；worktree 里的
+        # mp3/mp4/作者供图被 .gitignore 挡住、合回主线带不过去，必须在这里落到主仓。
+        if not getattr(args, "no_mirror", False):
+            from handoff_assets import mirror_deliverables_to_archive_root
+            from profile_config import physical_archive_dir
+            mirror, copied, mirror_errors = mirror_deliverables_to_archive_root(
+                cwd, physical_archive_dir()
+            )
+            if mirror_errors:
+                print("❌ 主仓镜像未完成：")
+                for error in mirror_errors:
+                    print(f"   • {error}")
+                sys.exit(2)
+            if mirror is not None:
+                print(f"✅ 已镜像 {len(copied)} 个文件到主仓成品目录：{mirror}")
     elif args.cmd == "skip":
         cmd_skip(args.stage, cwd, force=getattr(args, "force", False))
     elif args.cmd == "reset":

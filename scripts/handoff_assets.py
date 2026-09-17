@@ -548,3 +548,71 @@ def _main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_main())
+
+
+# ---------------------------------------------------------------------------
+# 主仓镜像：作者只在 SANSHENG_WRITE_ARCHIVE_DIR（主仓 文稿成品/）找成品。
+# 文章在 git worktree 里生产时，tracked 文件靠合回主线快进到主仓，但 mp3 / mp4
+# 这类被 .gitignore 的交付物永远到不了主仓——2026-09-15、09-17 连续两篇作者在
+# worktree 里找不到音频视频。镜像只复制、不删除、不覆盖不同内容。
+# ---------------------------------------------------------------------------
+MIRROR_EXTRA_DIRS = ("素材/视频", "素材/作者素材")
+MIRROR_EXTRA_FILES = ("dist/podcast/audio.mp3", "dist/podcast/audio.json",
+                      "dist/podcast/audio.manifest.json", "dist/podcast/shownotes.md")
+MIRROR_TOP_SUFFIXES = (".mp3", ".m4a", ".png", ".jpg", ".jpeg", ".mp4", ".mov")
+
+
+def mirror_deliverables_to_archive_root(
+    article_dir: Path, archive_root: Path | None
+) -> tuple[Path | None, list[str], list[str]]:
+    """把文章第一层的上传文件、作者供图、视频与播客产物镜像到主仓同名目录。
+
+    返回 (镜像目录 | None, 已复制的相对路径, 错误)。文章目录本身已在归档根下、
+    或未配置归档根时返回 (None, [], [])，不算错误。目标同路径内容不同 → 记错误、
+    不覆盖；内容相同 → 跳过。
+    """
+    article_dir = Path(article_dir).resolve()
+    if archive_root is None:
+        return None, [], []
+    root = Path(archive_root).expanduser().resolve()
+    try:
+        article_dir.relative_to(root)
+        return None, [], []  # 已经在主仓成品目录里生产，无需镜像
+    except ValueError:
+        pass
+    target = root / article_dir.name
+    sources: list[Path] = []
+    for child in sorted(article_dir.iterdir()):
+        if child.is_file() and child.suffix.lower() in MIRROR_TOP_SUFFIXES:
+            sources.append(child)
+    for rel in MIRROR_EXTRA_DIRS:
+        folder = article_dir / rel
+        if folder.is_dir():
+            sources.extend(p for p in sorted(folder.rglob("*")) if p.is_file())
+    for rel in MIRROR_EXTRA_FILES:
+        f = article_dir / rel
+        if f.is_file():
+            sources.append(f)
+    copied: list[str] = []
+    errors: list[str] = []
+    for src in sources:
+        rel = src.relative_to(article_dir)
+        dst = target / rel
+        if dst.is_symlink():
+            errors.append(f"镜像目标是符号链接，拒绝写入：{rel}")
+            continue
+        if dst.exists():
+            if dst.stat().st_size == src.stat().st_size and sha256_file(dst) == sha256_file(src):
+                continue
+            errors.append(f"主仓已有不同内容，未覆盖：{rel}")
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_name(f".{dst.name}.tmp")
+        shutil.copyfile(src, tmp)
+        if sha256_file(tmp) != sha256_file(src):
+            tmp.unlink(missing_ok=True)
+            errors.append(f"镜像复制后哈希不一致：{rel}")
+            continue
+        os.replace(tmp, dst)
+        copied.append(str(rel))
+    return target, copied, errors
