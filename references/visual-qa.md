@@ -20,18 +20,28 @@ skill **不给默认复核器**：谁来看图必须由使用者显式配置。�
 进程正常退出即可，「复核不通过」不要用非零退出码表达 —— 把结论写进 JSON，
 交给 `visual_qa.py` 的校验器统一裁决，否则「进程炸了」和「图没过」两种语义会混在一起。
 
-## 现成适配器：`scripts/visual_qa_codex.py`
+## 现成适配器：`visual_qa_claude.py`（默认）/ `visual_qa_codex.py`
 
-配置写进仓根 `.env`（与 profile 指针、各家 key 同一个配置面，换机复刻只拷一份）：
+两个后端跑**同一套验收合同**（提示词、schema、逐项判据、信道自检全部从 codex 版复用），
+只有「看图的独立进程」不同。配置写进仓根 `.env`（与 profile 指针、各家 key 同一个配置面，
+换机复刻只拷一份）：
 
 ```
-SANSHENG_WRITE_VISUAL_QA_COMMAND=["python","-X","utf8","<绝对路径>/scripts/visual_qa_codex.py"]
+SANSHENG_WRITE_VISUAL_QA_COMMAND=["python3","-X","utf8","<绝对路径>/scripts/visual_qa_claude.py"]
 ```
 
+- 🔴 **Claude Code 自己就能看图，只是不能生图**（2026-09-19 作者拍板「不用通过 codex 看图，
+  Claude Code 自己看图就好」）。这道闸不依赖 Codex 额度：第 103 篇实跑时 Codex 的
+  usage limit 把复核卡了两小时，图早就渲好了，纯粹在等一个别家的看图进程。
+- `visual_qa_claude.py` 每张图各起一个全新的 `claude -p --tools Read --add-dir <图目录>`
+  无头进程（不带当前会话上下文，独立性与 codex 版同级）；默认模型 `claude-opus-5`，
+  可用 `SANSHENG_WRITE_VISUAL_QA_MODEL` / `_JOBS`（默认 3）/ `_CLAUDE`（可执行文件）覆盖。
+  实测 2 张图并发约 80 秒。
+- `visual_qa_codex.py` 保留为备用后端（`SANSHENG_WRITE_VISUAL_QA_MODEL` 默认 `gpt-5.6-terra`、
+  `_JOBS`、`_CODEX`）。⚠️ 走 ChatGPT 账号的 codex **不放行 `gpt-5.6-codex`**（服务端 400
+  明确拒绝），别照抄历史文章 `_visual-qa.json` 里记的模型名。
 - `-X utf8` **不能省**：子进程被 `capture_output` 管道接走后默认走 GBK，打中文直接崩。
-- 可选 `SANSHENG_WRITE_VISUAL_QA_MODEL`（默认 `gpt-5.6-terra`）、`_JOBS`（默认 3）、`_CODEX`。
-- ⚠️ 走 ChatGPT 账号的 codex **不放行 `gpt-5.6-codex`**（服务端 400 明确拒绝），
-  别照抄历史文章 `_visual-qa.json` 里记的模型名。
+- 复核模型必须与生图模型不同族；`visual_qa.py::validate_qa_result` 会拿两边 model 求交集。
 
 ## 🔴 三种静默失效（都不报错，只是悄悄失灵）
 

@@ -5,6 +5,7 @@
 ## [未发布]
 
 **新增**
+- **Claude Code 后端的视觉复核适配器 `scripts/visual_qa_claude.py`**（默认）：与 `visual_qa_codex.py` 同一套验收合同（提示词 / schema / 逐项判据全部复用），每张图各起一个全新的 `claude -p --tools Read --add-dir <图目录>` 无头进程独立看图，默认 `claude-opus-5`，2 张图并发约 80 秒。起因：第 103 篇图 17:15 就渲好，复核却卡在 Codex 的 usage limit 上等了两小时 -- Claude 自己就能看图，只是不能生图，这道闸不该依赖别家额度。失败也返回 0、`_visual-qa.raw.json` 永远落盘，与 codex 版同语义；`references/visual-qa.md` 改为双后端说明。
 - X 版适配文件 `定稿.x.md`：存在时 `x_article.py` 优先读它，公众号定稿不动，两份共用 `素材/`；receipt 记录实际用的源文件。`references/x-article.md` 新增「发前适配」七条与选篇 / 节奏规则。
 
 **修正**
