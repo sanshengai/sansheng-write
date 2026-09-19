@@ -37,11 +37,11 @@ import re
 import statistics
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 SITE_ROOT = "https://sanshengai.top/articles/"
+XYZ_SHOW = "https://www.xiaoyuzhoufm.com/podcast/69f1a2c798fa520797d8a4e4"  # 叁笙早安AI 节目主页
 PASTE_JS = """(html)=>{const el=document.activeElement; const dt=new DataTransfer();
 dt.setData('text/html',html); dt.setData('text/plain',html.replace(/<[^>]+>/g,''));
 el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));}"""
@@ -285,6 +285,50 @@ def site_url(article_dir: Path) -> str:
     return ""
 
 
+def wechat_url(article_dir: Path) -> str:
+    f = article_dir / "_website-sync-receipt.json"
+    if f.is_file():
+        m = re.search(r'"wechat_url":\s*"(https://mp\.weixin\.qq\.com/s/[^"]+)"', f.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1)
+    return ""
+
+
+def xiaoyuzhou_url(article_dir: Path, title: str) -> str:
+    """本篇有播客（dist/podcast/audio.mp3）时，到小宇宙节目页按「深聊 | 标题」匹配单集；
+    匹配不到（页面只列最近 15 集）就退回节目主页。抓不到网络时返回空串，不阻塞发布。"""
+    if not (article_dir / "dist" / "podcast" / "audio.mp3").is_file():
+        return ""
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(XYZ_SHOW, headers={"User-Agent": "Mozilla/5.0"})
+        html_text = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html_text, re.S)
+        episodes = json.loads(m.group(1))["props"]["pageProps"]["podcast"].get("episodes") or []
+        key = title[:12]
+        for ep in episodes:
+            if key and key in str(ep.get("title") or ""):
+                return f"https://www.xiaoyuzhoufm.com/episode/{ep['eid']}"
+        return XYZ_SHOW
+    except Exception:
+        return XYZ_SHOW
+
+
+def tail_links(article_dir: Path, title: str, site: str) -> str:
+    """文末「继续阅读」：网站全文 / 公众号原文 / 小宇宙播客，缺哪个不放哪个。链接放正文里不放主帖。"""
+    items = []
+    if site:
+        items.append(f'<li>网页版全文（含来源链接）：<a href="{site}">{site}</a></li>')
+    wx = wechat_url(article_dir)
+    if wx:
+        items.append(f'<li>公众号原文：<a href="{wx}">{wx}</a></li>')
+    xyz = xiaoyuzhou_url(article_dir, title)
+    if xyz:
+        items.append(f'<li>播客版（小宇宙）：<a href="{xyz}">{xyz}</a></li>')
+    return "<h1>继续阅读</h1><ul>" + "".join(items) + "</ul>" if items else ""
+
+
 # ---------------------------------------------------------------- 编辑器驱动
 def _wait_media(page, limit_s: int = 900):
     for _ in range(limit_s * 2):
@@ -294,18 +338,8 @@ def _wait_media(page, limit_s: int = 900):
     raise SystemExit("媒体处理超时")
 
 
-def _click_last_block(page):
-    """真实点击末块再 Cmd+↓ 到文档末尾。End 只到当前视觉行尾，长段落会把内容贴进段中间。"""
-    last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-    last.scroll_into_view_if_needed()
-    last.click()
-    page.wait_for_timeout(250)
-    page.keyboard.press("Meta+ArrowDown")
-    page.wait_for_timeout(150)
-
-
 SAVE_STATUS_JS = """()=>{const e=[...document.querySelectorAll('span,div')].find(e=>e.children.length==0 && /最后保存|保存中/.test(e.innerText)); return e? e.innerText:''}"""
-ELEMENT_RE = re.compile(r"<(h1|h2|p|ul|ol|blockquote)>.*?</\1>", re.S)
+PLACEHOLDER = "XIMGPH_{n}"
 
 
 def _wait_saved(page, limit_s: int = 30):
@@ -322,105 +356,25 @@ def _wait_saved(page, limit_s: int = 30):
         page.wait_for_timeout(500)
 
 
-def _plain(fragment: str) -> str:
-    return H.unescape(re.sub(r"<[^>]+>", "", fragment)).replace("• ", "").strip()
+def _blocks(page) -> list[str]:
+    return page.evaluate("()=>[...document.querySelectorAll('[data-testid=composer] [data-block=true]')].map(e=>(e.className.split(' ')[0]||'media')+'|'+e.innerText.trim())")
 
 
-def _paste_one(page, element: str, idx: int):
-    """贴一个顶层元素并核实它真的落在了文末。"""
-    tail_text = _plain(re.findall(r"<(?:h1|h2|p|li|blockquote)>(.*?)</(?:h1|h2|p|li|blockquote)>", element)[-1])[-24:]
-    for attempt in range(4):
-        _click_last_block(page)
-        page.keyboard.type("§")
-        page.wait_for_timeout(200)
-        last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-        if not (last.inner_text() or "").rstrip().endswith("§"):
-            if "§" in (last.inner_text() or ""):
-                page.keyboard.press("Backspace")
-            continue  # 焦点没落进编辑器，或光标不在末尾
-        page.keyboard.press("Backspace")
-        page.wait_for_timeout(200)
-        page.evaluate(PASTE_JS, element)
-        page.wait_for_timeout(700)
-        last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-        if tail_text and tail_text in (last.inner_text() or "").replace("• ", ""):
-            _apply_block_style(page, element)
-            _open_new_block(page)
-            return
-        print(f"   块 {idx} 元素粘贴重试 {attempt}: …{tail_text[-12:]}")
-    raise SystemExit(f"块 {idx} 粘贴失败：…{tail_text}")
+def _placeholder_block(page, name: str):
+    return page.locator('[data-testid="composer"] [data-block="true"]', has_text=re.compile(rf"^{name}$")).first
 
 
-BLOCK_STYLE = {"h1": ("longform-header-one", "标题"), "h2": ("longform-header-two", "副标题"),
-               "blockquote": ("longform-blockquote", None)}
-
-
-def _apply_block_style(page, element: str):
-    """单独贴进空块的 <h1>/<h2>/<blockquote> 会退化成正文块，贴完按工具栏补块样式。"""
-    tag = element[1:element.index(">")]
-    if tag not in BLOCK_STYLE:
-        return
-    cls, menu = BLOCK_STYLE[tag]
-    for _ in range(3):
-        last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-        if cls in (last.get_attribute("class") or ""):
-            return
-        last.click()
-        page.wait_for_timeout(200)
-        if menu:
-            page.locator('div[role="button"], button').filter(has_text=re.compile(r"^(正文|标题|副标题)$")).first.click()
-            page.wait_for_timeout(500)
-            page.locator("[role=menuitem]", has_text=menu).first.click()
-        else:
-            page.locator('[data-testid="btn-blockquote"]').first.click()
-        page.wait_for_timeout(400)
-    raise SystemExit(f"块样式未生效：{tag} …{_plain(element)[:30]}")
-
-
-def _open_new_block(page):
-    """每贴完一个元素就回车开一个空的正文块（单个 <p> 贴进非空块会并进同一段）。
-    标题 / 引用块末尾回车，新块会继承同样的块类型（09-19 实证：整段正文全成了大标题，
-    还留下一串空标题块），所以回车后若末块不是正文块，就用工具栏把它改回「正文」；
-    列表末尾回车先生成新条目、再回车才退出列表。"""
-    for _ in range(4):
-        page.keyboard.press("Meta+ArrowDown")
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(150)
-        last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-        cls = last.get_attribute("class") or ""
-        if (last.inner_text() or "").strip():
-            continue  # 回车没开出空块（少见），再来一次
-        if "longform-unstyled" in cls:
-            return
-        if "list-item" in cls:
-            continue  # 再回车一次即退出列表
-        last.click()
-        page.wait_for_timeout(150)
-        if "longform-blockquote" in cls:
-            page.locator('[data-testid="btn-blockquote"]').first.click()
-        else:
-            page.locator('div[role="button"], button').filter(has_text=re.compile(r"^(正文|标题|副标题)$")).first.click()
-            page.wait_for_timeout(400)
-            page.locator("[role=menuitem]", has_text="正文").first.click()
-        page.wait_for_timeout(300)
-        last = page.locator('[data-testid="composer"] [data-block="true"][class*="longform-"]').last
-        if "longform-unstyled" in (last.get_attribute("class") or "") and not (last.inner_text() or "").strip():
-            return
-    raise SystemExit("开不出空正文块")
-
-
-def _paste(page, html_chunk: str, idx: int):
-    """一个块可能含多个顶层元素，逐个贴，各自核实落点与块样式。"""
-    elements = [m.group(0) for m in ELEMENT_RE.finditer(html_chunk)]
-    for element in elements or [html_chunk]:
-        _paste_one(page, element, idx)
-
-
-def _insert_media(page, path: Path, expect_kind: str):
-    sel = '[data-testid="composer"] img' if expect_kind == "image" else '[data-testid="composer"] video'
-    before = page.locator(sel).count()
+def _insert_media_at(page, name: str, path: Path, kind: str):
+    """光标放在占位块末尾，走「插入 → 媒体」；媒体落在占位块正下方。然后逐字退格删掉占位文字，
+    若占位块上方是文字块再退格一次并入上一块；上方是媒体块时退格无效，留一个空块当间隔（实测行为）。"""
+    sel = '[data-testid="composer"] img' if kind == "image" else '[data-testid="composer"] video'
     _wait_saved(page)
-    _click_last_block(page)
+    blk = _placeholder_block(page, name)
+    blk.scroll_into_view_if_needed()
+    blk.click()
+    page.keyboard.press("End")
+    page.wait_for_timeout(200)
+    before = page.locator(sel).count()
     page.locator('[aria-label="添加媒体内容"]').first.click()
     page.wait_for_timeout(700)
     page.locator("[role=menuitem]", has_text="媒体").first.click()
@@ -430,12 +384,33 @@ def _insert_media(page, path: Path, expect_kind: str):
         page.wait_for_timeout(500)
         if page.locator(sel).count() > before:
             break
+    else:
+        raise SystemExit(f"{name} 媒体未出现：{path}")
     _wait_media(page)
-    page.wait_for_timeout(6000)  # 媒体落地后编辑器还会重渲染一次，给它时间
+    page.wait_for_timeout(4000)  # 媒体落地后编辑器还会重渲染一次
     _wait_saved(page)
+    blk = _placeholder_block(page, name)
+    if not blk.count():
+        raise SystemExit(f"{name} 占位块在插图后消失")
+    blocks_before = _blocks(page)
+    idx = next(i for i, b in enumerate(blocks_before) if b.endswith("|" + name))
+    prev_is_text = idx > 0 and not blocks_before[idx - 1].startswith("media|")
+    blk.click()
+    page.keyboard.press("End")
+    for _ in range(len(name)):
+        page.keyboard.press("Backspace")
+    page.wait_for_timeout(300)
+    if prev_is_text:
+        page.keyboard.press("Backspace")
+        page.wait_for_timeout(300)
+    if _placeholder_block(page, name).count():
+        raise SystemExit(f"{name} 占位文字没删干净")
+    if page.locator(sel).count() != before + 1:
+        raise SystemExit(f"{name} 清理占位时媒体数变了")
 
 
-def build_draft(page, parsed: dict, media_plan: list, caption_title: str) -> str:
+def build_draft(page, parsed: dict, media_plan: list) -> str:
+    """整篇一次粘贴（块样式最保真），媒体位置先放 XIMGPH_n 占位段，再逐个替换。"""
     page.goto("https://x.com/compose/articles")
     page.wait_for_timeout(4000)
     for _ in range(5):  # 删掉本篇上次没跑完的同名草稿，别的草稿不动
@@ -454,7 +429,7 @@ def build_draft(page, parsed: dict, media_plan: list, caption_title: str) -> str
     page.locator('textarea[name="文章标题"]').click()
     page.keyboard.type(parsed["title"], delay=8)
     page.wait_for_timeout(800)
-    cover = Path(media_plan.pop(0)[1])
+    cover = Path(media_plan[0][1])
     page.locator('input[data-testid="fileInput"]:not([multiple])').first.set_input_files(str(cover))
     page.wait_for_timeout(3000)
     ap = page.locator('[data-testid="applyButton"]')
@@ -462,14 +437,35 @@ def build_draft(page, parsed: dict, media_plan: list, caption_title: str) -> str
         ap.click()
         page.wait_for_timeout(2000)
     _wait_media(page)
-    page.locator('[contenteditable=true][data-testid="composer"]').first.click()
-    page.wait_for_timeout(300)
-    for idx, (kind, val) in enumerate(media_plan):
+
+    # 拼整篇 HTML，媒体处放占位段
+    html_parts, media_items = [], []
+    for kind, val in media_plan[1:]:
         if kind == "html":
-            _paste(page, val, idx)
+            html_parts.append(val)
         else:
-            _insert_media(page, Path(val), kind)
-        print(f"  {idx:>3} {kind}")
+            media_items.append((PLACEHOLDER.format(n=len(media_items) + 1), Path(val), kind))
+            html_parts.append(f"<p>{media_items[-1][0]}</p>")
+    full_html = "".join(html_parts)
+    ed = page.locator('[contenteditable=true][data-testid="composer"]').first
+    for attempt in range(3):
+        ed.click()
+        page.wait_for_timeout(300)
+        page.evaluate(PASTE_JS, full_html)
+        page.wait_for_timeout(2500)
+        found = sum(1 for b in _blocks(page) if re.search(r"\|XIMGPH_\d+$", b))
+        if found == len(media_items) and page.evaluate(TEXT_LEN_JS) > len(full_html) // 8:
+            break
+        print(f"   整篇粘贴重试 {attempt}: 占位 {found}/{len(media_items)}")
+        page.keyboard.press("Meta+A")
+        page.keyboard.press("Backspace")
+        page.wait_for_timeout(500)
+    else:
+        raise SystemExit("整篇粘贴失败")
+    _wait_saved(page)
+    for i, (name, path, kind) in enumerate(media_items):
+        _insert_media_at(page, name, path, kind)
+        print(f"  {i + 1:>3}/{len(media_items)} {kind} {path.name}")
     page.wait_for_timeout(2000)
     return draft_url
 
@@ -500,9 +496,17 @@ def verify(page, media_plan: list) -> list[str]:
     for tag in want:
         if want[tag] != got_types[tag]:
             diffs.append(f"块类型 {tag}: 计划 {want[tag]} 实际 {got_types[tag]}")
-    empties = page.evaluate("()=>[...document.querySelectorAll('[data-testid=composer] [data-block=true][class*=longform-]')].filter(e=>!e.innerText.trim()).length")
-    if empties > 1:
-        diffs.append(f"空块 {empties} 个（只允许文末 1 个）")
+    blocks = _blocks(page)
+    bad_empties = 0
+    for i, b in enumerate(blocks):
+        if b.startswith("media|") or b.split("|", 1)[1].strip():
+            continue
+        last = i == len(blocks) - 1
+        between_media = 0 < i < len(blocks) - 1 and blocks[i - 1].startswith("media|") and blocks[i + 1].startswith("media|")
+        if not (last or between_media):
+            bad_empties += 1
+    if bad_empties:
+        diffs.append(f"多余空块 {bad_empties} 个（只允许文末 1 个和两张图之间的间隔）")
     return diffs
 
 
@@ -569,8 +573,7 @@ def main() -> int:
     tail = ""
     if parsed["sources"]:
         tail += "<h1>信息来源</h1><ul>" + "".join(f"<li>{s}</li>" for s in parsed["sources"]) + "</ul>"
-    if url:
-        tail += f'<p>网页版全文：<a href="{url}">{url}</a></p>'
+    tail += tail_links(article_dir, parsed["title"], url)
     tail += "<p>叁笙早安 AI · 把最新技术真正用进生活与工作的实测与教程。</p>"
     plan.append(("html", tail))
 
@@ -591,7 +594,7 @@ def main() -> int:
             page.wait_for_timeout(7000)
             draft_url = args.draft_url
         else:
-            draft_url = build_draft(page, parsed, list(plan), parsed["title"])
+            draft_url = build_draft(page, parsed, list(plan))
         diffs = verify(page, plan[1:])
         n_img = page.locator('[data-testid="composer"] img').count()
         n_vid = page.locator('[data-testid="composer"] video').count()
