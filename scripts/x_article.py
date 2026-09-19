@@ -54,7 +54,9 @@ CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CHROME_PROFILE_DEFAULT = Path.home() / "Library/Application Support/baoyu-skills/chrome-profile"
 CDP_DEFAULT = "http://127.0.0.1:9333"
 MAX_RUNTIME_SECONDS = 40 * 60
-CAPTION_WEIGHT_LIMIT = 256  # X 发布说明文字：中文/表情按 2 算
+CAPTION_WEIGHT_LIMIT = 256
+# 裸域名（sanshengai.top / example.com）X 也会自动转成 t.co 链接，和贴 URL 一样压流
+DOMAIN_TLDS = r"(?:com|net|org|top|cn|io|ai|me|app|dev|xyz|co|cc|info|site|online|tech|blog|fm|tv|so|link|run)"  # X 发布说明文字：中文/表情按 2 算
 IMG_MAX_EDGE = 2000
 IMG_JPEG_QUALITY = 85
 IMG_MAX_BYTES = 3 * 1024 * 1024
@@ -444,8 +446,8 @@ def check_caption(text: str) -> list[str]:
     w = caption_weight(text)
     if w > CAPTION_WEIGHT_LIMIT:
         problems.append(f"说明文字 {w} 权重字符，超过上限 {CAPTION_WEIGHT_LIMIT}（中文按 2 算，约 128 个汉字）")
-    if re.search(r"https?://|www\.", text):
-        problems.append("说明文字里有 URL：外链压流，链接放文章末尾或回复")
+    if re.search(r"https?://|www\.", text) or re.search(r"(?<![\w.])[\w-]+(\.[\w-]+)*\." + DOMAIN_TLDS + r"(?![\w.])", text, re.I):
+        problems.append("说明文字里有 URL 或裸域名（X 会自动转成链接）：外链压流，链接放文章末尾或回复")
     if len(re.findall(r"(?<!\S)#\S+", text)) >= 2:
         problems.append("hashtag ≥2 会被降权")
     if re.search(r"(点赞|转发|关注|收藏|评论区见|你怎么看|欢迎讨论)", text):

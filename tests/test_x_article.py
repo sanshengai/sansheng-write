@@ -132,6 +132,8 @@ def test_caption_rejects_over_limit_url_hashtags_bait():
     too_long = "字" * 129  # 258 权重
     assert any("超过上限" in p for p in xa.check_caption(too_long))
     assert any("URL" in p for p in xa.check_caption("看这里 https://x.com/a"))
+    assert any("裸域名" in p for p in xa.check_caption("去 sanshengai.top 看看"))  # X 会把裸域名自动转成 t.co 链接
+    assert xa.check_caption("更新到 V1.77 了，共 3.5 万字") == []  # 小数点不是域名
     assert any("hashtag" in p for p in xa.check_caption("#AI 与 #Mac 的事"))
     assert any("诱饵" in p for p in xa.check_caption("觉得有用请点赞转发"))
     assert xa.check_caption("Mac 和安卓自带日历能双向同步，中间只有两个免费选择。") == []
