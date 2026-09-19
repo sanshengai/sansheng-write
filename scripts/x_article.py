@@ -759,6 +759,24 @@ def build_draft(page, parsed: dict, plan: list, cover: Path) -> str:
     return draft_url
 
 
+def build_draft_with_retry(page, parsed: dict, plan: list, cover: Path, tries: int = 3) -> str:
+    """占位块在媒体落地后消失、插入超时这类编辑器抽风（09-20 实证：同一篇连着两次失败、第三次全过），
+    整篇重建比人工介入便宜；重建前会删同名旧草稿。只对这类瞬态错误重试，其它错误照常抛。"""
+    transient = ("占位块在插入后消失", "插入后没出现", "没删干净", "块数变了", "Timeout")
+    last = None
+    for attempt in range(1, tries + 1):
+        try:
+            return build_draft(page, parsed, plan, cover)
+        except (SystemExit, Exception) as e:  # noqa: BLE001 - 只放行瞬态错误
+            msg = str(e)
+            if not any(k in msg for k in transient) or attempt == tries:
+                raise
+            last = msg
+            print(f"  建稿失败（{msg[:60]}），第 {attempt + 1}/{tries} 次重建…")
+            page.wait_for_timeout(5000)
+    raise SystemExit(last or "建稿失败")
+
+
 def verify(page, plan: list) -> list[str]:
     return diff_blocks(plan, _blocks(page))
 
@@ -986,7 +1004,7 @@ def main() -> int:
             page.wait_for_timeout(7000)
             draft_url = args.draft_url
         else:
-            draft_url = build_draft(page, parsed, plan, cover_ready)
+            draft_url = build_draft_with_retry(page, parsed, plan, cover_ready)
         diffs = verify(page, plan)
         n_img = page.locator('[data-testid="composer"] img').count()
         n_vid = page.locator('[data-testid="composer"] video').count()
