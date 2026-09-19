@@ -199,6 +199,74 @@ def _published_digest(digest: str) -> str:
     )
 
 
+# 作者在微信编辑器里把标题缩短几个字、或删掉一两张图（如文末入口二维码）后正式发布，
+# 与正文小幅手改同性质：不回传本地、不重生成播客，放行但留痕。只在人工插音频之后的
+# 双音频核验（草稿 / 正式文章两条路）里生效，首次 draft/get 读回仍逐字逐图比对。
+# 2026-09-19 第 103 篇实证：作者把「（限时免费）」改成「（限免）」并删掉二维码图后发布，
+# title / image_count / image_identity 三道逐字门把 finalize 卡死，而回传本地又要重跑
+# adopt-final → 草稿整条链。换图、加图、换序、删太多图、标题改成另一篇仍一律不放行。
+TITLE_DRIFT_TOLERANCE = 0.8
+TITLE_PURE_EDIT_MAX_CHARS = 4
+IMAGE_REMOVAL_TOLERANCE = 2
+
+
+def _is_subsequence(short: str, long: str) -> bool:
+    it = iter(long)
+    return all(ch in it for ch in short)
+
+
+def _title_drift(expected_title: str, actual_title: str) -> dict[str, Any]:
+    """Judge whether a remote title is the local title after an author-side trim.
+
+    Two signals, either one suffices: overall similarity ≥ TITLE_DRIFT_TOLERANCE, or the
+    change is a pure deletion / pure insertion of at most TITLE_PURE_EDIT_MAX_CHARS
+    characters (「（限时免费）」→「（限免）」is a 2-char deletion; short titles fall below
+    the ratio bar even for that). A rewritten title matches neither.
+    """
+    import difflib
+
+    left = "".join(str(expected_title or "").split())
+    right = "".join(str(actual_title or "").split())
+    ratio = difflib.SequenceMatcher(None, left, right, autojunk=False).ratio()
+    shorter, longer = sorted((left, right), key=len)
+    pure_edit = (
+        0 < len(longer) - len(shorter) <= TITLE_PURE_EDIT_MAX_CHARS
+        and _is_subsequence(shorter, longer)
+    )
+    return {
+        "expected": str(expected_title or ""),
+        "actual": str(actual_title or ""),
+        "ratio": round(ratio, 4),
+        "tolerated": ratio >= TITLE_DRIFT_TOLERANCE or pure_edit,
+    }
+
+
+def _image_removal_drift(
+    baseline_sources: list[str], actual_sources: list[str]
+) -> dict[str, Any] | None:
+    """Tolerate only order-preserving removals of at most IMAGE_REMOVAL_TOLERANCE images.
+
+    Returns the drift record when ``actual_sources`` is ``baseline_sources`` with
+    1..IMAGE_REMOVAL_TOLERANCE entries deleted (same order, nothing added or swapped,
+    at least one image left); otherwise ``None`` so the caller keeps the hard failure.
+    """
+    baseline = [str(item) for item in baseline_sources]
+    actual = [str(item) for item in actual_sources]
+    removed = len(baseline) - len(actual)
+    if removed < 1 or removed > IMAGE_REMOVAL_TOLERANCE or not actual:
+        return None
+    removed_sources: list[str] = []
+    cursor = 0
+    for source in baseline:
+        if cursor < len(actual) and actual[cursor] == source:
+            cursor += 1
+        else:
+            removed_sources.append(source)
+    if cursor != len(actual) or len(removed_sources) != removed:
+        return None
+    return {"removed_count": removed, "removed_sources": removed_sources}
+
+
 def _image_count(html: str) -> int:
     return len(re.findall(r"<img\b", str(html or ""), flags=re.I))
 
@@ -563,10 +631,24 @@ def verify_wechat_audio(
         actual,
         str(attempt.get("cover_media_id") or ""),
         content_normalizer=_without_audio_slots,
+        author_edits=True,
     )
-    full_checks["image_identity"] = _image_sources(content) == baseline_image_sources
+    actual_image_sources = _image_sources(content)
+    image_drift: dict[str, Any] | None = None
+    full_checks["image_identity"] = actual_image_sources == baseline_image_sources
     if not full_checks["image_identity"]:
-        full_errors.append("draft/get 回读字段不一致：image_identity")
+        image_drift = _image_removal_drift(baseline_image_sources, actual_image_sources)
+        if image_drift is not None:
+            # 作者删掉一两张图（顺序子序列、无新增无换序）：放行并留痕。
+            full_checks["image_identity"] = True
+            full_checks["image_drift_tolerated"] = True
+        else:
+            full_errors.append("draft/get 回读字段不一致：image_identity")
+    if full_checks.get("image_count_drift_tolerated") and image_drift is None:
+        # 数量少了却不是干净的删除（例如删一张又换一张）：数量容忍作废。
+        full_checks["image_count"] = False
+        full_checks.pop("image_count_drift_tolerated", None)
+        full_errors.append("draft/get 回读字段不一致：image_count")
     errors.extend(full_errors)
     if persist and not audition_confirmed:
         errors.append(
@@ -584,6 +666,9 @@ def verify_wechat_audio(
         "handoff_digest": stable_digest(handoff),
         # 作者在微信编辑器里的小幅手改（相似度 ≥ BODY_DRIFT_TOLERANCE）留痕，不拦。
         "body_drift": dict(_LAST_BODY_DRIFT) if full_checks.get("body_drift_tolerated") else None,
+        # 作者在微信侧缩短标题 / 删掉一两张图：同样留痕不拦（见 TITLE_DRIFT_TOLERANCE 注释）。
+        "title_drift": dict(_LAST_TITLE_DRIFT) if full_checks.get("title_drift_tolerated") else None,
+        "image_drift": image_drift if full_checks.get("image_drift_tolerated") else None,
         "local_audio_sha256": local_audio_sha256,
         "remote_content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         "remote_audio_components": remote_audio_components,
@@ -1556,6 +1641,9 @@ def verify_wechat_published_audio(
         "local_audio_sha256": draft_receipt.get("local_audio_sha256"),
         "remote_content_sha256": draft_receipt.get("remote_content_sha256"),
         "remote_audio_components": draft_receipt.get("remote_audio_components"),
+        "body_drift": draft_receipt.get("body_drift"),
+        "title_drift": draft_receipt.get("title_drift"),
+        "image_drift": draft_receipt.get("image_drift"),
         "remote_readback": {
             "apis": (
                 ["freepublish/batchget", "freepublish/getarticle"]
@@ -1590,6 +1678,7 @@ def verify_wechat_published_audio(
 
 
 _LAST_BODY_DRIFT: dict[str, Any] = {}
+_LAST_TITLE_DRIFT: dict[str, Any] = {}
 
 
 def _compare_readback(
@@ -1598,7 +1687,15 @@ def _compare_readback(
     cover_media_id: str,
     *,
     content_normalizer: Callable[[str], str] | None = None,
+    author_edits: bool = False,
 ) -> tuple[dict[str, bool], list[str]]:
+    """Compare the local expectation with a remote readback.
+
+    ``author_edits=True`` is only for the post-handoff audio checks: it additionally
+    tolerates an author-side title shortening (similarity ≥ TITLE_DRIFT_TOLERANCE) and a
+    smaller image count (the caller must still prove the survivors are the same images in
+    the same order via ``_image_removal_drift``); both leave a drift record in ``checks``.
+    """
     pairs = {
         "title": (expected["title"], actual.get("title")),
         "digest": (_published_digest(expected["digest"]), actual.get("digest")),
@@ -1620,6 +1717,14 @@ def _compare_readback(
         name: str(wanted).strip() == str(got).strip()
         for name, (wanted, got) in pairs.items()
     }
+    _LAST_TITLE_DRIFT.clear()
+    if author_edits and not checks["title"]:
+        title_drift = _title_drift(str(expected["title"]), str(actual.get("title") or ""))
+        if title_drift.pop("tolerated"):
+            # 作者在微信侧缩短标题：放行，但把漂移记进 checks 供回执留痕。
+            checks["title"] = True
+            checks["title_drift_tolerated"] = True
+            _LAST_TITLE_DRIFT.update(title_drift)
     content = str(actual.get("content") or "")
     expected_content = str(expected["content"])
     compared_content = content_normalizer(content) if content_normalizer else content
@@ -1637,7 +1742,16 @@ def _compare_readback(
             checks["body_drift_tolerated"] = True
             _LAST_BODY_DRIFT.clear()
             _LAST_BODY_DRIFT.update(drift)
-    checks["image_count"] = expected["image_count"] == _image_count(content)
+    actual_image_count = _image_count(content)
+    checks["image_count"] = expected["image_count"] == actual_image_count
+    if (
+        author_edits
+        and not checks["image_count"]
+        and 0 < int(expected["image_count"]) - actual_image_count <= IMAGE_REMOVAL_TOLERANCE
+    ):
+        # 只放行「少了一两张」这一种数量差；到底是不是同一批图，由调用方按顺序子序列核对。
+        checks["image_count"] = True
+        checks["image_count_drift_tolerated"] = True
     unuploaded = _unuploaded_images(content)
     checks["image_src_uploaded"] = not unuploaded
     checks["cover_media_id"] = (

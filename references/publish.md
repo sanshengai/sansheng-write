@@ -35,6 +35,12 @@ python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition
 
 正文比对**允许作者在微信编辑器里的小幅手改**（改几个字、顺一句话，不回传本地也行）：可见文字相似度 ≥ `BODY_DRIFT_TOLERANCE`（0.98，约 2% 字符）即放行，改动内容写进回执的 `body_drift` 留痕；删段、换章这类结构性改写仍会被拦。2026-09-16 第 99 篇定的规矩：作者把首句改了 7 个字后正式发布，逐字门把整条 finalize 卡死，回传本地又要重生成播客，两头都不对。
 
+同一精神也覆盖**作者在微信侧缩短标题、删掉一两张图**（2026-09-19 第 103 篇：「（限时免费）」改成「（限免）」并删掉文末入口二维码后发布，title / image_count / image_identity 三道逐字门把 finalize 卡死）。只在人工插音频之后的两条双音频核验路径里生效，首次 `draft/get` 读回仍逐字逐图比对：
+
+- 标题：相似度 ≥ `TITLE_DRIFT_TOLERANCE`（0.8），或纯删 / 纯增 ≤ `TITLE_PURE_EDIT_MAX_CHARS`（4）个字，放行并记 `title_drift`；换成另一个标题仍拦。
+- 图片：正式页图片必须是草稿回执图片的**顺序子序列**，最多少 `IMAGE_REMOVAL_TOLERANCE`（2）张且至少剩一张，放行并记 `image_drift`（删了哪几张）；换图、加图、换序、删太多一律拦。
+- 作品库与官网仍沿用本地 `article-meta.yaml` 的标题（正式标题只认这一处）；作者要同步改就走 `retitle`，不由核验器代改。
+
 若文章已经正式发布、草稿被微信回收并返回 `40007 invalid media_id`，不得伪造上述草稿凭证。改在正式文章完成同样的双音频首尾试听，然后运行：
 
 ```bash

@@ -249,11 +249,30 @@ def _dual_audio_reader(
     duplicate_image: bool = False,
     duplicate_audio_identity: bool = False,
     reverse_cards: bool = False,
+    title: str = "",
+    drop_images: tuple[str, ...] = (),
+    add_image: bool = False,
+    swap_images: bool = False,
 ):
     base = _reader()
 
     def read(media_id, expected):
         actual = base(media_id, expected)
+        if title:
+            actual["title"] = title
+        for name in drop_images:
+            tag = f'<img src="https://wechat-image.invalid/{name}">'
+            assert tag in actual["content"], tag
+            actual["content"] = actual["content"].replace(tag, "", 1)
+        if add_image:
+            actual["content"] = actual["content"].replace(
+                "</section>", '<img src="https://wechat-image.invalid/extra.png"></section>', 1
+            )
+        if swap_images:
+            hero = '<img src="https://wechat-image.invalid/hero.png">'
+            info = '<img src="https://wechat-image.invalid/infographic-01.png">'
+            assert hero + info in actual["content"]
+            actual["content"] = actual["content"].replace(hero + info, info + hero, 1)
         content = actual["content"].replace(
             "（👉 删除本段文字，并插入主题曲音频）",
             '<mp-common-mpaudio name="主题曲"></mp-common-mpaudio>',
@@ -694,6 +713,127 @@ def test_dual_audio_readback_rejects_player_outside_podcast_card(tmp_path):
 
     assert receipt is None
     assert any("播客" in error and "卡片内" in error for error in errors)
+
+
+def test_dual_audio_readback_tolerates_author_title_shortening_and_one_image_removal(tmp_path):
+    """第 103 篇：作者在微信侧把标题缩短、删掉文末二维码后发布，不该把 finalize 卡死。"""
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(
+            title="教程 | 一键草稿（限免）", drop_images=("infographic-01.png",)
+        ),
+        audition_confirmed=True,
+    )
+
+    assert errors == []
+    assert receipt is not None
+    checks = receipt["remote_readback"]["checks"]
+    assert checks["title"] is True and checks["title_drift_tolerated"] is True
+    assert checks["image_identity"] is True and checks["image_drift_tolerated"] is True
+    assert checks["image_count"] is True and checks["image_count_drift_tolerated"] is True
+    assert receipt["title_drift"]["actual"] == "教程 | 一键草稿（限免）"
+    assert receipt["image_drift"] == {
+        "removed_count": 1,
+        "removed_sources": ["https://wechat-image.invalid/infographic-01.png"],
+    }
+
+
+def test_dual_audio_readback_rejects_unrelated_title(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article, reader=_dual_audio_reader(title="另一篇文章的标题被贴错了")
+    )
+
+    assert receipt is None
+    assert any(error.endswith("title") for error in errors)
+
+
+def test_dual_audio_readback_rejects_added_image_even_with_removal(tmp_path):
+    """删一张又加一张：数量相同、身份不同，不是「作者删图」。"""
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(drop_images=("infographic-01.png",), add_image=True),
+    )
+
+    assert receipt is None
+    assert any("image_identity" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_reordered_images(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article, reader=_dual_audio_reader(swap_images=True)
+    )
+
+    assert receipt is None
+    assert any("image_identity" in error for error in errors)
+
+
+def test_dual_audio_readback_rejects_removing_every_image(tmp_path):
+    from scripts.release_to_draft import verify_wechat_audio
+
+    article = _dual_audio_article(tmp_path)
+    receipt, errors = verify_wechat_audio(
+        article,
+        reader=_dual_audio_reader(drop_images=("hero.png", "infographic-01.png")),
+    )
+
+    assert receipt is None
+    assert any("image_identity" in error or "image_count" in error for error in errors)
+
+
+def test_title_drift_accepts_short_trim_but_not_rewrite():
+    from scripts.release_to_draft import _title_drift
+
+    base = "分享 | 全网最好的初中英语学习网站（限时免费）"
+    assert _title_drift(base, "分享 | 全网最好的初中英语学习网站（限免）")["tolerated"]
+    assert _title_drift("教程 | 一键草稿", "教程 | 一键草稿箱")["tolerated"]
+    # 纯删超过 4 字且相似度不够：短标题被砍成另一个意思，不放行
+    assert not _title_drift("教程 | 一键草稿箱指南", "教程")["tolerated"]
+    assert not _title_drift(base, "另一篇文章的标题被贴错了")["tolerated"]
+
+
+def test_image_removal_drift_caps_removed_count():
+    from scripts.release_to_draft import IMAGE_REMOVAL_TOLERANCE, _image_removal_drift
+
+    baseline = [f"img-{i}" for i in range(6)]
+    assert _image_removal_drift(baseline, baseline[:-IMAGE_REMOVAL_TOLERANCE]) is not None
+    assert _image_removal_drift(baseline, baseline[: -(IMAGE_REMOVAL_TOLERANCE + 1)]) is None
+    assert _image_removal_drift(baseline, baseline) is None
+    assert _image_removal_drift(baseline, baseline[1:] + ["img-0"]) is None
+
+
+def test_initial_draft_readback_still_rejects_missing_image(tmp_path):
+    """首次 draft/get 读回不吃作者容忍：少一张图就是上传失败，必须拦。"""
+    from scripts.release_to_draft import release_to_draft
+
+    def reader_missing_image(media_id, expected):
+        actual = _reader()(media_id, expected)
+        actual["content"] = actual["content"].replace(
+            '<img src="https://wechat-image.invalid/infographic-01.png">', "", 1
+        )
+        return actual
+
+    article = _article(tmp_path)
+    receipt, errors = release_to_draft(
+        article,
+        preflight=_preflight,
+        publisher=_publisher([]),
+        reader=reader_missing_image,
+    )
+
+    assert receipt is None
+    assert any("image_count" in error for error in errors)
 
 
 def test_dual_audio_readback_rejects_equal_count_image_replacement(tmp_path):

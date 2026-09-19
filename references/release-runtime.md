@@ -140,9 +140,8 @@ QA 资产集合从最终 HTML 与 Markdown 的实际引用共同计算；Hero �
 `text_match`、`no_unexpected_text`、`style_contract_match` 是不可移除的发布硬门；
 每条 `required_text` 必须在整图恰好出现一次。视觉编译后若 QA 代码字节变化，旧凭证立即失效。
 
-仓内自带两个同合同的看图适配器：默认 `scripts/visual_qa_claude.py`（Claude Code 无头进程，
-Claude 自己能看图、不依赖 Codex 额度）与备用 `scripts/visual_qa_codex.py`；配置与三种静默失效
-（提示词没送达 / 糊字被脑补成通顺句 / 转写被打碎误杀好图）见 `visual-qa.md`。
+仓内自带两个同合同的看图适配器：默认 `scripts/visual_qa_claude.py`（Claude 无头进程自己看图，不依赖 Codex 额度）与备用
+`scripts/visual_qa_codex.py`；配置与三种静默失效（提示词没送达 / 糊字被脑补成通顺句 / 转写被打碎误杀好图）见 `visual-qa.md`。
 
 ## 5. 唯一草稿箱事务
 
