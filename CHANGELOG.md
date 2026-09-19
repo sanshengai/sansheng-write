@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+**新增**
+- X 版适配文件 `定稿.x.md`：存在时 `x_article.py` 优先读它，公众号定稿不动，两份共用 `素材/`；receipt 记录实际用的源文件。`references/x-article.md` 新增「发前适配」七条与选篇 / 节奏规则。
+
 **修正**
 - `check_caption` 也拦裸域名（`example.com` 这种没有 `https://` 的写法）：X 会把它自动转成 t.co 链接，和贴 URL 一样压主帖触达。
 - SKILL.md 触发描述补上「转成 X（Twitter）文章 / 发推特长文」：2.3.0 只在正文模块表和子命令入口加了 X，frontmatter 描述没提，Agent 从技能清单判断是否加载时看不到，「发推特」可能不触发本 skill。

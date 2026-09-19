@@ -184,3 +184,13 @@ def test_maturity_buckets():
     assert xa.maturity(1) == "early"
     assert xa.maturity(30) == "day3"
     assert xa.maturity(9999) == "plateau"
+
+
+# ---------------------------------------------------------------- X 版适配文件
+def test_x_variant_preferred_over_wechat_final(tmp_path: Path):
+    (tmp_path / "定稿.md").write_text("---\ntitle: 公众号版\n---\n\n正文 A\n", encoding="utf-8")
+    assert xa.parse_article(tmp_path)["source"] == "定稿.md"
+    (tmp_path / "定稿.x.md").write_text("---\ntitle: X 版\n---\n\n正文 B\n", encoding="utf-8")
+    parsed = xa.parse_article(tmp_path)
+    assert parsed["source"] == "定稿.x.md" and parsed["title"] == "X 版"
+    assert "正文 A" not in "".join(v for k, v in parsed["blocks"] if k == "html")

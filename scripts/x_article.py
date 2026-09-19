@@ -271,8 +271,21 @@ def parse_markdown(md: str, article_dir: Path) -> dict:
             "description": description, "blocks": blocks, "sources": sources or extra_sources}
 
 
+X_VARIANT = "定稿.x.md"
+
+
+def article_source(article_dir: Path) -> Path:
+    """X 版适配（删公众号专属段落、标美元、补大陆专有词解释）写在 `定稿.x.md`，存在就优先用它；
+    公众号定稿 `定稿.md` 不动。两份的图片都指向同一个 素材/。"""
+    x = article_dir / X_VARIANT
+    return x if x.is_file() else article_dir / "定稿.md"
+
+
 def parse_article(article_dir: Path) -> dict:
-    return parse_markdown((article_dir / "定稿.md").read_text(encoding="utf-8"), article_dir)
+    src = article_source(article_dir)
+    parsed = parse_markdown(src.read_text(encoding="utf-8"), article_dir)
+    parsed["source"] = src.name
+    return parsed
 
 
 # ---------------------------------------------------------------- 素材预处理
@@ -934,7 +947,7 @@ def main() -> int:
         return 2
 
     if args.dry_run:
-        print("TITLE:", parsed["title"], "| cover:", cover)
+        print("TITLE:", parsed["title"], "| source:", parsed["source"], "| cover:", cover)
         for k, v in plan:
             print(k, v[:160] if k == "html" else v)
         if caption:
@@ -962,7 +975,8 @@ def main() -> int:
         for d in diffs[:20]:
             print("   ", d[:120])
         receipt = {"at": datetime.now(timezone.utc).isoformat(), "draft_url": draft_url,
-                   "title": parsed["title"], "images": n_img, "videos": n_vid, "diffs": len(diffs),
+                   "title": parsed["title"], "source": parsed["source"],
+                   "images": n_img, "videos": n_vid, "diffs": len(diffs),
                    "site_url": url, "post_url": "", "account": account_handle(page)}
         out_dir.mkdir(parents=True, exist_ok=True)
         if diffs:
