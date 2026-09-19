@@ -171,6 +171,7 @@ cp .env.example .env              # 填你自己的 key
 | 小红书图文 | 按一个传播命题重编为 6-10 张 3:4 轮播图文，开浏览器填好标题/正文/图，你点「发布」 | 小红书账号 + 一个驱动创作服务平台网页端的发布脚本（自备） | 完全不影响写作与公众号发布 |
 | 微博 | 独立生成完整微博正文与 4-9 张 1:1 图片，开浏览器填好，你点「发送」 | 微博账号（发布脚本可自动发现） | 同上 |
 | 播客（RSS / 公众号 / 官网） | 把定稿做成双主持音频并复用到 RSS、官网；显式设 `wechat_embed: true` 后，公众号导读后也会出现与主题曲同级的播客卡 | NotebookLM 登录态、ffmpeg、一台放 mp3 与 `feed.xml` 的主机（可 SSH）；公众号插入后须在微信预览试听两条音频首尾 | 同上；未显式开启嵌入时公众号保持主题曲单卡 |
+| X（Twitter）文章 | 把整篇定稿搬成 X 文章：标题 / 引用 / 列表 / 分割线按块保真，表格降级成列表，竖图垫成 3:4 免裁切，文末自动接网站全文、公众号原文、播客单集链接；建草稿 → 逐块校验（文本 + 块类型 + 空块）→ 预览截图 → 确认后发布 → 回读互动快照 | X Premium 账号、一个已登录 X 的 Chrome（脚本会自动拉起）、`playwright` | 同上 |
 
 朋友圈文案写入 `_moments-copy.md`：文件首字符就是 emoji，无标题、代码围栏、前导空白或
 附加说明。Agent 在聊天里交付时也必须把它作为独立最终消息原样发送，避免复制时带入杂字。
@@ -185,8 +186,8 @@ python scripts/setup.py        # 交互式：问你要哪些，只收集那些�
 
 > 装了 `ruamel.yaml`（`pip install ruamel.yaml`）时会**保留注释**就地改写你的 profile；没装则不写盘，改为打印配置片段让你自己粘贴——不会默默抹掉你 profile 里的注释。
 
-**共同前提**：小红书和微博只在你按篇明确点名时触发，不随正式链接自动执行；两端分别生图，
-不复用同一套比例。模块把内容填进发布框后就停手，**最后那下「发布」永远由你点**。填错了还能改，发出去收不回来。
+**共同前提**：小红书、微博和 X 只在你按篇明确点名时触发，不随正式链接自动执行；两端分别生图，
+不复用同一套比例。小红书、微博把内容填进发布框后就停手，**最后那下「发布」永远由你点**；X 文章在发布前打一张确认卡，只有你回 `yes`（或显式传 `--yes`）才发。填错了还能改，发出去收不回来。
 
 ---
 
@@ -333,6 +334,16 @@ GitHub 宝藏精选、AI 羊毛铺……
 
 - **[humanizer](https://github.com/blader/humanizer)** by [blader](https://github.com/blader)（MIT）--
   反 AI 味过滤器中「四种高频 AI 句式」的识别框架来自该项目。
+
+- **[x-skills](https://github.com/sergebulaev/x-skills)** by [sergebulaev](https://github.com/sergebulaev)（MIT）--
+  反 AI 味过滤器 2026-09 补进的四条句式判据（揭示桥 / 表演式真诚 / 反强制节奏 / 三连留一）、
+  密度口径与过度矫正三问，以及 X 账号页记分卡、算法信号权重，方法来自其 x-humanizer V3 与
+  x-profile-optimizer；规则按本 skill 口径独立重写，未复制原文。**不捆绑分发。**
+
+- **[baoyu-post-to-x](https://github.com/JimLiu/baoyu-skills)**、**[x-article-publisher-skill](https://github.com/wshuyi/x-article-publisher-skill)** by [王树义](https://github.com/wshuyi)、
+  **[qiaomu-x-article-publisher](https://github.com/joeseesun/qiaomu-x-article-publisher)** by [向阳乔木](https://github.com/joeseesun)（均 MIT）--
+  X 文章发布链的三个做法借鉴自它们：整篇粘贴 + 占位符定位插图、上传前压缩、粘贴后按块数稳定判定渲染完成；
+  `x_article.py` 为独立实现，未复制其代码。**不捆绑分发。**
 
 - **[human-writing](https://github.com/KKKKhazix/human-writing)** by [KKKKhazix](https://github.com/KKKKhazix)（MIT）--
   材料承重、事实与推理分账、来源边界、逐段新增信息、结尾删除测试等方法给了本次改造启发。

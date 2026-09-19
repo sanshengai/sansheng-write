@@ -157,6 +157,7 @@ output — no errors, no nags, no noise. If you just want to write, skip this se
 | Xiaohongshu (RED) | Re-narrates one distribution thesis as 6-10 dedicated 3:4 carousel cards, opens a browser with title/body/images filled in, you click Publish | A RED account + a script that drives the creator platform (bring your own) | No effect at all on writing or WeChat publishing |
 | Weibo | Generates a complete post plus 4-9 dedicated 1:1 cards, opens a browser filled in, you click Send | A Weibo account (the posting script is auto-discovered) | Same |
 | Podcast (RSS) | Turns the piece into a two-host audio episode and ships it to your feed host; `auto_after_finalize` can run the whole RSS handoff after the permanent article URL is finalized | NotebookLM session, ffmpeg, a host for the mp3 and `feed.xml` (SSH-reachable) | Same |
+| X (Twitter) Articles | Ports the whole finished piece into an X Article: headings / quotes / lists / dividers preserved block-by-block, tables degraded to lists, portrait images padded to 3:4 so X does not crop them, and a "Keep reading" tail with your site, WeChat and podcast links; builds the draft → verifies every block (text + block type + empty blocks) → preview screenshots → publishes only after confirmation → reads engagement back into a snapshot log | An X Premium account, a Chrome already logged into X (the script launches it), `playwright` | Same |
 
 Moments copy is written to `_moments-copy.md` as a paste-ready payload: the first byte of visible
 content is the opening emoji, with no heading, code fence, leading whitespace, or status text.
@@ -175,7 +176,7 @@ prints the checklist and exits instead of blocking.
 > **preserves comments**. Without it, it writes nothing and prints a snippet for you to paste —
 > it will never silently strip the comments from your profile.
 
-**Common ground rule**: RED and Weibo run only when you explicitly request them for a specific
+**Common ground rule**: RED, Weibo and X run only when you explicitly request them for a specific
 article; a permanent URL alone never triggers them. Their image sets are generated separately for
 their native aspect ratios. These modules fill the content into the platform's composer and then
 stop. **You always click the final Publish button.** A wrong draft can be fixed; a published post cannot.
@@ -274,6 +275,13 @@ stripped the private bits, and opened it up. Use it, or make it yours.
 
 ### Credits
 
+- **[x-skills](https://github.com/sergebulaev/x-skills)** by [sergebulaev](https://github.com/sergebulaev) (MIT) --
+  the four sentence-level AI tells added in 2026-09 (reveal bridges, performative candour, forced rhythm,
+  hollow triads), the density rule and the over-correction check, plus the X profile scorecard and
+  algorithm-signal weights, follow its x-humanizer V3 and x-profile-optimizer; rules rewritten independently.
+  Also borrowed for the X Articles pipeline: whole-document paste with placeholders, pre-upload compression and
+  the block-count-stable heuristic from baoyu-post-to-x, x-article-publisher-skill and qiaomu-x-article-publisher (all MIT);
+  `x_article.py` is an independent implementation. **Not bundled.**
 - **[baoyu-skills](https://github.com/JimLiu/baoyu-skills)** by [宝玉 / JimLiu](https://github.com/JimLiu) (MIT) --
   the upstream markdown→HTML converter, infographic and publishing toolchain. This skill's
   typesetting post-processor runs on top of its output, and borrows from how it organizes skills.

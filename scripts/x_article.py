@@ -15,7 +15,7 @@
 - 文末追加「信息来源」（解析 SANSHENG-SOURCES 块）和「继续阅读」（网站全文 / 公众号原文 /
   小宇宙单集，缺哪个不放哪个）
 - 主题曲：X 不能上传音频。``--theme`` 才把 ``素材/bgm_cover.png`` + 主题曲 MP3 合成静帧 MP4
-  插在正文第一个大标题前；默认不放（sandy 2026-09-19：不必强行合成视频），播客也不放
+  插在正文第一个大标题前；默认不放（作者 2026-09-19 定：不必强行合成视频），播客也不放
 
 建稿：整篇一次粘贴（合成 ClipboardEvent，Draft.js 解析 <h1>/<strong>/<blockquote>/<ul>），
 媒体与分割线位置先放 ``XIMGPH_n`` / ``XDIVPH_n`` 占位段，再逐个走「插入 → 媒体 / 分割线」
@@ -50,10 +50,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SITE_ROOT = "https://sanshengai.top/articles/"
-XYZ_SHOW = "https://www.xiaoyuzhoufm.com/podcast/69f1a2c798fa520797d8a4e4"  # 叁笙早安AI 节目主页
 CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-CHROME_PROFILE = Path.home() / "Library/Application Support/baoyu-skills/chrome-profile"
+CHROME_PROFILE_DEFAULT = Path.home() / "Library/Application Support/baoyu-skills/chrome-profile"
 CDP_DEFAULT = "http://127.0.0.1:9333"
 MAX_RUNTIME_SECONDS = 40 * 60
 CAPTION_WEIGHT_LIMIT = 256  # X 发布说明文字：中文/表情按 2 算
@@ -355,15 +353,41 @@ def _render_theme(mp3: Path, cover: Path, out_dir: Path) -> Path:
     return mp4
 
 
+# ---------------------------------------------------------------- 渠道配置（brand.yaml distribute.channels.x）
+def x_config(article_dir: Path) -> dict:
+    """网站链接模板 / 播客节目页 / 署名行 / CDP 端口 / Chrome profile 都是私有但非密的品牌值，
+    放 profile 而不是写死在脚本里；未配置时全部为空 = 文末不放对应项。"""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import profile_config as pc
+
+        pc.bind_workspace(article_dir)
+        cfg = dict(pc.distribute_channel("x") or {})
+    except Exception:
+        cfg = {}
+    cfg.setdefault("article_url_template", "")
+    cfg.setdefault("podcast_show_url", "")
+    cfg.setdefault("podcast_episode_prefix", "深聊 | ")
+    cfg.setdefault("tail_line", "")
+    cfg.setdefault("cdp", CDP_DEFAULT)
+    cfg["chrome_profile"] = cfg.get("chrome_profile") or str(CHROME_PROFILE_DEFAULT)
+    return cfg
+
+
 # ---------------------------------------------------------------- 链接
-def site_url(article_dir: Path) -> str:
+def article_code(article_dir: Path) -> str:
     for name in ("_website-sync-receipt.json", "_publish-receipt.json"):
         f = article_dir / name
         if f.is_file():
             m = re.search(r'"code":\s*"([A-Z]+-\d+)"', f.read_text(encoding="utf-8"))
             if m:
-                return SITE_ROOT + m.group(1).lower() + "/"
+                return m.group(1)
     return ""
+
+
+def site_url(article_dir: Path, template: str) -> str:
+    code = article_code(article_dir)
+    return template.replace("{code}", code.lower()) if (template and code) else ""
 
 
 def wechat_url(article_dir: Path) -> str:
@@ -375,26 +399,26 @@ def wechat_url(article_dir: Path) -> str:
     return ""
 
 
-def xiaoyuzhou_url(article_dir: Path, title: str) -> str:
-    """本篇有播客（dist/podcast/audio.mp3）时，到小宇宙节目页按「深聊 | 标题」匹配单集；
+def xiaoyuzhou_url(article_dir: Path, title: str, show_url: str, prefix: str = "深聊 | ") -> str:
+    """本篇有播客（dist/podcast/audio.mp3）且配置了小宇宙节目页时，到节目页按「前缀 + 标题」匹配单集；
     匹配不到（页面只列最近 15 集）就退回节目主页。抓不到网络时返回节目主页，不阻塞发布。"""
-    if not (article_dir / "dist" / "podcast" / "audio.mp3").is_file():
+    if not show_url or not (article_dir / "dist" / "podcast" / "audio.mp3").is_file():
         return ""
     try:
-        req = urllib.request.Request(XYZ_SHOW, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(show_url, headers={"User-Agent": "Mozilla/5.0"})
         html_text = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
         m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html_text, re.S)
         episodes = json.loads(m.group(1))["props"]["pageProps"]["podcast"].get("episodes") or []
-        key = title[:12]
+        key = (prefix + title)[:16]
         for ep in episodes:
             if key and key in str(ep.get("title") or ""):
                 return f"https://www.xiaoyuzhoufm.com/episode/{ep['eid']}"
-        return XYZ_SHOW
+        return show_url
     except Exception:
-        return XYZ_SHOW
+        return show_url
 
 
-def tail_links(article_dir: Path, title: str, site: str) -> str:
+def tail_links(article_dir: Path, title: str, site: str, cfg: dict) -> str:
     """文末「继续阅读」：网站全文 / 公众号原文 / 小宇宙播客，缺哪个不放哪个。链接放正文里不放主帖。"""
     items = []
     if site:
@@ -402,7 +426,7 @@ def tail_links(article_dir: Path, title: str, site: str) -> str:
     wx = wechat_url(article_dir)
     if wx:
         items.append(f'<li>公众号原文：<a href="{wx}">{wx}</a></li>')
-    xyz = xiaoyuzhou_url(article_dir, title)
+    xyz = xiaoyuzhou_url(article_dir, title, cfg.get("podcast_show_url", ""), cfg.get("podcast_episode_prefix", "深聊 | "))
     if xyz:
         items.append(f'<li>播客版（小宇宙）：<a href="{xyz}">{xyz}</a></li>')
     return "<h1>继续阅读</h1><ul>" + "".join(items) + "</ul>" if items else ""
@@ -485,8 +509,8 @@ def diff_blocks(media_plan: list, got_blocks: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------- Chrome / 锁
-def ensure_cdp(cdp: str) -> None:
-    """探调试端口；探不到就用 baoyu profile 拉起 Chrome（子进程脱离本进程，命令结束不会被杀）。"""
+def ensure_cdp(cdp: str, chrome_profile: str = "") -> None:
+    """探调试端口；探不到就用配置的 Chrome profile 拉起（子进程脱离本进程，命令结束不会被杀）。"""
     def alive() -> bool:
         try:
             urllib.request.urlopen(cdp + "/json/version", timeout=3).read()
@@ -498,7 +522,7 @@ def ensure_cdp(cdp: str) -> None:
         return
     port = re.search(r":(\d+)$", cdp).group(1)
     subprocess.Popen(
-        [CHROME_BIN, f"--remote-debugging-port={port}", f"--user-data-dir={CHROME_PROFILE}",
+        [CHROME_BIN, f"--remote-debugging-port={port}", f"--user-data-dir={chrome_profile or CHROME_PROFILE_DEFAULT}",
          "--no-first-run", "https://x.com/compose/articles"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
@@ -834,9 +858,9 @@ def readback(page, receipt: dict, out_dir: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("article_dir")
-    ap.add_argument("--cdp", default=CDP_DEFAULT)
+    ap.add_argument("--cdp", default="", help="Chrome 调试端口，默认取 profile distribute.channels.x.cdp")
     ap.add_argument("--dry-run", action="store_true", help="只打印块序列，不碰浏览器")
-    ap.add_argument("--theme", action="store_true", help="把主题曲合成静帧 MP4 插进正文（默认不放，2026-09-19 sandy 定：太重）")
+    ap.add_argument("--theme", action="store_true", help="把主题曲合成静帧 MP4 插进正文（默认不放）")
     ap.add_argument("--publish", action="store_true", help="校验通过后发布（需 --yes 或交互确认）")
     ap.add_argument("--yes", action="store_true", help="跳过发布确认卡（授权只在本次命令有效）")
     ap.add_argument("--caption-file", help="发布时的帖子说明文字（文件）")
@@ -848,15 +872,17 @@ def main() -> int:
     article_dir = Path(args.article_dir).resolve()
     out_dir = article_dir / "dist" / "x"
     receipt_path = out_dir / "receipt.json"
+    cfg = x_config(article_dir)
+    cdp = args.cdp or cfg["cdp"]
 
     if args.readback:
         if not receipt_path.is_file():
             raise SystemExit("没有 receipt.json")
         from playwright.sync_api import sync_playwright
 
-        ensure_cdp(args.cdp)
+        ensure_cdp(cdp, cfg["chrome_profile"])
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(args.cdp)
+            browser = p.chromium.connect_over_cdp(cdp)
             pages = [pg for pg in browser.contexts[0].pages if "x.com" in pg.url]
             page = pages[0] if pages else browser.contexts[0].new_page()
             snap = readback(page, json.loads(receipt_path.read_text(encoding="utf-8")), out_dir)
@@ -864,7 +890,7 @@ def main() -> int:
         return 0
 
     parsed = parse_article(article_dir)
-    url = args.site_url or site_url(article_dir)
+    url = args.site_url or site_url(article_dir, cfg["article_url_template"])
     cover = find_cover(article_dir)
     if not cover:
         raise SystemExit("找不到封面：frontmatter cover / 素材/cover.* / 素材/hero.*")
@@ -888,9 +914,11 @@ def main() -> int:
     tail = ""
     if parsed["sources"]:
         tail += "<h1>信息来源</h1><ul>" + "".join(f"<li>{s}</li>" for s in parsed["sources"]) + "</ul>"
-    tail += tail_links(article_dir, parsed["title"], url)
-    tail += "<p>叁笙早安 AI · 把最新技术真正用进生活与工作的实测与教程。</p>"
-    plan.append(("html", tail))
+    tail += tail_links(article_dir, parsed["title"], url, cfg)
+    if cfg["tail_line"]:
+        tail += f"<p>{H.escape(cfg['tail_line'], quote=False)}</p>"
+    if tail:
+        plan.append(("html", tail))
 
     caption = Path(args.caption_file).read_text(encoding="utf-8").strip() if args.caption_file else ""
     caption_problems = check_caption(caption) if caption else []
@@ -909,9 +937,9 @@ def main() -> int:
 
     from playwright.sync_api import sync_playwright
 
-    ensure_cdp(args.cdp)
+    ensure_cdp(cdp, cfg["chrome_profile"])
     with ArticleLock(out_dir), sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(args.cdp)
+        browser = p.chromium.connect_over_cdp(cdp)
         pages = [pg for pg in browser.contexts[0].pages if "x.com" in pg.url]
         page = pages[0] if pages else browser.contexts[0].new_page()
         cover_ready = prepare_image(cover, out_dir)

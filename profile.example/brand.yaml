@@ -208,6 +208,16 @@ publish:
 #       image_ideal: 9         # 完整九宫格
 #       image_max: 9           # 必须来自 dist/weibo/images/ 的 1:1 专属图
 #
+#     # ---- X（Twitter）文章：走登录态 Chrome 的文章编辑器，见 references/x-article.md ----
+#     x:
+#       enabled: false
+#       article_url_template: "https://example.com/articles/{code}/"   # 文末「网页版全文」；{code} = 小写作品编号；留空不放
+#       podcast_show_url: ""            # 小宇宙节目主页；有播客的篇目会按 episode_prefix + 标题匹配单集，留空不放
+#       podcast_episode_prefix: "深聊 | "
+#       tail_line: ""                   # 文末署名行，留空不放
+#       cdp: "http://127.0.0.1:9333"    # Chrome 远程调试端口；探不到会用 chrome_profile 自动拉起
+#       chrome_profile: ""              # 已登录 X 的 Chrome user-data-dir；留空则用 baoyu-skills 的共享 profile
+#
 #     # ---- 播客：NotebookLM 生成音频 → 自建 RSS → 平台侧抓取 ----
 #     podcast:
 #       enabled: false

@@ -13,8 +13,9 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --draft-url <草稿URL> --p
 python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                      # 回读互动数据追加到 snapshots.jsonl
 ```
 
-- Chrome：脚本先探 `--cdp`（默认 `http://127.0.0.1:9333`），探不到就用 baoyu profile 自己拉起。跑的时候**别关那个窗口**——09-19 有一次跑到第 5 张图标签页被关掉，脚本随之中断。
+- Chrome：脚本先探 `--cdp`（默认取 profile 的 `cdp`，缺省 `http://127.0.0.1:9333`），探不到就用 `chrome_profile` 指定的已登录 Chrome user-data-dir 自己拉起（缺省用 baoyu-skills 的共享 profile）。跑的时候**别关那个窗口**——09-19 有一次跑到第 5 张图标签页被关掉，脚本随之中断。
 - 锁：`dist/x/.lock` 记 pid，同一篇第二个进程直接退出；总时长超过 40 分钟自杀。
+- 配置在 profile `brand.yaml` 的 `distribute.channels.x`：`article_url_template`（网站全文，`{code}` = 小写作品编号）、`podcast_show_url` + `podcast_episode_prefix`（小宇宙节目页与单集前缀）、`tail_line`（署名行）、`cdp`、`chrome_profile`；留空的项文末不放。
 - 产物 `dist/x/`：压缩/垫边图、`preview-{top,mid,end}.png`、`receipt.json`（draft_url / post_url / images / diffs / account / published_at 带时区 / caption_sha256 / preview）、`snapshots.jsonl`（append-only）、`caption.txt`（说明文字，写法见 [x-caption.md](x-caption.md)）。
 - 说明文字：发布前 `check_caption` 本地预检——256 权重字符（中文 ×2）、无 URL、hashtag <2、无互动诱饵，不过直接拒绝，不等发布按钮禁用。
 - 确认卡：`--publish` 不带 `--yes` 时打印「账号 / 标题 / 说明 / 图片数 / 链接 / 预览路径」等交互确认；授权只在本次命令有效，不跨会话。
@@ -34,7 +35,7 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                 
 | 封面 | frontmatter `cover_image/cover/image` → `素材/cover.*` → `素材/hero.*` | 5:2 裁切由 X 做 |
 | SANSHENG-SOURCES / 旧版裸 HTML 来源块 | 文末「信息来源」列表 | |
 | DEEP READ / 音频卡 / 播客卡 | 丢弃 | 主题曲默认不放（`--theme` 才合成静帧 MP4）；播客不放 |
-| 文末 | 「继续阅读」三链接 | 网站全文（按作品编号推）、公众号原文（`_website-sync-receipt.json`）、小宇宙单集（有播客时到节目页按「深聊 \| 标题」匹配，匹配不到退回节目主页）；缺哪个不放哪个 |
+| 文末 | 「继续阅读」三链接 + 署名行 | 网站全文（`article_url_template` 按作品编号推）、公众号原文（`_website-sync-receipt.json`）、小宇宙单集（有播客且配了 `podcast_show_url` 时到节目页按前缀 + 标题匹配，匹配不到退回节目主页）；缺哪个不放哪个 |
 
 ## 编辑器的坑（2026-09-18/19 实证，脚本已处理）
 
@@ -61,18 +62,18 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                 
 - 回复是内容，不是客套：每天 5–10 条实质回复给体量 2–10 倍的账号，禁「great thread / 学到了」式；回应对方实际内容，不套模板，不杜撰承诺。
 - 留言处理默认**批量确认**：自动回只限感谢 / 正面 / 纯表情；出现登录页 / 验证码 / 限流、回复开始重复、短时爆量就停。
 
-## 账号页记分卡（吸自 x-skills profile-optimizer + x-twitter-growth profile_auditor，2026-09-19 已按此改过一轮）
+## 账号页记分卡（吸自 x-skills profile-optimizer + x-twitter-growth profile_auditor）
 
-| 项 | 判据 | 现状（09-19） |
-|---|---|---|
-| 简介 | 帮谁 + 写什么 + 一个证明，≤160 字，结构化分行（每行一个图标一件事），无 hashtag、无 guru/思想者类词、分隔符 ≤2；**不举具体文章当例子**（sandy：例子没有代表性，读者会以为你只会做这个） | 四行版：经历线 → 使命 → 更新节奏 → 哪里找我 |
-| 显示名 | 品牌 + 可搜关键词（@ 用户名不可搜） | 叁笙早安AI |
-| 用户名 | 品牌可读 | `@han_zi34380`，建议 `@sanshengai`（待作者点头） |
-| 头像 | 真人；48px 小圆里看对比度；不要大头 | 远景照，头占圆框 1/3 |
-| 横幅 | 一句价值主张，**不重复简介**；1500×500 | 品牌字标 + 小笙 + 「把最新 AI，真正用进生活与工作」 |
-| 置顶 | 给新关注者的最佳证明帖，≤30 天换一次 | 未设 |
-| 链接 | 只留一个 | sanshengai.top |
-| 两秒测试 | 陌生人看两秒能说出「这人写什么、我为什么关注」 | — |
+| 项 | 判据 |
+|---|---|
+| 简介 | 帮谁 + 写什么 + 一个证明，≤160 字，结构化分行（每行一个图标一件事），无 hashtag、无 guru/思想者类词、分隔符 ≤2；**不举具体文章当例子**（作者 2026-09-19：例子没有代表性，读者会以为你只会做这个）。四行结构：经历线 → 使命 → 更新节奏 → 哪里找我 |
+| 显示名 | 品牌 + 可搜关键词（@ 用户名不可搜） |
+| 用户名 | 品牌可读，和其他平台一致 |
+| 头像 | 真人；48px 小圆里看对比度；不要大头 |
+| 横幅 | 一句价值主张，**不重复简介**；1500×500 |
+| 置顶 | 给新关注者的最佳证明帖，≤30 天换一次 |
+| 链接 | 只留一个 |
+| 两秒测试 | 陌生人看两秒能说出「这人写什么、我为什么关注」 |
 
 抓来的对照样本（宝玉 / 歸藏 / 向阳乔木 / meng shao / yihong0618 / levelsio / simonw / karpathy）共同点：简介 2–3 行、第一行是具体身份、第二行是你能得到什么、第三行放渠道；没有一个堆形容词；横幅要么真人照要么一句 tagline + 品牌图；置顶都是带数字的代表作。
 
