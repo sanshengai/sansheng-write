@@ -10,7 +10,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 运行要求：Python 3.10+、Node.js 18+ 与 baoyu-skills；renderer 凭证按 `image-routing.md` 配置。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
 
-**主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `xxx.md` 一律指 `references/xxx.md`**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
+**主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
 > **先确定本轮终点**：完整新文章任务按 autopilot.md 的自动主链推进；用户只要正文、大纲、局部改稿或排版时，完成指定产物即止，不进入后续生图、音频、归档或草稿箱事务。作者给确认定稿且要求制作发布材料/提交草稿箱时，才按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。显式配置 `podcast.wechat_embed: true` 时，公众号固定为「导读 → 主题曲卡 → 播客卡 → 正文」，两卡同级、同宽、上下排列；音频必须在草稿前生成。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
 
@@ -79,7 +79,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 转图文 / 拆图文（**低频能力**；仅按篇显式要求时用；图片也是文章，先定唯一传播命题） | xhs-storyboard.md |
 | 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭且不随正式链接自动触发**；小红书 3:4、微博 1:1 分别生图） | distribute.md |
 | 转 X（Twitter）文章 / 发推特长文（**可选，按篇显式触发**；走登录态浏览器，`x_article.py` 建草稿→校验→预览→发布→回读；主帖说明文字写法见 x-caption.md） | x-article.md |
-| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md（派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
+| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md（需要并行任务合同细节时再按需读 orchestration.md；派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |
 | 我改了 / 学习我的修改（draft vs final diff 提 pattern 写 playbook.md） | learn-edits.md |
@@ -161,4 +161,4 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 - **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。`profile/context.md` 按创作/品牌任务读取，`profile/brand-net.md` 仅用于启用织网的大纲或归档阶段；已加载且未变化的内容不重复读取。
 - **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列，含实体归档 `physical-archive.md`）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
-- **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / visual-qa（接复核器 + 视觉闸三种静默失效）/ orchestration / agent-contracts / learn-edits / skill-review / `_archive/候补技法池.md`（技法池候补备料，craft-techniques 主池不够时才翻）。
+- **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / visual-qa（接复核器 + 视觉闸三种静默失效）/ orchestration / agent-contracts / learn-edits / skill-review。
