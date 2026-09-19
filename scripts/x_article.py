@@ -525,7 +525,11 @@ def ensure_cdp(cdp: str, chrome_profile: str = "") -> None:
     port = re.search(r":(\d+)$", cdp).group(1)
     subprocess.Popen(
         [CHROME_BIN, f"--remote-debugging-port={port}", f"--user-data-dir={chrome_profile or CHROME_PROFILE_DEFAULT}",
-         "--no-first-run", "https://x.com/compose/articles"],
+         "--no-first-run",
+         # Chrome 的 Gemini 按钮按国家白名单显示，国家码来自 Finch 种子；这个 profile 拿到的种子国家为空时
+         # 按钮会消失（09-19 实证），显式指定国家。该开关不持久化，每次拉起都要带。
+         "--variations-override-country=us",
+         "https://x.com/compose/articles"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     for _ in range(40):

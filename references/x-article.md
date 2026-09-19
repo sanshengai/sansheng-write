@@ -13,7 +13,7 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --draft-url <草稿URL> --p
 python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                      # 回读互动数据追加到 snapshots.jsonl
 ```
 
-- Chrome：脚本先探 `--cdp`（默认取 profile 的 `cdp`，缺省 `http://127.0.0.1:9333`），探不到就用 `chrome_profile` 指定的已登录 Chrome user-data-dir 自己拉起（缺省用 baoyu-skills 的共享 profile）。跑的时候**别关那个窗口**——09-19 有一次跑到第 5 张图标签页被关掉，脚本随之中断。
+- Chrome：脚本先探 `--cdp`（默认取 profile 的 `cdp`，缺省 `http://127.0.0.1:9333`），探不到就用 `chrome_profile` 指定的已登录 Chrome user-data-dir 自己拉起（缺省用 baoyu-skills 的共享 profile，带 `--variations-override-country=us`，否则 Chrome 判不出国家时右上角 Gemini 按钮会消失；手动拉起也要带）。跑的时候**别关那个窗口**——09-19 有一次跑到第 5 张图标签页被关掉，脚本随之中断。
 - 锁：`dist/x/.lock` 记 pid，同一篇第二个进程直接退出；总时长超过 40 分钟自杀。
 - 配置在 profile `brand.yaml` 的 `distribute.channels.x`：`article_url_template`（网站全文，`{code}` = 小写作品编号）、`podcast_show_url` + `podcast_episode_prefix`（小宇宙节目页与单集前缀）、`tail_line`（署名行）、`cdp`、`chrome_profile`；留空的项文末不放。
 - 产物 `dist/x/`：压缩/垫边图、`preview-{top,mid,end}.png`、`receipt.json`（draft_url / post_url / images / diffs / account / published_at 带时区 / caption_sha256 / preview）、`snapshots.jsonl`（append-only）、`caption.txt`（说明文字，写法见 [x-caption.md](x-caption.md)）。
