@@ -17,7 +17,7 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                 
 - 锁：`dist/x/.lock` 记 pid，同一篇第二个进程直接退出；总时长超过 40 分钟自杀。
 - 配置在 profile `brand.yaml` 的 `distribute.channels.x`：`article_url_template`（网站全文，`{code}` = 小写作品编号）、`podcast_show_url` + `podcast_episode_prefix`（小宇宙节目页与单集前缀）、`tail_line`（署名行）、`cdp`、`chrome_profile`；留空的项文末不放。
 - 产物 `dist/x/`：压缩/垫边图、`preview-{top,mid,end}.png`、`receipt.json`（draft_url / post_url / images / diffs / account / published_at 带时区 / caption_sha256 / preview）、`snapshots.jsonl`（append-only）、`caption.txt`（说明文字，写法见 [x-caption.md](x-caption.md)）。
-- 说明文字：发布前 `check_caption` 本地预检——256 权重字符（中文 ×2）、无 URL、hashtag <2、无互动诱饵，不过直接拒绝，不等发布按钮禁用。
+- 说明文字：发布前 `check_caption` 本地预检——256 权重字符（中文 ×2）、无 URL 或裸域名、hashtag <2、无互动诱饵，不过直接拒绝，不等发布按钮禁用。
 - 确认卡：`--publish` 不带 `--yes` 时打印「账号 / 标题 / 说明 / 图片数 / 链接 / 预览路径」等交互确认；授权只在本次命令有效，不跨会话。
 
 ## 内容如何翻译（原味 = 文字零改动、图在原位、层级对应，不是长得一样）
