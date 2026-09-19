@@ -66,6 +66,7 @@ UI = {
     "zh": {
         "title_field": 'textarea[name="文章标题"]',
         "write": "撰写",
+        "not_found": "该页面不存在",
         "preview": "预览",
         "publish": "发布",
         "delete": "删除",
@@ -702,6 +703,9 @@ def build_draft(page, parsed: dict, plan: list, cover: Path) -> str:
     """整篇一次粘贴（块样式最保真），媒体/分割线位置先放占位段，再逐个替换。"""
     page.goto("https://x.com/compose/articles")
     page.wait_for_timeout(4000)
+    if T["not_found"] in page.inner_text("body"):
+        raise SystemExit("文章列表页 404：账号当前没有 Articles 权限（Premium+ 失效或在审查中）。"
+                         "先在 X 设置 → Premium 与 Grok 应用里核对订阅和账号绑定，再重跑。")
     _delete_same_title_drafts(page, parsed["title"])
     page.get_by_text(T["write"], exact=True).first.click()
     page.wait_for_timeout(6000)
@@ -777,7 +781,7 @@ def preview_shots(page, out_dir: Path) -> list[str]:
     return shots
 
 
-def publish(page, caption: str) -> str:
+def publish(page, caption: str, title: str = "") -> str:
     _wait_saved(page)
     page.get_by_role("button", name=T["publish"]).first.click()
     page.wait_for_timeout(3000)
@@ -810,8 +814,21 @@ def publish(page, caption: str) -> str:
     m = re.search(r"@(\w+)", handle)
     page.goto(f"https://x.com/{m.group(1)}")
     page.wait_for_timeout(6000)
-    links = page.evaluate("()=>[...document.querySelectorAll('article a[href*=\"/status/\"]')].map(a=>a.href)")
+    first = page.locator("article").first
+    text = first.inner_text() if first.count() else ""
+    if not post_matches(text, caption, title):
+        raise SystemExit("发布未确认：主页首条帖子和本次说明文字 / 标题对不上，不能把别人的帖当成本篇。"
+                         "去 X 上核对是否真的发出（Premium+ 失效时发布按钮会静默失败）。")
+    links = first.evaluate("a=>[...a.querySelectorAll('a[href*=\"/status/\"]')].map(x=>x.href)")
     return next((l for l in links if "/analytics" not in l), "")
+
+
+def post_matches(post_text: str, caption: str, title: str) -> bool:
+    """回退抓主页首条时的防误报：帖子文本里得有本次说明文字的开头或文章标题。"""
+    norm = lambda t: re.sub(r"\s+", "", t or "")
+    pt = norm(post_text)
+    head = norm(caption)[:20]
+    return bool(pt) and ((bool(head) and head in pt) or (bool(norm(title)) and norm(title)[:20] in pt))
 
 
 def account_handle(page) -> str:
@@ -995,7 +1012,7 @@ def main() -> int:
                     print("未发布（加 --yes 可跳过确认）")
                     receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
                     return 3
-            receipt["post_url"] = publish(page, caption)
+            receipt["post_url"] = publish(page, caption, parsed["title"])
             receipt["published_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
             receipt["caption_sha256"] = hashlib.sha256(caption.encode("utf-8")).hexdigest() if caption else ""
             print("published:", receipt["post_url"])
