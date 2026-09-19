@@ -194,3 +194,13 @@ def test_x_variant_preferred_over_wechat_final(tmp_path: Path):
     parsed = xa.parse_article(tmp_path)
     assert parsed["source"] == "定稿.x.md" and parsed["title"] == "X 版"
     assert "正文 A" not in "".join(v for k, v in parsed["blocks"] if k == "html")
+
+
+def test_sources_without_closing_marker_stop_at_next_comment(tmp_path: Path):
+    src = lambda name, url: (f'<section style="padding:14px 16px 16px;"><section style="font-size:15px;">{name}</section>'
+                             f'<section style="font-size:13px;">{url}</section></section>')
+    md = ("---\ntitle: t\n---\n\n正文\n\n<!-- SANSHENG-SOURCES -->\n<section>" + src("来源甲", "https://a.example/1") +
+          "</section>\n<!-- 推荐阅读 -->\n<section>" + src("推荐乙", "https://sanshengai.top/x") +
+          "</section>\n<!-- AUDIO-CARD-START -->\n<section>音频</section>\n<!-- AUDIO-CARD-END -->\n")
+    parsed = xa.parse_markdown(md, tmp_path)
+    assert parsed["sources"] == ["来源甲 https://a.example/1"]  # 推荐阅读那条不能混进信息来源

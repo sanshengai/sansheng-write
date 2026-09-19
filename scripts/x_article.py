@@ -108,7 +108,9 @@ def _sources(md: str) -> list[str]:
     """解析 SANSHENG-SOURCES 机器块：每条 = 名称 / 说明 / URL 三个 section。"""
     m = re.search(r"<!-- SANSHENG-SOURCES -->(.*?)<!-- /SANSHENG-SOURCES -->", md, re.S)
     if not m:
-        m = re.search(r"<!-- SANSHENG-SOURCES -->(.*?)<!-- AUDIO-CARD-START -->", md, re.S)
+        # 旧格式没有闭合标记：止于下一个 HTML 注释（推荐阅读 / AUDIO-CARD / 任何机器块），
+        # 否则会一路吃到音频卡，把「推荐阅读」的三条站内链接当成信息来源（96 篇实证）
+        m = re.search(r"<!-- SANSHENG-SOURCES -->(.*?)(?=<!--)", md, re.S)
     if not m:
         return []
     items = []
