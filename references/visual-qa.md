@@ -40,6 +40,10 @@ SANSHENG_WRITE_VISUAL_QA_COMMAND=["python3","-X","utf8","<绝对路径>/scripts/
 - `visual_qa_codex.py` 保留为备用后端（`SANSHENG_WRITE_VISUAL_QA_MODEL` 默认 `gpt-5.6-terra`、
   `_JOBS`、`_CODEX`）。⚠️ 走 ChatGPT 账号的 codex **不放行 `gpt-5.6-codex`**（服务端 400
   明确拒绝），别照抄历史文章 `_visual-qa.json` 里记的模型名。
+- `visual_qa_openai.py` 是第三个后端：任意 OpenAI 兼容 `/chat/completions` 视觉模型（默认取
+  `OPENAI_BASE_URL` / `OPENAI_API_KEY`，可用 `SANSHENG_WRITE_VISUAL_QA_BASE_URL` / `_API_KEY` 单独指定，
+  模型默认 `gpt-5.6-terra`）。第 105 篇实跑：Claude 与 Codex 都不方便时走中转，6 张图约 2 分钟，
+  合同与判据同样全部复用 codex 版；`json_schema` 不被中转接受时自动退到 `json_object`。
 - `-X utf8` **不能省**：子进程被 `capture_output` 管道接走后默认走 GBK，打中文直接崩。
 - 复核模型必须与生图模型不同族；`visual_qa.py::validate_qa_result` 会拿两边 model 求交集。
 
