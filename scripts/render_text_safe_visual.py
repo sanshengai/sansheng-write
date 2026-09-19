@@ -37,9 +37,48 @@ DARK_CARD = "#191A1D"
 DARK_LINE = "#2A2C31"
 WHITE = "#FFFFFF"
 
-FONT_REGULAR = Path(r"C:\Windows\Fonts\msyh.ttc")
-FONT_BOLD = Path(r"C:\Windows\Fonts\msyhbd.ttc")
-FONT_KAI = Path(r"C:\Windows\Fonts\simkai.ttf")
+# 字体按角色给候选清单，首个存在的生效：Windows 微软雅黑 / 楷体，macOS 用户目录的
+# Noto CJK 或系统自带 Hiragino / 黑体，Linux 的 Noto CJK。原先写死 C:\Windows\Fonts，
+# 在 Mac 上 truetype 直接 "cannot open resource"（2026-09-20 第 103 篇实证）。
+# 元组第二项是 .ttc 里的字面索引（Hiragino Sans GB.ttc 的 2 号是 W6 粗体）。
+FONT_CANDIDATES: dict[str, list[tuple[Path, int]]] = {
+    "regular": [
+        (Path(r"C:\Windows\Fonts\msyh.ttc"), 0),
+        (Path.home() / "Library/Fonts/NotoSansCJKsc-Regular.otf", 0),
+        (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 0),
+        (Path("/System/Library/Fonts/STHeiti Light.ttc"), 1),
+        (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"), 2),
+    ],
+    "bold": [
+        (Path(r"C:\Windows\Fonts\msyhbd.ttc"), 0),
+        (Path.home() / "Library/Fonts/NotoSansCJKsc-Bold.otf", 0),
+        (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 2),
+        (Path("/System/Library/Fonts/STHeiti Medium.ttc"), 1),
+        (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"), 2),
+    ],
+    "handwritten": [
+        (Path(r"C:\Windows\Fonts\simkai.ttf"), 0),
+        (Path("/System/Library/Fonts/Supplemental/Kaiti.ttc"), 0),
+        (Path.home() / "Library/Fonts/NotoSerifCJKsc-Regular.otf", 0),
+        (Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"), 2),
+    ],
+}
+_FONT_CACHE: dict[str, tuple[Path, int]] = {}
+
+
+def _resolve_font(role: str) -> tuple[Path, int]:
+    """返回该角色首个存在的字体文件与字面索引；手写体缺席时退回常规体。"""
+    if role in _FONT_CACHE:
+        return _FONT_CACHE[role]
+    for path, index in FONT_CANDIDATES[role]:
+        if path.is_file():
+            _FONT_CACHE[role] = (path, index)
+            return path, index
+    if role != "regular":
+        return _resolve_font("regular")
+    raise FileNotFoundError(
+        "找不到可用的中文字体；候选：" + "、".join(str(p) for p, _ in FONT_CANDIDATES["regular"])
+    )
 
 TEMPLATE_IDS = {
     "curve-convergence",
@@ -62,10 +101,9 @@ def _point(value: tuple[int, int]) -> tuple[int, int]:
 
 
 def _font(size: int, *, bold: bool = False, handwritten: bool = False):
-    path = FONT_KAI if handwritten and FONT_KAI.is_file() else FONT_BOLD if bold else FONT_REGULAR
-    if not path.is_file():
-        path = FONT_REGULAR
-    return ImageFont.truetype(str(path), _s(size))
+    role = "handwritten" if handwritten else "bold" if bold else "regular"
+    path, index = _resolve_font(role)
+    return ImageFont.truetype(str(path), _s(size), index=index)
 
 
 def _font_for_width(

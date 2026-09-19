@@ -209,16 +209,19 @@ def main() -> int:
         print("  已取消，未改动任何文件。")
         return 0
 
-    _write_profile(target, chosen)
+    written = _write_profile(target, chosen)
     print()
-    print(f"  {OK} 已写入。用 `python scripts/setup_check.py` 复查。")
+    if written:
+        print(f"  {OK} 已写入。用 `python scripts/setup_check.py` 复查。")
+    else:
+        print("  ⏸ 未写盘（缺 ruamel.yaml）。把上面的片段粘进 profile，或装好后重跑本脚本。")
     if turned_on:
         print("  提示：需要账号登录态的模块，首次使用会弹出浏览器让你登录一次。")
     return 0
 
 
-def _write_profile(target: Path, chosen: dict) -> None:
-    """把选择合并进 profile 的 distribute 段。
+def _write_profile(target: Path, chosen: dict) -> bool:
+    """把选择合并进 profile 的 distribute 段；返回是否真的写了盘。
 
     🔴 只在能保留注释时才就地改写。PyYAML 的 safe_dump 会把整个文件重排并
     **抹掉所有注释**——profile 里的注释往往是决策记录和踩坑说明，丢了比没写入更糟。
@@ -228,7 +231,7 @@ def _write_profile(target: Path, chosen: dict) -> None:
         from ruamel.yaml import YAML                      # noqa: PLC0415
     except ImportError:
         _print_snippet(target, chosen)
-        return
+        return False
 
     yaml_rt = YAML()
     yaml_rt.preserve_quotes = True
@@ -254,6 +257,7 @@ def _write_profile(target: Path, chosen: dict) -> None:
     target.write_bytes(buf.getvalue().encode("utf-8"))
     if backup.exists():
         print(f"  （原文件已备份到 {backup.name}）")
+    return True
 
 
 def _print_snippet(target: Path, chosen: dict) -> None:

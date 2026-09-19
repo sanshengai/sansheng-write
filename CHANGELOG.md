@@ -10,6 +10,7 @@
 - X 版适配文件 `定稿.x.md`：存在时 `x_article.py` 优先读它，公众号定稿不动，两份共用 `素材/`；receipt 记录实际用的源文件。`references/x-article.md` 新增「发前适配」七条与选篇 / 节奏规则。
 
 **修正**
+- macOS 上三处本来就红的测试：`render_text_safe_visual.py` 字体不再写死 `C:\Windows\Fonts`，按角色给跨平台候选清单（微软雅黑 → 用户目录 Noto CJK → Hiragino / 黑体 → Linux Noto），`.ttc` 带字面索引；`profile_config.resolve_config_path` 对 `@workspace/C:/...` 与 UNC 后缀同时按 Windows 规则查盘符，Mac 与 Windows 得到同一结论；`setup.py` 缺 ruamel.yaml 只打印片段时不再收尾「已写入」（`_write_profile` 返回是否真写盘，补反例测试）。
 - 发布后拿不到帖子 URL 时的回退（抓主页首条）必须与本篇说明文字 / 标题匹配，否则报错；文章列表页 404（账号没有 Articles 权限）时直接失败并说明原因。此前 Premium+ 失效会静默失败并把上一篇的帖子 URL 写进凭证。
 - 旧格式 SOURCES 块没有闭合标记时，解析止于下一个 HTML 注释，不再把后面「推荐阅读」的站内链接混进「信息来源」。
 - `check_caption` 也拦裸域名（`example.com` 这种没有 `https://` 的写法）：X 会把它自动转成 t.co 链接，和贴 URL 一样压主帖触达。

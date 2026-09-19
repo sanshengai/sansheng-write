@@ -184,8 +184,11 @@ def resolve_config_path(value: str, *, setting: str = "路径配置") -> Path:
         # 上面的合法性判断已保证第一字符是分隔符；只移除这一字符，保留后续
         # anchor/drive 供检查，避免 ``@workspace/C:/...`` 或 UNC 被悄悄重解释。
         suffix = suffix[1:]
-    suffix_path = Path(suffix)
-    if suffix_path.anchor:
+    # 盘符 / UNC 用 PureWindowsPath 一起查：macOS 上 Path("C:/x").anchor 是空串，
+    # 只按本机规则判会把 ``@workspace/C:/outside`` 当成相对路径放行（跨平台配置文件，
+    # 同一份 .env 在 Mac 和 Windows 上必须得到同一个结论）。
+    from pathlib import PureWindowsPath
+    if Path(suffix).anchor or PureWindowsPath(suffix).anchor:
         raise WorkspaceBindingError(
             f"{setting} 的 @workspace 后只能接相对路径：{raw!r}"
         )

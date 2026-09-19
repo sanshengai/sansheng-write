@@ -177,3 +177,22 @@ def test_写入保留原有注释与其他段(monkeypatch, my_profile):
     text = my_profile.read_text(encoding="utf-8")
     assert "我的注释，必须活下来" in text
     assert "我的专栏" in text
+
+
+def test_缺_ruamel_时不写盘也不谎报已写入(capsys, monkeypatch, my_profile):
+    """2026-09-20 实证：没装 ruamel.yaml 时打印了粘贴片段却仍收尾「✅ 已写入」，profile 其实没动。"""
+    import builtins
+    real_import = builtins.__import__
+
+    def no_ruamel(name, *args, **kwargs):
+        if name.startswith("ruamel"):
+            raise ImportError("no ruamel")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_ruamel)
+    _fake_io(monkeypatch, ["n", "n", "n", "y"])
+    assert setup.main() == 0
+    out = capsys.readouterr().out
+    assert "不写盘" in out and "未写盘" in out
+    assert f"{setup.OK} 已写入" not in out      # 临时目录名里带着测试名，只查那一整句
+    assert "distribute" not in my_profile.read_text(encoding="utf-8")
