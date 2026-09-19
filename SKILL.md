@@ -78,7 +78,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
 | 转图文 / 拆图文（**低频能力**；仅按篇显式要求时用；图片也是文章，先定唯一传播命题） | xhs-storyboard.md |
 | 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭且不随正式链接自动触发**；小红书 3:4、微博 1:1 分别生图） | distribute.md |
-| 转 X（Twitter）文章 / 发推特长文（**可选，按篇显式触发**；走登录态浏览器，`x_article.py` 建草稿→校验→发布） | x-article.md |
+| 转 X（Twitter）文章 / 发推特长文（**可选，按篇显式触发**；走登录态浏览器，`x_article.py` 建草稿→校验→预览→发布→回读；主帖说明文字写法见 x-caption.md） | x-article.md |
 | 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md + orchestration.md（派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
 | 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
 | 学某文排版（Agent 抓 URL 分析→排版参考库） | — |

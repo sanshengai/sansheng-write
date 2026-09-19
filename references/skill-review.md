@@ -125,6 +125,18 @@ contracts.py / format_layout.py / pipeline.py / references/{writing,outline}.md 
 独立判断 —— observation log 是事实，你负责从事实里读出 skill 的病。
 ```
 
+## X 帖复盘（2026-09-19 补，吸自 Hao0321 social-post F03 / R05–R06）
+
+复核 X 侧时不看单帖点赞，看 `dist/x/snapshots.jsonl` 里**同 maturity 档**的快照（early / day1 / day3 / week1 / month1 / plateau）。每篇按下面五段写，一段一句：
+
+1. **结果**：同档快照的回复 / 转发 / 书签 / 点赞四个数（拿不到的记 null，不写 0）
+2. **原假设**：发之前认为这篇会因为什么被读（说明文字的判断句、标题的兑现句）
+3. **真正看见的信号**：哪一项互动来了、哪一项没来；回复里读者实际在问什么
+4. **混淆因素**：同时改了什么（发布时段 / 封面 / 说明文字长度 / 图片数）——多个变量同时变的不叫 A/B，列在这里
+5. **下一轮测试**：只改一个变量的下一篇怎么发
+
+证据分四档：hypothesis → emerging → validated → deprecated；一条规则要在 ≥3 篇**不同系列**上复现才升到 validated，同系列 3 篇 ≠ 3 个样本。发布时段先当假设，不抄别人的时段表。扑了先问「钩子 / 正文 / 回报哪一段掉人」，爆了问「什么让它落地」。
+
 ## 铁律
 
 - 旁观者**永不自动改 skill** —— 它只诊断，动刀由你签字。
