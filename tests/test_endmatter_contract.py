@@ -43,6 +43,25 @@ def test_endmatter_markers_are_hard_gates(tmp_path, monkeypatch):
     assert any("SANSHENG-SOURCES" in e for e in result["errors"])
 
 
+def test_audio_covers_do_not_hide_unreferenced_article_images(tmp_path):
+    d = _article(tmp_path)
+    (d / "article-meta.yaml").write_text("endmatter: {}\n", encoding="utf-8")
+    (d / "_fact-check.md").unlink()
+    materials = d / "素材"
+    materials.mkdir()
+    for name in ["bgm_cover.png", "podcast_cover.png"]:
+        (materials / name).write_bytes(b"audio-cover")
+    result = contracts.verify_publish_assets(str(d))
+    assert result["verdict"] == "ok", result["errors"]
+    (materials / "infographic-unreferenced.png").write_bytes(b"article-image")
+    result = contracts.verify_publish_assets(str(d))
+    assert result["verdict"] == "fail"
+    assert any("infographic-unreferenced.png" in e for e in result["errors"])
+    with (d / "定稿.md").open("a", encoding="utf-8") as f:
+        f.write("\n![图](素材/infographic-unreferenced.png)\n")
+    assert contracts.verify_publish_assets(str(d))["verdict"] == "ok"
+
+
 def test_standard_deep_read_and_sources_pass(tmp_path, monkeypatch):
     d = _article(tmp_path)
     monkeypatch.setattr(profile_config, "identity", lambda: {"site": "https://example.com"})

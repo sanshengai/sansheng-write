@@ -1561,6 +1561,7 @@ def verify_publish_assets(article_dir: str) -> dict:
     #    共同子集是 hero/bgm_cover/music_cover/logo-white/logo-black，差异项各有设计理由。
     SKIP_PNG = {
         'cover.png', 'hero.png', 'bgm_cover.png', 'music_cover.png',
+        'podcast_cover.png',  # 原生播客播放器单独上传的封面，不是正文插图
         'logo.png', 'logo-white.png', 'logo-black.png',
     }
     src_dir = base / '素材'
