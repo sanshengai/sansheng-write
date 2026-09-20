@@ -160,10 +160,10 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 草稿回读通过后运行 `pipeline.py handoff-assets`，先补齐主题曲封面 / 播客封面（`audio_covers.py`，缺哪张生成哪张），再将主题曲（原文件名）、`podcast.mp3`、`cover.png`、`theme-cover.png`、`podcast-cover.png` 汇齐到本篇文章文件夹第一层。交付直接链接文章目录，不另建“手工上传”目录；源文件和发布回执保留原位。详见 `music.md`「上传文件统一放在文章文件夹」。🔴 **主仓镜像（2026-09-18）**：文章在 git worktree 里生产时，同一命令会自动把第一层上传文件、`素材/作者素材/`、`素材/视频/` 与 `dist/podcast/` 产物镜像到 `SANSHENG_WRITE_ARCHIVE_DIR/<同名目录>/`（作者只在那里找成品；这些文件被 `.gitignore` 挡住，合回主线带不过去）。同哈希跳过、不同内容不覆盖并报错、`--no-mirror` 可关。**回复里给作者的路径一律是主仓路径**，worktree 路径只在说明过程时提。
 ## 6. 人工正式发布与自动收尾
 
-若启用了公众号播客卡，作者先在微信编辑器的两个占位处分别插入主题曲与播客原生音频，删除占位文字并保存；再从微信预览分别试听两条音频的开头 10 秒与结尾 10 秒，最后运行 `python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition`。
-该命令不是只数播放器：它再次 `draft/get`，校验固定顺序「导读 → 🎵 阅读配乐｜本文主题曲 → 🎧 音频版本｜本期播客 → 正文」，并复核标题、摘要、正文、图片、推广链接、封面、本地音频哈希及远端播放器身份。微信 API 不返回播放器内的音频字节，不能用本地 SHA 冒充远端同一性证明，因此人工首尾试听是不可省的物理边界；试听声明与播放器身份共同写入 `_wechat-audio-receipt.json`。主题曲与播客同级同宽、上下排列，不做手机端左右双栏。
+若启用了公众号播客卡，作者先在微信编辑器的两个占位处分别插入主题曲与播客原生音频，删除占位文字并保存；保存后直接运行 `python "$SKILL/scripts/pipeline.py" wechat-audio-check`。
+该命令不是只数播放器：它再次 `draft/get`，校验固定顺序「导读 → 🎵 阅读配乐｜本文主题曲 → 🎧 音频版本｜本期播客 → 正文」，并复核标题、摘要、正文、图片、推广链接、封面、本地音频哈希及远端播放器身份。微信 API 不返回播放器内的音频字节，不能用本地 SHA 冒充远端同一性证明，自动核验仅证明可回读字段及本地文件一致性，不声称已试听或已验证远端音频字节。无需作者确认试听，也不得为此暂停归档或官网更新；核验结果写入 `_wechat-audio-receipt.json`。主题曲与播客同级同宽、上下排列，不做手机端左右双栏。
 
-若作者已经正式发布，草稿随后被微信回收，`draft/get` 可能返回 `40007 invalid media_id`。这不是放宽发布门的理由，也不得补写或复制 `_wechat-audio-receipt.json`。先在**正式文章**分别试听两条音频的开头与结尾 10 秒，再运行 `python "$SKILL/scripts/pipeline.py" wechat-published-audio-check "https://mp.weixin.qq.com/s/..." --confirm-audition`。该命令只接受官方永久链接：优先用 `freepublish/batchget` 精确定位 `article_id`，再用 `freepublish/getarticle` 复核正式全文；若账号仅对已发表内容 API 返回 `48001 api unauthorized`，才严格降级读取同一 `mp.weixin.qq.com` 永久链接，公开页独立证明标题、摘要、公众号主体、阅读原文、封面 URL、全文语义、图片身份、推广链接与两个原生播放器，公开页不可见的文章署名、封面 media_id 和评论设置则沿用此前已完整通过的官方草稿回执。两种模式都绑定本地双音频哈希和人工首尾试听，并逐项记录证据覆盖面；通过后写独立的 `_wechat-published-audio-receipt.json`，绝不冒充发布前草稿凭证。`finalize` 每次写盘前都会再次读取同一证据面，正式文章身份、永久链接、正文、播放器或本地音频任一变化都会令凭证失效。
+若作者已经正式发布，草稿随后被微信回收，`draft/get` 可能返回 `40007 invalid media_id`。这不是放宽发布门的理由，也不得补写或复制 `_wechat-audio-receipt.json`。直接运行 `python "$SKILL/scripts/pipeline.py" wechat-published-audio-check "https://mp.weixin.qq.com/s/..."`。该命令只接受官方永久链接：优先用 `freepublish/batchget` 精确定位 `article_id`，再用 `freepublish/getarticle` 复核正式全文；若账号仅对已发表内容 API 返回 `48001 api unauthorized`，才严格降级读取同一 `mp.weixin.qq.com` 永久链接，公开页独立证明标题、摘要、公众号主体、阅读原文、封面 URL、全文语义、图片身份、推广链接与两个原生播放器，公开页不可见的文章署名、封面 media_id 和评论设置则沿用此前已完整通过的官方草稿回执。两种模式都绑定本地双音频哈希与远端播放器身份，无需作者确认试听，并逐项记录证据覆盖面；通过后写独立的 `_wechat-published-audio-receipt.json`，绝不冒充发布前草稿凭证。`finalize` 每次写盘前都会再次读取同一证据面，正式文章身份、永久链接、正文、播放器或本地音频任一变化都会令凭证失效。
 
 作者再人工处理预览、原创、赞赏和正式发布。拿到永久链接后运行：
 

@@ -123,7 +123,7 @@ def test_status_reports_manifest_music_origin_instead_of_hardcoded_provider(tmp_
     assert "Lyria 3 Pro" not in result.stdout
 
 
-def test_published_audio_cli_requires_explicit_audition(tmp_path):
+def test_published_audio_cli_without_audition_still_requires_release_evidence(tmp_path):
     result = _run(
         tmp_path,
         "wechat-published-audio-check",
@@ -131,7 +131,8 @@ def test_published_audio_cli_requires_explicit_audition(tmp_path):
     )
 
     assert result.returncode == 2, result.stdout + result.stderr
-    assert "--confirm-audition" in result.stdout
+    assert "--confirm-audition" not in result.stdout
+    assert "试听" not in result.stdout
 
 
 def test_init_persists_cross_process_run_id(tmp_path):

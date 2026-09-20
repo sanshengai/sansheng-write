@@ -28,10 +28,10 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 若 `podcast.wechat_embed: true`，草稿创建成功后会生成 `_wechat-audio-handoff.json`。作者在微信编辑器依次把主题曲与播客音频插入各自卡片并删除占位文字，保存后运行：
 
 ```bash
-python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition
+python "$SKILL/scripts/pipeline.py" wechat-audio-check
 ```
 
-先在微信预览分别试听主题曲与播客的开头/结尾 10 秒。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；试听声明会与该次远端回读绑定。
+无需作者确认试听，保存后直接自动核验。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；凭证如实记录自动核验范围，不声称已试听或已校验远端音频字节。
 
 正文比对**允许作者在微信编辑器里的小幅手改**（改几个字、顺一句话，不回传本地也行）：可见文字相似度 ≥ `BODY_DRIFT_TOLERANCE`（0.98，约 2% 字符）即放行，改动内容写进回执的 `body_drift` 留痕；删段、换章这类结构性改写仍会被拦。2026-09-16 第 99 篇定的规矩：作者把首句改了 7 个字后正式发布，逐字门把整条 finalize 卡死，回传本地又要重生成播客，两头都不对。
 
@@ -41,11 +41,11 @@ python "$SKILL/scripts/pipeline.py" wechat-audio-check --confirm-audition
 - 图片：正式页图片必须是草稿回执图片的**顺序子序列**，最多少 `IMAGE_REMOVAL_TOLERANCE`（2）张且至少剩一张，放行并记 `image_drift`（删了哪几张）；换图、加图、换序、删太多一律拦。
 - 作品库与官网仍沿用本地 `article-meta.yaml` 的标题（正式标题只认这一处）；作者要同步改就走 `retitle`，不由核验器代改。
 
-若文章已经正式发布、草稿被微信回收并返回 `40007 invalid media_id`，不得伪造上述草稿凭证。改在正式文章完成同样的双音频首尾试听，然后运行：
+若文章已经正式发布、草稿被微信回收并返回 `40007 invalid media_id`，不得伪造上述草稿凭证。直接对正式文章运行自动核验：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" wechat-published-audio-check \
-  "https://mp.weixin.qq.com/s/..." --confirm-audition
+  "https://mp.weixin.qq.com/s/..."
 ```
 
 命令优先通过官方 `freepublish/batchget` 与 `freepublish/getarticle` 精确绑定永久链接和 `article_id`。仅当账号对已发表内容 API 返回 `48001 api unauthorized` 时，才读取同一微信官方永久页：公开页验证最终正文、图片和双播放器，页面不可见的文章署名、封面 media_id 与评论设置由此前已完整通过的 `_publish-receipt.json` 承接；回执会显式记录两类字段的证据来源。随后生成独立的 `_wechat-published-audio-receipt.json`。这是一条证据来源不同、验收强度不降低的恢复路径；普通路径仍须在正式发布前完成草稿读回。
@@ -144,7 +144,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - `_release-attempt.json`：草稿创建后的断点记录，防重试重复建稿。
 - `_publish-receipt.json`：官方读回通过后的 v2 凭证。
 - `_wechat-audio-handoff.json`：人工插入双音频前的草稿 ID、角色、相对路径与本地 SHA-256。
-- `_wechat-audio-receipt.json`：人工编辑后的官方全文回读、远端播放器身份与首尾试听凭证；`finalize` 前会再次远端复核，不能只复用旧文件。
+- `_wechat-audio-receipt.json`：人工编辑后的官方全文回读、远端播放器身份与本地音频哈希凭证；`finalize` 前会再次远端复核，不能只复用旧文件。
 - `_website-sync-receipt.json`：官网同步完成、失败或未配置记录。
 
 本地 HTML、Hero、视觉凭证发生变化后，旧发布凭证失效，必须重跑 `release-to-draft`。标题、作者正文、播客提示词、语言、时长或生成器版本变化后，旧播客音频失效；只改音频卡样式不重生成节目。

@@ -117,7 +117,7 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 音频文件与 manifest 验证通过后，用 `audio_cards.py::upsert_card` 的共享模板写入主题曲卡片。必须在 MD→HTML 排版之前完成；AUDIO-CARD 与可选 PODCAST-CARD 机器块先收口到 `定稿.md` 最末尾，再由 `format_layout.py --all` 按「导读 → 主题曲 → 播客 → 正文」前置。不得改动已审批的作者正文。主题曲封面按既有视觉流程处理；封面不能证明音频已经生成。
 
-若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后从微信预览分别试听两条音频的开头/结尾 10 秒，再跑 `pipeline.py wechat-audio-check --confirm-audition`。
+若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后直接跑 `pipeline.py wechat-audio-check`。
 
 ### 上传文件统一放在文章文件夹
 
@@ -149,7 +149,7 @@ python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
 - 主题曲、播客两张封面已看图核对主题关联、文字及彼此/近期封面的区别，不能以文件存在代替视觉验收。
 - `定稿.md` 含 AUDIO-CARD；开启嵌入时还有 PODCAST-CARD 与同源播客 MP3。
 - 排版顺序为导读 → 主题曲 → 播客 → 正文。
-- 作者在微信后台插入两份实际音频、移除占位文字，分别试听首尾后，按原流程完成官方回读检查。
+- 作者在微信后台插入两份实际音频、移除占位文字，保存后自动完成官方回读检查，不再要求确认试听。
 
 ## 暂停通道的维护资料
 

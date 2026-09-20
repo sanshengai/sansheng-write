@@ -383,7 +383,7 @@ def test_published_audio_recovery_writes_distinct_official_receipt(tmp_path):
     assert not (article / "_wechat-audio-receipt.json").exists()
 
 
-def test_published_audio_recovery_requires_explicit_audition(tmp_path):
+def test_published_audio_recovery_persists_without_audition(tmp_path):
     from scripts.release_to_draft import verify_wechat_published_audio
 
     article = _dual_audio_article(tmp_path)
@@ -393,8 +393,17 @@ def test_published_audio_recovery_requires_explicit_audition(tmp_path):
         reader=_published_audio_reader(),
     )
 
-    assert receipt is None
-    assert any("正式文章" in error and "开头 10 秒" in error for error in errors)
+    assert errors == [] and receipt is not None
+    assert "audition" not in receipt
+    assert receipt["verification_scope"] == {
+        "manual_audition_required": False,
+        "remote_audio_bytes_verified": False,
+    }
+    assert (article / "_wechat-published-audio-receipt.json").is_file()
+    from scripts.release_to_draft import compare_wechat_published_audio_receipts
+    assert compare_wechat_published_audio_receipts(
+        receipt, receipt, expected_wechat_url="https://mp.weixin.qq.com/s/x"
+    ) == []
 
 
 def test_published_audio_recovery_rejects_wrong_permanent_url(tmp_path):
@@ -407,7 +416,6 @@ def test_published_audio_recovery_rejects_wrong_permanent_url(tmp_path):
         reader=_published_audio_reader(
             remote_url="https://mp.weixin.qq.com/s/y"
         ),
-        audition_confirmed=True,
     )
 
     assert receipt is None
@@ -592,14 +600,18 @@ def test_default_published_reader_does_not_hide_other_api_failures(
         )
 
 
-def test_dual_audio_readback_requires_explicit_remote_audition(tmp_path):
+def test_dual_audio_readback_persists_without_audition(tmp_path):
     from scripts.release_to_draft import verify_wechat_audio
 
     article = _dual_audio_article(tmp_path)
     receipt, errors = verify_wechat_audio(article, reader=_dual_audio_reader())
 
-    assert receipt is None
-    assert any("开头 10 秒、结尾 10 秒" in error for error in errors)
+    assert errors == [] and receipt is not None
+    assert "audition" not in receipt
+    assert receipt["verification_scope"]["remote_audio_bytes_verified"] is False
+    assert (article / "_wechat-audio-receipt.json").is_file()
+    from scripts.release_to_draft import compare_wechat_audio_receipts
+    assert compare_wechat_audio_receipts(receipt, receipt) == []
 
 
 def test_dual_audio_readback_rejects_duplicate_remote_component_identity(tmp_path):
@@ -609,7 +621,6 @@ def test_dual_audio_readback_rejects_duplicate_remote_component_identity(tmp_pat
     receipt, errors = verify_wechat_audio(
         article,
         reader=_dual_audio_reader(duplicate_audio_identity=True),
-        audition_confirmed=True,
     )
 
     assert receipt is None
@@ -623,7 +634,6 @@ def test_dual_audio_readback_rejects_reversed_card_order(tmp_path):
     receipt, errors = verify_wechat_audio(
         article,
         reader=_dual_audio_reader(reverse_cards=True),
-        audition_confirmed=True,
     )
 
     assert receipt is None
@@ -640,11 +650,10 @@ def test_finalize_receipt_comparison_rejects_stale_remote_player(tmp_path):
     stored, errors = verify_wechat_audio(
         article,
         reader=_dual_audio_reader(),
-        audition_confirmed=True,
     )
     assert errors == [] and stored is not None
     fresh = json.loads(json.dumps(stored, ensure_ascii=False))
-    fresh.pop("audition")
+    fresh.pop("audition", None)
     fresh["remote_audio_components"]["podcast"]["component_digest"] = "replaced"
 
     compare_errors = compare_wechat_audio_receipts(
@@ -656,7 +665,7 @@ def test_finalize_receipt_comparison_rejects_stale_remote_player(tmp_path):
     assert any("远端播放器身份" in error for error in compare_errors)
 
 
-def test_finalize_receipt_comparison_rejects_legacy_receipt_without_audition(tmp_path):
+def test_finalize_receipt_comparison_rejects_missing_remote_identity(tmp_path):
     from scripts.release_to_draft import (
         compare_wechat_audio_receipts,
         verify_wechat_audio,
@@ -676,7 +685,6 @@ def test_finalize_receipt_comparison_rejects_legacy_receipt_without_audition(tmp
 
     compare_errors = compare_wechat_audio_receipts(legacy, current)
 
-    assert any("缺人工试听证明" in error for error in compare_errors)
     assert any("远端播放器身份" in error for error in compare_errors)
 
 

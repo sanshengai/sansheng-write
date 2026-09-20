@@ -336,12 +336,8 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
         "draft_media_id": media_id,
         "status": "manual_insert_required",
         "roles": roles,
-        "audition_required": {
-            "surface": "wechat_preview",
-            "segments": ["first_10_seconds", "last_10_seconds"],
-            "reason": "draft/get exposes component metadata, not the uploaded audio bytes",
-        },
-        "next_command": "pipeline.py wechat-audio-check --confirm-audition",
+        "audition_required": False,
+        "next_command": "pipeline.py wechat-audio-check",
     }
     (cwd / AUDIO_HANDOFF_FILE).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -650,11 +646,6 @@ def verify_wechat_audio(
         full_checks.pop("image_count_drift_tolerated", None)
         full_errors.append("draft/get 回读字段不一致：image_count")
     errors.extend(full_errors)
-    if persist and not audition_confirmed:
-        errors.append(
-            "微信 API 不能证明播放器内字节等于本地 MP3；请在微信预览分别试听主题曲和播客"
-            "的开头 10 秒、结尾 10 秒，再用 --confirm-audition 重新核验"
-        )
     if errors:
         return None, errors
     receipt = {
@@ -674,6 +665,10 @@ def verify_wechat_audio(
         "remote_audio_components": remote_audio_components,
         "remote_readback": {"checks": full_checks},
         "remote_verified": True,
+        "verification_scope": {
+            "manual_audition_required": False,
+            "remote_audio_bytes_verified": False,
+        },
     }
     if audition_confirmed:
         receipt["audition"] = {
@@ -697,7 +692,7 @@ def compare_wechat_audio_receipts(
     *,
     expected_media_id: str = "",
 ) -> list[str]:
-    """Validate the persisted human+API proof against a new draft/get readback."""
+    """Validate persisted automatic proof against a new draft/get readback."""
     errors: list[str] = []
     if not stored.get("remote_verified"):
         errors.append("双音频草稿凭证未标 remote_verified=true")
@@ -705,18 +700,6 @@ def compare_wechat_audio_receipts(
         errors.append("双音频草稿凭证与本篇 draft_media_id 不一致")
     if set(stored.get("roles") or []) != {"theme", "podcast"}:
         errors.append("双音频草稿凭证未同时覆盖 theme 与 podcast")
-    audition = stored.get("audition") or {}
-    if (
-        not audition.get("confirmed")
-        or audition.get("surface") != "wechat_preview"
-        or set(audition.get("roles") or []) != {"theme", "podcast"}
-        or set(audition.get("segments") or [])
-        != {"first_10_seconds", "last_10_seconds"}
-    ):
-        errors.append(
-            "双音频草稿凭证缺人工试听证明；需在微信预览分别试听两条音频的"
-            "开头/结尾 10 秒后重跑 wechat-audio-check --confirm-audition"
-        )
     if stored.get("handoff_digest") != fresh.get("handoff_digest"):
         errors.append("双音频草稿凭证已过期：交接单在上次核验后变化")
     if stored.get("local_audio_sha256") != fresh.get("local_audio_sha256"):
@@ -1031,7 +1014,7 @@ def compare_wechat_published_audio_receipts(
     *,
     expected_wechat_url: str,
 ) -> list[str]:
-    """Bind a human audition to a fresh official published-article readback."""
+    """Compare automatic proof with a fresh official published-article readback."""
     errors: list[str] = []
     if stored.get("proof_kind") != "wechat_published_article_audio":
         errors.append("正式文章双音频凭证 proof_kind 不正确")
@@ -1043,18 +1026,6 @@ def compare_wechat_published_audio_receipts(
         errors.append("正式文章双音频凭证与本次永久链接不一致")
     if set(stored.get("roles") or []) != {"theme", "podcast"}:
         errors.append("正式文章双音频凭证未同时覆盖 theme 与 podcast")
-    audition = stored.get("audition") or {}
-    if (
-        not audition.get("confirmed")
-        or audition.get("surface") != "wechat_published_article"
-        or set(audition.get("roles") or []) != {"theme", "podcast"}
-        or set(audition.get("segments") or [])
-        != {"first_10_seconds", "last_10_seconds"}
-    ):
-        errors.append(
-            "正式文章双音频凭证缺人工试听证明；需在正式文章分别试听两条音频的"
-            "开头/结尾 10 秒后重跑 wechat-published-audio-check --confirm-audition"
-        )
     if stored.get("readback_mode") != fresh.get("readback_mode"):
         errors.append("正式文章双音频凭证已过期：官方回读模式发生变化")
     if not stored.get("published_identity") or (
@@ -1574,12 +1545,6 @@ def verify_wechat_published_audio(
     canonical = _canonical_published_url(wechat_url)
     if not canonical:
         return None, [f"不是合法公众号永久链接：{wechat_url!r}"]
-    if persist and not audition_confirmed:
-        return None, [
-            "请先在正式文章分别试听主题曲和播客的开头 10 秒、结尾 10 秒，"
-            "再用 --confirm-audition 重新核验"
-        ]
-
     published: dict[str, Any] = {}
 
     def published_as_draft(
@@ -1659,6 +1624,10 @@ def verify_wechat_published_audio(
             "checks": (draft_receipt.get("remote_readback") or {}).get("checks"),
         },
         "remote_verified": True,
+        "verification_scope": {
+            "manual_audition_required": False,
+            "remote_audio_bytes_verified": False,
+        },
     }
     if audition_confirmed:
         receipt["audition"] = {
