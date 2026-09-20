@@ -1879,6 +1879,31 @@ def process_lead_quote(html):
 # ===== 【第 16 节】模块11 微信兼容微调 =====
 #  模块 11: 微信兼容性微调（图片圆角 + <p> 强制 color）
 # ========================================
+def process_endmatter_url_cards(html):
+    """补齐文末模板中独占一行的 URL 卡样式，不改正文或链接内容。"""
+    marker = re.search(r'<!-- SANSHENG-(?:DEEP-READ|SOURCES) -->', html)
+    if not marker:
+        return html
+    pattern = re.compile(
+        r'<section\b[^>]*>\s*<a\b(?P<attrs>[^>]*)>'
+        r'(?P<url>https?://[^<\s]+)</a>\s*</section>', re.I)
+
+    def render(match):
+        attrs, url = match.group('attrs', 'url')
+        href = re.search(r'\bhref\s*=\s*([\"\'])(.*?)\1', attrs, re.I)
+        if not href or html_mod.unescape(href.group(2)) != html_mod.unescape(url):
+            return match.group(0)
+        attrs = re.sub(r'\s*style\s*=\s*([\"\']).*?\1', '', attrs, flags=re.I)
+        color = _c('text_link', '#4a6b7a')
+        box = (f'font-size:13px;color:{color};font-weight:600;line-height:1.55;'
+               f'margin-top:7px;background:{TINT_INSET};border-radius:{RADIUS_SM};'
+               'padding:7px 9px;text-align:left;word-break:break-all;')
+        link = f'color:{color};text-decoration:none;text-align:left;word-break:break-all;'
+        return f'<section style="{box}"><a{attrs} style="{link}">{url}</a></section>'
+
+    return html[:marker.start()] + pattern.sub(render, html[marker.start():])
+
+
 def process_wechat_compat(html):
     """微信客户端兼容性微调。
 
@@ -1889,6 +1914,7 @@ def process_wechat_compat(html):
 
     借鉴来源：WeWrite converter.py _apply_wechat_fixes()
     """
+    html = process_endmatter_url_cards(html)
     changes = 0
 
     # --- 图片圆角 ---
