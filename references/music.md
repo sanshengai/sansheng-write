@@ -31,7 +31,7 @@ Agent 必须先完成可直接使用的 `MiniMax-主题曲生成单.md`，再请
 
 核实可播放文件与实际时长、来源后，使用 `music_manifest.py` 创建 `_music-manifest.json`，绑定文件 SHA-256、字节数、时长以及真实 `provider/model/mode`。文件名、时间戳、生成单里的计划字段和“最新候选”均不能证明实际来源。
 
-若没有既有歌曲注册表，可先在本篇建立 `主题曲来源记录.md`，以独立条目记下作者交付事实、实际模型和文件；manifest 引用该文件和条目。已有注册表时复用，不复制另一份。模型名称不明时向作者核实，不硬填某个 MiniMax 版本。
+若没有既有歌曲注册表，可先在本篇建立 `主题曲来源记录.md`，以独立条目记下作者交付事实、实际模型和文件；manifest 引用该文件和条目。已有注册表时复用，不复制另一份。模型版本只是来源备注，不作为制作前置条件：优先采用作者已提供的信息或文件内可核实的元数据；版本缺失时将 `origin.model` 如实登记为 `未提供`，在来源记录说明已知与未知，继续制作，不仅为补版本追问或暂停。作者主动补充后再更新记录，不把计划模型、历史歌曲版本或平台默认版本当作本首事实。
 
 ```bash
 python "$SKILL/scripts/music_manifest.py" create "<文章目录>" --audio "<实际 MP3 相对路径>" --title "<歌名>" --duration-seconds <探测时长> --provider "MiniMax" --model "<网页实际模型>" --mode "web-ui" --registry-ref "主题曲来源记录.md" --registry-entry "<实际条目 ID>"
