@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 try:
     from .music_manifest import MUSIC_MANIFEST_FILE
@@ -37,6 +40,7 @@ PODCAST_COVER = Path("素材/podcast_cover.png")
 PODCAST_MANIFEST = Path("dist/podcast/audio.manifest.json")
 PROMPT_DIR = Path("素材/prompts")
 GEN_LOG = ".gen-log.jsonl"
+COVER_PLAN = "_audio-cover-plan.json"
 # codex-cli 出图机器级串行锁；另一篇文章在渲时等它放锁，别当失败。
 LOCK_BUSY_MARK = "lock_busy"
 LOCK_RETRY_LIMIT = 12
@@ -53,22 +57,51 @@ def _primary_color() -> str:
         return "#2F6F8F"
 
 
-def _frontmatter_field(article_dir: Path, key: str) -> str:
-    """从 定稿.md frontmatter 取 title / description，取不到返回空串。"""
+def _article_context(article_dir: Path) -> tuple[str, str, str]:
+    """meta 为配置真源；兼容正文 frontmatter 与普通 H1，保留正文作取材依据。"""
     draft = article_dir / "定稿.md"
     if not draft.is_file():
-        return ""
+        return "", "", ""
     text = draft.read_text(encoding="utf-8", errors="replace")
-    if not text.startswith("---"):
-        return ""
-    head = text.split("---", 2)
-    if len(head) < 3:
-        return ""
-    for line in head[1].splitlines():
-        if line.strip().startswith(f"{key}:"):
-            value = line.split(":", 1)[1].strip()
-            return value.strip('"').strip("'")
-    return ""
+    meta_path = article_dir / "article-meta.yaml"
+    meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+    meta = meta if isinstance(meta, dict) else {}
+    front: dict = {}
+    match = re.match(r"\A---\s*\n(.*?)\n---\s*(?:\n|$)", text, re.S)
+    if match:
+        parsed = yaml.safe_load(match.group(1))
+        front = parsed if isinstance(parsed, dict) else {}
+        text = text[match.end():]
+    h1 = re.search(r"^#\s+(.+)$", text, re.M)
+    title = str(meta.get("title") or front.get("title") or (h1.group(1) if h1 else "")).strip()
+    digest = str(meta.get("digest") or meta.get("description") or front.get("description") or front.get("digest") or "").strip()
+    return title, digest, text
+
+
+def _cover_plan(article_dir: Path, stages: list[str], body: str) -> dict[str, dict]:
+    path = article_dir / COVER_PLAN
+    if not path.is_file():
+        raise ValueError(f"缺 {COVER_PLAN}；先按 music.md 写明音频封面的具体场景与正文依据")
+    plan = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(plan, dict) or plan.get("schema_version") != 1:
+        raise ValueError(f"{COVER_PLAN} 的 schema_version 必须为 1")
+    normalize = lambda value: re.sub(r"\s+", "", value)
+    for stage in stages:
+        item = plan.get(stage)
+        if not isinstance(item, dict):
+            raise ValueError(f"{COVER_PLAN} 缺 {stage}")
+        for key in ("scene", "article_anchor"):
+            if not isinstance(item.get(key), str) or not item[key].strip():
+                raise ValueError(f"{stage}.{key} 必须非空")
+        anchor = normalize(item["article_anchor"])
+        if len(anchor) < 8 or anchor not in normalize(body):
+            raise ValueError(f"{stage}.article_anchor 必须引用正文中的具体内容（至少 8 字符），不能只填产品名")
+    # 即使只补一张，也核对规划中两张图没有复用同一场景。
+    scenes = [normalize(item["scene"]) for key in ("theme_cover", "podcast_cover")
+              if isinstance((item := plan.get(key)), dict) and isinstance(item.get("scene"), str)]
+    if len(scenes) == 2 and scenes[0] == scenes[1]:
+        raise ValueError("主题曲与播客封面不能使用同一场景；分别表现歌曲场景和文章核心问题")
+    return plan
 
 
 def _theme_title(article_dir: Path) -> str:
@@ -85,33 +118,35 @@ def _theme_title(article_dir: Path) -> str:
 
 def _shared_style(primary: str) -> str:
     return (
-        f"Mood: contemplative, intimate, unrushed, ambient lighting with deep warm horizon glow. "
-        f"Color palette: deep cinematic dark background with a muted accent of {primary}, "
-        f"warm cream highlights, a single warm ember spark. "
-        f"Style: hand-painted digital, soft edges, subtle gradients, one central focal element, "
-        f"ample negative space. "
-        f"NO realistic people, NO text, NO watermark, NO logos, NO UI elements. 1:1 square aspect ratio."
+        f"1:1 square editorial cover, readable at thumbnail size. Use {primary} as a restrained "
+        "brand accent; choose composition, lighting and material to fit the specified subject. "
+        "The topic-specific objects and their action must carry the meaning even without text. "
+        "Render the supplied display title natively, clearly and accurately; no extra slogans, "
+        "watermarks or invented logos. Do not substitute generic windows, desk lamps, books, "
+        "rivers, boats, sunsets, headphones or microphones for the subject. Such props are only "
+        "appropriate when the supplied article evidence and planned scene actually require them. "
     )
 
 
-def build_theme_cover_prompt(song_title: str, digest: str, primary: str) -> str:
-    theme = digest.strip() or "a quiet desk at dawn"
+def build_theme_cover_prompt(song_title: str, digest: str, primary: str, *, article_title: str, plan: dict) -> str:
     return (
         f'A cinematic, painterly album cover for a Mandarin vocal song titled "{song_title}". '
-        f"The song accompanies an article about: {theme} "
-        f"Translate that subject into one calm, symbolic still-life scene; the objects may hint at the "
-        f"subject but stay abstract and logo-free. Must look like a legitimate album cover, not an "
-        f"infographic. " + _shared_style(primary)
+        f"Display title: {song_title}\nArticle title: {article_title}\nArticle summary: {digest}\n"
+        f"Article evidence: {plan['article_anchor']}\nPlanned song scene: {plan['scene']}\n"
+        "Express the song's concrete action and emotion through this scene. Preserve recognizable "
+        "topic details; do not turn it into an unrelated abstract still life. " + _shared_style(primary)
     )
 
 
-def build_podcast_cover_prompt(article_title: str, digest: str, primary: str) -> str:
-    subject = digest.strip() or article_title.strip() or "a late-evening conversation"
+def build_podcast_cover_prompt(article_title: str, digest: str, primary: str, *, plan: dict) -> str:
     return (
-        f"A cinematic, painterly podcast episode cover for a Mandarin talk episode. The episode "
-        f"discusses: {subject} Render it as one quiet, symbolic evening scene, like two people talking "
-        f"it through over a desk lamp; objects stay abstract and logo-free. Must look like a legitimate "
-        f"podcast cover, not an infographic. " + _shared_style(primary)
+        "An editorial podcast episode cover for a Mandarin talk episode. "
+        f"Article title: {article_title}\nDisplay title: {plan.get('display_title') or article_title}\n"
+        f"Article summary: {digest}\nArticle evidence: {plan['article_anchor']}\n"
+        f"Planned explanatory scene: {plan['scene']}\n"
+        "Make the article's central question, subject and relationship visible in one clear scene. "
+        "Use an explanatory composition distinct from the song cover; an audio device alone does "
+        "not identify this episode's topic. " + _shared_style(primary)
     )
 
 
@@ -176,27 +211,33 @@ def ensure_audio_covers(
     if not article_dir.is_dir():
         return [], [f"文章目录不存在：{article_dir}"]
     primary = _primary_color()
-    digest = _frontmatter_field(article_dir, "description")
-    title = _frontmatter_field(article_dir, "title")
     song = _theme_title(article_dir)
 
-    jobs: list[tuple[str, Path, str]] = []
+    jobs: list[tuple[str, Path]] = []
     if not song:
         return [], [f"缺 {MUSIC_MANIFEST_FILE} 或其中无歌名，无法生成主题曲封面"]
-    jobs.append(("theme_cover", THEME_COVER, build_theme_cover_prompt(song, digest, primary)))
+    jobs.append(("theme_cover", THEME_COVER))
     if (article_dir / PODCAST_MANIFEST).is_file():
-        jobs.append(("podcast_cover", PODCAST_COVER, build_podcast_cover_prompt(title, digest, primary)))
+        jobs.append(("podcast_cover", PODCAST_COVER))
 
     ready: list[Path] = []
-    pending: list[tuple[str, Path, str]] = []
-    for stage, rel, prompt in jobs:
+    pending: list[tuple[str, Path]] = []
+    for stage, rel in jobs:
         target = article_dir / rel
         if target.is_file() and target.stat().st_size > 0 and not force:
             ready.append(target)
         else:
-            pending.append((stage, rel, prompt))
+            pending.append((stage, rel))
     if not pending:
         return ready, []
+
+    try:
+        title, digest, body = _article_context(article_dir)
+        if not title or not body.strip():
+            raise ValueError("缺文章标题或正文，不能用通用场景代替音频封面的主题")
+        plan = _cover_plan(article_dir, [stage for stage, _ in pending], body)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return ready, [str(exc)]
 
     command, _revision, errors = resolve_renderer_command()
     if errors or command is None:
@@ -207,7 +248,10 @@ def ensure_audio_covers(
     (article_dir / PROMPT_DIR).mkdir(parents=True, exist_ok=True)
     (article_dir / THEME_COVER).parent.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
-    for stage, rel, prompt in pending:
+    for stage, rel in pending:
+        prompt = (build_theme_cover_prompt(song, digest, primary, article_title=title, plan=plan[stage])
+                  if stage == "theme_cover" else
+                  build_podcast_cover_prompt(title, digest, primary, plan=plan[stage]))
         prompt_file = article_dir / PROMPT_DIR / f"{rel.stem}.md"
         prompt_file.write_text(prompt + "\n", encoding="utf-8")
         item_errors = _render_one(
