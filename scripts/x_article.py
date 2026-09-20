@@ -216,7 +216,8 @@ def parse_markdown(md: str, article_dir: Path) -> dict:
             i += 1
             if lang:  # 保留语言标签行（宝玉做法），读者知道这是段什么
                 code.insert(0, f"[{lang}]")
-            buf.append("".join(f"<blockquote>{H.escape(c) or ' '}</blockquote>" for c in code))
+            # 代码里的空行不留：贴进去是一个空引用块，校验会把它算成多余空块（09-20 实证）
+            buf.append("".join(f"<blockquote>{H.escape(c)}</blockquote>" for c in code if c.strip()))
             continue
         m = re.match(r"!\[([^\]]*)\]\(([^)]+)\)", st)
         if m:

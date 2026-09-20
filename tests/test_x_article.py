@@ -222,3 +222,10 @@ def test_audio_card_at_top_does_not_truncate_body(tmp_path: Path):
     parsed = xa.parse_markdown(md, tmp_path)
     html = "".join(v for k, v in parsed["blocks"] if k == "html")
     assert "正文第一段" in html and "<h1>一节</h1>" in html and "音频卡" not in html
+
+
+def test_code_block_blank_lines_dropped(tmp_path: Path):
+    md = "---\ntitle: t\n---\n\n```bash\nuv tool install x\n\n# 或者 pip\npip install x\n```\n"
+    html = "".join(v for k, v in xa.parse_markdown(md, tmp_path)["blocks"] if k == "html")
+    assert "<blockquote></blockquote>" not in html and "<blockquote> </blockquote>" not in html
+    assert html.count("<blockquote>") == 4  # [bash] + 3 行非空
