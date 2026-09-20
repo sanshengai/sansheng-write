@@ -139,7 +139,10 @@ def parse_markdown(md: str, article_dir: Path) -> dict:
             if line.strip().startswith("title:"):
                 fm_title = line.split(":", 1)[1].strip().strip('"').strip("'")
     sources = _sources(md)
-    body = re.split(r"<!-- SANSHENG-DEEP-READ -->|<!-- SANSHENG-SOURCES -->|<!-- AUDIO-CARD-START -->", md)[0]
+    # 音频卡 / 播客卡可能在正文开头（podcast.wechat_embed 时固定在导读后面）：先整块剜掉，再按尾块截止；
+    # 以前直接在 AUDIO-CARD-START 处截断，卡在开头的篇目会把整篇截空（09-20 两篇实证）
+    md_body = re.sub(r"<!-- (AUDIO|PODCAST)-CARD-START -->.*?<!-- \1-CARD-END -->\n?", "", md, flags=re.S)
+    body = re.split(r"<!-- SANSHENG-DEEP-READ -->|<!-- SANSHENG-SOURCES -->|<!-- (?:AUDIO|PODCAST)-CARD-START -->", md_body)[0]
     body = re.sub(r"<!-- SANSHENG-VISUAL-(START|END):\d+ -->\n?", "", body)
 
     blocks: list[tuple[str, str]] = []

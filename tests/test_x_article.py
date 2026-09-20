@@ -214,3 +214,11 @@ def test_post_matches_rejects_someone_elses_post():
     # 09-19 实证：Premium+ 失效后发布静默失败，主页首条是上一篇（封号文），不能当成本篇
     assert not xa.post_matches("叁笙早安AI · 3分钟 Anthropic 的透明度报告：2025 下半年封禁 145 万个账号", cap, title)
     assert not xa.post_matches("", cap, title)
+
+
+def test_audio_card_at_top_does_not_truncate_body(tmp_path: Path):
+    md = ("---\ntitle: t\n---\n\n> 导读\n\n<!-- AUDIO-CARD-START -->\n<section>音频卡</section>\n<!-- AUDIO-CARD-END -->\n\n"
+          "# 标题\n\n正文第一段\n\n## 一节\n\n正文第二段\n")
+    parsed = xa.parse_markdown(md, tmp_path)
+    html = "".join(v for k, v in parsed["blocks"] if k == "html")
+    assert "正文第一段" in html and "<h1>一节</h1>" in html and "音频卡" not in html

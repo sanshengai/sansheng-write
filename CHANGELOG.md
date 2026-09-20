@@ -12,6 +12,7 @@
 
 **修正**
 - macOS 上三处本来就红的测试：`render_text_safe_visual.py` 字体不再写死 `C:\Windows\Fonts`，按角色给跨平台候选清单（微软雅黑 → 用户目录 Noto CJK → Hiragino / 黑体 → Linux Noto），`.ttc` 带字面索引；`profile_config.resolve_config_path` 对 `@workspace/C:/...` 与 UNC 后缀同时按 Windows 规则查盘符，Mac 与 Windows 得到同一结论；`setup.py` 缺 ruamel.yaml 只打印片段时不再收尾「已写入」（`_write_profile` 返回是否真写盘，补反例测试）。
+- 音频卡 / 播客卡在正文开头（`podcast.wechat_embed` 篇目）时不再把整篇截空：先整块剜掉再按尾块截止。
 - 建草稿遇到编辑器瞬态错误（占位块在媒体落地后消失、插入超时）自动整篇重建，最多 3 次；其它错误照常中止。
 - 发布后拿不到帖子 URL 时的回退（抓主页首条）必须与本篇说明文字 / 标题匹配，否则报错；文章列表页 404（账号没有 Articles 权限）时直接失败并说明原因。此前 Premium+ 失效会静默失败并把上一篇的帖子 URL 写进凭证。
 - 旧格式 SOURCES 块没有闭合标记时，解析止于下一个 HTML 注释，不再把后面「推荐阅读」的站内链接混进「信息来源」。
