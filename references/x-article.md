@@ -13,6 +13,7 @@ python3 "$SKILL/scripts/x_article.py" <文章目录> --draft-url <草稿URL> --p
 python3 "$SKILL/scripts/x_article.py" <文章目录> --readback                      # 回读互动数据追加到 snapshots.jsonl
 ```
 
+- 老文章 `素材/` 里常常只剩封面、正文图丢了（早期流水线没把配图镜像回成品目录），`定稿.md` 却还引用着——脚本 `--dry-run` 不查文件，真发时 `prepare_image` 才报 FileNotFoundError。用 `python3 "$SKILL/scripts/recover_images_from_wechat.py" <文章目录>` 从公众号页面把图拉回来（先出对照表 `dist/wx-images/sheet.jpg`，人眼确认映射后 `--apply "页面序号:素材/xx.webp,…"` 落盘，转 webp）。2026-09-20 用它救回 10 篇 58 张图。
 - Chrome：脚本先探 `--cdp`（默认取 profile 的 `cdp`，缺省 `http://127.0.0.1:9333`），探不到就用 `chrome_profile` 指定的已登录 Chrome user-data-dir 自己拉起（缺省用 baoyu-skills 的共享 profile，带 `--variations-override-country=us`，否则 Chrome 判不出国家时右上角 Gemini 按钮会消失；手动拉起也要带）。跑的时候**别关那个窗口**——09-19 有一次跑到第 5 张图标签页被关掉，脚本随之中断。
 - 锁：`dist/x/.lock` 记 pid，同一篇第二个进程直接退出；总时长超过 40 分钟自杀。
 - 配置在 profile `brand.yaml` 的 `distribute.channels.x`：`article_url_template`（网站全文，`{code}` = 小写作品编号）、`podcast_show_url` + `podcast_episode_prefix`（小宇宙节目页与单集前缀）、`tail_line`（署名行）、`cdp`、`chrome_profile`；留空的项文末不放。
