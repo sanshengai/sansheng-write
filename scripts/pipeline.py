@@ -4720,6 +4720,14 @@ def main():
                 print(f"   • {error}")
             sys.exit(2)
         print(f"✅ 上传文件{('已创建' if status == 'created' else '未变化')}：{target}")
+        receipt_path = target / "_handoff-receipt.json"
+        if receipt_path.is_file():
+            handoff_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            for asset in handoff_receipt.get("assets") or []:
+                rel = str((asset.get("handoff") or {}).get("path") or "")
+                label = asset.get("label") or asset.get("role") or "文件"
+                if rel:
+                    print(f"   {label}：{target / rel}")
         # 🔴 主仓镜像（2026-09-18）：作者只在主仓 文稿成品/ 找成品；worktree 里的
         # mp3/mp4/作者供图被 .gitignore 挡住、合回主线带不过去，必须在这里落到主仓。
         if not getattr(args, "no_mirror", False):

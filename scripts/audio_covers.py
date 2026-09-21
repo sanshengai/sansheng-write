@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""主题曲封面与播客封面：缺哪张生成哪张，产物固定落 ``素材/``。
+"""主题曲封面与播客封面：缺哪张生成哪张，产物放在文章编号文件夹第一层。
 
 背景（2026-09-14 第 99 篇）：主题曲封面原来由 Lyria 自动链顺手生成；主题曲改走
 MiniMax 网页手工生成后这一步就断了，播客封面流水线里从来没有。作者要在微信
 编辑器里给两条音频各配一张封面，结果连着两篇都得事后补。现在把两张封面收进
 ``handoff-assets`` 的前置步骤：交付上传文件前先保证它们存在。
 
-- 主题曲封面：``素材/bgm_cover.png``，歌名来自 ``_music-manifest.json``。
-- 播客封面：``素材/podcast_cover.png``，仅当 ``dist/podcast/audio.manifest.json``
+- 主题曲封面：``音乐封面.png``，歌名来自 ``_music-manifest.json``。
+- 播客封面：``播客封面.png``，仅当 ``dist/podcast/audio.manifest.json``
   存在（即本篇真的有播客）时生成。
+- 旧稿若只有 ``素材/bgm_cover.png`` / ``素材/podcast_cover.png``，沿用该文件，不另造一张。
 - 渲染器只走 ``baoyu-image-gen``，provider/model 按文章目录的 ``renderer-policy.json``
   逐项降级，与信息图同一条链；封面图不加品牌水印（与 music.md 既有约定一致）。
 - 已存在且非空的封面不重生成；``--force`` 才覆盖。
@@ -29,14 +30,14 @@ from typing import Any
 import yaml
 
 try:
+    from .article_paths import PODCAST_COVER, THEME_COVER, cover_output
     from .music_manifest import MUSIC_MANIFEST_FILE
     from .render_visuals import _load_policy, resolve_renderer_command
 except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import PODCAST_COVER, THEME_COVER, cover_output
     from music_manifest import MUSIC_MANIFEST_FILE
     from render_visuals import _load_policy, resolve_renderer_command
 
-THEME_COVER = Path("素材/bgm_cover.png")
-PODCAST_COVER = Path("素材/podcast_cover.png")
 PODCAST_MANIFEST = Path("dist/podcast/audio.manifest.json")
 PROMPT_DIR = Path("素材/prompts")
 GEN_LOG = ".gen-log.jsonl"
@@ -213,21 +214,21 @@ def ensure_audio_covers(
     primary = _primary_color()
     song = _theme_title(article_dir)
 
-    jobs: list[tuple[str, Path]] = []
+    jobs: list[tuple[str, str]] = []
     if not song:
         return [], [f"缺 {MUSIC_MANIFEST_FILE} 或其中无歌名，无法生成主题曲封面"]
-    jobs.append(("theme_cover", THEME_COVER))
+    jobs.append(("theme_cover", "theme"))
     if (article_dir / PODCAST_MANIFEST).is_file():
-        jobs.append(("podcast_cover", PODCAST_COVER))
+        jobs.append(("podcast_cover", "podcast"))
 
     ready: list[Path] = []
     pending: list[tuple[str, Path]] = []
-    for stage, rel in jobs:
-        target = article_dir / rel
+    for stage, kind in jobs:
+        target = cover_output(article_dir, kind=kind, force=force)
         if target.is_file() and target.stat().st_size > 0 and not force:
             ready.append(target)
         else:
-            pending.append((stage, rel))
+            pending.append((stage, target))
     if not pending:
         return ready, []
 
@@ -246,27 +247,26 @@ def ensure_audio_covers(
     if policy_errors:
         return ready, policy_errors
     (article_dir / PROMPT_DIR).mkdir(parents=True, exist_ok=True)
-    (article_dir / THEME_COVER).parent.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
-    for stage, rel in pending:
+    for stage, target in pending:
         prompt = (build_theme_cover_prompt(song, digest, primary, article_title=title, plan=plan[stage])
                   if stage == "theme_cover" else
                   build_podcast_cover_prompt(title, digest, primary, plan=plan[stage]))
-        prompt_file = article_dir / PROMPT_DIR / f"{rel.stem}.md"
+        prompt_file = article_dir / PROMPT_DIR / f"{target.stem}.md"
         prompt_file.write_text(prompt + "\n", encoding="utf-8")
         item_errors = _render_one(
             article_dir, stage=stage, prompt_file=prompt_file,
-            output=article_dir / rel, command=command, renderers=renderers,
+            output=target, command=command, renderers=renderers,
         )
         if item_errors:
             failures.extend(item_errors)
         else:
-            ready.append(article_dir / rel)
+            ready.append(target)
     return ready, failures
 
 
 def _main() -> int:
-    parser = argparse.ArgumentParser(description="生成缺失的主题曲封面 / 播客封面（素材/）")
+    parser = argparse.ArgumentParser(description="生成缺失的音乐封面 / 播客封面（文章编号文件夹第一层）")
     parser.add_argument("article_dir", nargs="?", default=".")
     parser.add_argument("--force", action="store_true", help="已存在也重新生成")
     args = parser.parse_args()

@@ -34,6 +34,7 @@ def _article(tmp_path: Path, *, podcast: bool = False):
     }
     theme = article / "边界之歌.mp3"
     theme.write_bytes(b"theme-audio")
+    (article / "article-meta.yaml").write_text("title: 边界之歌\n", encoding="utf-8")
     write_music_manifest(
         article,
         theme,
@@ -83,10 +84,10 @@ def test_handoff_exports_only_receipt_bound_assets_and_is_idempotent(tmp_path: P
     assert sorted(path.name for path in target.iterdir()) == [
         "_handoff-receipt.json",
         "cover.png",
-        "podcast-cover.png",
-        "podcast.mp3",
-        "theme-cover.png",
-        "theme-边界之歌.mp3",
+        "播客 | 边界之歌.mp3",
+        "播客封面.png",
+        "边界之歌.mp3",
+        "音乐封面.png",
     ]
     receipt = json.loads((target / "_handoff-receipt.json").read_text(encoding="utf-8"))
     assert [asset["role"] for asset in receipt["assets"]] == [
@@ -181,18 +182,19 @@ def test_default_handoff_stays_in_article_and_ignores_legacy_env(tmp_path, monke
     target, status, errors = export_handoff_assets(article, **kwargs)
     assert (target, status, errors) == (article, "created", [])
     assert not legacy.exists()
-    assert (article / "podcast.mp3").read_bytes() == (article / "dist/podcast/audio.mp3").read_bytes()
+    assert (article / "播客 | 边界之歌.mp3").read_bytes() == (article / "dist/podcast/audio.mp3").read_bytes()
     assert (article / "cover.png").read_bytes() == (article / "素材/cover.png").read_bytes()
-    assert (article / "theme-cover.png").read_bytes() == b"theme-cover"
-    assert (article / "podcast-cover.png").read_bytes() == b"podcast-cover"
+    assert (article / "音乐封面.png").read_bytes() == b"theme-cover"
+    assert (article / "播客封面.png").read_bytes() == b"podcast-cover"
     assert not (article / "theme-边界之歌.mp3").exists()
+    assert not (article / "podcast.mp3").exists()
     assert all(p.read_bytes() == data for p, data in before.items())
     assert export_handoff_assets(article, **kwargs) == (article, "unchanged", [])
 
 
 def test_default_handoff_rejects_collision_before_any_write(tmp_path):
     article, verify_visual, probe = _article(tmp_path, podcast=True)
-    (article / "podcast.mp3").write_bytes(b"authors-unrelated-recording")
+    (article / "播客 | 边界之歌.mp3").write_bytes(b"authors-unrelated-recording")
     before = {p: p.read_bytes() for p in article.rglob("*") if p.is_file()}
     target, _, errors = export_handoff_assets(article, duration_probe=probe, visual_verifier=verify_visual)
     assert target is None and any("未覆盖" in error for error in errors)
@@ -221,13 +223,13 @@ def test_default_handoff_preserves_concurrent_writer_and_rolls_back_own_files(tm
     article, verify_visual, probe = _article(tmp_path, podcast=True)
     link = handoff.os.link
     def racing_link(source, destination):
-        if destination.name == "podcast.mp3":
+        if destination.name == "播客 | 边界之歌.mp3":
             destination.write_bytes(b"concurrent-writer")
         return link(source, destination)
     monkeypatch.setattr(handoff.os, "link", racing_link)
     target, _, errors = export_handoff_assets(article, duration_probe=probe, visual_verifier=verify_visual)
     assert target is None and errors
-    assert (article / "podcast.mp3").read_bytes() == b"concurrent-writer"
+    assert (article / "播客 | 边界之歌.mp3").read_bytes() == b"concurrent-writer"
     assert not (article / "cover.png").exists()
     assert not (article / "_handoff-receipt.json").exists()
 
@@ -243,7 +245,7 @@ def test_handoff_requires_theme_cover_and_podcast_cover(tmp_path):
     (article / "素材/podcast_cover.png").write_bytes(b"podcast-cover")
     (article / "素材/bgm_cover.png").write_bytes(b"")
     target, _, errors = export_handoff_assets(article, **kwargs)
-    assert target is None and any("缺主题曲封面" in error for error in errors)
+    assert target is None and any("缺音乐封面" in error for error in errors)
 
     # 没有播客的文章不要求播客封面
     (tmp_path / "plain").mkdir()
@@ -252,5 +254,5 @@ def test_handoff_requires_theme_cover_and_podcast_cover(tmp_path):
         plain, duration_probe=probe_plain, visual_verifier=verify_plain
     )
     assert errors == [] and status == "created"
-    assert (plain / "theme-cover.png").exists() and not (plain / "podcast-cover.png").exists()
+    assert (plain / "音乐封面.png").exists() and not (plain / "播客封面.png").exists()
 

@@ -519,9 +519,7 @@ def generate_music_cover(song_name: str, imagery: list, output_dir: Path):
         f"ample negative space. Must look like a legitimate album cover, not an infographic. "
         f"NO realistic people, NO text, NO watermark, NO logos, NO UI elements. 1:1 square aspect ratio."
     )
-    materials_dir = output_dir / "素材"
-    materials_dir.mkdir(parents=True, exist_ok=True)
-    img_path = materials_dir / "bgm_cover.png"
+    img_path = output_dir / "音乐封面.png"
 
     gen_img = Path(__file__).resolve().parent / "gen_img.py"
     if not gen_img.exists():
@@ -765,7 +763,7 @@ def main():
     print("\n🚀 请手动上传音频至微信素材库（手动上传才能设置音乐封面图）")
     print(f"  📁 音频: {output_path}")
     if not args.skip_cover:
-        print(f"  🖼️ 封面: {output_path.parent / '素材' / 'bgm_cover.png'}")
+        print(f"  🖼️ 封面: {output_path.parent / '音乐封面.png'}")
     print("  ℹ️  路径: 微信后台 → 素材管理 → 音频 → 上传；插入时定位到卡片占位处。")
 
 

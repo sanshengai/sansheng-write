@@ -12,6 +12,7 @@
 - X 版适配文件 `定稿.x.md`：存在时 `x_article.py` 优先读它，公众号定稿不动，两份共用 `素材/`；receipt 记录实际用的源文件。`references/x-article.md` 新增「发前适配」七条与选篇 / 节奏规则。
 
 **修正**
+- **作者上传的播客和两张音频封面改到文章编号文件夹第一层**。播客文件名是 `播客 | {文章标题}.mp3`（竖线保留）；主题曲封面是 `音乐封面.png`，播客封面是 `播客封面.png`。新生成不再写入 `素材/`。旧稿里的 `素材/bgm_cover.png`、`素材/podcast_cover.png` 仍能交付，并复制成上述文件名。feed 主机上的文件名与这一层相同，scp 对空格和竖线加引号。`dist/podcast/audio.mp3` 继续作为官网取字节的机器副本。
 - macOS 上三处本来就红的测试：`render_text_safe_visual.py` 字体不再写死 `C:\Windows\Fonts`，按角色给跨平台候选清单（微软雅黑 → 用户目录 Noto CJK → Hiragino / 黑体 → Linux Noto），`.ttc` 带字面索引；`profile_config.resolve_config_path` 对 `@workspace/C:/...` 与 UNC 后缀同时按 Windows 规则查盘符，Mac 与 Windows 得到同一结论；`setup.py` 缺 ruamel.yaml 只打印片段时不再收尾「已写入」（`_write_profile` 返回是否真写盘，补反例测试）。
 - 代码块里的空行不再变成空引用块（会被校验判成多余空块拒发）。
 - 音频卡 / 播客卡在正文开头（`podcast.wechat_embed` 篇目）时不再把整篇截空：先整块剜掉再按尾块截止。

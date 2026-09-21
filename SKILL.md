@@ -129,7 +129,9 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 ```
 {数据目录}/{N}-{选题名}/
-  ├── 大纲.md ← 大纲   ├── 定稿.md ← 写作   ├── 定稿.html ← 排版   └── 素材/ ← 所有 AI 生成图片
+  ├── 大纲.md  定稿.md  定稿.html  cover.png  {歌名}.mp3
+  ├── 音乐封面.png  播客 | {文章标题}.mp3  播客封面.png
+  └── 素材/ ← 只放正文插图；音频封面不放这里
 
 {SANSHENG_WRITE_ARCHIVE_DIR}/{N}-{选题名}/
   └── 全部流程完成后的永久成品；含 _physical-archive-receipt.json

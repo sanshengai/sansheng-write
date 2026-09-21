@@ -26,19 +26,21 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
 import tempfile
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from profile_config import distribute_channel  # noqa: E402
 import distribute  # noqa: E402
+from article_paths import podcast_filename  # noqa: E402
 
 POLL_INTERVAL = 30
 POLL_TIMEOUT = 1800          # 30 分钟。长文比晨报慢，20 分钟不够。
@@ -269,10 +271,16 @@ def _extract_id(payload, *keys: str) -> str:
 
 
 def _safe_stem(text: str) -> str:
-    """文件名安全化。斜杠冒号等在 Windows/Linux 都是非法字符。"""
+    """旧的短 slug。新的作者可见文件名走 ``podcast_filename``，不再用它。"""
     cleaned = re.sub(r'[/\\:*?"<>|]', "", text).strip()
     cleaned = re.sub(r"\s+", "-", cleaned)
     return cleaned[:40] or "episode"
+
+
+def scp_remote(host: str, remote_dir: str, filename: str) -> str:
+    """远端路径交给 scp 时必须加引号，否则空格和 ``|`` 会被远端 shell 拆开。"""
+    remote_path = str(PurePosixPath(remote_dir) / filename)
+    return f"{host}:{shlex.quote(remote_path)}"
 
 
 # ===== generate =====
@@ -609,8 +617,9 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
         return 2
 
     title = distribute.read_final_title(article_dir)
-    stem = f"{datetime.now():%Y-%m-%d}-{_safe_stem(title)}"
-    log(f"远端文件名：{stem}.mp3 (+ .json)")
+    audio_name = podcast_filename(title)
+    sidecar_name = f"{audio_name[:-4]}.json"
+    log(f"远端文件名：{audio_name} (+ .json)")
 
     if not confirm:
         log("dry-run：加 --confirm 才真正上传并重建 feed（这一步对外可见）")
@@ -624,8 +633,8 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
 
     # 🔴 先传 sidecar 再传 mp3。反过来的话，两次传输之间若正好触发 feed 重建，
     # mp3 会被当成「无 sidecar 且文件名非纯日期」而静默跳过。
-    for src, dst in ((side, f"{stem}.json"), (mp3, f"{stem}.mp3")):
-        r = subprocess.run([scp, str(src), f"{host}:{remote_dir}/{dst}"])
+    for src, dst in ((side, sidecar_name), (mp3, audio_name)):
+        r = subprocess.run([scp, str(src), scp_remote(host, remote_dir, dst)])
         if r.returncode != 0:
             log(f"✗ 上传 {dst} 失败")
             return 1
@@ -639,7 +648,7 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
     distribute._write_json(out_dir / distribute.RECEIPT_FILE, {
         "channel": "podcast",
         "mode": "rss",
-        "remote_stem": stem,
+        "remote_stem": audio_name[:-4],
         "published_at": distribute._now(),
         "source_digest": distribute.source_digest(article_dir, "podcast"),
         "generation_digest": generation_digest(article_dir, c),

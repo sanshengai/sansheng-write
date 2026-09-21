@@ -127,7 +127,17 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
 ```
 
-主题曲保留原文件名（已经在第一层就直接复用），播客为 `podcast.mp3`，封面为 `cover.png`；🔴 **两条音频各配一张 1:1 封面一起交付**：主题曲封面 `theme-cover.png`（源 `素材/bgm_cover.png`）、播客封面 `podcast-cover.png`（源 `素材/podcast_cover.png`，仅本篇有播客时）。`handoff-assets` 先跑 `audio_covers.py` 缺哪张生成哪张（走 `renderer-policy.json` 同一条 baoyu-image-gen 链，不加水印，`--regenerate-covers` 才重生成），缺封面直接拒绝交付——2026-09-14 前连续两篇发布后才发现作者在微信编辑器里没封面可传，这一步就是为它设的。源文件 `dist/podcast/audio.mp3`、`素材/cover.png` 及其回执继续服务生成和发布流程；根目录提供经 SHA-256 与大小验证的上传副本，不为方便查找移走源文件。
+作者上传时只看文章编号文件夹第一层，不要再进 `素材/` 找音频封面：
+
+| 上传什么 | 文件名 |
+|---|---|
+| 公众号头图 | `cover.png`（生成源仍是 `素材/cover.png`，第一层是同一份副本） |
+| 主题曲 | 歌名原文件名，例如 `对标那一档.mp3` |
+| 主题曲封面 | `音乐封面.png` |
+| 播客 | `播客 \| {文章标题}.mp3`，标题用定稿标题，竖线保留 |
+| 播客封面 | `播客封面.png` |
+
+`handoff-assets` 先跑 `audio_covers.py` 缺哪张生成哪张（走 `renderer-policy.json` 同一条 baoyu-image-gen 链，不加水印，`--regenerate-covers` 才重生成），缺封面直接拒绝交付。新封面直接写在第一层，不写进 `素材/`。旧稿若只有 `素材/bgm_cover.png` 或 `素材/podcast_cover.png`，交付时复制成上表的文件名，不删旧文件。`dist/podcast/audio.mp3` 仍是官网和 RSS 取字节的机器副本；推到 feed 主机的文件名与第一层播客文件名相同。`素材/` 只放正文插图。
 
 命令只读取封存视觉凭证和音频 manifest 指定的文件，验证后才交付，根目录写 `_handoff-receipt.json`；同一快照可重复运行，现有同名不同内容文件会报错，不静默覆盖正文或其他资产。旧 `SANSHENG_WRITE_HANDOFF_DIR` 配置不再自动生效。只有作者明确要求独立导出时才使用 `--target-root <目录>`，此模式保留 `--revision r2` 的版本快照能力。
 

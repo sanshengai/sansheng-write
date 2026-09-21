@@ -14,7 +14,7 @@
   两侧补边缘色垫成 3:4，否则 X 会居中裁掉上下
 - 文末追加「信息来源」（解析 SANSHENG-SOURCES 块）和「继续阅读」（网站全文 / 公众号原文 /
   小宇宙单集，缺哪个不放哪个）
-- 主题曲：X 不能上传音频。``--theme`` 才把 ``素材/bgm_cover.png`` + 主题曲 MP3 合成静帧 MP4
+- 主题曲：X 不能上传音频。``--theme`` 才把 ``音乐封面.png`` + 主题曲 MP3 合成静帧 MP4
   插在正文第一个大标题前；默认不放（作者 2026-09-19 定：不必强行合成视频），播客也不放
 
 建稿：整篇一次粘贴（合成 ClipboardEvent，Draft.js 解析 <h1>/<strong>/<blockquote>/<ul>），
@@ -345,13 +345,18 @@ def find_cover(article_dir: Path) -> Path | None:
 
 
 def theme_video(article_dir: Path, out_dir: Path) -> tuple[Path, str] | None:
-    """主题曲 MP3 + 素材/bgm_cover.png → 静帧 MP4（X 不收音频）。返回 (mp4, 歌名)。"""
+    """主题曲 MP3 + 音乐封面 → 静帧 MP4（X 不收音频）。返回 (mp4, 歌名)。"""
+    try:
+        from article_paths import is_podcast_audio_name, resolve_cover
+    except ImportError:  # pragma: no cover
+        from .article_paths import is_podcast_audio_name, resolve_cover
+
     manifest = article_dir / "_music-manifest.json"
-    cover = article_dir / "素材" / "bgm_cover.png"
-    if not cover.is_file():
+    cover = resolve_cover(article_dir, kind="theme")
+    if cover is None:
         return None
     if not manifest.is_file():  # 2026-09 之前的篇目没有 manifest：根目录唯一一个非播客 MP3 就是主题曲
-        mp3s = [f for f in article_dir.glob("*.mp3") if f.name != "podcast.mp3"]
+        mp3s = [f for f in article_dir.glob("*.mp3") if not is_podcast_audio_name(f.name)]
         if len(mp3s) != 1:
             return None
         return _render_theme(mp3s[0], cover, out_dir), mp3s[0].stem

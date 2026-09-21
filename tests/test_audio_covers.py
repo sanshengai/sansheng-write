@@ -107,7 +107,7 @@ def test_invalid_material_never_calls_renderer(tmp_path, monkeypatch, failure):
 def test_existing_covers_reused_but_force_requires_current_plan(tmp_path, monkeypatch):
     root = article(tmp_path)
     target = root / covers.THEME_COVER
-    target.parent.mkdir()
+    target.parent.mkdir(exist_ok=True)
     target.write_bytes(b"previous-published-image")
     prompts = renderer(monkeypatch)
     ready, errors = covers.ensure_audio_covers(root)

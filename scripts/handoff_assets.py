@@ -23,6 +23,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 try:
+    from .article_paths import (
+        PODCAST_COVER,
+        THEME_COVER,
+        podcast_upload_name,
+        resolve_cover,
+    )
     from .evidence import sha256_file, stable_digest, verify_visual_receipt
     from .music_manifest import (
         MUSIC_MANIFEST_FILE,
@@ -32,6 +38,12 @@ try:
         validate_music_manifest,
     )
 except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import (
+        PODCAST_COVER,
+        THEME_COVER,
+        podcast_upload_name,
+        resolve_cover,
+    )
     from evidence import sha256_file, stable_digest, verify_visual_receipt
     from music_manifest import (
         MUSIC_MANIFEST_FILE,
@@ -178,8 +190,7 @@ def _theme_from_manifest(
     )
     if measure_errors or measured is None:
         return None, None, measure_errors
-    suffix = theme.path.suffix.lower() or ".mp3"
-    destination = f"theme-{_safe_name(theme.title, fallback='audio')}{suffix}"
+    destination = theme.path.name
     spec = CopySpec("theme", theme.path, destination, theme.sha256, theme.bytes)
     entry = {
         "role": "theme",
@@ -253,7 +264,7 @@ def _podcast_from_manifest(
         errors.extend(measure_errors)
     if errors or measured is None:
         return None, None, errors
-    spec = CopySpec("podcast", audio, "podcast.mp3", digest, audio.stat().st_size)
+    spec = CopySpec("podcast", audio, podcast_upload_name(article_dir), digest, audio.stat().st_size)
     entry = {
         "role": "podcast",
         "label": "播客",
@@ -275,10 +286,6 @@ def _podcast_from_manifest(
     return entry, spec, []
 
 
-THEME_COVER = Path("素材/bgm_cover.png")
-PODCAST_COVER = Path("素材/podcast_cover.png")
-
-
 def _audio_covers(
     article_dir: Path,
     *,
@@ -290,29 +297,33 @@ def _audio_covers(
     ``handoff-assets`` 已串好）；这里只认已存在的文件，缺了就报错而不是静默少给——
     作者是在微信编辑器里逐条插音频时才发现少封面的，事后补比事前拦贵得多。
     """
-    wanted: list[tuple[str, str, Path, str]] = [
-        ("theme_cover", "主题曲封面", THEME_COVER, "theme-cover.png"),
+    wanted: list[tuple[str, str, str, Path]] = [
+        ("theme_cover", "音乐封面", "theme", THEME_COVER),
     ]
     if podcast_present:
-        wanted.append(("podcast_cover", "播客封面", PODCAST_COVER, "podcast-cover.png"))
+        wanted.append(("podcast_cover", "播客封面", "podcast", PODCAST_COVER))
     entries: list[dict[str, Any]] = []
     specs: list[CopySpec] = []
     errors: list[str] = []
-    for role, label, relative, destination in wanted:
-        source = article_dir / relative
-        if not source.is_file() or source.stat().st_size == 0:
+    for role, label, kind, canonical in wanted:
+        source = resolve_cover(article_dir, kind=kind)
+        if source is None:
             errors.append(
-                f"缺{label}：{relative.as_posix()}；先运行 audio_covers.py 生成"
+                f"缺{label}：{canonical.as_posix()}；先运行 audio_covers.py 生成"
             )
             continue
         digest = sha256_file(source)
         size = source.stat().st_size
-        specs.append(CopySpec(role, source, destination, digest, size))
+        try:
+            relative = source.resolve().relative_to(article_dir.resolve()).as_posix()
+        except ValueError:
+            relative = source.name
+        specs.append(CopySpec(role, source, canonical.name, digest, size))
         entries.append({
             "role": role,
             "label": label,
-            "source": {"path": relative.as_posix(), "sha256": digest, "bytes": size},
-            "handoff": {"path": destination, "sha256": digest, "bytes": size},
+            "source": {"path": relative, "sha256": digest, "bytes": size},
+            "handoff": {"path": canonical.name, "sha256": digest, "bytes": size},
         })
     return entries, specs, errors
 
