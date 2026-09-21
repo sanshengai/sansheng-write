@@ -2075,6 +2075,151 @@ def _soft_zero_anaphora_warnings(text: str) -> list:
     return out
 
 
+# ---- Jev 第二意见（2026-09-22，站点 write.qc.anti_ai_second_opinion，见 _ops/jev/README.md）----
+# 正则黑名单自认约 40% 语义反例拦不住；这里给每个散文段加一道 Noul「这段是 AI 腔」第二意见。
+# 铁律：**只报不拦**。verdict / errors / hard_hits / soft_hits 永远只由正则决定；
+# Jev 命中而正则未命中的段落只出现在返回值 'jev' 字段（shadow）或 warnings（enforce，仍不阻塞）。
+# 只走 _ops/jev/client.py；接入层缺失 / 未登记 / mode=off / 无 key / 超时，本函数行为与接入前完全一致。
+_JEV_AI_TONE_SITE = 'write.qc.anti_ai_second_opinion'
+_JEV_AI_TONE_MIN = 0.5          # Noul ≥ 此值 = Jev 认为是 AI 腔
+_JEV_AI_TONE_MIN_CHARS = 30     # 太短的段（标题/口号/过渡）不问，省调用也少噪音
+_JEV_AI_TONE_MAX_PARAS = 150    # 单篇上限，钉住费用与时长
+_JEV_AI_TONE_QUESTIONS = {
+    'ai_tone': {
+        'type': 'noul',
+        'instructions': '这段中文更像 AI 生成的套话腔——宏大空泛的开场或升维收尾、报幕式元话语'
+                        '（先说结论/重点来了/还记得前面）、无具体信源的判断性陈词、模板式排比、'
+                        '一份感情十份用的抒情——而不是有具体画面、数字、时间地点、亲历细节的人写的话。',
+    },
+}
+
+
+def _jev_client(site_id: str):
+    """按 README 路径 import 统一客户端；任何原因拿不到都返回 None（fail-open）。"""
+    import sys
+    from pathlib import Path
+    repo = Path(__file__).resolve().parents[3]
+    jev_dir = repo / '_ops' / 'jev'
+    if not (jev_dir / 'client.py').is_file():
+        return None
+    if str(jev_dir) not in sys.path:
+        sys.path.insert(0, str(jev_dir))
+    try:
+        from client import JevClient  # noqa: WPS433
+        jev = JevClient(site_id)
+    except Exception:  # noqa: BLE001  接入层缺失 / 未登记 / 依赖缺失 → 走原路径
+        return None
+    return jev if jev.enabled else None
+
+
+def _jev_deadline(default: float = 45.0) -> float:
+    import os
+    try:
+        return float(os.environ.get('SANSHENG_WRITE_JEV_DEADLINE', default))
+    except ValueError:
+        return default
+
+
+_ENDMATTER_MARKERS = ('<!-- SANSHENG-DEEP-READ -->', '<!-- SANSHENG-SOURCES -->',
+                      '<!-- AUDIO-CARD-START -->', '<!-- PODCAST-CARD-START -->')
+
+
+def _cut_endmatter(raw: str) -> str:
+    """去掉定稿尾部的模板块（DEEP READ / SOURCES / 音频卡），只留作者正文；没有标记就原样返回。"""
+    cut = len(raw)
+    for marker in _ENDMATTER_MARKERS:
+        i = raw.find(marker)
+        if i >= 0:
+            cut = min(cut, i)
+    return raw[:cut]
+
+
+def jev_ai_tone_paragraphs(text: str) -> list:
+    """把清洗后的正文切成待问的散文段：[(起始行号, 段文本)]。跳过标题/列表/表格/图片/引用与过短段。"""
+    import re
+    out = []
+    # 一段 = 连续的非空行；起始行号按原偏移算，和黑名单消息里的 [L~n] 同一口径
+    for m in re.finditer(r'[^\n]*\S[^\n]*(?:\n[^\n]*\S[^\n]*)*', text):
+        start = text[:m.start()].count('\n') + 1
+        para = m.group(0).strip()
+        if len(para) < _JEV_AI_TONE_MIN_CHARS:
+            continue
+        head = para.lstrip()[:2]
+        if head[:1] in ('#', '-', '*', '|', '>', '`') or para.startswith('!['):
+            continue
+        if re.match(r'\d+[.、]', head):
+            continue
+        out.append((start, para))
+    return out[:_JEV_AI_TONE_MAX_PARAS]
+
+
+def jev_ai_tone_is_hit(noul) -> bool:
+    """阈值单一真源；测试用边界反例守住。"""
+    return noul is not None and float(noul) >= _JEV_AI_TONE_MIN
+
+
+def _jev_anti_ai_second_opinion(text: str, regex_lines: set, *, jev=None, deadline: float = None) -> dict:
+    """逐段问 Jev「这段是 AI 腔」，与正则结论对照记台账，返回汇总（不改任何正则结论）。
+
+    :param regex_lines: 正则（A 档 + B 档）命中的行号集合，用于给每段算 baseline
+    :return: {'mode', 'total', 'scored', 'errors', 'jev_hits', 'baseline_hits', 'agree',
+              'new_hits': [{'line', 'noul', 'excerpt'}], 'elapsed_s'} ；未启用返回 {'mode': 'off', ...}
+    """
+    import concurrent.futures as cf
+    import time
+    paras = jev_ai_tone_paragraphs(text)
+    summary = {'mode': 'off', 'total': len(paras), 'scored': 0, 'errors': 0, 'jev_hits': 0,
+               'baseline_hits': 0, 'agree': 0, 'new_hits': [], 'elapsed_s': 0.0}
+    if jev is None:
+        jev = _jev_client(_JEV_AI_TONE_SITE)
+    if jev is None or not paras:
+        return summary
+    summary['mode'] = jev.mode
+    deadline = _jev_deadline() if deadline is None else deadline
+
+    def _para_lines(start, para):
+        return range(start, start + para.count('\n') + 1)
+
+    def _one(start, para):
+        baseline = 'hit' if any(ln in regex_lines for ln in _para_lines(start, para)) else 'clean'
+        meta = {'line': start, 'excerpt': para[:60], 'baseline': baseline}
+        try:
+            r = jev.ask(state={'paragraph': para[:1500]}, questions=_JEV_AI_TONE_QUESTIONS, meta=meta, log=False)
+        except Exception as exc:  # noqa: BLE001  单条异常只算这条失败
+            return {'line': start, 'error': f'{type(exc).__name__}: {exc}', 'baseline': baseline}
+        if not r.ok:
+            return {'line': start, 'error': r.error, 'baseline': baseline}
+        noul = r.noul('ai_tone', 0.0)
+        hit = jev_ai_tone_is_hit(noul)
+        jev.log(r, {**meta, 'jev': 'hit' if hit else 'clean', 'noul': round(noul, 3)})
+        return {'line': start, 'noul': round(noul, 3), 'hit': hit, 'baseline': baseline, 'excerpt': para[:40]}
+
+    t0 = time.time()
+    results = []
+    with cf.ThreadPoolExecutor(8) as ex:
+        futs = [ex.submit(_one, s, p) for s, p in paras]
+        try:
+            for f in cf.as_completed(futs, timeout=deadline):
+                results.append(f.result())
+        except cf.TimeoutError:
+            pass
+        for f in futs:
+            if not f.done():
+                f.cancel()
+    ok = [r for r in results if 'error' not in r]
+    summary['elapsed_s'] = round(time.time() - t0, 1)
+    summary['scored'] = len(ok)
+    summary['errors'] = len(paras) - len(ok)
+    summary['jev_hits'] = sum(1 for r in ok if r['hit'])
+    summary['baseline_hits'] = sum(1 for r in ok if r['baseline'] == 'hit')
+    summary['agree'] = sum(1 for r in ok if r['hit'] == (r['baseline'] == 'hit'))
+    summary['new_hits'] = sorted(
+        ({'line': r['line'], 'noul': r['noul'], 'excerpt': r['excerpt']}
+         for r in ok if r['hit'] and r['baseline'] == 'clean'),
+        key=lambda d: -d['noul'])
+    return summary
+
+
 def verify_anti_ai_blacklist(article_path: str) -> dict:
     """
     B-主门：确定性 AI 腔黑名单硬验证。只问「固定套话字符串出现了吗」。
@@ -2148,13 +2293,33 @@ def verify_anti_ai_blacklist(article_path: str) -> dict:
     if excl > 5:
         warnings.append(f'感叹号 {excl} 个（>5）：考虑用反问替代部分感叹')
 
-    return {
+    result = {
         'verdict': 'fail' if errors else 'ok',
         'errors': errors,
         'warnings': warnings,
         'hard_hits': len(errors),
-        'soft_hits': len(warnings),
+        'soft_hits': len(warnings),   # 只数正则；Jev 第二意见另计在 'jev'，不改这个数
     }
+
+    # Jev 第二意见：只报不拦。shadow 只落 'jev' 字段与台账；enforce 才把新增命中追加进 warnings（仍不阻塞）。
+    # 任何异常都吞掉——这道门是硬门，旁挂绝不能让它因网络问题红。
+    try:
+        regex_lines = set()
+        for msg in errors + warnings:
+            m = re.match(r'\[L~(\d+)\]', msg)
+            if m:
+                regex_lines.add(int(m.group(1)))
+        # 只问作者正文：DEEP READ / SOURCES / 音频卡等尾部模板块不是作者的话（回放里 14 条新增命中有 5 条是它们）。
+        # 截的是前缀，行号与上面的 [L~n] 仍同一口径；正则扫描范围不变。
+        jev = _jev_anti_ai_second_opinion(_strip_for_scan(_cut_endmatter(raw)), regex_lines)
+        result['jev'] = jev
+        if jev.get('mode') == 'enforce':
+            for h in jev['new_hits']:
+                warnings.append(f"[L~{h['line']}] Jev 第二意见（只报不拦）：疑似 AI 腔 p={h['noul']:.2f}"
+                                f"「{h['excerpt']}…」→ 建议：换具体画面/数字/亲历细节，或确认是有意为之")
+    except Exception as exc:  # noqa: BLE001
+        result['jev'] = {'mode': 'error', 'error': f'{type(exc).__name__}: {exc}'}
+    return result
 
 
 # ===== 【第 12 节】B-软门 风格信号 =====

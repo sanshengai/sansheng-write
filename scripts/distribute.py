@@ -47,6 +47,15 @@ from profile_config import (  # noqa: E402
     distribute_config,
     using_example_profile,
 )
+# Jev 第二意见（2026-09-22，站点 write.distribute.xhs_risk，见 _ops/jev/README.md）：只走统一客户端；
+# 接入层被整体删除 / 依赖缺失时 JevClient=None，导流硬门与接入前完全一致（关键词）。
+_JEV_DIR = SCRIPTS_DIR.parent.parent.parent / "_ops" / "jev"
+if (_JEV_DIR / "client.py").is_file() and str(_JEV_DIR) not in sys.path:
+    sys.path.insert(0, str(_JEV_DIR))
+try:
+    from client import JevClient  # noqa: E402
+except Exception:  # noqa: BLE001
+    JevClient = None
 
 # ===== 【第 1 节】渠道注册表 =====
 #
@@ -550,6 +559,59 @@ def xhs_divert_hits(text: str) -> list[str]:
     return hits
 
 
+# Jev 第二意见：关键词之外再问一道 Noul「文案是否含站外导流」。**只报不拦**——硬门的
+# problems 永远只由关键词决定；Jev 命中而关键词没命中的，shadow 只记台账，enforce 打一行提示。
+_JEV_XHS_SITE = "write.distribute.xhs_risk"
+_JEV_XHS_MIN = 0.5          # Noul ≥ 此值 = Jev 认为含站外导流
+_JEV_XHS_QUESTIONS = {
+    "divert": {
+        "type": "noul",
+        "instructions": "这段小红书文案是否含站外导流：明写或暗示微信号、公众号、外部链接、二维码、"
+                        "私信/加好友、看主页、去别处搜账号、进群领资料等把读者引到小红书之外或私域的内容。"
+                        "只提及产品/项目名、评论区互动、书名、平台通用词不算导流。",
+    },
+}
+
+
+def xhs_divert_is_hit(noul) -> bool:
+    """阈值单一真源；测试用边界反例守住。"""
+    return noul is not None and float(noul) >= _JEV_XHS_MIN
+
+
+def _jev_xhs_client():
+    """拿到已启用的客户端；任何原因拿不到都返回 None（fail-open，走关键词）。"""
+    if JevClient is None:
+        return None
+    try:
+        jev = JevClient(_JEV_XHS_SITE)
+    except Exception:  # noqa: BLE001  未登记 / 登记表坏 → 走原路径
+        return None
+    return jev if jev.enabled else None
+
+
+def xhs_divert_second_opinion(text: str, keyword_hits: list[str], *, jev=None, article: str = "") -> dict | None:
+    """问 Jev 一次并记台账（baseline=关键词是否命中，jev=Noul 是否命中）。
+    返回 {mode, noul, hit, baseline_hit, new_hit}；未启用 / 调用失败返回 None。永不抛异常。"""
+    try:
+        if jev is None:
+            jev = _jev_xhs_client()
+        if jev is None:
+            return None
+        baseline = "hit" if keyword_hits else "clean"
+        meta = {"article": article, "excerpt": text.strip()[:60], "baseline": baseline,
+                "keyword_hits": list(keyword_hits)[:6]}
+        r = jev.ask(state={"copy": text[:3000]}, questions=_JEV_XHS_QUESTIONS, meta=meta, log=False)
+        if not r.ok:
+            return None
+        noul = r.noul("divert", 0.0)
+        hit = xhs_divert_is_hit(noul)
+        jev.log(r, {**meta, "jev": "hit" if hit else "clean", "noul": round(noul, 3)})
+        return {"mode": jev.mode, "noul": round(noul, 3), "hit": hit,
+                "baseline_hit": bool(keyword_hits), "new_hit": hit and not keyword_hits}
+    except Exception:  # noqa: BLE001  旁挂绝不能让 verify 崩
+        return None
+
+
 def xhs_char_count(text: str) -> float:
     """小红书官方字数算法：中文 / emoji / 中文标点 = 1，英文数字 = 0.5，空格不计。
 
@@ -688,6 +750,12 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
                     "含站外导流风险：" + "、".join(divert)
                     + "。小红书 2026-06 起间接导流同样违规（扣分不清零），"
                       "见 distribute.md「引流策略」——这一路只做认知，不做引流")
+            # Jev 第二意见（只报不拦）：problems 不因它变；enforce 下只打一行提示
+            jev_op = xhs_divert_second_opinion(
+                f"{parsed['title']}\n{parsed['body']}", divert, article=article_dir.name)
+            if jev_op and jev_op["mode"] == "enforce" and jev_op["new_hit"]:
+                print(f"[distribute] ℹ️ Jev 第二意见（只报不拦）：文案疑似含站外导流 p={jev_op['noul']:.2f}，"
+                      "关键词未命中；发布前自查一遍", file=sys.stderr)
         else:
             bmax = cons.get("body_max", 5000)
             total = len(parsed["body"].replace("\n", "").strip())

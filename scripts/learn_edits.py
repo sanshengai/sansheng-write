@@ -45,6 +45,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import profile_config as pc  # noqa: E402
+# Jev 第二意见（2026-09-22，站点 write.learn.voice_sample，见 _ops/jev/README.md）：只走统一客户端；
+# 接入层被整体删除 / 依赖缺失时 JevClient=None，灌库判断与接入前完全一致（difflib）。
+_JEV_DIR = SKILL_DIR.parent.parent / "_ops" / "jev"
+if (_JEV_DIR / "client.py").is_file() and str(_JEV_DIR) not in sys.path:
+    sys.path.insert(0, str(_JEV_DIR))
+try:
+    from client import JevClient  # noqa: E402
+except Exception:  # noqa: BLE001
+    JevClient = None
 # 飞轮状态归 profile 层（配置了 profile 时在 <profile>/flywheel/，随私有仓版本化；
 # 未配置时回退仓根空壳——复核 B-4：个人数据不写 git 跟踪文件、不再依赖 skip-worktree）
 LESSONS_FILE = pc.dynamic_path(pc.lessons_file)
@@ -69,6 +78,80 @@ _VOICE_HEADER = (
 #       天然规避「教坏声纹」）。纯函数挑选与文件写入分离，便于回归测试。
 _VOICE_PROMOTE_HI = 0.92   # 与某 draft 段相似度 ≥ 此值 = 基本没改（AI 原段）→ 不收
 _VOICE_MIN_CHARS = 50      # 太短的段不够承载声音特征（按中文校准：~50 字≈完整一两句，更短多是碎片/口号）
+_JEV_VOICE_SITE = "write.learn.voice_sample"
+_JEV_VOICE_MIN = 0.5       # Noul ≥ 此值 = Jev 认为 final 是作者实质改写/新写
+_JEV_VOICE_QUESTIONS = {
+    "substantive_rewrite": {
+        "type": "noul",
+        "instructions": "final 相对 draft 是作者的实质改写或新写——措辞、句式、内容有实质变化，"
+                        "或 draft 与 final 根本不是同一段（全新段落）。只改错别字、标点、空格、"
+                        "格式符号、个别同义词替换的不算实质改写。",
+    },
+}
+
+
+def _jev_voice_is_rewrite(noul):
+    """阈值单一真源；测试用边界反例守住。"""
+    return noul is not None and float(noul) >= _JEV_VOICE_MIN
+
+
+def _jev_voice_client():
+    """拿到已启用的客户端；任何原因拿不到都返回 None（fail-open，走 difflib）。"""
+    if JevClient is None:
+        return None
+    try:
+        jev = JevClient(_JEV_VOICE_SITE)
+    except Exception:  # noqa: BLE001  未登记 / 登记表坏 → 走原路径
+        return None
+    return jev if jev.enabled else None
+
+
+def _jev_voice_second_opinion(records, jev=None, deadline=None):
+    """对每条 (final 段, 最近 draft 段, difflib 相似度, difflib 是否入选) 问一次 Jev，
+    记台账（baseline=difflib 决策，jev=Jev 决策）。返回 {final 段索引: Jev 是否入选}；
+    未启用 / 失败的条目不在返回里，调用方按 difflib 走。"""
+    import concurrent.futures as cf
+    import os
+    if jev is None:
+        jev = _jev_voice_client()
+    if jev is None or not records:
+        return {}
+    if deadline is None:
+        try:
+            deadline = float(os.environ.get("SANSHENG_WRITE_JEV_DEADLINE", "45"))
+        except ValueError:
+            deadline = 45.0
+
+    def _one(idx, rec):
+        fp, dp, best, selected = rec
+        meta = {"idx": idx, "excerpt": fp[:60], "difflib": round(best, 3),
+                "baseline": "select" if selected else "skip"}
+        try:
+            r = jev.ask(state={"draft": dp[:1500], "final": fp[:1500]},
+                        questions=_JEV_VOICE_QUESTIONS, meta=meta, log=False)
+        except Exception:  # noqa: BLE001  单条异常只算这条失败，回退 difflib
+            return idx, None
+        if not r.ok:
+            return idx, None
+        noul = r.noul("substantive_rewrite", 0.0)
+        decided = _jev_voice_is_rewrite(noul)
+        jev.log(r, {**meta, "jev": "select" if decided else "skip", "noul": round(noul, 3)})
+        return idx, decided
+
+    out = {}
+    with cf.ThreadPoolExecutor(8) as ex:
+        futs = [ex.submit(_one, i, rec) for i, rec in enumerate(records)]
+        try:
+            for f in cf.as_completed(futs, timeout=deadline):
+                idx, decided = f.result()
+                if decided is not None:
+                    out[idx] = decided
+        except cf.TimeoutError:
+            pass
+        for f in futs:
+            if not f.done():
+                f.cancel()
+    return out
 
 
 def _split_paragraphs(text):
@@ -99,26 +182,46 @@ def _is_voice_sample(para):
     return True
 
 
-def _select_voice_candidates(draft_text, final_text, hi=_VOICE_PROMOTE_HI):
-    """纯函数：从 draft→final 挑出作者实质改写 / 新写的散文段（声纹候选）。
-    对每个 final 散文段，取它与所有 draft 段的最高相似度 best：
-      best ≥ hi → 基本没动（AI 原段，作者没改）→ 不收，避免教坏声纹；
-      best < hi → 改写过 / 全新（draft 找不到近似）→ 收（final 已是作者的声音）。"""
+def _score_voice_paragraphs(draft_text, final_text, hi=_VOICE_PROMOTE_HI):
+    """纯函数（difflib 原路径）：对每个 final 散文段算与 draft 的最高相似度。
+    返回 [(final 段, 最近的 draft 段, best, 是否入选)]，入选 = best < hi。"""
     draft_paras = _split_paragraphs(draft_text)
     out = []
     for fp in _split_paragraphs(final_text):
         if not _is_voice_sample(fp):
             continue
-        best = 0.0
+        best, closest = 0.0, ""
         for dp in draft_paras:
             r = difflib.SequenceMatcher(None, dp, fp).ratio()
             if r > best:
-                best = r
+                best, closest = r, dp
                 if best >= hi:
                     break
-        if best < hi:
-            out.append(fp)
+        out.append((fp, closest, best, best < hi))
     return out
+
+
+def _select_voice_candidates(draft_text, final_text, hi=_VOICE_PROMOTE_HI, jev=None):
+    """从 draft→final 挑出作者实质改写 / 新写的散文段（声纹候选）。
+    对每个 final 散文段，取它与所有 draft 段的最高相似度 best：
+      best ≥ hi → 基本没动（AI 原段，作者没改）→ 不收，避免教坏声纹；
+      best < hi → 改写过 / 全新（draft 找不到近似）→ 收（final 已是作者的声音）。
+    Jev 第二意见：shadow 只记台账对照、入选结果与上面完全一致；enforce 才按 Jev 判
+    「是否实质改写」，Jev 失败的条目回退 difflib。"""
+    records = _score_voice_paragraphs(draft_text, final_text, hi)
+    decisions = [selected for _, _, _, selected in records]
+    if records:
+        try:
+            if jev is None:
+                jev = _jev_voice_client()
+            if jev is not None:
+                override = _jev_voice_second_opinion(records, jev)
+                if jev.enforce:
+                    for idx, decided in override.items():
+                        decisions[idx] = decided
+        except Exception:  # noqa: BLE001  旁挂绝不能让灌库崩
+            pass
+    return [rec[0] for rec, keep in zip(records, decisions) if keep]
 
 
 def _append_voice_paragraphs(paras, source_label, today):

@@ -17,3 +17,9 @@ os.environ["SANSHENG_WRITE_DATA_DIR"] = _TEST_DATA
 os.environ["SANSHENG_WRITE_WORKS_FILE"] = str(Path(_TEST_DATA) / "works.yaml")
 os.environ["SANSHENG_WRITE_FLYWHEEL_DIR"] = _TEST_DATA
 os.environ["SANSHENG_WRITE_GOLDEN_LINES_FILE"] = str(Path(_TEST_DATA) / "golden-lines.md")
+# Jev 第二意见（_ops/jev 接入层）：测试默认关掉、台账落临时目录、不读真机 env 文件。
+# 维护者本机 shell 里有 TYPESAFE_API_KEY，不钉死的话 contracts / learn_edits / evidence /
+# distribute 的既有测试会真打网络。需要验证接入的测试用 monkeypatch 显式打开。
+os.environ["JEV_ENABLED"] = "0"
+os.environ["JEV_ENV_FILE"] = str(Path(_TEST_DATA) / "no-jev.env")
+os.environ["JEV_LEDGER_DIR"] = str(Path(_TEST_DATA) / "jev-ledger")
