@@ -5,6 +5,7 @@
 ## [未发布]
 
 **新增**
+- **重点段（整段强调）**：正文里不带标签、不带出处的 `> 整段话` 由 `format_layout.py::process_callout` 转成强调卡（主题色 4px 左竖条 + 浅主题底 + 右侧圆角，正文字号不加粗）；最后一行以 `--` 开头的引用块转成金句卡（与 `quote-card.html` 同款）。此前普通引用块沿用 baoyu 的 `#f7f7f7` 灰底 / 6px 圆角 / 0.1em 字距，与「划重点」不同族。`> **导读：**` 与 `> **划重点**` 不受影响。写法与配额见 `references/writing.md` §视觉节奏标记「重点段」；测试 `tests/test_process_callout.py`。
 - `scripts/recover_images_from_wechat.py`：从已发布的公众号页面找回文章目录里缺失的正文图（下载 → 对照表 → 按序号映射落盘转 webp）。
 - **双音频核验容忍作者在微信侧缩短标题 / 删掉一两张图**（`release_to_draft.py`）：与 2.2 时代的正文小幅手改同精神——只在人工插音频之后的草稿 / 正式文章两条核验路里生效，标题相似度 ≥ 0.8 或纯删/纯增 ≤ 4 字放行、图片须是草稿回执的顺序子序列且最多少 2 张，全部记进回执 `title_drift` / `image_drift`；换标题、换图、加图、换序、删太多仍拦，首次 draft/get 读回不吃容忍。起因：第 103 篇作者把「（限时免费）」改成「（限免）」并删掉二维码图后发布，三道逐字门把 finalize 卡死。反例测试 8 条。
 - **Claude Code 后端的视觉复核适配器 `scripts/visual_qa_claude.py`**（默认）：与 `visual_qa_codex.py` 同一套验收合同（提示词 / schema / 逐项判据全部复用），每张图各起一个全新的 `claude -p --tools Read --add-dir <图目录>` 无头进程独立看图，默认 `claude-opus-5`，2 张图并发约 80 秒。起因：第 103 篇图 17:15 就渲好，复核却卡在 Codex 的 usage limit 上等了两小时 -- Claude 自己就能看图，只是不能生图，这道闸不该依赖别家额度。失败也返回 0、`_visual-qa.raw.json` 永远落盘，与 codex 版同语义；`references/visual-qa.md` 改为双后端说明。

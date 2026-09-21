@@ -1876,6 +1876,100 @@ def process_lead_quote(html):
 
 
 # ========================================
+# ===== 【第 15b 节】模块10b 重点段 / 金句卡 =====
+#  模块 10b: 剩余的普通 `>` 引用块 → 强调卡家族（重点段 / 金句卡）
+# ========================================
+def process_callout(html):
+    """把写作阶段的普通 `> 整段话` 引用块转换为「重点段」强调卡；带出处行的转「金句卡」。
+
+    写作阶段的 Markdown 格式（见 writing.md §视觉节奏标记）：
+      > 整段需要突出的重点内容，作者自己的结论，一段，不带标签。      → 重点段
+      > 金句正文
+      > -- 出处                                                       → 金句卡（quote-card.html 同款）
+
+    baoyu 转换后是 <blockquote style="...background:#f7f7f7..."><p>…</p></blockquote>，
+    灰底 + 主题色左竖条、radius 6px、letter-spacing 0.1em，与 design-tokens 的强调卡
+    家族（TINT_CARD 浅底 + 4px 主色左竖条 + 右侧 RADIUS_CARD 圆角）不一致。这里统一
+    重绘成同一家族，让「划重点」「重点段」「金句卡」三兄弟视觉一致。
+
+    跳过：「导读」引用块（process_lead_quote 已处理、有自己的语义）；已含组件标记的块。
+    幂等：转换后不再有 <blockquote>，重复执行自然 no-op。
+    """
+    MARKER = '<!-- CALLOUT -->'
+    QUOTE_MARKER = '<!-- QUOTE_CARD -->'
+    pattern = re.compile(r'<blockquote[^>]*>([\s\S]*?)</blockquote>', re.IGNORECASE)
+    converted = 0
+    quotes = 0
+
+    def _inner_html(p_tag):
+        # 去掉 <p ...> 外壳，保留 <strong>/<span>/<mark> 等内联标记
+        return re.sub(r'^<p[^>]*>|</p>$', '', p_tag.strip(), flags=re.IGNORECASE).strip()
+
+    def replace_bq(m):
+        nonlocal converted, quotes
+        block = m.group(0)
+        inner = m.group(1)
+        if MARKER in block or QUOTE_MARKER in block:
+            return block
+        text_plain = re.sub(r'<[^>]+>', '', inner)
+        # 导读引用块保留（有独立语义与 14px 样式）
+        if re.match(r'\s*导读', text_plain.strip()):
+            return block
+        # 含列表 / 标题的块不是重点段（划重点已在 process_takeaway 转走；其余原样保留）
+        if re.search(r'<(ul|ol|h[1-6])[\s>]', inner, re.IGNORECASE):
+            return block
+
+        paras = re.findall(r'<p[^>]*>[\s\S]*?</p>', inner, re.IGNORECASE)
+        parts = [_inner_html(x) for x in paras] if paras else [inner.strip()]
+        # baoyu 把 `> 第一行\n> 第二行` 合成一个 <p> 用 <br> 断行 → 按 <br> 再拆
+        lines = []
+        for part in parts:
+            lines.extend(x.strip() for x in re.split(r'<br\s*/?>', part, flags=re.IGNORECASE) if x.strip())
+        if not lines:
+            return block
+
+        last_plain = re.sub(r'<[^>]+>', '', lines[-1]).strip()
+        is_quote = len(lines) >= 2 and re.match(r'^(--|—|―|——|-)\s*\S', last_plain) is not None
+
+        if is_quote:
+            attribution = lines[-1]
+            body = '<br>'.join(lines[:-1])
+            attribution = re.sub(r'^(<[^>]+>)*\s*(--|—|―|——|-)\s*', r'\1-- ', attribution, count=1)
+            card = (
+                f'{QUOTE_MARKER}\n'
+                f'<section style="margin:24px 8px;border-left:4px solid {BRAND_PRIMARY};'
+                f'background:{TINT_CARD};border-radius:0 {RADIUS_CARD} {RADIUS_CARD} 0;padding:15px 18px;">\n'
+                f'<section style="font-size:16px;font-weight:700;line-height:1.9;letter-spacing:.02em;'
+                f'color:{TEXT_TITLE};">{body}</section>\n'
+                f'<section style="margin-top:12px;padding-top:9px;border-top:1px solid rgba(47, 111, 143,0.14);'
+                f'text-align:right;font-size:12px;color:{TEXT_MUTED};letter-spacing:.04em;">{attribution}</section>\n'
+                f'</section>'
+            )
+            quotes += 1
+            return card
+
+        # 重点段：整段作者结论，正文字号、稍深字色、不加粗（整块已是强调，不再叠加）
+        body = '<br>'.join(lines)
+        card = (
+            f'{MARKER}\n'
+            f'<section style="margin:24px 8px;border-left:4px solid {BRAND_PRIMARY};'
+            f'background:{TINT_CARD};border-radius:0 {RADIUS_CARD} {RADIUS_CARD} 0;padding:15px 18px;">\n'
+            f'<section style="font-size:15px;line-height:1.9;letter-spacing:.02em;'
+            f'text-align:left;color:{TEXT_TITLE};">{body}</section>\n'
+            f'</section>'
+        )
+        converted += 1
+        return card
+
+    new_html = pattern.sub(replace_bq, html)
+    if converted or quotes:
+        log(f"✅ 已转换 {converted} 处「重点段」强调卡、{quotes} 处「金句卡」")
+    else:
+        log("⏭️ 未发现需转换的重点段 / 金句引用块")
+    return new_html
+
+
+# ========================================
 # ===== 【第 16 节】模块11 微信兼容微调 =====
 #  模块 11: 微信兼容性微调（图片圆角 + <p> 强制 color）
 # ========================================
@@ -2445,6 +2539,7 @@ def run(args):
                           getattr(args, 'lists', False),
                           getattr(args, 'highlights', False),
                           getattr(args, 'lead_quote', False),
+                          getattr(args, 'callout', False),
                           getattr(args, 'stat', False),
                           getattr(args, 'steps', False),
                           getattr(args, 'compare', False),
@@ -2475,6 +2570,8 @@ def run(args):
             html = process_lists(html)
         if args.all or getattr(args, 'lead_quote', False):
             html = process_lead_quote(html)
+        if args.all or getattr(args, 'callout', False):
+            html = process_callout(html)
         if args.all or args.h2:
             # H2 固定 PART 编号格式
             part_subs = getattr(args, 'part_subtitles', None)
@@ -2553,6 +2650,7 @@ def main():
     parser.add_argument("--table", action="store_true", help="表格品牌化（绿头/列宽/字号）")
     parser.add_argument("--lead", action="store_true", help="注入导读栏")
     parser.add_argument("--lead-quote", action="store_true", help="导读引用块字号调整（--all 时自动执行）")
+    parser.add_argument("--callout", action="store_true", help="普通 `>` 引用块 → 重点段强调卡 / 带出处行 → 金句卡（--all 时自动执行）")
     parser.add_argument("--footer", action="store_true", help="注入推荐阅读+关注卡片")
     parser.add_argument("--colors", action="store_true", help="品牌色全局清洗")
     parser.add_argument("--prompts", action="store_true", help="清除 AI 生图提示词残留")

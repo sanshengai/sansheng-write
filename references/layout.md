@@ -71,6 +71,8 @@ python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 
 金句卡不加装饰性引号；出处行使用发丝线和弱化右对齐。
 
+正文里剩余的普通 `>` 引用块由 `format_layout.py --all`（`process_callout`）自动转成同族强调卡：不带出处行的是「重点段」（整段强调，正文字号不加粗），最后一行以 `--` 开头的是金句卡（`quote-card.html` 同款）。`> **导读：**` 与 `> **划重点**` 各有自己的转换，不受影响。
+
 ### 文末双模块合同
 
 - `DEEP READ` 与 `SOURCES` 是两件事，禁止合并：前者负责“读者接下来去哪”，后者负责

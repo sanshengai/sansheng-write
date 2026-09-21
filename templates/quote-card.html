@@ -24,6 +24,10 @@
   - 单篇加粗口号式金句 ≤2（与 craft-techniques.md §金句节拍器禁令一致）
 
   变量：{{QUOTE}} = 金句正文； {{ATTRIBUTION}} = 出处（如「-- 查理·芒格 ·《穷查理宝典》」）
+
+  自动路径（2026-09-22）：正文里 `> 金句` + `> -- 出处` 的引用块由 format_layout.py::process_callout
+  直接渲染成本样式；不带出处行的 `> 整段话` 渲染成同族「重点段」（正文字号、不加粗）。
+  本模板保留给排版阶段手工嵌入的场景，两条路径样式必须一致。
 -->
 <section style="margin:24px 8px;border-left:4px solid #2F6F8F;background:rgba(47, 111, 143,0.05);border-radius:0 10px 10px 0;padding:15px 18px;">
 <section style="font-size:16px;font-weight:700;line-height:1.9;letter-spacing:.02em;color:#26333a;">{{QUOTE}}</section>
