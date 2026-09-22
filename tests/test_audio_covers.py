@@ -24,18 +24,21 @@ def article(tmp_path, name="106-Jev入门与应用"):
 
 def plan(root, **changes):
     data = {
-        "schema_version": 2,
+        "schema_version": 3,
         "theme_cover": {
             "subject": "一封信悬在三个空托盘上方，正落向中间那个",
             "lyric_anchor": "三个托盘摆在面前",
             "article_anchor": "邮件先进入工具，模型分类以后由程序接着处理。",
             "palette": "ocean",
+            "identity": {"anchor": "Jev", "route": "名字字面义", "reason": "歌名就是 Jev 的选择题，三个托盘即三个选项"},
         },
         "podcast_cover": {
-            "subject": "一枚齿轮咬着一枚更小的齿轮，小的那枚是信封形状",
+            "subject": "一只信封正被放进三格分拣架中间那一格，那一格刻着 J",
             "article_anchor": "模型分类以后由程序接着处理。",
             "palette": "ember",
             "render": "flat",
+            "identity": {"anchor": "Jev", "route": "标号", "reason": "标题首词是 Jev，J 字分拣格直接对上"},
+            "glyph": "J",
         },
     }
     data.update(changes)
@@ -70,10 +73,11 @@ def test_icon_prompts_have_one_subject_palette_and_no_text(tmp_path, monkeypatch
     theme, podcast_prompt = prompts
     assert "Jev 的选择题" in theme and "三个托盘摆在面前" in theme and "正落向中间那个" in theme
     assert "deep navy" in theme and "aqua cyan" in theme and covers.RENDERS["sculpted"] in theme
-    assert "信封形状" in podcast_prompt and "warm amber" in podcast_prompt and covers.RENDERS["flat"] in podcast_prompt
+    assert "分拣架" in podcast_prompt and "warm amber" in podcast_prompt and covers.RENDERS["flat"] in podcast_prompt
     assert theme != podcast_prompt
+    assert "Strictly no text" in theme and 'ONLY legible characters in the whole image are "J"' in podcast_prompt
     for prompt in prompts:
-        assert "ONE subject only" in prompt and "Strictly no text" in prompt and "64 pixels" in prompt
+        assert "ONE subject only" in prompt and "64 pixels" in prompt and 'think of "Jev"' in prompt
         assert "Display title" not in prompt and "Render the supplied display title" not in prompt
         assert "a quiet desk at dawn" not in prompt
 
@@ -92,7 +96,9 @@ def test_meta_and_multiline_frontmatter_are_loaded(tmp_path):
     "missing_plan", "empty_plan", "old_schema", "empty_body", "wrong_anchor", "short_anchor",
     "empty_subject", "long_subject", "list_subject", "text_subject", "generic_prop",
     "missing_lyric", "lyric_not_in_brief", "bad_palette", "same_palette", "same_subject",
-    "bad_render", "legacy_scene_field",
+    "bad_render", "legacy_scene_field", "old_schema_2", "missing_identity", "anchor_not_in_title",
+    "podcast_anchor_only_in_song", "bad_route", "short_reason", "metaphor_prop", "long_glyph",
+    "glyph_not_in_title",
 ])
 def test_invalid_plan_never_calls_renderer(tmp_path, monkeypatch, failure):
     root = article(tmp_path)
@@ -135,6 +141,28 @@ def test_invalid_plan_never_calls_renderer(tmp_path, monkeypatch, failure):
         theme["render"] = "photoreal"
     elif failure == "legacy_scene_field":
         theme["scene"] = "窗边书桌"
+    elif failure == "old_schema_2":
+        data["schema_version"] = 2
+    elif failure == "missing_identity":
+        del theme["identity"]
+    elif failure == "anchor_not_in_title":
+        theme["identity"]["anchor"] = "Opus"
+    elif failure == "podcast_anchor_only_in_song":
+        podcast["identity"]["anchor"] = "选择题"
+    elif failure == "bad_route":
+        theme["identity"]["route"] = "意境"
+    elif failure == "short_reason":
+        theme["identity"]["reason"] = "像"
+    elif failure == "metaphor_prop":
+        podcast["subject"] = "一块价签从中间剪开，两半错开"
+    elif failure == "long_glyph":
+        podcast["glyph"] = "Jev处理"
+    elif failure == "glyph_not_in_title":
+        podcast["glyph"] = "K"
+    if failure in ("podcast_anchor_only_in_song", "metaphor_prop", "long_glyph", "glyph_not_in_title"):
+        manifest = root / covers.PODCAST_MANIFEST
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("{}")
     if failure not in ("missing_plan", "empty_plan"):
         path.write_text(json.dumps(data, ensure_ascii=False))
     prompts = renderer(monkeypatch)
@@ -151,6 +179,7 @@ def test_generic_prop_allowed_when_lyric_or_article_actually_has_it(tmp_path, mo
         "lyric_anchor": "台灯下只剩三个托盘",
         "article_anchor": "邮件先进入工具，模型分类以后由程序接着处理。",
         "palette": "ocean",
+        "identity": {"anchor": "Jev", "route": "名字字面义", "reason": "歌名就是 Jev 的选择题，托盘即选项"},
     })
     prompts = renderer(monkeypatch)
     ready, errors = covers.ensure_audio_covers(root)
@@ -212,3 +241,29 @@ def test_thumb_sheet_lays_out_site_sizes_and_skips_invalid_images(tmp_path):
     assert sheet.height == covers.THUMB_SIZES[0] + 18 + 24  # 一行：只有有效的那张
     assert sheet.width > sum(covers.THUMB_SIZES)
     assert covers.write_thumb_sheet(root, [broken]) is None
+
+
+def test_metaphor_prop_allowed_when_title_literally_names_it(tmp_path, monkeypatch):
+    root = article(tmp_path, name="109-天平")
+    (root / "定稿.md").write_text("# Jev 天平实验\n\n邮件先进入工具，模型分类以后由程序接着处理。\n", encoding="utf-8")
+    data = plan(root)
+    data["podcast_cover"]["subject"] = "一架天平，左盘放着一只信封"
+    data["podcast_cover"].pop("glyph")
+    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    podcast = root / covers.PODCAST_MANIFEST
+    podcast.parent.mkdir(parents=True)
+    podcast.write_text("{}")
+    renderer(monkeypatch)
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and len(ready) == 2
+
+
+def test_glyph_subject_may_describe_its_letters(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    data = plan(root)
+    data["theme_cover"]["subject"] = "三个托盘中间那个上浮雕着 Jev 三个字母"
+    data["theme_cover"]["glyph"] = "Jev"
+    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    renderer(monkeypatch)
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and len(ready) == 1
