@@ -155,7 +155,7 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 3. 创建微信草稿；拿到 `media_id` 后立即写 `_release-attempt.json`。
 4. 调微信官方 `draft/get` 读回。
 5. 比对标题、摘要、作者、阅读原文、评论设置、正文规范化摘要、图片数量、上传后的图片地址、推广链接与封面 media ID。
-6. 全部一致才写 v2 `_publish-receipt.json` 并把 publish 标为 done；若含音频卡，同时写 `_wechat-audio-handoff.json`，绑定草稿 ID、两份音频路径与 SHA-256。
+6. 全部一致才写 v2 `_publish-receipt.json` 并把 publish 标为 done；若含音频卡，同时写 `_wechat-audio-handoff.json`，绑定草稿 ID、两份音频路径与 SHA-256。🔴 **同时落朋友圈文案基线**（2026-09-23 作者要求）：命令成功后已写 `_moments-copy.md` 基线。Agent 必须当场按 publish.md §朋友圈内容协议改写、写回，并在**报告「已进草稿箱」的同一条回复**里逐字给出，作者可直接复制。不等永久链接——文案本来就不放文章链接行；`finalize` 续跑时保留已改写的终稿。
 读回失败时保留 attempt；同一 ready digest 重试只读回原草稿，不重复创建。产物发生变化后才会开启新 attempt。
 草稿回读通过后运行 `pipeline.py handoff-assets`，先补齐主题曲封面 / 播客封面（`audio_covers.py`，缺哪张生成哪张，写在文章编号文件夹第一层），再把主题曲（歌名原文件名）、`播客 | {文章标题}.mp3`、`cover.png`、`音乐封面.png`、`播客封面.png` 放在同一层。交付直接链接文章目录，不另建“手工上传”目录，也不要把这两张音频封面放进 `素材/`。机器副本 `dist/podcast/audio.mp3` 和发布回执留在原位。详见 `music.md`「上传文件统一放在文章文件夹」。🔴 **主仓镜像（2026-09-18）**：文章在 git worktree 里生产时，同一命令会自动把第一层上传文件、`素材/作者素材/`、`素材/视频/` 与 `dist/podcast/` 产物镜像到 `SANSHENG_WRITE_ARCHIVE_DIR/<同名目录>/`（作者只在那里找成品；这些文件被 `.gitignore` 挡住，合回主线带不过去）。同哈希跳过、不同内容不覆盖并报错、`--no-mirror` 可关。**回复里给作者的路径一律是主仓路径**，worktree 路径只在说明过程时提。
 ## 6. 人工正式发布与自动收尾

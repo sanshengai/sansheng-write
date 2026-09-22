@@ -40,7 +40,6 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from profile_config import distribute_channel  # noqa: E402
 import distribute  # noqa: E402
-from article_paths import podcast_filename  # noqa: E402
 
 POLL_INTERVAL = 30
 POLL_TIMEOUT = 1800          # 30 分钟。长文比晨报慢，20 分钟不够。
@@ -271,16 +270,27 @@ def _extract_id(payload, *keys: str) -> str:
 
 
 def _safe_stem(text: str) -> str:
-    """旧的短 slug。新的作者可见文件名走 ``podcast_filename``，不再用它。"""
-    cleaned = re.sub(r'[/\\:*?"<>|]', "", text).strip()
+    """服务器与 RSS 用的短 slug：无空格、无 shell / URL 特殊字符。"""
+    cleaned = re.sub(r'[/\\:*?"<>|\'`$;&()\[\]{}!#]', "", text).strip()
     cleaned = re.sub(r"\s+", "-", cleaned)
     return cleaned[:40] or "episode"
 
 
+def remote_episode_stem(title: str, day: str | None = None) -> str:
+    """远端文件名 = 日期 + 短 slug。
+
+    作者可见的「播客 | 标题.mp3」只用于本地上传交接，不能当远端名：
+    OpenSSH 9+ 的 scp 默认走 SFTP，不经远端 shell，引号会原样进路径
+    （2026-09-23 第 108 篇上传失败）；空格和 ``|`` 进 RSS enclosure URL 也不干净。
+    """
+    return f"{day or datetime.now().strftime('%Y-%m-%d')}-{_safe_stem(title)}"
+
+
 def scp_remote(host: str, remote_dir: str, filename: str) -> str:
-    """远端路径交给 scp 时必须加引号，否则空格和 ``|`` 会被远端 shell 拆开。"""
-    remote_path = str(PurePosixPath(remote_dir) / filename)
-    return f"{host}:{shlex.quote(remote_path)}"
+    """不加 shell 引号（SFTP 模式会把引号当字面量）；文件名必须已是安全 slug。"""
+    if re.search(r"[\s'\"|`$;&]", filename):
+        raise ValueError(f"远端文件名含空白或 shell 特殊字符：{filename!r}")
+    return f"{host}:{PurePosixPath(remote_dir) / filename}"
 
 
 # ===== generate =====
@@ -617,8 +627,9 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
         return 2
 
     title = distribute.read_final_title(article_dir)
-    audio_name = podcast_filename(title)
-    sidecar_name = f"{audio_name[:-4]}.json"
+    stem = remote_episode_stem(title)
+    audio_name = f"{stem}.mp3"
+    sidecar_name = f"{stem}.json"
     log(f"远端文件名：{audio_name} (+ .json)")
 
     if not confirm:

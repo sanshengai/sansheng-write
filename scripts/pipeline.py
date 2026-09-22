@@ -4159,6 +4159,13 @@ def cmd_release_to_draft(cwd: Path) -> None:
             print(f"   • {role['label']} ← {role['source']}")
         print("   保存后运行自动核验，无需作者确认试听：")
         print("   pipeline.py wechat-audio-check")
+    # 2026-09-23 作者要求：推到草稿箱的同一条汇报里就交付朋友圈文案，
+    # 不等永久链接（文案本来就不放文章链接行）。这里只落基线；Agent 须按
+    # publish.md §朋友圈内容协议改写、写回，再在同一条回复里逐字给出。
+    # finalize 续跑时会保留已改写的终稿，不会冲回基线。
+    _write_moments_copy(cwd, "")
+    print("📣 朋友圈文案：按 publish.md §朋友圈内容协议改写 _moments-copy.md，"
+          "并在本次草稿汇报里逐字交付给作者（可直接复制）。")
 
 
 def cmd_wechat_audio_check(cwd: Path, *, confirm_audition: bool = False) -> None:
