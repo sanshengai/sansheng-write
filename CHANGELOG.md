@@ -4,6 +4,8 @@
 
 ## [未发布]
 
+## [2.4.0] -- 2026-09-22
+
 **新增**
 - **重点段（整段强调）**：正文里不带标签、不带出处的 `> 整段话` 由 `format_layout.py::process_callout` 转成强调卡（主题色 4px 左竖条 + 浅主题底 + 右侧圆角，正文字号不加粗）；最后一行以 `--` 开头的引用块转成金句卡（与 `quote-card.html` 同款）。此前普通引用块沿用 baoyu 的 `#f7f7f7` 灰底 / 6px 圆角 / 0.1em 字距，与「划重点」不同族。`> **导读：**` 与 `> **划重点**` 不受影响。写法与配额见 `references/writing.md` §视觉节奏标记「重点段」；测试 `tests/test_process_callout.py`。
 - `scripts/recover_images_from_wechat.py`：从已发布的公众号页面找回文章目录里缺失的正文图（下载 → 对照表 → 按序号映射落盘转 webp）。
