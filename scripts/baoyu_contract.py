@@ -24,6 +24,11 @@ import os
 import re
 from pathlib import Path
 
+try:
+    from .baoyu_locator import find_skill_dir
+except ImportError:  # pragma: no cover - direct script execution
+    from baoyu_locator import find_skill_dir
+
 INFOGRAPHIC_SKILL = "baoyu-infographic"
 ARTICLE_SKILL = "baoyu-article-illustrator"
 
@@ -58,24 +63,17 @@ def _search_roots() -> list[Path]:
     return roots
 
 
-def _cache_globs(name: str) -> list[str]:
-    return [
-        f".codex/plugins/cache/baoyu-skills/**/skills/{name}",
-        f".claude/plugins/cache/baoyu-skills/**/skills/{name}",
-    ]
-
-
 def resolve_skill_dir(name: str) -> Path:
     """定位 Baoyu 能力目录；找不到即硬失败。"""
     for root in _search_roots():
         candidate = root / name
         if (candidate / "SKILL.md").is_file():
             return candidate
-    home = Path.home()
-    for pattern in _cache_globs(name):
-        for candidate in sorted(home.glob(pattern)):
-            if (candidate / "SKILL.md").is_file():
-                return candidate
+    # 兜底交给 baoyu_locator：先 installed_plugins.json 的现役版本，再缓存按 mtime；
+    # 缓存目录名是 hash，绝不能 sorted() 取尾（09-22 实证选中旧版）
+    located = find_skill_dir(name)
+    if located is not None:
+        return located
     raise BaoyuContractError(
         f"未找到 Baoyu 能力 {name}：视觉链要求它真实可读。"
         f"请确认它已进入共享真源（如 ~/Cowork/skills/{name}）并完成四端接线。"

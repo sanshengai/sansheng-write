@@ -41,10 +41,12 @@ def ensure_wechat_proxy_bypass(env: dict[str, str] | None = None) -> dict[str, s
 
 try:
     from .audio_cards import locate_theme_audio_record
+    from .baoyu_locator import find_skill_dir
     from .evidence import stable_digest
     from .profile_config import brand
 except ImportError:  # pragma: no cover - direct script execution
     from audio_cards import locate_theme_audio_record
+    from baoyu_locator import find_skill_dir
     from evidence import stable_digest
     from profile_config import brand
 
@@ -1187,17 +1189,8 @@ def _find_skill_dir(name: str, explicit_env: str) -> Path | None:
     if explicit:
         path = Path(explicit).expanduser()
         return path if path.is_dir() else None
-    home = Path.home()
-    patterns = [
-        f".codex/plugins/cache/baoyu-skills/**/skills/{name}",
-        f".claude/plugins/cache/baoyu-skills/**/skills/{name}",
-        f".agents/skills/{name}",
-    ]
-    candidates = []
-    for pattern in patterns:
-        candidates.extend(home.glob(pattern))
-    valid = [path.resolve() for path in candidates if path.is_dir()]
-    return max(valid, key=lambda path: path.stat().st_mtime) if valid else None
+    # 现役版本以 installed_plugins.json 为准，不在缓存里按 mtime 猜（见 baoyu_locator）
+    return find_skill_dir(name)
 
 
 def _bun_command(entrypoint: Path) -> tuple[list[str] | None, list[str]]:

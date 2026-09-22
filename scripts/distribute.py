@@ -42,6 +42,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import profile_config as pc  # noqa: E402
+from baoyu_locator import find_skill_script  # noqa: E402
 from profile_config import (  # noqa: E402
     distribute_channel,
     distribute_config,
@@ -911,8 +912,9 @@ def _dispatch_assisted(article_dir: Path, channel: str) -> int:
 def resolve_post_script(channel: str, cfg: dict) -> Path | None:
     """解析该渠道的发布脚本路径。
 
-    profile 显式配置优先；微博没配时在 baoyu 插件缓存里递归找 weibo-post.ts
-    —— 那个目录名带版本 hash，插件一升级就变，写死必然失效。
+    profile 显式配置优先；微博没配时按 baoyu_locator 的优先级找 weibo-post.ts
+    —— 插件缓存目录名是版本 hash，会同时留多份，不能写死也不能按名字排序
+    （09-22 实证字典序选中了没打补丁的旧版）。
     """
     explicit = str(cfg.get("post_script") or "").strip()
     if explicit:
@@ -920,16 +922,7 @@ def resolve_post_script(channel: str, cfg: dict) -> Path | None:
         return p if p.is_file() else None
 
     if channel == "weibo":
-        roots = (
-            Path.home() / ".claude" / "plugins" / "cache" / "baoyu-skills",
-            Path.home() / ".codex" / "plugins" / "cache",
-        )
-        found: list[Path] = []
-        for cache in roots:
-            if cache.is_dir():
-                found.extend(cache.rglob("weibo-post.ts"))
-        if found:
-            return sorted(found)[-1]
+        return find_skill_script("baoyu-post-to-weibo", "scripts/weibo-post.ts")
     return None
 
 

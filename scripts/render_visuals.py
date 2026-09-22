@@ -21,6 +21,11 @@ from typing import Any
 import yaml
 
 try:
+    from .baoyu_locator import installed_plugin_roots
+except ImportError:  # pragma: no cover - direct script execution
+    from baoyu_locator import installed_plugin_roots
+
+try:
     from .visual_workflow import VISUAL_PRODUCER
 except ImportError:  # pragma: no cover - direct script execution
     from visual_workflow import VISUAL_PRODUCER
@@ -255,11 +260,18 @@ def _candidate_renderer_dirs() -> list[Path]:
     patterns = [
         ".codex/plugins/cache/baoyu-skills/**/skills/baoyu-image-gen",
         ".claude/plugins/cache/baoyu-skills/**/skills/baoyu-image-gen",
-        ".agents/skills/baoyu-image-gen",
     ]
     candidates: list[Path] = list(direct_candidates)
+    candidates.append(home / ".agents/skills/baoyu-image-gen")
+    # 现役插件版本（installed_plugins.json）优先于缓存里的历史版本
+    for root in installed_plugin_roots(home):
+        candidates.append(root / "skills/baoyu-image-gen")
+    cached: list[Path] = []
     for pattern in patterns:
-        candidates.extend(home.glob(pattern))
+        cached.extend(p for p in home.glob(pattern) if p.is_dir())
+    # 缓存目录名是 hash，无顺序含义，只按 mtime 取新
+    cached.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates.extend(cached)
     resolved: list[Path] = []
     seen: set[Path] = set()
     for path in candidates:
