@@ -71,7 +71,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 改任何颜色/圆角前必读（视觉 SSOT，改一处全局生效） | design-tokens.md |
 | 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
-| 生成音乐 / BGM / 主题曲、改歌名歌词风格、主题曲或播客封面（先按本文主题规划，歌曲 150–210 秒；MiniMax 手动生成，Lyria 暂停） | music.md |
+| 生成音乐 / BGM / 主题曲、改歌名歌词风格、主题曲或播客封面（封面按图标逻辑：无文字、单主体、深底调色板，看 46 px 缩略图验收；歌曲 150–210 秒；MiniMax 手动生成，Lyria 暂停） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链） | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |

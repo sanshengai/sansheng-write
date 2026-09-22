@@ -12,6 +12,7 @@
 - X 版适配文件 `定稿.x.md`：存在时 `x_article.py` 优先读它，公众号定稿不动，两份共用 `素材/`；receipt 记录实际用的源文件。`references/x-article.md` 新增「发前适配」七条与选篇 / 节奏规则。
 
 **修正**
+- **主题曲 / 播客封面改按图标逻辑出图**（`audio_covers.py`，`_audio-cover-plan.json` 升到 `schema_version: 2`）：两张封面在官网只有 46–66 px、微信音频卡也只是一小块，原来「场景 + 歌名 + 副标题」缩下去只剩一团暗色，101–105 篇还清一色书桌台灯落日窗。现在不放任何文字，只画一个居中占 2/3 的主体，深底 + 一个强调色（8 组固定调色板，两张不同、主题曲避开前三篇），主体必须从歌名 / 歌词句（`lyric_anchor`）或文章核心对象长出来；窗 / 台灯 / 书本 / 河船 / 落日 / 耳机 / 麦克风只有依据里真出现才放行，罗列多件、含文字类词、旧 `scene` / `display_title` 字段都拦。出图后写 `_audio-cover-thumbs.png`（256 / 128 / 64 / 46 px 一行），验收看它不看原图；`--thumbs` 可单独重排。
 - **作者上传的播客和两张音频封面改到文章编号文件夹第一层**。播客文件名是 `播客 | {文章标题}.mp3`（竖线保留）；主题曲封面是 `音乐封面.png`，播客封面是 `播客封面.png`。新生成不再写入 `素材/`。旧稿里的 `素材/bgm_cover.png`、`素材/podcast_cover.png` 仍能交付，并复制成上述文件名。feed 主机上的文件名与这一层相同，scp 对空格和竖线加引号。`dist/podcast/audio.mp3` 继续作为官网取字节的机器副本。
 - macOS 上三处本来就红的测试：`render_text_safe_visual.py` 字体不再写死 `C:\Windows\Fonts`，按角色给跨平台候选清单（微软雅黑 → 用户目录 Noto CJK → Hiragino / 黑体 → Linux Noto），`.ttc` 带字面索引；`profile_config.resolve_config_path` 对 `@workspace/C:/...` 与 UNC 后缀同时按 Windows 规则查盘符，Mac 与 Windows 得到同一结论；`setup.py` 缺 ruamel.yaml 只打印片段时不再收尾「已写入」（`_write_profile` 返回是否真写盘，补反例测试）。
 - 代码块里的空行不再变成空引用块（会被校验判成多余空块拒发）。
