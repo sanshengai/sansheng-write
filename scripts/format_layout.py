@@ -2296,6 +2296,21 @@ def write_layout_decision(cwd: str, meta: dict = None) -> None:
         log(f"⚠️ _layout-decision.md 生成跳过（不阻断）：{e}")
 
 
+def jev_shadow_lines(jev_summary) -> list:
+    """B-主门 Jev 第二意见的 shadow 可见行（2026-09-22 A4）。
+    只在 mode=shadow 且有打分时给：1 行汇总 + 最多 3 条「正则放行、Jev 命中」的分歧样本。
+    enforce 走 contracts 的 warnings 路径；off / error / 没打分 → 空列表。纯函数，不改任何门的结论。"""
+    if not isinstance(jev_summary, dict) or jev_summary.get('mode') != 'shadow' or not jev_summary.get('scored'):
+        return []
+    new_hits = jev_summary.get('new_hits') or []
+    lines = [f"ℹ️ B-主门影子：Jev 第二意见 {len(new_hits)} 段（只报）"
+             f" · 正则 {jev_summary.get('baseline_hits', 0)} vs Jev {jev_summary.get('jev_hits', 0)}"
+             f" · {jev_summary.get('scored')} 段一致 {jev_summary.get('agree', 0)}"]
+    for h in new_hits[:3]:
+        lines.append(f"   ℹ️ Jev 影子：clean vs hit p={h.get('noul', 0):.2f} [L~{h.get('line')}]「{h.get('excerpt', '')}…」")
+    return lines
+
+
 # ===== 【第 19 节】run() 主编排 · 契约门链 =====
 def run(args):
     target = args.file
@@ -2441,6 +2456,16 @@ def run(args):
                     log("ℹ️ 事实复核含待核实项 —— 发布前确认这些 claim 已改模糊表述或删除")
                 else:
                     log("ℹ️ 事实复核签名完整（复核模型 + 条目）；外部真伪核验靠异视野、非脚本可验")
+                # 条目格式（2026-09-22 B4）：`- [✓/△/✗/⚠️ 待核实] <claim> -- <证据>`，不合格只 WARNING 不阻断
+                try:
+                    from evidence import fact_check_format_warnings as _fc_fmt
+                    _fc_bad = _fc_fmt(_fc_txt)
+                except Exception:
+                    _fc_bad = []
+                if _fc_bad:
+                    log(f"⚠️ 事实复核条目格式不合格 {len(_fc_bad)} 条（不阻断；格式见 references/fact-check.md「条目格式」）")
+                    for _w in _fc_bad[:3]:
+                        log(f"   • {_w}")
 
         # B-主门：AI 腔黑名单硬验证（A 档命中即 exit 2）
         if verify_anti_ai_blacklist and os.path.exists(md_path):
@@ -2452,6 +2477,9 @@ def run(args):
                 sys.exit(2)
             for w in bl.get('warnings', []):
                 log(f"⚠️ B-主门软提示：{w}")
+            # Jev 影子可见（2026-09-22 A4）：shadow 下把第二意见打成软提示行，只报不拦、退出码不变
+            for _ln in jev_shadow_lines(bl.get('jev')):
+                log(_ln)
             # 诚实边界提示：B-主门只覆盖反例库约 60% 的显性套话
             log("ℹ️ B-主门只查显性 AI 套话，verdict=ok ≠ AI 味已清；语义类靠磨稿自查")
 

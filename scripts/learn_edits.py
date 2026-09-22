@@ -23,6 +23,7 @@ learn_edits.py — 写作闭环学习飞轮
 import argparse
 import datetime
 import difflib
+import re
 import sys
 import os
 from pathlib import Path
@@ -164,12 +165,40 @@ def _split_paragraphs(text):
     return out
 
 
+# ── 模板块排除（2026-09-22，Jev 第二轮 B2）────────────────────────────────────
+# 定稿里有几类机器写的 HTML 块：AUDIO-CARD / PODCAST-CARD（成对标记）、
+# SANSHENG-DEEP-READ / SANSHENG-SOURCES（单标记，其后到文末都是尾注区：推荐阅读 / 信源 / 关注卡）、
+# SANSHENG-VISUAL-START/END（配图块）。它们与 draft 的相似度天然很低，difflib 会当成「作者新写」收进声纹库。
+# 4 篇回放 6 条分歧里 4 条就是这个。两层排除：先把整段区间从 final 里剪掉，再逐段拦以 <!-- / <section 开头的块。
+_TEMPLATE_PAIRED_RES = (
+    re.compile(r"(?s)<!--\s*AUDIO-CARD-START\s*-->.*?<!--\s*AUDIO-CARD-END\s*-->"),
+    re.compile(r"(?s)<!--\s*PODCAST-CARD-START\s*-->.*?<!--\s*PODCAST-CARD-END\s*-->"),
+    re.compile(r"(?s)<!--\s*SANSHENG-VISUAL-START:(\d+)\s*-->.*?<!--\s*SANSHENG-VISUAL-END:\1\s*-->"),
+)
+_TEMPLATE_TAIL_RE = re.compile(r"(?s)<!--\s*SANSHENG-(?:DEEP-READ|SOURCES)\s*-->.*$")
+_HTML_BLOCK_HEADS = ("<!--", "<section", "<div", "<table", "<figure", "<p ", "<p>", "<img", "<a ", "<br")
+
+
+def _strip_template_zones(text):
+    """剪掉 final 里的模板区：成对标记之间的块、以及 DEEP-READ / SOURCES 标记之后的整个尾注区。
+    没有任何标记时原样返回（旧稿行为不变）。"""
+    if "<!--" not in text:
+        return text
+    out = text
+    for rx in _TEMPLATE_PAIRED_RES:
+        out = rx.sub("\n\n", out)
+    out = _TEMPLATE_TAIL_RE.sub("", out)
+    return out
+
+
 def _is_voice_sample(para):
-    """是否够格当声纹样本：实质散文，排除 标题/列表/表格/代码/引用/图片标记。"""
+    """是否够格当声纹样本：实质散文，排除 标题/列表/表格/代码/引用/图片标记/HTML 模板块。"""
     if len(para) < _VOICE_MIN_CHARS:
         return False
     head = para.lstrip()
     if head[:1] in ("#", "-", "*", ">", "|", "`") or head.startswith("!["):
+        return False
+    if head.startswith(_HTML_BLOCK_HEADS):   # 模板块 / 内嵌 HTML 不是作者的声音
         return False
     lines = [l for l in para.split("\n") if l.strip()]
     listy = sum(
@@ -187,7 +216,7 @@ def _score_voice_paragraphs(draft_text, final_text, hi=_VOICE_PROMOTE_HI):
     返回 [(final 段, 最近的 draft 段, best, 是否入选)]，入选 = best < hi。"""
     draft_paras = _split_paragraphs(draft_text)
     out = []
-    for fp in _split_paragraphs(final_text):
+    for fp in _split_paragraphs(_strip_template_zones(final_text)):
         if not _is_voice_sample(fp):
             continue
         best, closest = 0.0, ""

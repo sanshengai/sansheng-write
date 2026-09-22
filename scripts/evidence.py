@@ -698,10 +698,18 @@ _JEV_FACTCHECK_QUESTIONS = {
 }
 
 
+# 条目格式（references/fact-check.md「产出」节写死，2026-09-22 B4）：`- [✓/△/✗/⚠️ 待核实] <claim> -- <证据>`
+# 不合格 = 标记认不出 / 没有 ` -- ` 分隔 / claim 或证据为空。只报 warning 不阻断；
+# 没有分隔符的条目仍按句号兜底切给 Jev，但台账 meta 带 degraded（报表单列、不进一致率）。
+FACTCHECK_SEPARATOR = " -- "
+_FACTCHECK_DEGRADED_UNSPLIT = "claim_evidence_unsplit"
+
+
 def parse_fact_check_items(text: str) -> list[dict]:
-    """解析 _fact-check.md 的逐条：[{mark, claim, evidence, raw}]。
+    """解析 _fact-check.md 的逐条：[{mark, claim, evidence, raw, warning, degraded}]。
     mark 归一到 correct/attributed/wrong/need_verify；认不出的标记归 unknown（不喂 Jev）。
-    claim / evidence 按 ` -- ` 切；没有分隔符就按第一个句号切（实际产物两种写法都有）。"""
+    claim / evidence 按 ` -- ` 切；没有分隔符就按第一个句号切（旧产物两种写法都有），
+    这类条目 `degraded` 非空。`warning` 是该条不合格的原因（合格为 None），只报不阻断。"""
     items: list[dict] = []
     for m in _FACTCHECK_ITEM_RE.finditer(text):
         raw_mark = m.group("mark").strip()
@@ -710,17 +718,40 @@ def parse_fact_check_items(text: str) -> list[dict]:
             mark = "need_verify"
         else:
             mark = _FACTCHECK_MARKS.get(raw_mark, "unknown")
-        if " -- " in body:
-            claim, evidence = body.split(" -- ", 1)
+        degraded = None
+        if FACTCHECK_SEPARATOR in body:
+            claim, evidence = body.split(FACTCHECK_SEPARATOR, 1)
         elif " — " in body:
             claim, evidence = body.split(" — ", 1)
+            degraded = _FACTCHECK_DEGRADED_UNSPLIT
         else:
             parts = re.split(r"(?<=[。；])", body, maxsplit=1)
             claim = parts[0]
             evidence = parts[1] if len(parts) > 1 else ""
-        items.append({"mark": mark, "raw_mark": raw_mark, "claim": claim.strip(),
-                      "evidence": evidence.strip(), "raw": body})
+            degraded = _FACTCHECK_DEGRADED_UNSPLIT
+        claim, evidence = claim.strip(), evidence.strip()
+        problems = []
+        if mark == "unknown":
+            problems.append(f"标记 [{raw_mark}] 不在 ✓/△/✗/⚠️ 待核实 之内")
+        if degraded:
+            problems.append("claim 与证据没用 ` -- ` 分写")
+        if not claim:
+            problems.append("claim 为空")
+        if not evidence:
+            problems.append("证据为空")
+        items.append({"mark": mark, "raw_mark": raw_mark, "claim": claim,
+                      "evidence": evidence, "raw": body, "degraded": degraded,
+                      "warning": "；".join(problems) or None})
     return items
+
+
+def fact_check_format_warnings(text: str) -> list[str]:
+    """不合格条目的 warning 列表（每条一行，带条目序号与 claim 摘要）。空列表 = 全部合格。"""
+    out = []
+    for i, it in enumerate(parse_fact_check_items(text), 1):
+        if it["warning"]:
+            out.append(f"第 {i} 条：{it['warning']} —— {it['raw'][:40]}")
+    return out
 
 
 def _jev_factcheck_client():
@@ -767,6 +798,8 @@ def jev_factcheck_second_opinion(cwd: Path, *, jev=None, deadline: float | None 
 
         def _one(idx, it):
             meta = {"article": article, "idx": idx, "claim": it["claim"][:80], "baseline": it["mark"]}
+            if it.get("degraded"):
+                meta["degraded"] = it["degraded"]    # 条目没按 ` -- ` 分写：台账单列，不进一致率
             try:
                 r = jev.ask(state={"claim": it["claim"][:800], "evidence": it["evidence"][:1500]},
                             questions=_JEV_FACTCHECK_QUESTIONS, meta=meta, log=False)

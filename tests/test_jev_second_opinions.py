@@ -247,6 +247,34 @@ def test_parse_fact_check_items_marks_and_split():
     assert items[5]["evidence"].startswith("[证据]")
 
 
+def test_parse_fact_check_items_warns_on_nonconforming_but_never_raises():
+    """B4：不合格条目只报 warning；合格条目 warning=None。degraded 只标没用 ` -- ` 分写的。"""
+    items = evidence.parse_fact_check_items(FACT_MD)
+    assert items[1]["warning"] is None and items[1]["degraded"] is None            # 标准写法
+    assert items[3]["warning"] is None                                              # ⚠️ 待核实 + ` -- ` 也合格
+    assert items[0]["degraded"] == "claim_evidence_unsplit" and "` -- `" in items[0]["warning"]
+    assert items[2]["degraded"] == "claim_evidence_unsplit"
+    assert "标记 [L]" in items[4]["warning"]
+    assert items[5]["degraded"] == "claim_evidence_unsplit"
+    warns = evidence.fact_check_format_warnings(FACT_MD)
+    assert len(warns) == 4 and warns[0].startswith("第 1 条：")
+    # 反例：全部合格 → 空列表；证据为空也要报
+    good = "- [✓] A -- 对上官网\n- [△] B -- 当事方自述\n- [✗] C -- 实际应为 D\n- [⚠️ 待核实] E -- 搜不到\n"
+    assert evidence.fact_check_format_warnings(good) == []
+    assert "证据为空" in evidence.fact_check_format_warnings("- [✓] 只有 claim -- \n")[0]
+
+
+def test_factcheck_degraded_items_carry_marker_into_ledger(tmp_path):
+    """A3：条目没按 ` -- ` 分写 → 台账 meta 带 degraded；合格条目不带。"""
+    (tmp_path / "_fact-check.md").write_text(FACT_MD, encoding="utf-8")
+    fake = FakeJev(_fact_scorer, mode="shadow")
+    evidence.jev_factcheck_second_opinion(tmp_path, jev=fake)
+    by_claim = {r["claim"]: r for r in fake.rows}
+    assert by_claim["上下文 50 万，知识截止 2026 年 5 月。"]["degraded"] == "claim_evidence_unsplit"
+    assert "degraded" not in by_claim["版本号少了「.2」"]
+    assert "degraded" not in by_claim["使用者帖的浏览次数"]
+
+
 def _fact_scorer(state):
     ev = state["evidence"]
     if "写错" in ev or "写成 Grok Build" in ev:
