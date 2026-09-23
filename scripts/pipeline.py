@@ -167,7 +167,8 @@ STAGE_HINTS = {
         "  完成后：pipeline.py verify infographic"
     ),
     "bgm": (
-        "读取 references/music.md，先交付 MiniMax-主题曲生成单.md（歌名、主题、风格、完整歌词、导出要求）。\n"
+        "读取 references/music.md；MiniMax-主题曲生成单.md（歌名、主题、风格、完整歌词、导出要求）应在定稿接管后\n"
+        "  立即交付（作者生成音乐与配图并行），还没交付就马上补。\n"
         "  默认由作者在 MiniMax 网页手动生成，等待 MP3；Lyria 暂停，不调用或要求配置 Google Cloud。\n"
         "  收到音频后核实实际来源；作者指定复用既有成品时保留原来源。\n"
         "  用 music_manifest.py create 绑定实际文件、provider/model/mode 与注册表引用。\n"
@@ -892,8 +893,9 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
         return []
     name, anchor, desc = gate
     if name in cps and not (cwd / anchor).exists():
-        return [f"checkpoint:{name} 未过 -- {desc}，作者回复后把结论落 {anchor} 再继续"
-                f"（作者明说免检时写入『作者免检授权』放行）"]
+        return [f"checkpoint:{name} 未过 -- {desc}；作者回复后运行 "
+                f"pipeline.py approve {name} --words \"<作者原话>\" 生成 {anchor} 再继续"
+                f"（作者明说免检时用 --source-mode checkpoint-waived）"]
     if name == "blueprint" and name in cps:
         text = (cwd / anchor).read_text(encoding="utf-8")
         if "作者免检授权" not in text:
@@ -2743,13 +2745,40 @@ def cmd_visual_contract(cwd: Path) -> None:
     print("\n# Prompt 正文同时保留：暖米黄/浅色调/哑光软黏土/柔和漫射光。")
 
 
-def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = ""):
+def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = "", *,
+                words: str = "", fields: dict | None = None):
+    """封存作者审批；给了 ``words`` 就先按作者原话生成审批锚点文件（审计 F1）。
+
+    审批文件不再由 Agent 手写：作者原话逐字引用、带北京时间与审批来源。封存失败时
+    把锚点文件恢复原样（新建的删除），不留下「文件写了、凭证没封」的半截状态。
+    """
+    from evidence import _NEGATIVE_WORDS, write_approval_anchor
+
+    anchor_path = previous = None
+    if words:
+        anchor_path, previous, errors = write_approval_anchor(
+            cwd, gate, words, source_mode=source_mode, fields=fields,
+        )
+        if errors:
+            print(f"❌ {gate} 审批文件未生成：")
+            for error in errors:
+                print(f"   • {error}")
+            raise SystemExit(2)
+        if re.search(_NEGATIVE_WORDS, words):
+            print("⚠️ 作者原话里有否定词；只有作者确实同意放行时才该用 approve 记录。")
     receipt, errors = write_checkpoint_receipt(cwd, gate, source_mode, note)
     if errors:
-        print(f"❌ {gate} 审批对象未就绪：")
+        if anchor_path is not None:
+            if previous is None:
+                anchor_path.unlink(missing_ok=True)
+            else:
+                anchor_path.write_bytes(previous)
+        print(f"❌ {gate} 审批对象未就绪" + ("（审批文件已回滚）" if anchor_path else "") + "：")
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
+    if anchor_path is not None:
+        print(f"📝 已按作者原话生成 {anchor_path.name}")
     print(
         f"✅ 已封存 {gate} 审批：source_mode={source_mode} "
         f"digest={receipt['artifact_digest'][:12]}"
@@ -4201,6 +4230,16 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
         "✅ 已接管作者定稿并生成 _release-job.json："
         f"job_id={job['job_id']}，scope={job['scope']}"
     )
+    try:
+        if "作者原话" not in (cwd / "_draft-approval.md").read_text(encoding="utf-8"):
+            print("⚠️ _draft-approval.md 没有「作者原话」记录；作者拍板后用 "
+                  "pipeline.py approve draft --words 逐字落盘，不再手写审批文件。")
+    except OSError:
+        pass
+    # 审计 F3：生成单在接管后立即交付，作者生成音乐与配图并行，不等配图做完。
+    if not (cwd / "MiniMax-主题曲生成单.md").exists() and not (cwd / "_music-manifest.json").exists():
+        print("🎵 下一步先交付 MiniMax-主题曲生成单.md（references/music.md），再开始配图——"
+              "作者生成音乐和配图并行。")
     prep = cwd / "_prep-context.md"
     if not prep.exists() or prep.stat().st_size == 0:
         # 审计 G3：写作前参考汇总由接管自动补齐，不再作为排版硬门。
@@ -4783,6 +4822,13 @@ def _main_impl():
         help="本次确认来源，避免把作者提供的定稿误记成新稿审批",
     )
     p_ap.add_argument("--note", default="", help="可选备注")
+    p_ap.add_argument("--words", default="",
+                      help="作者原话（逐字，不转述）；给出时先生成审批文件再封存")
+    p_ap.add_argument("--words-file", default="", help="作者原话较长时从文件读取")
+    p_ap.add_argument("--title", default="", help="作者指定标题（蓝图必填）")
+    p_ap.add_argument("--opening", default="", help="开头选择（蓝图必填）")
+    p_ap.add_argument("--outline", default="", help="大纲要点（蓝图必填）")
+    p_ap.add_argument("--cover-style", default="", help="封面风格（蓝图必填）")
 
     p_seal = sub.add_parser("seal", help="封存最终产物字节证据")
     p_seal.add_argument("kind", choices=["visual"])
@@ -5024,7 +5070,13 @@ def _main_impl():
     elif args.cmd == "visual-contract":
         cmd_visual_contract(cwd)
     elif args.cmd == "approve":
-        cmd_approve(args.gate, cwd, args.source_mode, args.note)
+        words = args.words
+        if args.words_file:
+            words = Path(args.words_file).read_text(encoding="utf-8")
+        cmd_approve(args.gate, cwd, args.source_mode, args.note, words=words, fields={
+            "title": args.title, "opening": args.opening,
+            "outline": args.outline, "cover_style": args.cover_style,
+        })
     elif args.cmd == "seal":
         cmd_seal(args.kind, cwd)
     elif args.cmd == "history":

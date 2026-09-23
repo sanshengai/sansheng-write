@@ -16,12 +16,13 @@
 ## 0. 接管作者定稿
 
 ```bash
+python "$SKILL/scripts/pipeline.py" approve draft --source-mode author-provided-final --words "<作者原话>"
 python "$SKILL/scripts/pipeline.py" adopt-final \
   --final 定稿.md --meta article-meta.yaml
 python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
-先把作者真实拍板记录保存在 `_draft-approval.md`，结论行明确为 `审批结论：通过`；`adopt-final` 只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录。缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。
+作者拍板后先用 `approve draft --words` 把作者原话逐字落成 `_draft-approval.md`（北京时间、审批来源、`审批结论：通过`；不再手写，封存失败自动回滚），再 `adopt-final`。接管只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录；缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。🔴 **接管成功就先交付 `MiniMax-主题曲生成单.md`**（2026-09-23 审计 F3，见 §3 第 2 步），再开始配图：作者生成音乐和 Agent 配图并行，不串行等。
 
 ## 1. 生成受限视觉任务单
 
@@ -90,7 +91,7 @@ Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后�
 ```bash
 python "$SKILL/scripts/pipeline.py" assemble-release
 ```
-2. 按 `music.md` 与 `templates/minimax-music-brief.template.md` 交付文章目录内的 `MiniMax-主题曲生成单.md`，给作者可点击路径。默认由作者在 MiniMax 网页手动生成；Lyria 暂停，不调用 `generate_article_bgm.py` 或要求 Google Cloud 登录。收到 MP3 后核实来源、创建并验证 `_music-manifest.json`，再用 `audio_cards.py` 插入 AUDIO-CARD。等待 MP3 时继续图片等独立工作，不伪造完成状态。
+2. 按 `music.md` 与 `templates/minimax-music-brief.template.md` 交付文章目录内的 `MiniMax-主题曲生成单.md`，给作者可点击路径——**这一步在 §0 接管成功时就做**，到这里只收 MP3。默认由作者在 MiniMax 网页手动生成；Lyria 暂停，不调用 `generate_article_bgm.py` 或要求 Google Cloud 登录。收到 MP3 后核实来源、创建并验证 `_music-manifest.json`，再用 `audio_cards.py` 插入 AUDIO-CARD。等待 MP3 时继续图片等独立工作，不伪造完成状态。
 3. 若 profile 显式配置 `podcast.wechat_embed: true`，立即运行 `pipeline.py podcast-pregen`：先插入同级 PODCAST-CARD，再生成 `dist/podcast/audio.mp3`。这是草稿前硬门，不得留到 `finalize`；未显式配置时保持历史主题曲单卡。
 4. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
 5. 运行：

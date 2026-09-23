@@ -1,6 +1,10 @@
 # 全流程自动驾驶
 
-适用于完整新文章的自动主链：从选题到微信草稿箱连续推进。先服从本轮约定终点；仅要大纲、正文、局部改稿或排版时，完成该产物即止，不为满足流水线创建后续阶段。执行主链时按检查点推进；主题曲使用手动交接，先完成生成单再等待作者提供 MP3，等待期间继续不依赖音频的工作。状态以 `.state.json` 为准。
+适用于完整新文章的自动主链：从选题到微信草稿箱连续推进。先服从本轮约定终点；仅要大纲、正文、局部改稿或排版时，完成该产物即止，不为满足流水线创建后续阶段。主题曲使用手动交接：定稿接管后先交付生成单，等待作者提供 MP3 期间继续不依赖音频的工作。
+
+## 默认路径：创作在对话里推进，作者拍板后接管定稿
+
+前半程（选题 → 大纲 → 正文 → 磨稿 → 双复核）按下面 1–4 的 reference 在对话里推进，产物落在文章目录，**不启用大纲 / 正文的状态机阶段**；作者每次拍板都用 `approve --words` 把原话逐字落盘（不手写审批文件），定稿拍板后 `adopt-final` 接管，进入 release-runtime.md 的机械链。这是实际在用的主路径；给大纲、正文阶段也记状态的完整模式见文末附录，可选。
 
 ## 启动
 
@@ -8,7 +12,7 @@
 python "$SKILL/scripts/pipeline.py" status
 ```
 
-先读 profile 上下文，再从最早 pending/dirty 阶段恢复。不要重做已通过且摘要未变化的阶段。
+先读 profile 上下文。已接管的文章从最早 pending/dirty 阶段恢复；还没接管的，从下面对应步骤继续。不要重做已通过且摘要未变化的阶段。
 
 ## 主流程
 
@@ -18,24 +22,16 @@ python "$SKILL/scripts/pipeline.py" status
      `templates/article-meta.template.yaml` 复制再改**，不要手写 —— 模板里带着
      `infographic_subject` / `visual_profile` / `tags` 受控词表这些必填项的注释，
      手写极易漏，而它们要到 `adopt-final` 才报错。
-   - 配置 blueprint 检查点时等待作者确认并执行 `approve blueprint`。
+   - 「大纲 + 5 套标题/封面方案 + 开头候选」一包交作者拍板。作者选定后：
 
-   🔴 **blueprint 锚点文件必须同时含下面六项**，缺一 `verify outline` 就拦
-   （作者明说免检时写「作者免检授权」整体放行）：
+     ```bash
+     python "$SKILL/scripts/pipeline.py" approve blueprint --source-mode new-draft \
+       --words "<作者原话>" --title "<选定标题>" --opening "<开头选择>" \
+       --outline "<大纲要点>" --cover-style montage-evidence
+     ```
 
-   | 锚点 | 判据 |
-   |---|---|
-   | 5 套标题+封面文案 | 文中出现 `方案 1` ~ `方案 5`；或写明「作者指定标题」 |
-   | 开头选择 | 含「开头」 |
-   | 大纲结论 | 含「大纲」 |
-   | 封面风格 | 含「封面风格」 |
-
-   （信息图主题/风格不再进闸门：全站固定 `claymation + warm-light-clay`，没有可选项。
-   旧版要求在这里声明视觉路由，而那个判断填错时全链无人校验 —— 路由已整体砍掉。）
-
-   审批结论另需单独一行 `审批结论：通过`（或「作者免检授权：免检」），且全文不得
-   出现「不通过 / 未通过 / 拒绝 / 驳回 / 不同意 / 尚未确认 / 待确认」——
-   出现任一即判 rejected。
+     命令按作者原话生成 `_blueprint-approval.md` 并封存；缺标题 / 开头 / 大纲 / 封面风格任一项直接拒绝。
+     作者明说免检时改用 `--source-mode checkpoint-waived`。
 2. **内容增强**
    - 按 `content-enhance.md` 补充案例、反例、类比和可验证事实。
 3. **正文**
@@ -51,28 +47,31 @@ python "$SKILL/scripts/pipeline.py" status
 4. **磨稿与双复核**
    - 运行反 AI 磨稿：读出声 → [polish-whitelist.md](polish-whitelist.md) 白名单减法 → `pipeline.py verify writing` + `audit_quant_signals` → anti-ai-filter 语义层 → 冷读/事实复核。不为像人加料。
    - 事实复核与语义冷读使用独立上下文，产出结构化记录。
-   - 配置 draft 检查点时等待作者确认并执行 `approve draft`。
-5. **定稿后的机械链**
+   - 定稿交作者审读；作者说通过后：
+
+     ```bash
+     python "$SKILL/scripts/pipeline.py" approve draft --source-mode author-provided-final \
+       --words "<作者原话>"
+     ```
+5. **接管定稿**
+
+   ```bash
+   python "$SKILL/scripts/pipeline.py" adopt-final --final 定稿.md --meta article-meta.yaml
+   ```
+
+   显式进入 `release-from-final` 模式，不是伪造写作历史。🔴 `adopt-final` **没有作者审批权**：
+   运行前必须已有 `审批结论：通过` 的 `_draft-approval.md`；缺失、拒绝或尚未确认都会原子失败，
+   不写 state、release job 或 checkpoint receipt。接管只读取并绑定审批文件 SHA 与定稿 subject，
+   绝不改写审批文件。接管成功就交付主题曲生成单（见下一步）。
+6. **定稿后的机械链**
    - 只读 [release-runtime.md](release-runtime.md) 并按命令顺序执行。
    - 视觉业务规划在本 Skill 内完成；外部 `baoyu-image-gen` 只渲染像素。
-   - BGM 是发布硬门。默认按 `music.md` 先交付 `MiniMax-主题曲生成单.md`（歌名、主题、风格提示词、完整歌词、导出要求），由作者在 MiniMax 网页生成；收到 MP3 后接入。Lyria 暂停，不自动调用或要求配置 Google Cloud。
+   - BGM 是发布硬门。默认按 `music.md` 交付 `MiniMax-主题曲生成单.md`（歌名、主题、风格提示词、完整歌词、导出要求），**定稿接管成功就交付，不等配图做完**，作者生成音乐和配图并行；收到 MP3 后接入。Lyria 暂停，不自动调用或要求配置 Google Cloud。
    - ⏱ **BGM 注入 AUDIO-CARD 后，启用了 `podcast.wechat_embed: true` 就立刻跑 `pipeline.py podcast-pregen`**。它先写入同级 PODCAST-CARD，再生成音频；随后才允许排版与草稿。未显式开启嵌入时，仍可预生成 RSS，但公众号保持单卡。
    - 固定首屏顺序是「导读 → 主题曲卡 → 播客卡 → 正文」；两卡同宽上下排列。
    - 草稿创建只运行 `release-to-draft`；作者人工插入两份微信原生音频后可直接正式发布，`finalize <永久链接>` 会先自动做正式文章双音频补验（发布前自检 `wechat-audio-check` 可选）。
 
-作者直接提供已确认定稿时，跳过 1--4，使用：
-
-```bash
-python "$SKILL/scripts/pipeline.py" adopt-final \
-  --final 定稿.md --meta article-meta.yaml
-```
-
-这不是伪造写作历史，而是显式进入 `release-from-final` 模式。
-
-🔴 `adopt-final` **没有作者审批权**。运行前必须已有真实 `_draft-approval.md`，
-且结论行明确写 `审批结论：通过`；缺失、拒绝或尚未确认都会原子失败，不写
-state、release job 或 checkpoint receipt。接管只读取并绑定审批文件 SHA 与
-定稿 subject，绝不改写审批文件；作者原话、返工原因和取舍记录继续留在原处。
+作者直接交来已确认的定稿时，跳过 1–4，从 `approve draft` 开始。
 
 ## 合同门要求 subagent，但当前运行时不给 subagent 时
 
@@ -86,15 +85,12 @@ state、release job 或 checkpoint receipt。接管只读取并绑定审批文�
 ## 合法停顿
 
 - 用户明确要求逐步确认。
-- blueprint/draft 检查点。
+- 等作者拍板大纲 / 定稿（blueprint / draft 检查点）。
 - 已交付完整 MiniMax 主题曲生成单，等待作者提供 MP3；这是人工素材交接，不是定稿重审或生成失败，不能把生成单算成已完成 BGM。
 - 缺凭证、权限、输入文件或外部服务不可用。
 - 非零合同门经同因重试三次仍失败。
 
 除此之外不因“下一步可能费时”停顿，也不把失败 stage 标成 done。
-检查点是唯一错误时，pipeline 记为 `waiting_author`（⏸），不记 `failed`、
-不累计 `fail_count`；`status` / `next` 会直接显示所需作者动作。拍板凭证通过后，
-状态自动转为 `done` 并清理等待字段。
 
 ## 并行
 
@@ -111,3 +107,22 @@ state、release job 或 checkpoint receipt。接管只读取并绑定审批文�
 ## 自动化边界
 
 自动流程止于微信草稿箱。原创声明、赞赏、正式发布和朋友圈实际发送由作者完成；拿到永久链接后，归档、官网同步和朋友圈文案生成可自动完成。
+
+## 附录：完整状态机模式（可选）
+
+需要给大纲、正文阶段也记状态时才用：`pipeline.py init` 建 state，大纲写完 `verify outline`、正文写完
+`done writing title_final='…'` 与 `verify writing`，拍板照样用上面的 `approve` 命令（`--source-mode new-draft`
+时定稿审批还要求 `_fact-check.md`、`_stutter-list.md`、`_draft-qc.md` 已就位）。profile 启用
+`workflow.checkpoints` 后，`verify outline` 要求蓝图锚点同时含下面四项（作者免检授权整体放行）：
+
+| 锚点 | 判据 |
+|---|---|
+| 5 套标题+封面文案 | 文中出现 `方案 1` ~ `方案 5`；或写明「作者指定标题」 |
+| 开头选择 | 含「开头」 |
+| 大纲结论 | 含「大纲」 |
+| 封面风格 | 含「封面风格」 |
+
+审批结论只看结论行（`审批结论：` / `作者免检授权：`）：结论行出现「不通过 / 未通过 / 拒绝 / 驳回 /
+不同意 / 尚未确认 / 待确认」即判 rejected；`approve --words` 生成的文件把作者原话放在引用块里，不参与判定。
+检查点是唯一错误时，pipeline 记为 `waiting_author`（⏸），不记 `failed`、不累计 `fail_count`；
+`status` / `next` 会直接显示所需作者动作，拍板凭证通过后自动转为 `done`。

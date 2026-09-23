@@ -425,7 +425,7 @@
 
 🔴 **每个标题候选带 2 字分类标签前缀**（`标签 | 正文标题`，如「精选 | …」）：出候选前先按裁决链 6 选 1 定 `outward_category` 并回填 `article-meta.yaml`，5 个候选统一带同一前缀盲选 -- 完整方法见 [title.md 第一步：定分类标签前缀](title.md)。
 
-> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 排序 + 推荐**，每个候选配 L1/L2 与 2--4 个可视化事实，组成 5 套配套方案；作者已明确指定标题时可标“作者指定标题”免候选。大纲、标题封面方案、开头候选一包交付：明写 `封面风格`（信息图风格不必写，全站固定 `claymation`）。作者确认后把这些字段全部落 `_blueprint-approval.md`；`pipeline.py verify outline` 查内容结构，不只查文件名。细则见 [autopilot.md §检查点闸门](autopilot.md)。
+> 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 排序 + 推荐**，每个候选配 L1/L2 与 2--4 个可视化事实，组成 5 套配套方案；作者已明确指定标题时可标“作者指定标题”免候选。大纲、标题封面方案、开头候选一包交付：明写 `封面风格`（信息图风格不必写，全站固定 `claymation`）。作者确认后运行 `pipeline.py approve blueprint --words "<作者原话>" --title … --opening … --outline … --cover-style …`，由命令生成 `_blueprint-approval.md`（不手写）。细则见 [autopilot.md](autopilot.md) 第 1 步。
 
 #### 信息图结构稿
 
@@ -683,7 +683,7 @@
 
 > 🔴 **默认"不弹菜单、直接续跑"：** 默认模式（含普通"写一篇文章"请求）**不再停下来给下面这个 1/2/3 选择菜单**，直接顺着进正文写作（沿用大纲顶部风格标签）→ 一路到草稿箱。本菜单**仅在作者明确说"我要逐步确认 / 每步等我"时**才弹。开头候选盲选（[writing.md §开头候选盲选]）仍是法定停顿点，但作者不在场 / 要一条龙时也取默认继续、不干等。
 >
-> 🔴 **blueprint 蓝图闸启用时以闸为准**（覆盖上一段的"直接续跑"）：大纲 + 5 套「标题+封面文案」配套方案 + 开头候选一包交付后**硬停等作者拍板**，不在场 = 等、不自动续跑；拍板落 `_blueprint-approval.md` 后闭门直奔定稿。见 [autopilot.md §检查点闸门](autopilot.md)。
+> 🔴 **blueprint 蓝图闸启用时以闸为准**（覆盖上一段的"直接续跑"）：大纲 + 5 套「标题+封面文案」配套方案 + 开头候选一包交付后**硬停等作者拍板**，不在场 = 等、不自动续跑；拍板用 `approve blueprint --words` 落盘后闭门直奔定稿。见 [autopilot.md](autopilot.md) 第 1 步。
 
 > 大纲落地后（**仅当作者要求逐步确认**），**主动**给出 3-5 个具体下一步，不要只输出大纲就停手 -- 让创作者明确选择路径，而不是茫然问"下一步呢？"。
 

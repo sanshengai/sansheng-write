@@ -12,6 +12,8 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
+> 🧭 **默认路径**：前半程（选题 → 大纲 → 正文 → 磨稿 → 双复核）在对话里按各 reference 推进，不启用大纲 / 正文状态机；作者每次拍板用 `pipeline.py approve blueprint|draft --words "<作者原话>"` 逐字落盘（不手写审批文件），定稿拍板后 `adopt-final` 接管、先交付主题曲生成单，再走 release-runtime.md 机械链。给前半程也记状态的完整模式是 autopilot.md 附录里的可选项。
+
 > **先确定本轮终点**：完整新文章任务按 autopilot.md 的自动主链推进；用户只要正文、大纲、局部改稿或排版时，完成指定产物即止，不进入后续生图、音频、归档或草稿箱事务。作者给确认定稿且要求制作发布材料/提交草稿箱时，才按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。显式配置 `podcast.wechat_embed: true` 时，公众号固定为「导读 → 主题曲卡 → 播客卡 → 正文」，两卡同级、同宽、上下排列；音频必须在草稿前生成。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。
 
 > ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
@@ -117,7 +119,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 - **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
 - **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md（关键入口：`adopt-final` → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 将上传文件放在文章目录第一层 → 人工插入双音频后正式发布（不要求确认试听） → `finalize <永久链接>`）。`finalize` 先用永久链接自动做正式文章双音频补验（官方已发表内容 API；返回 `48001` 时严格降级为官方公开页 + 原草稿回执证据链），发布前草稿读回 `wechat-audio-check` 只是可选自检；草稿被回收返回 `40007` 不得伪造任何凭证，细则见 release-runtime.md §6。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
+- **定稿后运行时**统一见 release-runtime.md（关键入口：`approve draft --words` → `adopt-final` → 交付 MiniMax 主题曲生成单 → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 将上传文件放在文章目录第一层 → 人工插入双音频后正式发布（不要求确认试听） → `finalize <永久链接>`）。`finalize` 先用永久链接自动做正式文章双音频补验（官方已发表内容 API；返回 `48001` 时严格降级为官方公开页 + 原草稿回执证据链），发布前草稿读回 `wechat-audio-check` 只是可选自检；草稿被回收返回 `40007` 不得伪造任何凭证，细则见 release-runtime.md §6。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
 
 ## 运行时数据文件（语料池，勿整段复制进上下文）
 

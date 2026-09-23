@@ -190,8 +190,8 @@ def adopt_final(
     approval_path = cwd / "_draft-approval.md"
     if not approval_path.exists():
         return None, [
-            "缺 _draft-approval.md：adopt-final 不得替作者自签；"
-            "请先把作者真实拍板记录写入该文件（审批结论：通过）"
+            "缺 _draft-approval.md：adopt-final 不得替作者自签；作者拍板后先运行 "
+            "pipeline.py approve draft --source-mode author-provided-final --words \"<作者原话>\""
         ]
     try:
         approval_bytes = approval_path.read_bytes()

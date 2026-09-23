@@ -5,9 +5,9 @@
 ## 发布主链
 
 1. 新文章必须经过 pipeline；不得手改 `.state.json`。
-2. 作者定稿进入机械链时先有真实 `_draft-approval.md`（`审批结论：通过`），再跑
+2. 作者定稿进入机械链时先用 `approve draft --words "<作者原话>"` 生成 `_draft-approval.md`（`审批结论：通过`，不手写），再跑
    `adopt-final`；接管只读并绑定审批 SHA/subject，禁止代签、覆写审批或伪造前半程审稿文件。
-3. BGM 是发布硬门；缺 MP3、AUDIO-CARD 或 `_music-manifest.json` 就没完成，`skip bgm` 被拒绝。默认先交付 MiniMax 手动生成单并等待 MP3，Lyria 自动通道暂停；硬门校验文件与真实来源，不绑定厂商；旧歌换播放通道时不得伪造其 provider/model 出身。
+3. BGM 是发布硬门；缺 MP3、AUDIO-CARD 或 `_music-manifest.json` 就没完成，`skip bgm` 被拒绝。默认在定稿接管成功后立即交付 MiniMax 手动生成单（作者生成音乐与配图并行）并等待 MP3，Lyria 自动通道暂停；硬门校验文件与真实来源，不绑定厂商；旧歌换播放通道时不得伪造其 provider/model 出身。
 4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与人工插入后的官方读回凭证同为发布硬门。**主路径是发布后补验**：`finalize` 拿永久链接自动生成独立的正式文章凭证——优先 `freepublish/batchget` + `freepublish/getarticle`；只有已发表内容 API 返回 `48001` 才可改用同一微信官方公开页 + 原官方草稿回执的显式证据链。发布前 `draft/get` 草稿读回（`wechat-audio-check`）是可选自检，只在补验不过且草稿仍在时兜底。两条路径都必须绑定双播放器身份与本地音频哈希；不要求作者确认试听，自动核验不过不得 `finalize` 收尾，也不得补写、复制或让两种凭证互相冒充。
 5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。截图密集的文章可在 `article-meta.yaml` 声明 `infographic_mode: author-shots`：信息图 ≥4 的合同改由「正文引用 ≥4 张作者供图且文件存在」兑现，`verify infographic` 仍会拒绝不达标的稿，这不是 skip。
 6. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。

@@ -572,11 +572,89 @@ def _semantic_draft_text(path: Path) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
 
 
+APPROVAL_ANCHORS = {
+    "blueprint": "_blueprint-approval.md",
+    "draft": "_draft-approval.md",
+}
+_NEGATIVE_WORDS = r"(?:不通过|未通过|拒绝|驳回|不同意|尚未确认|待确认)"
+
+
+def _beijing_now() -> str:
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
+    except Exception:  # noqa: BLE001 - 无时区库时退回 UTC 并标明
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def render_approval_anchor(gate: str, words: str, *, source_mode: str,
+                           fields: dict | None = None) -> tuple[str, list[str]]:
+    """按作者原话生成审批锚点文本（2026-09-23 审计 F1/F6）。
+
+    作者原话整段放进引用块逐字保存：引用行不参与审批结论判定，原话里偶然出现的
+    「不同意改标题」之类不会把整份审批判成否决；结论只由本函数写出的结论行决定。
+    蓝图与定稿用同一结构，口径一致。
+    """
+    fields = {k: str(v or "").strip() for k, v in (fields or {}).items()}
+    errors: list[str] = []
+    words = str(words or "").strip()
+    if not words:
+        errors.append("缺作者原话：--words 或 --words-file 必须给出作者的原始回复")
+    if gate not in APPROVAL_ANCHORS:
+        errors.append(f"未知审批闸：{gate}")
+    waived = source_mode == "checkpoint-waived"
+    if gate == "blueprint" and not waived:
+        required = {"title": "--title（作者指定标题）", "opening": "--opening（开头选择）",
+                    "outline": "--outline（大纲要点）", "cover_style": "--cover-style（封面风格）"}
+        missing = [flag for key, flag in required.items() if not fields.get(key)]
+        if missing:
+            errors.append(f"蓝图审批缺 {missing}")
+    if errors:
+        return "", errors
+    heading = "蓝图审批" if gate == "blueprint" else "定稿审批"
+    lines = [
+        f"# {heading}",
+        "",
+        f"> 由 `pipeline.py approve {gate}` 生成；「作者原话」逐字引用作者回复，未经转述。",
+        "",
+    ]
+    for key, label in (("title", "作者指定标题"), ("opening", "开头"),
+                       ("outline", "大纲要点"), ("cover_style", "封面风格")):
+        if fields.get(key):
+            lines += [f"{label}：{fields[key]}", ""]
+    lines += [f"作者原话（{_beijing_now()}，北京时间）：", ""]
+    lines += [f"> {line}" if line.strip() else ">" for line in words.splitlines()]
+    lines += ["", f"审批来源：{source_mode}"]
+    if gate == "draft":
+        lines += ["已批准文件：定稿.md"]
+    lines += [""]
+    lines += (["作者免检授权：免检", "审批结论：免检"] if waived else ["审批结论：通过"])
+    return "\n".join(lines) + "\n", []
+
+
+def write_approval_anchor(cwd: Path, gate: str, words: str, *, source_mode: str,
+                          fields: dict | None = None) -> tuple[Path | None, bytes | None, list[str]]:
+    """写审批锚点；已有旧文件时原文整段引用保留在新记录之后（不参与判定）。
+
+    返回 ``(路径, 旧文件字节或 None, 错误)``，调用方封存失败时据此回滚。
+    """
+    text, errors = render_approval_anchor(gate, words, source_mode=source_mode, fields=fields)
+    if errors:
+        return None, None, errors
+    path = Path(cwd) / APPROVAL_ANCHORS[gate]
+    previous = path.read_bytes() if path.is_file() else None
+    if previous is not None:
+        old = previous.decode("utf-8", errors="replace").rstrip("\n")
+        quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in old.splitlines())
+        text += (f"\n## 此前的审批记录（{_beijing_now()} 被上面的新确认取代；原文引用，不参与判定）\n\n"
+                 f"{quoted}\n")
+    path.write_text(text, encoding="utf-8")
+    return path, previous, []
+
+
 def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
-    names = {
-        "blueprint": "_blueprint-approval.md",
-        "draft": "_draft-approval.md",
-    }
+    names = APPROVAL_ANCHORS
     name = names.get(gate, "")
     path = Path(cwd) / name if name else None
     if not path or not path.exists():
