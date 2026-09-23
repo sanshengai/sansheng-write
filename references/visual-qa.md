@@ -8,7 +8,7 @@
 图不能由生成它的模型自己审 —— `visual_qa.py::validate_qa_result` 会拿 `reviewer.model`
 和 request 里所有 `generation.model` 求交集，撞上直接判不合格。
 
-skill **不给默认复核器**：谁来看图必须由使用者显式配置。自己指派一个复核器，
+skill **不会替你自动指派复核器**：谁来看图必须由使用者在 `SANSHENG_WRITE_VISUAL_QA_COMMAND` 显式配置。自己指派一个复核器，
 等于自己给自己发合格证。
 
 ## 接入契约
@@ -20,7 +20,7 @@ skill **不给默认复核器**：谁来看图必须由使用者显式配置。�
 进程正常退出即可，「复核不通过」不要用非零退出码表达 —— 把结论写进 JSON，
 交给 `visual_qa.py` 的校验器统一裁决，否则「进程炸了」和「图没过」两种语义会混在一起。
 
-## 现成适配器：`visual_qa_claude.py`（默认）/ `visual_qa_codex.py`
+## 现成适配器：`visual_qa_claude.py`（推荐配置）/ `visual_qa_codex.py`
 
 两个后端跑**同一套验收合同**（提示词、schema、逐项判据、信道自检全部从 codex 版复用），
 只有「看图的独立进程」不同。配置写进仓根 `.env`（与 profile 指针、各家 key 同一个配置面，

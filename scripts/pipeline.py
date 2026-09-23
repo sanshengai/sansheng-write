@@ -163,6 +163,7 @@ STAGE_HINTS = {
         f'⓪ python "{_skill_path("scripts/normalize_cjk_punctuation.py")}" 定稿.md'
         "（中文半角标点转全角，MD→HTML 前置；done writing 已自动跑过则 0 处、空跑）\n"
         "① /baoyu-skills:baoyu-markdown-to-html 定稿.md --theme default --color '#2F6F8F' --keep-title\n"
+        "     （#2F6F8F 是占位色，format_layout 会整体换成 profile 的 colors.primary；别改成品牌色，否则替换对不上）\n"
         "     🔴 必带 --keep-title：本 skill 正文无 H1（标题在 frontmatter），baoyu 默认会把首个 H2 当标题吃掉\n"
         "        → H2 少一个、format_layout 报「H2≠part_subtitles」退出（详见 layout.md，曾两次踩坑）\n"
         f'  ② python "{_skill_path("scripts/format_layout.py")}" 定稿.html --all \\\n'

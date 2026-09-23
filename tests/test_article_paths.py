@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from scripts.article_paths import podcast_filename
 import pytest
 
@@ -29,5 +31,29 @@ def test_scp_remote_rejects_names_that_need_shell_quoting():
 
 def test_remote_episode_stem_is_safe_for_the_108_title():
     stem = remote_episode_stem("资讯 | Opus 5.5 与 GPT-6 Sol 同夜发布：一个追 Fable，一个砍半价", "2026-09-23")
-    assert stem.startswith("2026-09-23-资讯-Opus-5.5")
+    assert stem.startswith("2026-09-23-Opus-5.5"), stem  # 分类前缀「资讯 | 」不进远端名
     scp_remote("root@example", "/var/www/podcast/episodes", f"{stem}.mp3")
+
+
+def test_scp_retries_once_then_succeeds(monkeypatch):
+    import scripts.podcast_episode as pe
+
+    calls = []
+
+    class R:
+        def __init__(self, rc):
+            self.returncode = rc
+
+    results = iter([R(1), R(0)])
+    monkeypatch.setattr(pe.subprocess, "run", lambda argv: calls.append(argv) or next(results))
+    monkeypatch.setattr(pe.time, "sleep", lambda _s: None)
+    assert pe._scp_with_retry("scp", Path("a.mp3"), "host:/x/a.mp3") is True
+    assert len(calls) == 2
+
+
+def test_scp_gives_up_after_attempts(monkeypatch):
+    import scripts.podcast_episode as pe
+
+    monkeypatch.setattr(pe.subprocess, "run", lambda argv: type("R", (), {"returncode": 1})())
+    monkeypatch.setattr(pe.time, "sleep", lambda _s: None)
+    assert pe._scp_with_retry("scp", Path("a.mp3"), "host:/x/a.mp3") is False

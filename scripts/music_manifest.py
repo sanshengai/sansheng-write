@@ -303,6 +303,26 @@ def duration_matches(declared: float, measured: float) -> bool:
     return abs(float(declared) - float(measured)) <= tolerance
 
 
+THEME_DURATION_TARGET = (150.0, 210.0)
+
+
+def theme_duration_hint(duration_seconds: float | None) -> str:
+    """主题曲时长超出生成单目标（150–210 秒）时给一句提示；只提示不拦截。
+
+    2026-09-23 第 108 篇主题曲 135 秒，全链没有任何提示（审计 V4）。要不要重生成由作者定。
+    """
+    if duration_seconds is None:
+        return ""
+    low, high = THEME_DURATION_TARGET
+    if duration_seconds < low:
+        return (f"主题曲 {duration_seconds:.0f} 秒，短于生成单目标 {low:.0f}–{high:.0f} 秒；"
+                "可接受就继续，想加长就在 MiniMax 让副歌多唱一遍后重新生成（不要剪辑拉长）")
+    if duration_seconds > high:
+        return (f"主题曲 {duration_seconds:.0f} 秒，长于生成单目标 {low:.0f}–{high:.0f} 秒；"
+                "可接受就继续，想缩短就重新生成（不要截断唱到一半的句子）")
+    return ""
+
+
 def _main() -> int:
     _configure_stdio()
     parser = argparse.ArgumentParser(
@@ -364,6 +384,9 @@ def _main() -> int:
         f"OK: {asset.relative_path} sha256={asset.sha256} "
         f"bytes={asset.bytes} duration={asset.duration_seconds:g}s"
     )
+    hint = theme_duration_hint(asset.duration_seconds)
+    if hint:
+        print(f"NOTE: {hint}")
     return 0
 
 

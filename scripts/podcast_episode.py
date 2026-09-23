@@ -283,7 +283,25 @@ def remote_episode_stem(title: str, day: str | None = None) -> str:
     OpenSSH 9+ 的 scp 默认走 SFTP，不经远端 shell，引号会原样进路径
     （2026-09-23 第 108 篇上传失败）；空格和 ``|`` 进 RSS enclosure URL 也不干净。
     """
-    return f"{day or datetime.now().strftime('%Y-%m-%d')}-{_safe_stem(title)}"
+    # 去掉「资讯 | 」这类分类前缀：它是公众号栏目标签，不是节目名，放进远端文件名只增加噪音。
+    bare = re.sub(r"^\s*[^|｜]{1,4}\s*[|｜]\s*", "", title or "", count=1) or title
+    return f"{day or datetime.now().strftime('%Y-%m-%d')}-{_safe_stem(bare)}"
+
+
+SCP_ATTEMPTS = 2
+SCP_RETRY_DELAY = 5
+
+
+def _scp_with_retry(scp: str, src: Path, remote: str, *, attempts: int = SCP_ATTEMPTS,
+                    delay: float = SCP_RETRY_DELAY) -> bool:
+    """scp 偶发网络抖动时重试一次；与 generate 对 NotebookLM 的重试对齐（审计 D4）。"""
+    for attempt in range(1, attempts + 1):
+        if subprocess.run([scp, str(src), remote]).returncode == 0:
+            return True
+        if attempt < attempts:
+            log(f"  … 上传失败，{delay:g} 秒后重试（{attempt}/{attempts}）")
+            time.sleep(delay)
+    return False
 
 
 def scp_remote(host: str, remote_dir: str, filename: str) -> str:
@@ -645,9 +663,8 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
     # 🔴 先传 sidecar 再传 mp3。反过来的话，两次传输之间若正好触发 feed 重建，
     # mp3 会被当成「无 sidecar 且文件名非纯日期」而静默跳过。
     for src, dst in ((side, sidecar_name), (mp3, audio_name)):
-        r = subprocess.run([scp, str(src), scp_remote(host, remote_dir, dst)])
-        if r.returncode != 0:
-            log(f"✗ 上传 {dst} 失败")
+        if not _scp_with_retry(scp, src, scp_remote(host, remote_dir, dst)):
+            log(f"✗ 上传 {dst} 失败（已重试 {SCP_ATTEMPTS} 次）")
             return 1
         log(f"  ✓ {dst}")
 

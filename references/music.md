@@ -209,7 +209,7 @@ python "$SKILL/scripts/pipeline.py" --dir "<文章目录>" handoff-assets
 | 播客 | `播客 \| {文章标题}.mp3`，标题用定稿标题，竖线保留 |
 | 播客封面 | `播客封面.png` |
 
-`handoff-assets` 先跑 `audio_covers.py` 缺哪张生成哪张（走 `renderer-policy.json` 同一条 baoyu-image-gen 链，不加水印，`--regenerate-covers` 才重生成），缺封面直接拒绝交付。新封面直接写在第一层，不写进 `素材/`。旧稿若只有 `素材/bgm_cover.png` 或 `素材/podcast_cover.png`，交付时复制成上表的文件名，不删旧文件。`dist/podcast/audio.mp3` 仍是官网和 RSS 取字节的机器副本；推到 feed 主机的文件名与第一层播客文件名相同。`素材/` 只放正文插图。
+`handoff-assets` 先跑 `audio_covers.py` 缺哪张生成哪张（走 `renderer-policy.json` 同一条 baoyu-image-gen 链，不加水印，`--regenerate-covers` 才重生成），缺封面直接拒绝交付。新封面直接写在第一层，不写进 `素材/`。旧稿若只有 `素材/bgm_cover.png` 或 `素材/podcast_cover.png`，交付时复制成上表的文件名，不删旧文件。`dist/podcast/audio.mp3` 仍是官网和 RSS 取字节的机器副本；推到 feed 主机时改用安全短名（`日期-标题 slug`，无空格、无竖线；OpenSSH 9+ 的 scp 走 SFTP，不经远端 shell），第一层的「播客 | 标题」只给作者上传用。`素材/` 只放正文插图。
 
 命令只读取封存视觉凭证和音频 manifest 指定的文件，验证后才交付，根目录写 `_handoff-receipt.json`；同一快照可重复运行，现有同名不同内容文件会报错，不静默覆盖正文或其他资产。旧 `SANSHENG_WRITE_HANDOFF_DIR` 配置不再自动生效。只有作者明确要求独立导出时才使用 `--target-root <目录>`，此模式保留 `--revision r2` 的版本快照能力。
 
