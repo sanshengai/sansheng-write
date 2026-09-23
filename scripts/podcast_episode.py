@@ -705,4 +705,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    from command_telemetry import run_observed
+    sys.exit(run_observed("podcast_episode", main))

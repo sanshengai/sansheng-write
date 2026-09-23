@@ -3865,6 +3865,16 @@ def cmd_preflight(cwd: Path) -> None:
             print(f"      {detail}")
     print("─" * 58)
 
+    try:
+        from contracts import log_observation
+        log_observation(
+            "preflight", "preflight_result", "fail" if fails else "ok",
+            "、".join(name for _lvl, name, _d in fails)[:200], article=cwd.name,
+            issue_codes=[name for _lvl, name, _d in fails],
+            metrics={"fails": len(fails), "warns": len(warns)},
+        )
+    except Exception:  # noqa: BLE001 - 自省日志不影响预检
+        pass
     if fails:
         print(f"❌ {len(fails)} 项需要修复，{len(warns)} 项提示")
         print("   这些都是纯静态问题，现在改比等排版/发布阶段被打回省得多。")
@@ -4369,7 +4379,16 @@ def cmd_retitle(new_title: str, cwd: Path):
     print("   ④ 若已 archive，作品库标题需手动核对")
 
 
+_TELEMETRY = {"stage": "pipeline", "article": ""}
+
+
 def main():
+    """入口：任何子命令非零退出都写一条 command_exit 观察（审计 G6）。"""
+    from command_telemetry import run_observed
+    run_observed(lambda: _TELEMETRY["stage"], _main_impl, article=lambda: _TELEMETRY["article"])
+
+
+def _main_impl():
     parser = argparse.ArgumentParser(
         description="微信公众号写作流水线管理器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -4632,6 +4651,7 @@ def main():
     cwd = Path(selected_dir).expanduser().resolve() if selected_dir else Path.cwd()
     if not cwd.is_dir():
         parser.error(f"文章目录不存在：{cwd}")
+    _TELEMETRY.update(stage=f"pipeline.{args.cmd}", article=cwd.name)
     # 路径配置可能使用 @workspace/...。必须等文章目录确定后再绑定，
     # 且要早于 distribute 等延迟 import，避免同一进程把数据静默写回 main。
     import profile_config as _profile_config

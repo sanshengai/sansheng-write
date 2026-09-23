@@ -2654,4 +2654,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from command_telemetry import run_observed
+    run_observed("format_layout", main)
