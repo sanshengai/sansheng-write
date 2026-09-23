@@ -768,7 +768,8 @@ def main():
         sys.exit(2)
 
     content, missing = build_prep_context(cwd)
-    out = cwd / "_prep-context.md"
+    from article_paths import process_file
+    out = process_file(cwd, "_prep-context.md", for_write=True)
     out.write_text(content, encoding="utf-8")
 
     print(f"✅ 已生成 {out}（{len(content)} 字符）")

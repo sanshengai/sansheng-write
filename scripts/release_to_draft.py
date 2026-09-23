@@ -40,11 +40,13 @@ def ensure_wechat_proxy_bypass(env: dict[str, str] | None = None) -> dict[str, s
     return target
 
 try:
+    from .article_paths import process_file, process_rel
     from .audio_cards import locate_theme_audio_record
     from .baoyu_locator import find_skill_dir
     from .evidence import stable_digest
     from .profile_config import brand
 except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import process_file, process_rel
     from audio_cards import locate_theme_audio_record
     from baoyu_locator import find_skill_dir
     from evidence import stable_digest
@@ -344,7 +346,7 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
         "next_command": "pipeline.py finalize <永久链接>",
         "optional_precheck": "pipeline.py wechat-audio-check",
     }
-    (cwd / AUDIO_HANDOFF_FILE).write_text(
+    process_file(cwd, AUDIO_HANDOFF_FILE, for_write=True).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return payload, []
@@ -483,7 +485,7 @@ def verify_wechat_audio(
     audition_confirmed: bool = False,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """官方 draft/get 复核双音频，同时确认其余草稿内容没有被人工误改。"""
-    handoff_path = cwd / AUDIO_HANDOFF_FILE
+    handoff_path = process_file(cwd, AUDIO_HANDOFF_FILE)
     if not handoff_path.is_file():
         return None, [f"缺 {AUDIO_HANDOFF_FILE}；先运行 release-to-draft"]
     try:
@@ -540,7 +542,7 @@ def verify_wechat_audio(
                     errors.append("主题曲来源 manifest 已在草稿交接后变化")
     expected, expected_errors = build_expected_draft(cwd)
     errors.extend(expected_errors)
-    attempt_path = cwd / ATTEMPT_FILE
+    attempt_path = process_file(cwd, ATTEMPT_FILE)
     try:
         attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -552,7 +554,7 @@ def verify_wechat_audio(
     if attempt and str(attempt.get("draft_media_id") or "") != media_id:
         errors.append(f"{AUDIO_HANDOFF_FILE} 与 {ATTEMPT_FILE} 的 draft_media_id 不一致")
 
-    initial_receipt_path = cwd / RECEIPT_FILE
+    initial_receipt_path = process_file(cwd, RECEIPT_FILE)
     try:
         initial_receipt = json.loads(initial_receipt_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -685,7 +687,7 @@ def verify_wechat_audio(
             "attestation": "the two remote players match their labelled local audio roles",
         }
     if persist:
-        (cwd / AUDIO_RECEIPT_FILE).write_text(
+        process_file(cwd, AUDIO_RECEIPT_FILE, for_write=True).write_text(
             json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
     return receipt, []
@@ -906,7 +908,7 @@ def _published_page_payload(
     if missing:
         raise RuntimeError(f"公众号公开页缺可核验字段：{missing}")
 
-    receipt_path = cwd / RECEIPT_FILE
+    receipt_path = process_file(cwd, RECEIPT_FILE)
     try:
         baseline = json.loads(receipt_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -971,7 +973,7 @@ def _published_page_payload(
                 "need_open_comment",
                 "only_fans_can_comment",
             ],
-            "baseline_receipt": RECEIPT_FILE,
+            "baseline_receipt": process_rel(cwd, RECEIPT_FILE),
             "baseline_remote_digest": baseline_readback.get("remote_digest"),
         },
     }
@@ -1635,7 +1637,7 @@ def verify_wechat_published_audio(
             "attestation": "the two published players match their labelled local audio roles",
         }
     if persist:
-        (cwd / PUBLISHED_AUDIO_RECEIPT_FILE).write_text(
+        process_file(cwd, PUBLISHED_AUDIO_RECEIPT_FILE, for_write=True).write_text(
             json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
@@ -1756,7 +1758,7 @@ def release_to_draft(
     """Execute preflight → draft/add → draft/get as one resumable transaction."""
     cwd = cwd.resolve()
     try:
-        job = json.loads((cwd / "_release-job.json").read_text(encoding="utf-8"))
+        job = json.loads(process_file(cwd, "_release-job.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None, ["缺 _release-job.json；先运行 adopt-final"]
     except json.JSONDecodeError as exc:
@@ -1775,7 +1777,7 @@ def release_to_draft(
         return None, expected_errors
     expected_digest = stable_digest(expected)
 
-    attempt_path = cwd / ATTEMPT_FILE
+    attempt_path = process_file(cwd, ATTEMPT_FILE, for_write=True)
     attempt: dict[str, Any] = {}
     if attempt_path.is_file():
         try:
@@ -1856,7 +1858,7 @@ def release_to_draft(
         "remote_readback": readback,
         "resumed_attempt": resumed,
     }
-    (cwd / RECEIPT_FILE).write_text(
+    process_file(cwd, RECEIPT_FILE, for_write=True).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )

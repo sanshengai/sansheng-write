@@ -18,8 +18,10 @@ from typing import Iterable
 
 try:
     from . import baoyu_contract
+    from .article_paths import process_file, process_rel
 except ImportError:  # pragma: no cover - direct script execution
     import baoyu_contract
+    from article_paths import process_file, process_rel
 
 
 VISUAL_RECEIPT_FILE = "_visual-receipt.json"
@@ -331,7 +333,7 @@ def build_visual_manifest(
 
 def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    qa = cwd / "_visual-qa.json"
+    qa = process_file(cwd, "_visual-qa.json")
     if not qa.exists():
         return None, ["缺 _visual-qa.json，先运行独立结构化视觉 QA"]
     try:
@@ -359,12 +361,12 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
         "sealed_at": now_iso(),
         "manifest": manifest,
         "manifest_digest": stable_digest(manifest),
-        "qa_path": "_visual-qa.json",
+        "qa_path": process_rel(cwd, "_visual-qa.json"),
         "qa_sha256": sha256_file(qa),
         "qa_status": qa_payload.get("status"),
         "qa_findings": [],
     }
-    (cwd / VISUAL_RECEIPT_FILE).write_text(
+    process_file(cwd, VISUAL_RECEIPT_FILE, for_write=True).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return receipt, []
@@ -372,7 +374,7 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
 
 def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    path = cwd / VISUAL_RECEIPT_FILE
+    path = process_file(cwd, VISUAL_RECEIPT_FILE)
     if not path.exists():
         return None, [f"缺 {VISUAL_RECEIPT_FILE}：logo/压缩后必须执行 pipeline.py seal visual"]
     try:
@@ -385,7 +387,7 @@ def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     current_digest = stable_digest(manifest)
     if receipt.get("manifest_digest") != current_digest:
         errors.append("视觉资产字节/prompt/生成记录已变化，旧 visual receipt 失效")
-    qa = cwd / str(receipt.get("qa_path") or "_visual-qa.json")
+    qa = cwd / str(receipt.get("qa_path") or process_rel(cwd, "_visual-qa.json"))
     if not qa.exists() or receipt.get("qa_sha256") != sha256_file(qa):
         errors.append("_visual-qa.json 已变化或缺失，需重新运行视觉 QA 并 seal visual")
     elif qa.exists():
@@ -482,7 +484,7 @@ def write_publish_ready(cwd: Path) -> tuple[dict | None, list[str]]:
         "manifest": manifest,
         "manifest_digest": stable_digest(manifest),
     }
-    (cwd / PUBLISH_READY_FILE).write_text(
+    process_file(cwd, PUBLISH_READY_FILE, for_write=True).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return receipt, []
@@ -490,7 +492,7 @@ def write_publish_ready(cwd: Path) -> tuple[dict | None, list[str]]:
 
 def verify_publish_ready(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    path = cwd / PUBLISH_READY_FILE
+    path = process_file(cwd, PUBLISH_READY_FILE)
     if not path.exists():
         return None, [
             f"缺 {PUBLISH_READY_FILE}；调用微信前必须先执行 pipeline.py verify publish --pre"
@@ -523,7 +525,7 @@ def write_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None, 
         "manifest": manifest,
         "manifest_digest": stable_digest(manifest),
     }
-    (cwd / PUBLISH_RECEIPT_FILE).write_text(
+    process_file(cwd, PUBLISH_RECEIPT_FILE, for_write=True).write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return receipt, []
@@ -531,7 +533,7 @@ def write_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None, 
 
 def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
-    path = cwd / PUBLISH_RECEIPT_FILE
+    path = process_file(cwd, PUBLISH_RECEIPT_FILE)
     if not path.exists():
         return None, [f"缺 {PUBLISH_RECEIPT_FILE}，draft_media_id 未绑定本地发布产物"]
     try:
@@ -620,7 +622,8 @@ def render_approval_anchor(gate: str, words: str, *, source_mode: str,
         "",
     ]
     for key, label in (("title", "作者指定标题"), ("opening", "开头"),
-                       ("outline", "大纲要点"), ("cover_style", "封面风格")):
+                       ("outline", "大纲要点"), ("cover_style", "封面风格"),
+                       ("title_exempt", "标题公式豁免")):
         if fields.get(key):
             lines += [f"{label}：{fields[key]}", ""]
     lines += [f"作者原话（{_beijing_now()}，北京时间）：", ""]
@@ -642,7 +645,7 @@ def write_approval_anchor(cwd: Path, gate: str, words: str, *, source_mode: str,
     text, errors = render_approval_anchor(gate, words, source_mode=source_mode, fields=fields)
     if errors:
         return None, None, errors
-    path = Path(cwd) / APPROVAL_ANCHORS[gate]
+    path = process_file(cwd, APPROVAL_ANCHORS[gate], for_write=True)
     previous = path.read_bytes() if path.is_file() else None
     if previous is not None:
         old = previous.decode("utf-8", errors="replace").rstrip("\n")
@@ -656,7 +659,7 @@ def write_approval_anchor(cwd: Path, gate: str, words: str, *, source_mode: str,
 def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
     names = APPROVAL_ANCHORS
     name = names.get(gate, "")
-    path = Path(cwd) / name if name else None
+    path = process_file(cwd, name) if name else None
     if not path or not path.exists():
         return {}, [f"缺 {name or gate + ' approval anchor'}"]
     text = path.read_text(encoding="utf-8")
@@ -684,7 +687,7 @@ def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
     else:
         decision = "unknown"
     return {
-        "path": name,
+        "path": path.relative_to(Path(cwd)).as_posix(),
         "sha256": sha256_file(path),
         "decision": decision,
     }, []
@@ -926,7 +929,7 @@ def write_checkpoint_receipt(cwd: Path, gate: str, source_mode: str,
         return None, [
             f"{gate} 审批结论={decision or '(空)'}；source_mode={source_mode} 要求 {expected}"
         ]
-    path = cwd / CHECKPOINT_RECEIPT_FILE
+    path = process_file(cwd, CHECKPOINT_RECEIPT_FILE, for_write=True)
     payload = {"schema_version": 1, "checkpoints": {}}
     if path.exists():
         try:
@@ -954,7 +957,7 @@ def write_checkpoint_receipt(cwd: Path, gate: str, source_mode: str,
 
 def verify_checkpoint_receipt(cwd: Path, gate: str) -> list[str]:
     cwd = Path(cwd)
-    path = cwd / CHECKPOINT_RECEIPT_FILE
+    path = process_file(cwd, CHECKPOINT_RECEIPT_FILE)
     if not path.exists():
         return [f"缺 {CHECKPOINT_RECEIPT_FILE}；作者确认后执行 pipeline.py approve {gate}"]
     try:

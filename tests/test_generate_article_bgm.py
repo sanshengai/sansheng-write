@@ -1,3 +1,4 @@
+from scripts.article_paths import process_file
 from scripts.generate_article_bgm import (
     STYLE_POOL,
     build_music_prompt,
@@ -45,7 +46,7 @@ def test_generator_writes_manifest_with_actual_engine_provenance(tmp_path, monke
 
     bgm.main()
 
-    manifest = json.loads((article / "_music-manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(process_file(article, "_music-manifest.json").read_text(encoding="utf-8"))
     theme = manifest["theme"]
     assert theme["playback"]["path"] == "边界之歌.mp3"
     assert theme["playback"]["duration_seconds"] == 180.0

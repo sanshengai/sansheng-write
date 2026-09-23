@@ -23,6 +23,7 @@ import pytest
 from PIL import Image
 
 from scripts import cover_blind_match as bm
+from scripts.article_paths import process_file
 from scripts import works_registry
 
 
@@ -190,9 +191,9 @@ def test_run_blind_match_pass_writes_credential_and_review(tmp_path, monkeypatch
     outcome = bm.run_blind_match(article_dir, covers, article_title="本篇", exclude_seq=108)
 
     assert outcome == {"status": "pass", "errors": [], "warnings": []}
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["status"] == "pass" and len(credential["results"]) == 2
-    review = (article_dir / bm.REVIEW_FILE).read_text(encoding="utf-8")
+    review = process_file(article_dir, bm.REVIEW_FILE).read_text(encoding="utf-8")
     assert "自动盲配" in review and "✅" in review and "❌" not in review
 
 
@@ -215,9 +216,9 @@ def test_run_blind_match_fails_when_one_cover_is_mismatched(tmp_path, monkeypatc
     assert outcome["status"] == "fail"
     assert outcome["errors"] and "像星芒" in outcome["errors"][0]
     assert "_audio-cover-plan.json" in outcome["errors"][0] and "--force" in outcome["errors"][0]
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["status"] == "fail"
-    review = (article_dir / bm.REVIEW_FILE).read_text(encoding="utf-8")
+    review = process_file(article_dir, bm.REVIEW_FILE).read_text(encoding="utf-8")
     assert "❌ 配错" in review
 
 
@@ -236,10 +237,10 @@ def test_run_blind_match_errors_when_model_output_unparseable(tmp_path, monkeypa
 
     assert outcome["status"] == "error"
     assert outcome["errors"] and "不是合法 JSON" in outcome["errors"][0]
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["status"] == "error"
     # 没取得真正的判定结果，不追加人读摘要——review.md 只记真实配对结果。
-    assert not (article_dir / bm.REVIEW_FILE).is_file()
+    assert not process_file(article_dir, bm.REVIEW_FILE).is_file()
 
 
 def test_run_blind_match_skipped_by_env(tmp_path, monkeypatch):
@@ -251,7 +252,7 @@ def test_run_blind_match_skipped_by_env(tmp_path, monkeypatch):
     outcome = bm.run_blind_match(article_dir, covers, article_title="标题", exclude_seq=108)
 
     assert outcome["status"] == "skipped" and not outcome["errors"] and outcome["warnings"]
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["skipped_reason"] == "skipped_by_env"
 
 
@@ -264,7 +265,7 @@ def test_run_blind_match_skipped_when_claude_cli_not_found(tmp_path, monkeypatch
     outcome = bm.run_blind_match(article_dir, covers, article_title="标题", exclude_seq=108)
 
     assert outcome["status"] == "skipped" and not outcome["errors"] and outcome["warnings"]
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["skipped_reason"] == "claude_cli_not_found"
 
 
@@ -291,7 +292,7 @@ def test_run_blind_match_degrades_end_to_end_when_works_library_unavailable(tmp_
     outcome = bm.run_blind_match(article_dir, covers, article_title="本篇真实标题", exclude_seq=108)
 
     assert outcome["status"] == "pass"
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["degraded"] is True and credential["degraded_reason"]
     other_titles = {c["title"] for c in credential["candidates"] if not c["is_target"]}
     assert other_titles.issubset(set(bm.PLACEHOLDER_TITLES))
@@ -412,7 +413,7 @@ def test_recheck_env_off_overrides_recorded_failure(tmp_path, monkeypatch):
     monkeypatch.setenv(bm.ENV_OFF, "off")
     outcome = bm.recheck_existing(article_dir, covers, article_title="本篇")
     assert outcome["status"] == "skipped" and outcome["errors"] == []
-    credential = json.loads((article_dir / bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
+    credential = json.loads(process_file(article_dir, bm.BLINDMATCH_FILE).read_text(encoding="utf-8"))
     assert credential["skipped_reason"] == "skipped_by_env"
 
 

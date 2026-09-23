@@ -21,6 +21,48 @@ PODCAST_PREFIX = "播客 | "
 # ASCII ``:`` 在 macOS 文件名里非法；``|`` 是作者指定的分隔符，必须留下。
 _ILLEGAL = re.compile(r'[<>:"/\\?*\x00-\x1f]')
 
+# ── 机器回执与过程文件（2026-09-23 审计 E4）────────────────────────────────
+# 文章目录第一层曾有 48 项，其中 28 个是机器回执，作者要找的上传文件混在里面。
+# 机器写的回执与过程文件收进 ``过程记录/``；第一层已有同名文件（旧文章，或改动前
+# 就在跑的文章）时沿用第一层，同一份回执不分两处。Agent 按文档手写的复核记录
+# （_fact-check.md、_stutter-list.md、_draft-qc.md、_opening-choice.md）不在此列。
+PROCESS_DIR = "过程记录"
+PROCESS_FILES = frozenset({
+    "_visual-receipt.json", "_publish-receipt.json", "_publish-ready.json",
+    "_checkpoint-receipts.json", "_blueprint-approval.md", "_draft-approval.md",
+    "_visual-qa-request.json", "_visual-qa.json", "_visual-qa.md",
+    "_visual-qa.candidate.json", "_visual-qa.raw.json",
+    "_release-job.json", "_release-attempt.json",
+    "_wechat-audio-handoff.json", "_wechat-audio-receipt.json",
+    "_wechat-published-audio-receipt.json",
+    "_handoff-receipt.json", "_music-manifest.json",
+    "_audio-cover-plan.json", "_audio-cover-thumbs.png",
+    "_audio-cover-blindmatch.json", "_audio-cover-review.md",
+    "_finalize-state.json", "_website-sync-receipt.json", "_moments-copy.md",
+    "_prep-context.md", "_layout-decision.md", "_physical-archive-receipt.json",
+})
+
+
+def process_file(article_dir: Path, name: str, *, for_write: bool = False) -> Path:
+    """回执 / 过程文件的实际位置：第一层已有就沿用，否则在 ``过程记录/``。
+
+    ``for_write=True`` 时顺手建好 ``过程记录/``。不在 ``PROCESS_FILES`` 里的名字
+    原样返回第一层路径。
+    """
+    article_dir = Path(article_dir)
+    direct = article_dir / name
+    if name not in PROCESS_FILES or direct.exists():
+        return direct
+    nested = article_dir / PROCESS_DIR / name
+    if for_write:
+        nested.parent.mkdir(parents=True, exist_ok=True)
+    return nested
+
+
+def process_rel(article_dir: Path, name: str) -> str:
+    """同上，返回相对文章目录的 POSIX 路径（写进回执、算摘要用）。"""
+    return process_file(article_dir, name).relative_to(Path(article_dir)).as_posix()
+
 
 def podcast_filename(title: str) -> str:
     """``播客 | {文章标题}.mp3``。标题里的竖线保留，路径分隔符去掉。"""

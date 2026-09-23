@@ -347,11 +347,11 @@ def find_cover(article_dir: Path) -> Path | None:
 def theme_video(article_dir: Path, out_dir: Path) -> tuple[Path, str] | None:
     """主题曲 MP3 + 音乐封面 → 静帧 MP4（X 不收音频）。返回 (mp4, 歌名)。"""
     try:
-        from article_paths import is_podcast_audio_name, resolve_cover
+        from article_paths import is_podcast_audio_name, process_file, resolve_cover
     except ImportError:  # pragma: no cover
-        from .article_paths import is_podcast_audio_name, resolve_cover
+        from .article_paths import is_podcast_audio_name, process_file, resolve_cover
 
-    manifest = article_dir / "_music-manifest.json"
+    manifest = process_file(article_dir, "_music-manifest.json")
     cover = resolve_cover(article_dir, kind="theme")
     if cover is None:
         return None
@@ -402,9 +402,17 @@ def x_config(article_dir: Path) -> dict:
 
 
 # ---------------------------------------------------------------- 链接
+def _process_file(article_dir: Path, name: str) -> Path:
+    try:
+        from article_paths import process_file
+    except ImportError:  # pragma: no cover
+        from .article_paths import process_file
+    return process_file(article_dir, name)
+
+
 def article_code(article_dir: Path) -> str:
     for name in ("_website-sync-receipt.json", "_publish-receipt.json"):
-        f = article_dir / name
+        f = _process_file(article_dir, name)
         if f.is_file():
             m = re.search(r'"code":\s*"([A-Z]+-\d+)"', f.read_text(encoding="utf-8"))
             if m:
@@ -418,7 +426,7 @@ def site_url(article_dir: Path, template: str) -> str:
 
 
 def wechat_url(article_dir: Path) -> str:
-    f = article_dir / "_website-sync-receipt.json"
+    f = _process_file(article_dir, "_website-sync-receipt.json")
     if f.is_file():
         m = re.search(r'"wechat_url":\s*"(https://mp\.weixin\.qq\.com/s/[^"]+)"', f.read_text(encoding="utf-8"))
         if m:

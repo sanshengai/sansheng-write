@@ -11,7 +11,7 @@
 - 任一命令非零退出就停在当前步骤修复；禁止手工补状态、伪造凭证或调用低层发布脚本绕过。
 - BGM 是发布硬门；新文章不可 `skip bgm`。硬门认 `_music-manifest.json` 绑定的文件与真实来源，不要求特定厂商；网页手工生成或复用既有主题曲同样可用，但不得按文件名猜来源或把旧歌改写成新引擎出身。
 
-下文命令均在文章目录执行，`$SKILL` 指本 Skill 根目录。
+下文命令均在文章目录执行，`$SKILL` 指本 Skill 根目录。下文的 `_xxx.json` 等机器回执（及 `_moments-copy.md`、`_prep-context.md`、审批文件）新文章都在文章目录的 `过程记录/` 里，旧文章第一层已有的沿用第一层（`article_paths.process_file` 统一解析）；Agent 手写的 `_fact-check.md`、`_stutter-list.md` 等复核记录仍在第一层。
 
 ## 0. 接管作者定稿
 

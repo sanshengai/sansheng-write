@@ -71,6 +71,7 @@ _SCRIPTS_DIR = _os.path.dirname(_os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
+from article_paths import process_file, process_rel  # noqa: E402
 from evidence import (  # noqa: E402
     CHECKPOINT_RECEIPT_FILE,
     FINAL_PROMPT_PREFIX,
@@ -767,7 +768,7 @@ def _visual_qa_evidence_errors(cwd: Path) -> list:
 
     字节证据与看图判定分层计算只为精确报错；两层都没有授权旁路。
     """
-    qa_path = cwd / "_visual-qa.json"
+    qa_path = process_file(cwd, "_visual-qa.json")
     if not qa_path.exists():
         return ["缺 _visual-qa.json：生成后必须由独立看图进程验收"]
     try:
@@ -783,7 +784,7 @@ def _visual_qa_evidence_errors(cwd: Path) -> list:
 
 def _visual_qa_errors(cwd: Path) -> list:
     """发布前视觉 QA 凭证门：只认独立审阅进程产出的结构化合同。"""
-    qa_path = cwd / "_visual-qa.json"
+    qa_path = process_file(cwd, "_visual-qa.json")
     if not qa_path.exists():
         return ["缺 _visual-qa.json：生成后必须由独立看图进程验收"]
     try:
@@ -997,12 +998,12 @@ def _checkpoint_errors(stage: str, cwd: Path) -> list:
     if not gate:
         return []
     name, anchor, desc = gate
-    if name in cps and not (cwd / anchor).exists():
+    if name in cps and not process_file(cwd, anchor).exists():
         return [f"checkpoint:{name} 未过 -- {desc}；作者回复后运行 "
                 f"pipeline.py approve {name} --words \"<作者原话>\" 生成 {anchor} 再继续"
                 f"（作者明说免检时用 --source-mode checkpoint-waived）"]
     if name == "blueprint" and name in cps:
-        text = (cwd / anchor).read_text(encoding="utf-8")
+        text = process_file(cwd, anchor).read_text(encoding="utf-8")
         if "作者免检授权" not in text:
             missing = []
             has_five = all(re.search(rf"方案\s*{n}", text) for n in range(1, 6))
@@ -1233,8 +1234,8 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
                 compare_wechat_published_audio_receipts,
                 verify_wechat_published_audio,
             )
-            published_receipt_path = cwd / PUBLISHED_AUDIO_RECEIPT_FILE
-            receipt_path = cwd / AUDIO_RECEIPT_FILE
+            published_receipt_path = process_file(cwd, PUBLISHED_AUDIO_RECEIPT_FILE)
+            receipt_path = process_file(cwd, AUDIO_RECEIPT_FILE)
             if published_receipt_path.is_file():
                 try:
                     published_receipt = json.loads(
@@ -2015,11 +2016,11 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
             payload = {"renders": payload, "meta": _cover_meta_subset(cwd)}
         return stable_digest(payload)
     if stage == "bgm":
-        manifest = cwd / "_music-manifest.json"
+        manifest = process_file(cwd, "_music-manifest.json")
         if manifest.is_file():
             # 只认音乐清单绑定的那一首：交接复制到第一层的「播客 | 标题.mp3」、
             # 音乐封面都不是主题曲产物，算进来会让 handoff 把自己标脏（审计 F2）。
-            rels = ["_music-manifest.json"]
+            rels = [process_rel(cwd, "_music-manifest.json")]
             try:
                 playback = json.loads(manifest.read_text(encoding="utf-8"))["theme"]["playback"]["path"]
                 rels.append(str(playback))
@@ -2035,10 +2036,10 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
     if stage == "logo":
         rels = ["素材/cover.png", "素材/hero.png"]
         rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("infographic*.png")]
-        rels += ["_visual-qa.json", "_visual-qa-request.json", VISUAL_RECEIPT_FILE]
+        rels += [process_rel(cwd, name) for name in ("_visual-qa.json", "_visual-qa-request.json", VISUAL_RECEIPT_FILE)]
         return files_digest(cwd, rels)
     if stage == "publish":
-        return files_digest(cwd, [PUBLISH_RECEIPT_FILE])
+        return files_digest(cwd, [process_rel(cwd, PUBLISH_RECEIPT_FILE)])
     if stage == "archive":
         try:
             from works_registry import load_works
@@ -2076,6 +2077,58 @@ def _invalidate_downstream(state: dict, stage: str, reason: str) -> None:
             info["dirty_reason"] = reason
 
 
+def _stage_artifact_digest_legacy(cwd: Path, stage: str) -> str | None:
+    """2026-09-23 审计 F2 之前的摘要算法，只用于兼容比对，不再用来记录。
+
+    F2 让封面/信息图摘要跳过后处理补记、封面摘要纳入封面文字，主题曲摘要只认音乐
+    清单。算法一换，改动前记录的摘要全对不上，已发布或进行中的旧文章一跑 status
+    就被整链标脏。这里保留旧算法：记录值若等于旧算法对当前产物的结果，说明产物
+    没变，只是算法升级了。其余阶段算法没变，返回 None。
+    """
+    if stage in {"cover", "infographic"}:
+        rows = []
+        prefix = "素材/cover.png" if stage == "cover" else "素材/infographic"
+        for rec in _read_gen_log(cwd, stage):
+            output = _norm_relpath(rec.get("output", ""))
+            if output == prefix or (stage == "infographic" and output.startswith(prefix)):
+                prompt_rel = _norm_relpath(rec.get("prompt", ""))
+                prompt_path = cwd / Path(prompt_rel) if prompt_rel else None
+                rows.append({
+                    "output": output,
+                    "producer": rec.get("producer") or rec.get("tool") or "",
+                    "renderer": rec.get("renderer") or "",
+                    "model": rec.get("model") or "",
+                    "provenance_mode": rec.get("provenance_mode") or "rendered",
+                    "prompt": prompt_rel,
+                    "prompt_sha256": rec.get("prompt_sha256") or "",
+                    "prompt_current_sha256": (
+                        sha256_file(prompt_path)
+                        if prompt_path and prompt_path.exists() else "missing"
+                    ),
+                    "output_sha256": rec.get("output_sha256") or "",
+                    "record_id": rec.get("record_id") or "",
+                })
+        latest = {row["output"]: row for row in rows}
+        return stable_digest([latest[k] for k in sorted(latest)]) if latest else ""
+    if stage == "bgm":
+        rels = [str(p.relative_to(cwd)) for p in cwd.glob("*.mp3")]
+        rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*.mp3")]
+        rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*bgm*.png")]
+        return files_digest(cwd, rels)
+    return None
+
+
+def _legacy_digest_matches(cwd: Path, stage: str, recorded: str) -> bool:
+    """记录的摘要是否是旧算法对当前产物的结果（产物没变，只是算法升级）。"""
+    if not recorded:
+        return False
+    try:
+        legacy = _stage_artifact_digest_legacy(cwd, stage)
+    except Exception:  # noqa: BLE001 - 兼容比对失败时按「真的变了」处理
+        return False
+    return legacy is not None and legacy == recorded
+
+
 def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
     upstream_errors = _upstream_stage_errors(state, stage)
     if upstream_errors:
@@ -2085,7 +2138,8 @@ def _record_stage_success(cwd: Path, state: dict, stage: str) -> None:
     now = _now_iso()
     digest = _stage_artifact_digest(cwd, stage)
     old_digest = str(info.get("artifact_digest") or "")
-    if old_digest and digest and old_digest != digest:
+    if (old_digest and digest and old_digest != digest
+            and not _legacy_digest_matches(cwd, stage, old_digest)):
         _invalidate_downstream(state, stage, f"上游 {stage} 产物摘要已变化")
     info["status"] = "done"
     info["dirty"] = False
@@ -2203,7 +2257,15 @@ def _reconcile_artifact_drift(cwd: Path, state: dict) -> bool:
         if info.get("status") != "done" or not info.get("artifact_digest"):
             continue
         current = _stage_artifact_digest(cwd, stage)
-        if current != info.get("artifact_digest"):
+        recorded = info.get("artifact_digest")
+        if current == recorded:
+            continue
+        if _legacy_digest_matches(cwd, stage, recorded):
+            # 摘要算法升级前记录的值：产物没变，就地换成新算法的结果，不标脏
+            info["artifact_digest"] = current
+            changed = True
+            continue
+        if current != recorded:
             info["status"] = "dirty"
             info["dirty"] = True
             info["dirty_reason"] = f"{stage} 产物自上次验证后发生变化"
@@ -2236,7 +2298,7 @@ def cmd_status(cwd: Path):
         if s == "writing" and info.get("title_final"):
             extra = f"  「{info['title_final']}」"
         if s == "bgm":
-            manifest_path = cwd / "_music-manifest.json"
+            manifest_path = process_file(cwd, "_music-manifest.json")
             if manifest_path.is_file():
                 try:
                     music_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -2399,6 +2461,20 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     return errors
 
 
+def _cleanup_html_backups(cwd: Path) -> int:
+    """排版验收通过后删掉 Markdown→HTML 转换器留下的 ``定稿.html.bak-<时间戳>``（审计 E4）。
+
+    转换器每次覆盖 定稿.html 前都会留一份备份，一篇文章常攒下好几个，混在作者要找的
+    文件中间。验收通过说明当前 定稿.html 就是要用的那份，备份没有保留价值。
+    """
+    removed = 0
+    for backup in cwd.glob("定稿.html.bak-*"):
+        if backup.is_file():
+            backup.unlink()
+            removed += 1
+    return removed
+
+
 def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
     if legacy:
         print("❌ --legacy 已停用：阶段合同不允许绕过")
@@ -2454,6 +2530,10 @@ def cmd_verify(stage: str, cwd: Path, legacy: bool = False, pre: bool = False):
         _record_stage_success(cwd, state, stage)
         save_state(cwd, state)
         print(f"✅ {stage} 验证通过，已标记 done")
+        if stage == "layout":
+            removed = _cleanup_html_backups(cwd)
+            if removed:
+                print(f"🧹 已清理 {removed} 个 定稿.html.bak-* 备份（排版已验收）")
     elif waiting_author:
         _record_stage_waiting_author(cwd, state, stage, errors)
         print(f"⏸ {stage} 已进入 waiting_author；这不是内容失败，也不累计失败次数：")
@@ -2584,7 +2664,7 @@ def cmd_done(stage: str, cwd: Path, extras: list, force: bool = False, legacy: b
             print(f"⚠️  自动标点归一化出错：{e}")
     state = load_state(cwd)
     candidate = copy.deepcopy(state)
-    publish_receipt_path = cwd / PUBLISH_RECEIPT_FILE
+    publish_receipt_path = process_file(cwd, PUBLISH_RECEIPT_FILE)
     publish_receipt_existed = publish_receipt_path.exists()
     publish_receipt_before = (
         publish_receipt_path.read_bytes() if publish_receipt_existed else b""
@@ -3475,7 +3555,7 @@ def _run_website_sync(
         os.getenv("SANSHENG_WRITE_WEBSITE_CWD", "").strip()
         or str(publish.get("website_cwd") or "").strip()
     )
-    receipt_path = cwd / "_website-sync-receipt.json"
+    receipt_path = process_file(cwd, "_website-sync-receipt.json", for_write=True)
     if not template:
         _append_website_sync_attempt(
             receipt_path,
@@ -3686,7 +3766,7 @@ def _write_moments_copy(cwd: Path, wechat_url: str) -> str:
     ]
     clean_lines = [line for line in clean_lines if line]
     text = "\n\n".join(clean_lines) + "\n"
-    out = cwd / "_moments-copy.md"
+    out = process_file(cwd, "_moments-copy.md", for_write=True)
     # 🔴 2026-08-04：本函数产出的是**基线**（title + digest + 引流三行拼接），
     # 按 publish.md §朋友圈内容协议还要被改写成终稿。finalize 是可续跑的，
     # 续跑时绝不能把改写后的终稿冲回模板 —— 只在文件不存在、为空、或内容仍是
@@ -3760,7 +3840,7 @@ def _finalize_input_digest(cwd: Path, wechat_url: str) -> str:
         "_wechat-published-audio-receipt.json",
     ]
     files = {
-        rel: sha256_file(cwd / rel) if (cwd / rel).is_file() else ""
+        rel: sha256_file(process_file(cwd, rel)) if process_file(cwd, rel).is_file() else ""
         for rel in watched
     }
     return stable_digest(
@@ -3773,7 +3853,7 @@ def _finalize_input_digest(cwd: Path, wechat_url: str) -> str:
 
 
 def _load_or_reset_finalize_state(cwd: Path, wechat_url: str) -> dict:
-    path = cwd / FINALIZE_STATE_FILE
+    path = process_file(cwd, FINALIZE_STATE_FILE, for_write=True)
     digest = _finalize_input_digest(cwd, wechat_url)
     previous: dict = {}
     if path.is_file():
@@ -3819,7 +3899,7 @@ def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
         "completed_at": _now_iso(),
     }
     state["updated_at"] = _now_iso()
-    (cwd / FINALIZE_STATE_FILE).write_text(
+    process_file(cwd, FINALIZE_STATE_FILE, for_write=True).write_text(
         json.dumps(state, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
@@ -3893,7 +3973,7 @@ def cmd_finalize(wechat_url: str, cwd: Path) -> None:
         if website_was_done and (cwd / "dist" / "podcast" / "audio.mp3").is_file():
             state.setdefault("steps", {}).pop("website_sync", None)
             state["updated_at"] = _now_iso()
-            (cwd / FINALIZE_STATE_FILE).write_text(
+            process_file(cwd, FINALIZE_STATE_FILE, for_write=True).write_text(
                 json.dumps(state, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
@@ -4072,9 +4152,9 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
         cps = set()
 
     if "blueprint" in cps:
-        add("ok" if (cwd / "_blueprint-approval.md").exists() else "fail",
+        add("ok" if process_file(cwd, "_blueprint-approval.md").exists() else "fail",
             "blueprint 锚点",
-            "_blueprint-approval.md 存在" if (cwd / "_blueprint-approval.md").exists()
+            "_blueprint-approval.md 存在" if process_file(cwd, "_blueprint-approval.md").exists()
             else "缺 _blueprint-approval.md（蓝图闸启用时必需）")
     if "draft" in cps:
         for fname, why in (
@@ -4082,7 +4162,7 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
             ("_draft-qc.md", "定稿闸质检报告（approve draft 会强制要求）"),
             ("_opening-choice.md", "开头盲选记录（done writing 会检查）"),
         ):
-            exists = (cwd / fname).exists()
+            exists = process_file(cwd, fname).exists()
             add("ok" if exists else "fail", fname,
                 "存在" if exists else f"缺失 —— {why}")
 
@@ -4128,7 +4208,7 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
         ("_fact-check.md", "事实复核（独立上下文 subagent）"),
         ("_stutter-list.md", "语义冷读（独立上下文 subagent）"),
     ):
-        exists = (cwd / fname).exists()
+        exists = process_file(cwd, fname).exists()
         add("ok" if exists else "warn", fname,
             "存在" if exists else f"缺失 —— {why}")
 
@@ -4336,16 +4416,16 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
         f"job_id={job['job_id']}，scope={job['scope']}"
     )
     try:
-        if "作者原话" not in (cwd / "_draft-approval.md").read_text(encoding="utf-8"):
+        if "作者原话" not in process_file(cwd, "_draft-approval.md").read_text(encoding="utf-8"):
             print("⚠️ _draft-approval.md 没有「作者原话」记录；作者拍板后用 "
                   "pipeline.py approve draft --words 逐字落盘，不再手写审批文件。")
     except OSError:
         pass
     # 审计 F3：生成单在接管后立即交付，作者生成音乐与配图并行，不等配图做完。
-    if not (cwd / "MiniMax-主题曲生成单.md").exists() and not (cwd / "_music-manifest.json").exists():
+    if not (cwd / "MiniMax-主题曲生成单.md").exists() and not process_file(cwd, "_music-manifest.json").exists():
         print("🎵 下一步先交付 MiniMax-主题曲生成单.md（references/music.md），再开始配图——"
               "作者生成音乐和配图并行。")
-    prep = cwd / "_prep-context.md"
+    prep = process_file(cwd, "_prep-context.md")
     if not prep.exists() or prep.stat().st_size == 0:
         # 审计 G3：写作前参考汇总由接管自动补齐，不再作为排版硬门。
         result = subprocess.run(
@@ -4939,6 +5019,8 @@ def _main_impl():
     p_ap.add_argument("--opening", default="", help="开头选择（蓝图必填）")
     p_ap.add_argument("--outline", default="", help="大纲要点（蓝图必填）")
     p_ap.add_argument("--cover-style", default="", help="封面风格（蓝图必填）")
+    p_ap.add_argument("--title-exempt", default="",
+                      help="作者同意标题不按「锚点：一句话」结构时写明原因（蓝图，标题检查读取）")
 
     p_seal = sub.add_parser("seal", help="封存最终产物字节证据")
     p_seal.add_argument("kind", choices=["visual"])
@@ -5189,6 +5271,7 @@ def _main_impl():
         cmd_approve(args.gate, cwd, args.source_mode, args.note, words=words, fields={
             "title": args.title, "opening": args.opening,
             "outline": args.outline, "cover_style": args.cover_style,
+            "title_exempt": args.title_exempt,
         })
     elif args.cmd == "seal":
         cmd_seal(args.kind, cwd)
@@ -5263,7 +5346,7 @@ def _main_impl():
                 print(f"   • {error}")
             sys.exit(2)
         print(f"✅ 上传文件{('已创建' if status == 'created' else '未变化')}：{target}")
-        receipt_path = target / "_handoff-receipt.json"
+        receipt_path = process_file(target, "_handoff-receipt.json")
         if receipt_path.is_file():
             handoff_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             for asset in handoff_receipt.get("assets") or []:

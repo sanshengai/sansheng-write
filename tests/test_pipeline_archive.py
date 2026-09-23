@@ -8,6 +8,7 @@ import sys
 import types
 import pytest
 import scripts.pipeline as pipeline   # 触发 pipeline 顶部 bootstrap，把 scripts/ 加进 sys.path
+from scripts.article_paths import process_file
 import works_registry as wr
 import render_articles_md as ram
 import render_works_dashboard as rwd
@@ -85,7 +86,7 @@ def test_finalize_preflight_reports_published_failure_and_guides_rerun(tmp_path,
 
 def test_finalize_preflight_falls_back_to_live_draft_receipt(tmp_path, monkeypatch):
     url = "https://mp.weixin.qq.com/s/x"
-    (tmp_path / release_to_draft.AUDIO_RECEIPT_FILE).write_text("{}", encoding="utf-8")
+    process_file(tmp_path, release_to_draft.AUDIO_RECEIPT_FILE, for_write=True).write_text("{}", encoding="utf-8")
     calls = _audio_preflight_env(
         tmp_path, monkeypatch,
         published=(None, ["已发表内容接口暂不可用"]),
@@ -97,7 +98,7 @@ def test_finalize_preflight_falls_back_to_live_draft_receipt(tmp_path, monkeypat
 
 def test_finalize_preflight_reports_both_paths_when_draft_also_recycled(tmp_path, monkeypatch):
     url = "https://mp.weixin.qq.com/s/x"
-    (tmp_path / release_to_draft.AUDIO_RECEIPT_FILE).write_text("{}", encoding="utf-8")
+    process_file(tmp_path, release_to_draft.AUDIO_RECEIPT_FILE, for_write=True).write_text("{}", encoding="utf-8")
     _audio_preflight_env(
         tmp_path, monkeypatch,
         published=(None, ["已发表内容接口暂不可用"]),
@@ -118,7 +119,7 @@ def test_finalize_preflight_accepts_fresh_published_audio_receipt(
         "wechat_url": url,
         "remote_verified": True,
     }
-    (tmp_path / release_to_draft.PUBLISHED_AUDIO_RECEIPT_FILE).write_text(
+    process_file(tmp_path, release_to_draft.PUBLISHED_AUDIO_RECEIPT_FILE, for_write=True).write_text(
         json.dumps(stored), encoding="utf-8"
     )
     monkeypatch.setattr(pipeline, "_archive_metadata", lambda *a, **k: ({}, {}, []))
@@ -399,7 +400,7 @@ def test_moments_copy_is_deterministic_and_uses_profile_cta(tmp_path, monkeypatc
     assert "# 朋友圈文案" not in first
     assert not any(char in first for char in "\u200b\u200c\u200d\ufeff\u00a0")
     assert all(line == line.strip() for line in first.splitlines())
-    assert (tmp_path / "_moments-copy.md").read_text(encoding="utf-8") == first
+    assert process_file(tmp_path, "_moments-copy.md").read_text(encoding="utf-8") == first
 
 
 def test_moments_copy_fast_path_has_no_finalize_side_effects(tmp_path, monkeypatch):
@@ -420,10 +421,10 @@ def test_moments_copy_fast_path_has_no_finalize_side_effects(tmp_path, monkeypat
 
     pipeline.cmd_moments_copy(tmp_path)
 
-    text = (tmp_path / "_moments-copy.md").read_text(encoding="utf-8")
+    text = process_file(tmp_path, "_moments-copy.md").read_text(encoding="utf-8")
     assert text.count("\n\n") == 2
     assert "一篇现成文章" in text
-    assert not (tmp_path / pipeline.FINALIZE_STATE_FILE).exists()
+    assert not process_file(tmp_path, pipeline.FINALIZE_STATE_FILE).exists()
 
 
 def test_moments_cta_does_not_repeat_site_when_bare_host_is_present(tmp_path, monkeypatch):
@@ -614,7 +615,7 @@ def test_website_receipt_preserves_failed_and_successful_attempts(tmp_path, monk
     assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is False
     assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is True
 
-    receipt = json.loads((tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+    receipt = json.loads(process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["schema_version"] == 2
     assert [attempt["status"] for attempt in receipt["attempts"]] == ["failed", "done"]
 

@@ -6,6 +6,7 @@
 不存输出本身。结果是唯一一份诊断信息被丢掉，为了看到真正那行
 （世界史 canonical 门禁失败）多跑了两轮、二十多分钟。
 """
+from scripts.article_paths import process_file
 import json
 import sys
 from pathlib import Path
@@ -97,7 +98,7 @@ def test_failure_prints_the_real_error(tmp_path, monkeypatch, capsys):
 def test_failure_persists_readable_tail_in_receipt(tmp_path, monkeypatch, capsys):
     _run(tmp_path, monkeypatch, NOISY, 1)
     receipt = json.loads(
-        (tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+        process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     latest = receipt["latest"]
     assert latest["status"] == "failed"
     assert "Canonical verified 门禁失败" in latest.get("tail", ""), (
@@ -109,7 +110,7 @@ def test_failure_persists_readable_tail_in_receipt(tmp_path, monkeypatch, capsys
 def test_success_does_not_bloat_the_receipt(tmp_path, monkeypatch, capsys):
     assert _run(tmp_path, monkeypatch, NOISY, 0) is True
     receipt = json.loads(
-        (tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+        process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["status"] == "done"
     assert "tail" not in receipt["latest"]
 
@@ -186,6 +187,6 @@ def test_empty_code_does_not_run_website_command(tmp_path, monkeypatch):
         tmp_path, "https://mp.weixin.qq.com/s/X", runner=runner) is False
     assert called["n"] == 0
     receipt = json.loads(
-        (tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+        process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["status"] == "failed"
     assert receipt["latest"]["reason"] == "article_code_missing"

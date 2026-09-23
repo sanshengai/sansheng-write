@@ -51,7 +51,9 @@ def main() -> int:
     ad = Path(a.article_dir).resolve()
     url = a.url
     if not url:
-        f = ad / "_website-sync-receipt.json"
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from article_paths import process_file
+        f = process_file(ad, "_website-sync-receipt.json")
         if f.is_file():
             url = json.loads(f.read_text(encoding="utf-8")).get("wechat_url", "")
     if not url:

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from scripts import physical_archive as pa
+from scripts.article_paths import process_file
 from scripts import pipeline
 from scripts import profile_config as pc
 
@@ -32,7 +33,7 @@ def test_archive_article_verifies_then_deletes_source(tmp_path):
     assert (target / "定稿.md").read_text(encoding="utf-8") == "# 正文\n"
     assert (target / "空目录").is_dir()
     assert receipt["source_deleted"] is True
-    saved = json.loads((target / pa.RECEIPT_FILE).read_text(encoding="utf-8"))
+    saved = json.loads(process_file(target, pa.RECEIPT_FILE).read_text(encoding="utf-8"))
     assert saved["archived_from"] == str(source.resolve())
     assert saved["target"] == str(target.resolve())
     assert saved["source_file_count"] == 4
@@ -52,7 +53,7 @@ def test_existing_target_conflict_aborts_without_overwrite_or_delete(tmp_path):
 
     assert source.is_dir()
     assert conflict.read_text(encoding="utf-8") == 'title: "另一篇"\n'
-    assert not (target / pa.RECEIPT_FILE).exists()
+    assert not process_file(target, pa.RECEIPT_FILE).exists()
 
 
 def test_existing_identical_target_is_idempotent_and_preserves_target_only_files(tmp_path):

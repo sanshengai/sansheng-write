@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from article_paths import PROCESS_DIR, process_file, process_rel
 from assemble_release import author_content_sha256
 from evidence import (
     CHECKPOINT_RECEIPT_FILE,
@@ -187,7 +188,7 @@ def adopt_final(
     # pre-existing author record before loading or writing any mutable runtime
     # state.  Missing/rejected/pending approval therefore leaves state, job and
     # receipt byte-for-byte untouched.
-    approval_path = cwd / "_draft-approval.md"
+    approval_path = process_file(cwd, "_draft-approval.md")
     if not approval_path.exists():
         return None, [
             "缺 _draft-approval.md：adopt-final 不得替作者自签；作者拍板后先运行 "
@@ -266,7 +267,7 @@ def adopt_final(
         "meta_digest": meta_binding_digest(meta_file),
     }
     approval_evidence = {
-        "path": "_draft-approval.md",
+        "path": process_rel(cwd, "_draft-approval.md"),
         "sha256": approval_sha256,
         "decision": approval_decision,
         "subject": approval_subject,
@@ -285,7 +286,7 @@ def adopt_final(
 
     # Make the approval SHA and its exact subject explicit in the checkpoint
     # receipt (the legacy artifact fields remain for existing verifiers).
-    receipt_path = cwd / CHECKPOINT_RECEIPT_FILE
+    receipt_path = process_file(cwd, CHECKPOINT_RECEIPT_FILE)
     receipt_payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     checkpoint = receipt_payload["checkpoints"]["draft"]
     checkpoint["approval_evidence"] = approval_evidence
@@ -318,7 +319,7 @@ def adopt_final(
     job["job_digest"] = stable_digest(
         {key: value for key, value in job.items() if key != "job_digest"}
     )
-    (cwd / RELEASE_JOB_FILE).write_text(
+    process_file(cwd, RELEASE_JOB_FILE, for_write=True).write_text(
         json.dumps(job, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
@@ -327,7 +328,7 @@ def adopt_final(
 
 def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd).resolve()
-    path = cwd / RELEASE_JOB_FILE
+    path = process_file(cwd, RELEASE_JOB_FILE)
     if not path.exists():
         return None, [
             f"缺 {RELEASE_JOB_FILE}；作者确认定稿后先执行 pipeline.py adopt-final"
@@ -353,7 +354,7 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
         else:
             approval_rel = str(approval.get("path") or "")
             approval_path = cwd / Path(approval_rel)
-            if approval_rel != "_draft-approval.md":
+            if approval_rel not in ("_draft-approval.md", f"{PROCESS_DIR}/_draft-approval.md"):
                 errors.append("release job 审批证据路径非法")
             elif not approval_path.exists():
                 errors.append("作者审批证据 _draft-approval.md 已缺失")
@@ -435,7 +436,7 @@ def rebind_release_job(cwd: Path) -> tuple[dict | None, bool, list[str]]:
     rebound["job_digest"] = stable_digest(
         {key: value for key, value in rebound.items() if key != "job_digest"}
     )
-    (cwd / RELEASE_JOB_FILE).write_text(
+    process_file(cwd, RELEASE_JOB_FILE, for_write=True).write_text(
         json.dumps(rebound, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )

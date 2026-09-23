@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from scripts.baoyu_contract import build_anchors
+from scripts.article_paths import process_file
 from scripts.evidence import seal_visual_receipt, stable_digest
 
 
@@ -252,8 +253,8 @@ def test_external_visual_reviewer_writes_structured_source_and_derived_markdown(
     assert errors == []
     assert qa["status"] == "pass"
     assert qa["reviewer"]["independent"] is True
-    assert (article / "_visual-qa.json").is_file()
-    markdown = (article / "_visual-qa.md").read_text(encoding="utf-8")
+    assert process_file(article, "_visual-qa.json").is_file()
+    markdown = process_file(article, "_visual-qa.md").read_text(encoding="utf-8")
     assert "此文件由 _visual-qa.json 派生" in markdown
     assert "✅" in markdown
 
@@ -293,7 +294,7 @@ def test_qa_rejects_deterministic_compositor_without_bound_design_manifest(tmp_p
 
 def test_qa_rejects_checked_box_markdown_without_structured_result(tmp_path):
     article = _article(tmp_path)
-    (article / "_visual-qa.md").write_text(
+    process_file(article, "_visual-qa.md", for_write=True).write_text(
         "- [x] 我看过了\n结论：通过\n", encoding="utf-8"
     )
 
@@ -315,7 +316,7 @@ def test_qa_rejects_missing_expected_ocr_text_even_if_model_says_pass(tmp_path):
     assert any("required_text" in error for error in errors)
     # 🔴 2026-08-04 起 QA 结果无论成败都必须落盘：失败时删文件会把「为什么没过」
     # 的唯一证据一起删掉，作者与下一轮排查都无从对账。
-    result_path = article / "_visual-qa.json"
+    result_path = process_file(article, "_visual-qa.json")
     assert result_path.exists()
     persisted = json.loads(result_path.read_text(encoding="utf-8"))
     assert persisted["status"] == "fail"
@@ -328,7 +329,7 @@ def test_required_text_appearing_twice_is_blocking(tmp_path):
     article = _article(tmp_path)
     qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
     assert errors == []
-    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    request = json.loads(process_file(article, "_visual-qa-request.json").read_text(encoding="utf-8"))
     qa["assets"][0]["observed_text"].append(qa["assets"][0]["observed_text"][0])
 
     validation_errors = validate_qa_result(article, qa, request=request)
@@ -342,7 +343,7 @@ def test_unexpected_text_is_a_hard_gate_even_if_reviewer_says_pass(tmp_path):
     article = _article(tmp_path)
     qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
     assert errors == []
-    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    request = json.loads(process_file(article, "_visual-qa-request.json").read_text(encoding="utf-8"))
     qa["assets"][0]["observed_text"].append("模型自加编号 123")
 
     validation_errors = validate_qa_result(article, qa, request=request)
@@ -367,7 +368,7 @@ def test_qa_accepts_adjacent_allowlisted_lines_merged_into_one_ocr_block(tmp_pat
     article = _article(tmp_path)
     qa, errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
     assert errors == []
-    request = json.loads((article / "_visual-qa-request.json").read_text(encoding="utf-8"))
+    request = json.loads(process_file(article, "_visual-qa-request.json").read_text(encoding="utf-8"))
     cover = next(asset for asset in qa["assets"] if asset["path"] == "素材/cover.png")
     cover["observed_text"] = [
         cover["observed_text"][0] + cover["observed_text"][1],
@@ -396,7 +397,7 @@ def test_visual_seal_binds_structured_qa_and_exact_final_image_bytes(tmp_path):
     assert run_visual_qa(article, reviewer_command=_reviewer(tmp_path))[1] == []
     receipt, errors = seal_visual_receipt(article)
     assert errors == []
-    assert receipt["qa_path"] == "_visual-qa.json"
+    assert receipt["qa_path"] == "过程记录/_visual-qa.json"   # 新文章的机器回执在 过程记录/（审计 E4）
 
     Image.new("RGB", (1200, 510), (10, 20, 30)).save(article / "素材/cover.png")
     receipt, errors = seal_visual_receipt(article)
@@ -434,6 +435,6 @@ def test_cover_pixel_checks_are_attached_but_never_gate_the_result(tmp_path):
     assert qa["status"] == "pass"  # 像素测量结果无论如何都不能把 pass 变成 fail
     cover_result = next(a for a in qa["assets"] if a["path"] == "素材/cover.png")
     assert cover_result["pixel_checks"]["ghost_layer"]["contract_verdict"] == "not_detected"
-    markdown = (article / "_visual-qa.md").read_text(encoding="utf-8")
+    markdown = process_file(article, "_visual-qa.md").read_text(encoding="utf-8")
     assert "像素自动测量" in markdown
     assert "仅报告，不参与发布判定" in markdown

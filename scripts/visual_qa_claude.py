@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from article_paths import PROCESS_DIR, process_file  # noqa: E402
 from visual_qa import _fully_segmented_by_allowed  # noqa: E402
 from visual_qa_codex import (  # noqa: E402
     _build_prompt,
@@ -209,7 +210,8 @@ def main() -> int:
 
     request_path = Path(args.request).resolve()
     request = json.loads(request_path.read_text(encoding="utf-8"))
-    article_dir = request_path.parent
+    # 请求文件在 过程记录/ 里时，文章目录是它的上一级（审计 E4）
+    article_dir = request_path.parent.parent if request_path.parent.name == PROCESS_DIR else request_path.parent
     assets = request.get("assets") or []
     if not assets:
         print("request 里没有资产", file=sys.stderr)
@@ -328,7 +330,7 @@ def main() -> int:
         qa["failures"] = failures
 
     # raw 永远落盘：候选 JSON 校验不过会被上游删除，raw 是事后排查的唯一线索。
-    (article_dir / "_visual-qa.raw.json").write_text(
+    process_file(article_dir, "_visual-qa.raw.json", for_write=True).write_text(
         json.dumps(qa, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     Path(args.output).write_text(

@@ -113,7 +113,7 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 ### 怎么把一个专名画出来（四条路线，按优先级）
 
-`_audio-cover-plan.json` 每张封面必填 `identity.route`，只能是下面四种：
+`_audio-cover-plan.json`（新文章放 `过程记录/`，旧文章在第一层）每张封面必填 `identity.route`，只能是下面四种：
 
 1. **实物外形**：锚点本身有公认外形——一台车、一台电视、一本书的开本和颜色、一座建筑、一件标志性物件。
    真人不生成肖像（铁律），改画他公认的标志物件。

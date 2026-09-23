@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from scripts import visual_qa_claude
+from scripts.article_paths import process_file
 
 
 # ---------- ① 结果信封解析 ----------
@@ -75,7 +76,7 @@ def _request(tmp_path: Path) -> Path:
             }
         ]
     }
-    path = article / "_visual-qa-request.json"
+    path = process_file(article, "_visual-qa-request.json", for_write=True)
     path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
     return path
 
@@ -107,7 +108,7 @@ def test_failed_verdict_still_exits_zero_and_writes_raw(tmp_path):
     assert qa["status"] == "fail"
     assert any("crop_safe" in item for item in qa["failures"])
     assert qa["reviewer"]["backend"] == "claude-code-cli"
-    raw = json.loads((tmp_path / "article" / "_visual-qa.raw.json").read_text(encoding="utf-8"))
+    raw = json.loads(process_file(tmp_path / "article", "_visual-qa.raw.json").read_text(encoding="utf-8"))
     assert raw["status"] == "fail"
     argv = json.loads((tmp_path / "argv.json").read_text(encoding="utf-8"))
     add_dir = argv[argv.index("--add-dir") + 1]

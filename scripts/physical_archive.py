@@ -147,8 +147,12 @@ def _remove_owned_stage(stage: Path, archive_root: Path) -> None:
 
 
 def _write_receipt(target: Path, receipt: dict[str, Any]) -> None:
-    final = target / RECEIPT_FILE
-    temp = target / f".{RECEIPT_FILE}.{uuid.uuid4().hex}.tmp"
+    try:
+        from .article_paths import process_file
+    except ImportError:  # pragma: no cover - direct script execution
+        from article_paths import process_file
+    final = process_file(target, RECEIPT_FILE, for_write=True)
+    temp = final.parent / f".{RECEIPT_FILE}.{uuid.uuid4().hex}.tmp"
     temp.write_text(
         json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

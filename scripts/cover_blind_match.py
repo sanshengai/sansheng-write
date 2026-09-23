@@ -51,10 +51,12 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .article_paths import process_file, process_rel
     from .visual_qa_claude import _extract_json, _resolve_claude
     from . import profile_config as pc
     from . import works_registry
 except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import process_file, process_rel
     from visual_qa_claude import _extract_json, _resolve_claude
     import profile_config as pc
     import works_registry
@@ -336,18 +338,18 @@ def _cover_digests(stage_covers: dict[str, Path]) -> dict[str, str]:
     return {key: hashlib.sha256(Path(path).read_bytes()).hexdigest() for key, path in stage_covers.items()}
 
 
-def _failure_message(results: list[dict[str, Any]]) -> str:
+def _failure_message(results: list[dict[str, Any]], plan_rel: str = COVER_PLAN_FILENAME) -> str:
     detail = [
         f"{STAGE_LABELS.get(r['image'], r['image'])}盲配未通过：模型判给了「{r.get('chosen_title')}」"
         f"（置信度 {r.get('confidence')}），看到的是：{r.get('description')}"
         for r in results if not r.get("correct")
     ]
-    detail.append(f"改 {COVER_PLAN_FILENAME} 对应封面的 subject/identity 后 --force 重出")
+    detail.append(f"改 {plan_rel} 对应封面的 subject/identity 后 --force 重出")
     return "；".join(detail)
 
 
 def _write_credential(article_dir: Path, record: dict[str, Any]) -> None:
-    path = article_dir / BLINDMATCH_FILE
+    path = process_file(article_dir, BLINDMATCH_FILE, for_write=True)
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -368,7 +370,7 @@ def _beijing_display(iso_utc: str) -> str:
 
 def _append_review(article_dir: Path, record: dict[str, Any]) -> None:
     """追加一段人读摘要；已有内容（人工写的历史版本）一律保留，只在末尾追加。"""
-    path = article_dir / REVIEW_FILE
+    path = process_file(article_dir, REVIEW_FILE, for_write=True)
     exists = path.is_file()
     when = _beijing_display(str(record.get("at") or ""))
     parts: list[str] = []
@@ -497,7 +499,8 @@ def run_blind_match(
     if all_correct:
         return {"status": "pass", "errors": [], "warnings": []}
 
-    return {"status": "fail", "errors": [_failure_message(results)], "warnings": []}
+    return {"status": "fail", "errors": [_failure_message(results, process_rel(article_dir, COVER_PLAN_FILENAME))],
+            "warnings": []}
 
 
 def recheck_existing(
@@ -514,7 +517,7 @@ def recheck_existing(
       不能绕过；``pass`` / ``skipped`` 放行；``error``（上次没取得结论）重新盲配；
     - 哈希不一致（封面被换过）或凭证缺哈希：重新盲配。
     """
-    path = article_dir / BLINDMATCH_FILE
+    path = process_file(article_dir, BLINDMATCH_FILE)
     if not path.is_file():
         return {"status": "absent", "errors": [], "warnings": []}
     try:
@@ -529,7 +532,8 @@ def recheck_existing(
     status = record.get("status")
     if same and not off:
         if status == "fail":
-            return {"status": "fail", "errors": [_failure_message(record.get("results") or [])], "warnings": []}
+            return {"status": "fail", "warnings": [],
+                    "errors": [_failure_message(record.get("results") or [], process_rel(article_dir, COVER_PLAN_FILENAME))]}
         if status in ("pass", "skipped"):
             return {"status": status, "errors": [], "warnings": []}
     if not article_title:

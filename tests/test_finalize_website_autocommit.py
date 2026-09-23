@@ -4,6 +4,7 @@
 紧接着又因为没提交而拒绝同步官网。其中一篇的页面其实早被别的会话的发布带上线，
 回执却一直是 failed。
 """
+from scripts.article_paths import process_file
 import json
 import subprocess
 import sys
@@ -95,7 +96,7 @@ def test_website_sync_autocommits_then_runs_command(repo, monkeypatch):
                                     runner=lambda *a, **k: ran.append(a) or R(),
                                     live_checker=lambda c, code: False)
     assert ok and ran
-    receipt = json.loads((article / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+    receipt = json.loads(process_file(article, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["status"] == "done" and receipt["latest"]["auto_commit"]
 
 
@@ -110,7 +111,7 @@ def test_already_live_skips_publish_command(tmp_path, monkeypatch):
                                     runner=lambda *a, **k: ran.append(a),
                                     live_checker=lambda c, code: True)
     assert ok and not ran
-    receipt = json.loads((tmp_path / "_website-sync-receipt.json").read_text(encoding="utf-8"))
+    receipt = json.loads(process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["reason"] == "already_live"
 
 

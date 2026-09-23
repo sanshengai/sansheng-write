@@ -2950,7 +2950,11 @@ def verify_title_contract(article_dir: str) -> dict:
         return {'verdict': 'skip', 'violations': [], 'warnings': [],
                 'notes': f'article-meta.yaml 解析失败：{exc}'}
     exempt = ''
-    approval = Path(article_dir) / '_blueprint-approval.md'
+    try:
+        from .article_paths import process_file
+    except ImportError:  # pragma: no cover - direct script execution
+        from article_paths import process_file
+    approval = process_file(Path(article_dir), '_blueprint-approval.md')
     if approval.exists():
         import re as _re
         hit = _re.search(r'^标题公式豁免[：:]\s*(.+)$', approval.read_text(encoding='utf-8'), _re.M)

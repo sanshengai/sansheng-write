@@ -43,11 +43,11 @@ from typing import Any
 import yaml
 
 try:
-    from .article_paths import PODCAST_COVER, THEME_COVER, cover_output
+    from .article_paths import PODCAST_COVER, PROCESS_DIR, THEME_COVER, cover_output, process_file
     from .music_manifest import MUSIC_MANIFEST_FILE
     from .render_visuals import _load_policy, resolve_renderer_command
 except ImportError:  # pragma: no cover - direct script execution
-    from article_paths import PODCAST_COVER, THEME_COVER, cover_output
+    from article_paths import PODCAST_COVER, PROCESS_DIR, THEME_COVER, cover_output, process_file
     from music_manifest import MUSIC_MANIFEST_FILE
     from render_visuals import _load_policy, resolve_renderer_command
 
@@ -158,8 +158,11 @@ def _recent_theme_palettes(article_dir: Path, window: int = RECENT_PALETTE_WINDO
     if current is None:
         return {}
     found: list[tuple[int, str, str]] = []
-    for plan_path in article_dir.parent.glob("[0-9]*-*/" + COVER_PLAN):
-        number = _article_number(plan_path.parent)
+    plan_paths = [*article_dir.parent.glob("[0-9]*-*/" + COVER_PLAN),
+                  *article_dir.parent.glob(f"[0-9]*-*/{PROCESS_DIR}/" + COVER_PLAN)]
+    for plan_path in plan_paths:
+        owner = plan_path.parent.parent if plan_path.parent.name == PROCESS_DIR else plan_path.parent
+        number = _article_number(owner)
         if number is None or number >= current:
             continue
         try:
@@ -171,7 +174,7 @@ def _recent_theme_palettes(article_dir: Path, window: int = RECENT_PALETTE_WINDO
         theme = plan.get("theme_cover")
         palette = theme.get("palette") if isinstance(theme, dict) else None
         if isinstance(palette, str) and palette:
-            found.append((number, plan_path.parent.name, palette))
+            found.append((number, owner.name, palette))
     found.sort(reverse=True)
     return {name: palette for _, name, palette in found[:window]}
 
@@ -241,9 +244,9 @@ def _check_subject(stage: str, item: dict, evidence: str) -> None:
 def _cover_plan(
     article_dir: Path, stages: list[str], body: str, *, title: str = "", song: str = ""
 ) -> dict[str, dict]:
-    path = article_dir / COVER_PLAN
+    path = process_file(article_dir, COVER_PLAN)
     if not path.is_file():
-        raise ValueError(f"缺 {COVER_PLAN}；先按 music.md 写明两张封面的唯一主体、依据与调色板")
+        raise ValueError(f"缺 {COVER_PLAN}（应在 {path.relative_to(article_dir).as_posix()}）；先按 music.md 写明两张封面的唯一主体、依据与调色板")
     plan = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(plan, dict) or plan.get("schema_version") != PLAN_SCHEMA:
         raise ValueError(
@@ -303,7 +306,7 @@ def _cover_plan(
 
 
 def _theme_title(article_dir: Path) -> str:
-    manifest = article_dir / MUSIC_MANIFEST_FILE
+    manifest = process_file(article_dir, MUSIC_MANIFEST_FILE)
     if not manifest.is_file():
         return ""
     try:
@@ -402,7 +405,7 @@ def write_thumb_sheet(article_dir: Path, covers: list[Path]) -> Path | None:
             sheet.paste(thumb, (x, y + label_h + (THUMB_SIZES[0] - size)))
             draw.text((x, y + label_h + THUMB_SIZES[0] + 2), f"{size}px", fill="#666666")
             x += size + gap
-    out = article_dir / COVER_THUMBS
+    out = process_file(article_dir, COVER_THUMBS, for_write=True)
     sheet.save(out)
     return out
 
@@ -572,7 +575,7 @@ def _main() -> int:
     ready, errors = ensure_audio_covers(article_dir, force=args.force)
     for path in ready:
         print(f"✅ {path}")
-    thumbs = article_dir / COVER_THUMBS
+    thumbs = process_file(article_dir, COVER_THUMBS)
     if thumbs.is_file():
         print(f"👀 缩略核对图：{thumbs}")
     if errors:

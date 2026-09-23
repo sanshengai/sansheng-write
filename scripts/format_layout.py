@@ -2204,7 +2204,9 @@ def write_layout_decision(cwd: str, meta: dict = None) -> None:
     """写/更新 交付附件 _layout-decision.md。已存在则只刷新 AUTO-FACTS 段、保留语义段。
     任何异常静默跳过（交付附件非关键路径，绝不阻断排版主流程）。"""
     try:
-        out_path = os.path.join(cwd, "_layout-decision.md")
+        sys.path.insert(0, str(SCRIPT_DIR))
+        from article_paths import process_file
+        out_path = str(process_file(Path(cwd), "_layout-decision.md", for_write=True))
         facts = _render_layout_facts(cwd, meta)
         auto_block = f"{_LD_AUTO_START}\n{facts}\n{_LD_AUTO_END}"
         if os.path.exists(out_path):
@@ -2324,7 +2326,9 @@ def run(args):
         # 这道门只能验「文件在」，写完再补跑也放行，证明不了写作前用过；曾有一篇就是
         # 排版时被拦、补跑后放行。现在由 adopt-final 自动补跑，这里只提醒。
         if os.path.exists(md_path):
-            prep_path = os.path.join(cwd, "_prep-context.md")
+            sys.path.insert(0, str(SCRIPT_DIR))
+            from article_paths import process_file
+            prep_path = str(process_file(Path(cwd), "_prep-context.md"))
             if not os.path.exists(prep_path) or os.path.getsize(prep_path) == 0:
                 log("⚠️ 未见 _prep-context.md：写作前应先跑 prep_writing.py（adopt-final 会自动补跑）")
 

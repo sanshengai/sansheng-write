@@ -17,11 +17,13 @@ from PIL import Image, ImageStat
 import yaml
 
 try:
+    from .article_paths import process_file
     from .evidence import build_visual_manifest, sha256_file
     from .profile_config import identity, load_secret, visual_profile
     from .evidence import stable_digest
     from .visual_pixel_checks import compute_cover_pixel_checks
 except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import process_file
     from evidence import build_visual_manifest, sha256_file
     from profile_config import identity, load_secret, visual_profile
     from evidence import stable_digest
@@ -559,7 +561,7 @@ def final_byte_errors(
     cwd = Path(cwd).resolve()
     if request is None:
         try:
-            request = json.loads((cwd / QA_REQUEST_FILE).read_text(encoding="utf-8"))
+            request = json.loads(process_file(cwd, QA_REQUEST_FILE).read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             return [f"缺可用的 {QA_REQUEST_FILE}，无法校验最终图片字节"]
     expected = {
@@ -593,7 +595,7 @@ def validate_qa_result(
 ) -> list[str]:
     cwd = cwd.resolve()
     errors: list[str] = []
-    request_path = cwd / QA_REQUEST_FILE
+    request_path = process_file(cwd, QA_REQUEST_FILE)
     if request is None:
         try:
             request = json.loads(request_path.read_text(encoding="utf-8"))
@@ -768,7 +770,7 @@ def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
             ]
         )
     lines.extend(["## 结论", "", "✅ 通过", ""])
-    (cwd / QA_MARKDOWN_FILE).write_text("\n".join(lines), encoding="utf-8")
+    process_file(cwd, QA_MARKDOWN_FILE, for_write=True).write_text("\n".join(lines), encoding="utf-8")
 
 
 def _resolve_reviewer_command() -> tuple[list[str] | None, list[str]]:
@@ -819,7 +821,7 @@ def run_visual_qa(
     request, errors = build_qa_request(cwd)
     if errors or request is None:
         return None, errors
-    request_path = cwd / QA_REQUEST_FILE
+    request_path = process_file(cwd, QA_REQUEST_FILE, for_write=True)
     request_path.write_text(
         json.dumps(request, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -829,7 +831,7 @@ def run_visual_qa(
         command, resolve_errors = _resolve_reviewer_command()
         if resolve_errors or command is None:
             return None, resolve_errors
-    candidate = cwd / "_visual-qa.candidate.json"
+    candidate = process_file(cwd, "_visual-qa.candidate.json", for_write=True)
     if candidate.exists():
         candidate.unlink()
     try:
@@ -877,7 +879,7 @@ def run_visual_qa(
     candidate.write_text(
         json.dumps(qa, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    final_path = cwd / QA_FILE
+    final_path = process_file(cwd, QA_FILE, for_write=True)
     candidate.replace(final_path)
     _write_markdown(cwd, qa)
     if validation_errors:

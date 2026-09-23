@@ -91,8 +91,14 @@ def test_handoff_then_scan_contract_then_podcast_upload(tmp_path, monkeypatch):
     # 交接副本不能把主题曲阶段标脏（审计 F2）
     assert pipeline._stage_artifact_digest(article, "bgm") == bgm_before
 
-    # ② 官网扫描契约：主题曲只认 _music-manifest.json，第一层的播客 mp3 不能被当成主题曲
-    manifest = json.loads((article / "_music-manifest.json").read_text(encoding="utf-8"))
+    # 机器回执收在 过程记录/，第一层只剩作者要用的文件（审计 E4）
+    assert not [name for name in top if name.startswith("_")]
+    assert (article / "过程记录" / "_handoff-receipt.json").is_file()
+
+    # ② 官网扫描契约：主题曲只认 _music-manifest.json（新文章在 过程记录/，旧文章在第一层），
+    #    第一层的播客 mp3 不能被当成主题曲
+    manifest_path = article / "过程记录" / "_music-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     theme = article / manifest["theme"]["playback"]["path"]
     assert theme.is_file() and theme.name == f"{SONG}.mp3"
     assert not theme.name.startswith("播客")

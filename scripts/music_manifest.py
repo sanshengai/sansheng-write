@@ -20,6 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+try:
+    from .article_paths import process_file
+except ImportError:  # pragma: no cover - direct script execution
+    from article_paths import process_file
+
 
 MUSIC_MANIFEST_FILE = "_music-manifest.json"
 MUSIC_MANIFEST_SCHEMA = 1
@@ -141,7 +146,7 @@ def write_music_manifest(
     """Atomically replace the article-local manifest after full validation."""
     article_dir = Path(article_dir).resolve()
     payload = build_music_manifest(article_dir, Path(audio_path), **kwargs)
-    path = article_dir / MUSIC_MANIFEST_FILE
+    path = process_file(article_dir, MUSIC_MANIFEST_FILE, for_write=True)
     candidate = path.with_name(path.name + ".next")
     candidate.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -165,7 +170,7 @@ def validate_music_manifest(
 ) -> tuple[ThemeAsset | None, list[str]]:
     """Validate schema, provenance fields, containment, bytes and SHA-256."""
     article_dir = Path(article_dir).resolve()
-    path = Path(manifest_path) if manifest_path else article_dir / MUSIC_MANIFEST_FILE
+    path = Path(manifest_path) if manifest_path else process_file(article_dir, MUSIC_MANIFEST_FILE)
     if not path.is_file():
         return None, [
             f"缺 {MUSIC_MANIFEST_FILE}；主题曲不得从任意 MP3 或最新 sidecar 猜测"

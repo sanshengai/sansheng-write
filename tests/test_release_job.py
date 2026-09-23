@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from scripts import pipeline
+from scripts.article_paths import process_file
 from scripts.evidence import sha256_file
 
 
@@ -42,7 +43,7 @@ def _article(tmp_path: Path) -> Path:
         'visual_profile: "warm-light-clay"\n',
         encoding="utf-8",
     )
-    (article / "_draft-approval.md").write_text(
+    process_file(article, "_draft-approval.md", for_write=True).write_text(
         "# 定稿闸 · 作者拍板\n\n审批结论：通过\n作者意见：按这版进入发布链。\n",
         encoding="utf-8",
     )
@@ -66,7 +67,7 @@ def test_adopt_final_creates_bound_release_job_and_state(tmp_path):
     result = _run(article, "adopt-final")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    job = json.loads((article / "_release-job.json").read_text(encoding="utf-8"))
+    job = json.loads(process_file(article, "_release-job.json").read_text(encoding="utf-8"))
     state = pipeline.load_state(article)
     assert job["scope"] == "wechat-draft"
     assert job["final_path"] == "定稿.md"
@@ -74,7 +75,7 @@ def test_adopt_final_creates_bound_release_job_and_state(tmp_path):
     assert job["meta_sha256"] == sha256_file(article / "article-meta.yaml")
     assert job["schema_version"] == 3
     assert job["approval_evidence"]["sha256"] == sha256_file(
-        article / "_draft-approval.md"
+        process_file(article, "_draft-approval.md")
     )
     assert job["approval_evidence"]["subject"]["title"] == (
         "教程 | 一篇已经确认的文章"
@@ -84,7 +85,7 @@ def test_adopt_final_creates_bound_release_job_and_state(tmp_path):
     assert state["stages"]["writing"]["status"] == "done"
     assert state["stages"]["writing"]["source_mode"] == "author-provided-final"
     checkpoint = json.loads(
-        (article / "_checkpoint-receipts.json").read_text(encoding="utf-8")
+        process_file(article, "_checkpoint-receipts.json").read_text(encoding="utf-8")
     )
     assert checkpoint["checkpoints"]["draft"]["source_mode"] == "author-provided-final"
     assert checkpoint["checkpoints"]["draft"]["approval_evidence"] == job["approval_evidence"]
@@ -100,7 +101,7 @@ def test_adopt_final_requires_real_approval_and_invalid_cases_write_nothing(tmp_
         case_root = tmp_path / suffix
         case_root.mkdir()
         article = _article(case_root)
-        approval = article / "_draft-approval.md"
+        approval = process_file(article, "_draft-approval.md")
         if approval_text is None:
             approval.unlink()
         else:
@@ -111,13 +112,13 @@ def test_adopt_final_requires_real_approval_and_invalid_cases_write_nothing(tmp_
         assert result.returncode == 2, result.stdout + result.stderr
         assert "不得" in result.stdout or "有效通过" in result.stdout
         assert not (article / ".state.json").exists()
-        assert not (article / "_release-job.json").exists()
-        assert not (article / "_checkpoint-receipts.json").exists()
+        assert not process_file(article, "_release-job.json").exists()
+        assert not process_file(article, "_checkpoint-receipts.json").exists()
 
 
 def test_invalid_approval_preserves_existing_runtime_bytes(tmp_path):
     article = _article(tmp_path)
-    (article / "_draft-approval.md").write_text("审批结论：拒绝\n", encoding="utf-8")
+    process_file(article, "_draft-approval.md", for_write=True).write_text("审批结论：拒绝\n", encoding="utf-8")
     sentinels = {
         article / ".state.json": b'{"sentinel":"state"}',
         article / "_release-job.json": b'{"sentinel":"job"}',
@@ -135,7 +136,7 @@ def test_invalid_approval_preserves_existing_runtime_bytes(tmp_path):
 
 def test_adopt_final_preserves_approval_bytes_and_rejects_later_drift(tmp_path):
     article = _article(tmp_path)
-    approval = article / "_draft-approval.md"
+    approval = process_file(article, "_draft-approval.md")
     before = approval.read_bytes()
 
     assert _run(article, "adopt-final").returncode == 0
@@ -162,7 +163,7 @@ def test_adopt_final_rejects_title_drift_without_writing_state(tmp_path):
     assert result.returncode == 2
     assert "标题" in result.stdout
     assert not (article / ".state.json").exists()
-    assert not (article / "_release-job.json").exists()
+    assert not process_file(article, "_release-job.json").exists()
 
 
 def test_release_job_invalidates_when_final_changes(tmp_path):

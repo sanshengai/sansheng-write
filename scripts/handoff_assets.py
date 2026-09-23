@@ -27,6 +27,7 @@ try:
         PODCAST_COVER,
         THEME_COVER,
         podcast_upload_name,
+        process_rel,
         resolve_cover,
     )
     from .evidence import sha256_file, stable_digest, verify_visual_receipt
@@ -42,6 +43,7 @@ except ImportError:  # pragma: no cover - direct script execution
         PODCAST_COVER,
         THEME_COVER,
         podcast_upload_name,
+        process_rel,
         resolve_cover,
     )
     from evidence import sha256_file, stable_digest, verify_visual_receipt
@@ -161,7 +163,7 @@ def _cover_from_visual_receipt(
             "path": relative,
             "sha256": digest,
             "bytes": source.stat().st_size,
-            "receipt": "_visual-receipt.json",
+            "receipt": process_rel(article_dir, "_visual-receipt.json"),
             # Bind the deterministic visual manifest, not the seal timestamp.
             "receipt_digest": str(receipt.get("manifest_digest") or stable_digest(manifest)),
         },
@@ -204,7 +206,7 @@ def _theme_from_manifest(
             "path": theme.relative_path,
             "sha256": theme.sha256,
             "bytes": theme.bytes,
-            "receipt": MUSIC_MANIFEST_FILE,
+            "receipt": process_rel(article_dir, MUSIC_MANIFEST_FILE),
             "receipt_digest": theme.manifest_digest,
         },
         "handoff": {
@@ -482,7 +484,9 @@ def _export_in_article(
         return None, "", ["上传资产同名，无法放在文章第一层；请先区分源文件名称"]
     payloads = {spec.destination: (spec.bytes, spec.sha256) for spec in flat_specs}
     receipt_bytes = _canonical_json(receipt)
-    payloads[HANDOFF_RECEIPT_FILE] = (len(receipt_bytes), hashlib.sha256(receipt_bytes).hexdigest())
+    # 回执跟其他机器回执一起放 过程记录/（旧文章第一层已有就沿用第一层，审计 E4）。
+    receipt_rel = process_rel(article_dir, HANDOFF_RECEIPT_FILE)
+    payloads[receipt_rel] = (len(receipt_bytes), hashlib.sha256(receipt_bytes).hexdigest())
     # Check the complete set before creating anything, including the receipt.
     missing = []
     for name, (size, digest) in payloads.items():
@@ -496,7 +500,7 @@ def _export_in_article(
     if not missing:
         return article_dir, "unchanged", []
     temp = Path(tempfile.mkdtemp(prefix=".handoff-tmp-", dir=article_dir))
-    created: list[tuple[Path, int]] = []
+    created: list[tuple[Path, int, str]] = []
     try:
         for spec in flat_specs:
             if spec.destination not in missing:
@@ -505,18 +509,20 @@ def _export_in_article(
             shutil.copyfile(spec.source, staged)
             if staged.stat().st_size != spec.bytes or sha256_file(staged) != spec.sha256:
                 raise HandoffError(f"复制后校验失败：{spec.destination}")
-        if HANDOFF_RECEIPT_FILE in missing:
-            (temp / HANDOFF_RECEIPT_FILE).write_bytes(receipt_bytes)
+        if receipt_rel in missing:
+            (temp / receipt_rel).parent.mkdir(parents=True, exist_ok=True)
+            (temp / receipt_rel).write_bytes(receipt_bytes)
         # link() atomically installs a new file without replacing concurrent
         # writes; assets come first, the receipt is installed last.
         for name in missing:
             destination = article_dir / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
             os.link(temp / name, destination)
-            created.append((destination, destination.stat().st_ino))
+            created.append((destination, destination.stat().st_ino, name))
         return article_dir, "created", []
     except (OSError, HandoffError) as exc:
-        for destination, inode in reversed(created):
-            size, digest = payloads[destination.name]
+        for destination, inode, name in reversed(created):
+            size, digest = payloads[name]
             if (not destination.is_symlink() and destination.is_file()
                     and destination.stat().st_ino == inode
                     and destination.stat().st_size == size

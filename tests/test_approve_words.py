@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from scripts import pipeline
+from scripts.article_paths import process_file
 from scripts.evidence import CHECKPOINT_RECEIPT_FILE, _approval_anchor, render_approval_anchor
 
 PIPELINE = Path(pipeline.__file__).resolve()
@@ -64,11 +65,11 @@ def test_draft_words_are_quoted_verbatim_and_sealed(tmp_path):
     article = _article(tmp_path)
     result = _run(article, "approve", "draft", "--source-mode", "author-provided-final", "--words", WORDS)
     assert result.returncode == 0, result.stdout + result.stderr
-    text = (article / "_draft-approval.md").read_text(encoding="utf-8")
+    text = process_file(article, "_draft-approval.md").read_text(encoding="utf-8")
     assert "> 标题用方案2，开头A，\n> 直接按完整流程走完。" in text
     assert "作者原话（" in text and "北京时间" in text
     assert "审批结论：通过" in text
-    receipts = json.loads((article / CHECKPOINT_RECEIPT_FILE).read_text(encoding="utf-8"))
+    receipts = json.loads(process_file(article, CHECKPOINT_RECEIPT_FILE).read_text(encoding="utf-8"))
     assert receipts["checkpoints"]["draft"]["decision"] == "approved"
 
 
@@ -83,7 +84,7 @@ def test_adopt_final_accepts_generated_approval(tmp_path):
 
 def test_adopt_final_warns_on_hand_written_approval(tmp_path):
     article = _article(tmp_path)
-    (article / "_draft-approval.md").write_text("# 定稿审批\n\n审批结论：通过\n", encoding="utf-8")
+    process_file(article, "_draft-approval.md", for_write=True).write_text("# 定稿审批\n\n审批结论：通过\n", encoding="utf-8")
     result = _run(article, "adopt-final")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "没有「作者原话」记录" in result.stdout
@@ -104,10 +105,10 @@ def test_negative_words_inside_quote_do_not_reject(tmp_path):
 def test_existing_record_is_kept_as_quote_and_no_longer_governs(tmp_path):
     article = _article(tmp_path)
     old = "# 定稿审批\n\n审批结论：待确认\n作者还没看完。\n"
-    (article / "_draft-approval.md").write_text(old, encoding="utf-8")
+    process_file(article, "_draft-approval.md", for_write=True).write_text(old, encoding="utf-8")
     assert _run(article, "approve", "draft", "--source-mode", "author-provided-final",
                 "--words", "看完了，过。").returncode == 0
-    text = (article / "_draft-approval.md").read_text(encoding="utf-8")
+    text = process_file(article, "_draft-approval.md").read_text(encoding="utf-8")
     assert "> 审批结论：待确认" in text and "> 作者还没看完。" in text
     assert _approval_anchor(article, "draft")[0]["decision"] == "approved"
 
@@ -118,13 +119,13 @@ def test_blueprint_requires_structured_fields(tmp_path):
     result = _run(article, "approve", "blueprint", "--source-mode", "new-draft", "--words", "方案2，开头A")
     assert result.returncode == 2
     assert "--opening" in result.stdout and "--cover-style" in result.stdout
-    assert not (article / "_blueprint-approval.md").exists()
+    assert not process_file(article, "_blueprint-approval.md").exists()
 
     result = _run(article, "approve", "blueprint", "--source-mode", "new-draft", "--words", "方案2，开头A",
                   "--title", "教程 | 一篇已经确认的文章", "--opening", "A",
                   "--outline", "三段：问题、做法、边界", "--cover-style", "montage-evidence")
     assert result.returncode == 0, result.stdout + result.stderr
-    text = (article / "_blueprint-approval.md").read_text(encoding="utf-8")
+    text = process_file(article, "_blueprint-approval.md").read_text(encoding="utf-8")
     for needle in ("作者指定标题", "开头", "大纲", "封面风格"):
         assert needle in text   # 与 verify outline 的蓝图结构检查同一口径
 
@@ -134,12 +135,12 @@ def test_seal_failure_rolls_back_anchor(tmp_path):
     article = _article(tmp_path)
     result = _run(article, "approve", "draft", "--source-mode", "new-draft", "--words", "过")
     assert result.returncode == 2 and "已回滚" in result.stdout
-    assert not (article / "_draft-approval.md").exists()
+    assert not process_file(article, "_draft-approval.md").exists()
 
     old = "# 定稿审批\n\n审批结论：待确认\n"
-    (article / "_draft-approval.md").write_text(old, encoding="utf-8")
+    process_file(article, "_draft-approval.md", for_write=True).write_text(old, encoding="utf-8")
     assert _run(article, "approve", "draft", "--source-mode", "new-draft", "--words", "过").returncode == 2
-    assert (article / "_draft-approval.md").read_text(encoding="utf-8") == old
+    assert process_file(article, "_draft-approval.md").read_text(encoding="utf-8") == old
 
 
 def test_waiver_writes_waived_conclusion():
@@ -151,3 +152,21 @@ def test_waiver_writes_waived_conclusion():
 def test_empty_words_are_rejected():
     _, errors = render_approval_anchor("draft", "   ", source_mode="author-provided-final")
     assert errors and "作者原话" in errors[0]
+
+
+def test_title_exempt_reaches_title_contract(tmp_path):
+    """--title-exempt 写成「标题公式豁免：」行，标题检查能读到（审批文件在 过程记录/ 里也一样）。"""
+    from scripts.contracts import verify_title_contract
+
+    article = _article(tmp_path)
+    (article / "大纲.md").write_text("大纲\n" * 100, encoding="utf-8")
+    meta = article / "article-meta.yaml"
+    meta.write_text(meta.read_text(encoding="utf-8").replace(
+        '"教程 | 一篇已经确认的文章"', '"教程 | 全网最好的学习网站"'), encoding="utf-8")
+    assert verify_title_contract(article)["verdict"] == "fail"
+    result = _run(article, "approve", "blueprint", "--source-mode", "new-draft", "--words", "就用这个标题",
+                  "--title", "教程 | 全网最好的学习网站", "--opening", "A", "--outline", "三段",
+                  "--cover-style", "montage-evidence", "--title-exempt", "作者要求保留原名")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert process_file(article, "_blueprint-approval.md").parent.name == "过程记录"
+    assert verify_title_contract(article)["verdict"] != "fail"

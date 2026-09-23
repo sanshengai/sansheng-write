@@ -4,6 +4,7 @@ import json
 import pytest
 
 from scripts import audio_covers as covers
+from scripts.article_paths import process_file
 
 
 def article(tmp_path, name="106-Jev入门与应用"):
@@ -13,7 +14,7 @@ def article(tmp_path, name="106-Jev入门与应用"):
         "# Jev 处理小判断\n\n邮件先进入工具，模型分类以后由程序接着处理。\n",
         encoding="utf-8",
     )
-    (root / "_music-manifest.json").write_text(
+    process_file(root, "_music-manifest.json", for_write=True).write_text(
         json.dumps({"theme": {"title": "Jev 的选择题"}}), encoding="utf-8"
     )
     (root / covers.MUSIC_BRIEF).write_text(
@@ -43,7 +44,7 @@ def plan(root, **changes):
         },
     }
     data.update(changes)
-    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    process_file(root, covers.COVER_PLAN, for_write=True).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return data
 
 
@@ -109,7 +110,7 @@ def test_meta_and_multiline_frontmatter_are_loaded(tmp_path):
 def test_invalid_plan_never_calls_renderer(tmp_path, monkeypatch, failure):
     root = article(tmp_path)
     data = plan(root)
-    path = root / covers.COVER_PLAN
+    path = process_file(root, covers.COVER_PLAN)
     theme, podcast = data["theme_cover"], data["podcast_cover"]
     if failure == "missing_plan":
         path.unlink()
@@ -196,26 +197,26 @@ def test_theme_palette_must_avoid_previous_three_articles(tmp_path, monkeypatch)
     for number, palette in ((103, "moss"), (104, "plum"), (105, "rust"), (102, "ocean")):
         older = tmp_path / f"{number}-旧文"
         older.mkdir()
-        (older / covers.COVER_PLAN).write_text(json.dumps({
+        process_file(older, covers.COVER_PLAN, for_write=True).write_text(json.dumps({
             "schema_version": 2, "theme_cover": {"palette": palette},
         }), encoding="utf-8")
     # 未升级到 schema 2 的旧规划不参与回避。
     legacy = tmp_path / "101-更旧"
     legacy.mkdir()
-    (legacy / covers.COVER_PLAN).write_text(json.dumps({"schema_version": 1, "theme_cover": {"palette": "ink"}}))
+    process_file(legacy, covers.COVER_PLAN, for_write=True).write_text(json.dumps({"schema_version": 1, "theme_cover": {"palette": "ink"}}))
     root = article(tmp_path)
     assert covers._recent_theme_palettes(root) == {"105-旧文": "rust", "104-旧文": "plum", "103-旧文": "moss"}
 
     data = plan(root)
     data["theme_cover"]["palette"] = "plum"
-    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False))
+    process_file(root, covers.COVER_PLAN, for_write=True).write_text(json.dumps(data, ensure_ascii=False))
     prompts = renderer(monkeypatch)
     ready, errors = covers.ensure_audio_covers(root)
     assert errors and not ready and not prompts and "plum" in errors[0] and "104-旧文" in errors[0]
 
     # 102 用过的 ocean 已滑出三篇窗口，可以再用。
     data["theme_cover"]["palette"] = "ocean"
-    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False))
+    process_file(root, covers.COVER_PLAN, for_write=True).write_text(json.dumps(data, ensure_ascii=False))
     ready, errors = covers.ensure_audio_covers(root)
     assert not errors and len(ready) == 1
 
@@ -242,7 +243,8 @@ def test_thumb_sheet_lays_out_site_sizes_and_skips_invalid_images(tmp_path):
     broken = root / covers.PODCAST_COVER
     broken.write_bytes(b"not-an-image")
     out = covers.write_thumb_sheet(root, [theme, broken])
-    assert out == root / covers.COVER_THUMBS and out.is_file()
+    assert out == process_file(root, covers.COVER_THUMBS) and out.is_file()
+    assert out.parent.name == "过程记录"   # 核对图是机器产物，不放第一层（审计 E4）
     sheet = Image.open(out)
     assert sheet.height == covers.THUMB_SIZES[0] + 18 + 24  # 一行：只有有效的那张
     assert sheet.width > sum(covers.THUMB_SIZES)
@@ -255,7 +257,7 @@ def test_metaphor_prop_allowed_when_title_literally_names_it(tmp_path, monkeypat
     data = plan(root)
     data["podcast_cover"]["subject"] = "一架天平，左盘放着一只信封"
     data["podcast_cover"].pop("glyph")
-    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    process_file(root, covers.COVER_PLAN, for_write=True).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     podcast = root / covers.PODCAST_MANIFEST
     podcast.parent.mkdir(parents=True)
     podcast.write_text("{}")
@@ -269,7 +271,7 @@ def test_glyph_subject_may_describe_its_letters(tmp_path, monkeypatch):
     data = plan(root)
     data["theme_cover"]["subject"] = "三个托盘中间那个上浮雕着 Jev 三个字母"
     data["theme_cover"]["glyph"] = "Jev"
-    (root / covers.COVER_PLAN).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    process_file(root, covers.COVER_PLAN, for_write=True).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     renderer(monkeypatch)
     ready, errors = covers.ensure_audio_covers(root)
     assert not errors and len(ready) == 1
@@ -345,7 +347,7 @@ def test_reused_covers_keep_recorded_blind_match_failure(tmp_path, monkeypatch):
     root = article(tmp_path)
     target = root / covers.THEME_COVER
     target.write_bytes(b"cover-that-failed")
-    (root / bm.BLINDMATCH_FILE).write_text(json.dumps({
+    process_file(root, bm.BLINDMATCH_FILE, for_write=True).write_text(json.dumps({
         "status": "fail",
         "cover_sha256": {"theme_cover": hashlib.sha256(b"cover-that-failed").hexdigest()},
         "results": [{"image": "theme_cover", "chosen_title": "别篇", "confidence": "high",

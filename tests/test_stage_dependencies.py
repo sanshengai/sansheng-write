@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from scripts import pipeline
+from scripts.article_paths import process_file
 from scripts.evidence import stable_digest
 
 PIPELINE = Path(pipeline.__file__).resolve()
@@ -47,7 +48,7 @@ def _article(tmp_path: Path) -> Path:
         'visual_profile: "warm-light-clay"\n',
         encoding="utf-8",
     )
-    (article / "_draft-approval.md").write_text(
+    process_file(article, "_draft-approval.md", for_write=True).write_text(
         "# 定稿闸 · 作者拍板\n\n审批结论：通过\n作者意见：按这版进入发布链。\n",
         encoding="utf-8",
     )
@@ -88,7 +89,7 @@ def test_outline_change_still_invalidates_everything():
 
 def test_bgm_digest_ignores_handoff_copies(tmp_path):
     (tmp_path / "主题曲.mp3").write_bytes(b"theme-bytes")
-    (tmp_path / "_music-manifest.json").write_text(json.dumps(
+    process_file(tmp_path, "_music-manifest.json", for_write=True).write_text(json.dumps(
         {"schema_version": 1, "theme": {"playback": {"path": "主题曲.mp3"}}}), encoding="utf-8")
     before = pipeline._stage_artifact_digest(tmp_path, "bgm")
     (tmp_path / "播客 | 一篇文章.mp3").write_bytes(b"podcast-copy")
@@ -157,7 +158,7 @@ def test_title_change_still_invalidates_release_job(tmp_path):
 def test_legacy_job_without_meta_digest_keeps_whole_file_check(tmp_path):
     article = _article(tmp_path)
     assert _run(article, "adopt-final").returncode == 0
-    job_path = article / "_release-job.json"
+    job_path = process_file(article, "_release-job.json")
     job = json.loads(job_path.read_text(encoding="utf-8"))
     job.pop("meta_digest")
     subject = job["approval_evidence"]["subject"]
@@ -168,3 +169,49 @@ def test_legacy_job_without_meta_digest_keeps_whole_file_check(tmp_path):
     assert _run(article, "verify-release-job").returncode == 0
     _append_music(article)
     assert _run(article, "verify-release-job").returncode != 0
+
+
+# ---------- 摘要算法升级不误伤旧文章 ----------
+
+def _done_state(stage: str, digest: str) -> dict:
+    state = {"schema_version": 2, "stages": {name: {"status": "pending"} for name in pipeline.STAGE_ORDER}}
+    for name in pipeline.STAGE_ORDER[: pipeline.STAGE_ORDER.index(stage) + 1]:
+        state["stages"][name] = {"status": "done"}
+    state["stages"][stage]["artifact_digest"] = digest
+    return state
+
+
+def test_digest_recorded_by_old_algorithm_is_upgraded_not_dirtied(tmp_path):
+    """F2 换了封面摘要算法；旧算法记下的值只要对得上当前产物，就就地升级、不标脏。"""
+    article = _article(tmp_path)
+    render = {"stage": "cover", "output": "素材/cover.png", "record_id": "render-1", "output_sha256": "aaa"}
+    post = dict(render, record_id="postprocess-1", output_sha256="bbb",
+                post_process={"tool": "compress_images.py", "source_sha256": "aaa"})
+    _gen_log(article, [render, post])
+    old = pipeline._stage_artifact_digest_legacy(article, "cover")
+    assert old and old != pipeline._stage_artifact_digest(article, "cover")
+    state = _done_state("cover", old)
+    pipeline.save_state(article, state)
+    assert pipeline._reconcile_artifact_drift(article, state) is True   # 升级也要落盘
+    assert state["stages"]["cover"]["status"] == "done"
+    assert state["stages"]["cover"]["artifact_digest"] == pipeline._stage_artifact_digest(article, "cover")
+
+
+def test_bgm_old_digest_with_handoff_copies_is_upgraded(tmp_path):
+    (tmp_path / "主题曲.mp3").write_bytes(b"theme-bytes")
+    (tmp_path / "播客 | 一篇文章.mp3").write_bytes(b"podcast-copy")
+    (tmp_path / "_music-manifest.json").write_text(json.dumps(
+        {"schema_version": 1, "theme": {"playback": {"path": "主题曲.mp3"}}}), encoding="utf-8")
+    state = _done_state("bgm", pipeline._stage_artifact_digest_legacy(tmp_path, "bgm"))
+    pipeline._reconcile_artifact_drift(tmp_path, state)
+    assert state["stages"]["bgm"]["status"] == "done"
+
+
+def test_real_change_still_dirties_old_record(tmp_path):
+    article = _article(tmp_path)
+    render = {"stage": "cover", "output": "素材/cover.png", "record_id": "render-1", "output_sha256": "aaa"}
+    _gen_log(article, [render])
+    state = _done_state("cover", pipeline._stage_artifact_digest_legacy(article, "cover"))
+    _gen_log(article, [dict(render, record_id="render-2", output_sha256="ccc")])   # 真的重出了封面
+    pipeline._reconcile_artifact_drift(article, state)
+    assert state["stages"]["cover"]["status"] == "dirty"

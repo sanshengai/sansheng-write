@@ -1,3 +1,4 @@
+from scripts.article_paths import process_file
 import json
 import re
 from pathlib import Path
@@ -21,7 +22,7 @@ def _article(root: Path) -> Path:
         encoding="utf-8",
     )
     (root / "素材/cover.png").write_bytes(b"cover")
-    (root / "_release-job.json").write_text(
+    process_file(root, "_release-job.json", for_write=True).write_text(
         json.dumps({"scope": "wechat-draft", "formal_publish": False}),
         encoding="utf-8",
     )
@@ -41,7 +42,7 @@ def _preflight(root: Path):
         "manifest": manifest,
         "manifest_digest": stable_digest(manifest),
     }
-    (root / "_publish-ready.json").write_text(
+    process_file(root, "_publish-ready.json", for_write=True).write_text(
         json.dumps(ready, ensure_ascii=False), encoding="utf-8"
     )
     return ready, []
@@ -379,8 +380,8 @@ def test_published_audio_recovery_writes_distinct_official_receipt(tmp_path):
     assert receipt["published_article_id"] == "published-article-001"
     assert receipt["wechat_url"] == url
     assert receipt["audition"]["surface"] == "wechat_published_article"
-    assert (article / PUBLISHED_AUDIO_RECEIPT_FILE).is_file()
-    assert not (article / "_wechat-audio-receipt.json").exists()
+    assert process_file(article, PUBLISHED_AUDIO_RECEIPT_FILE).is_file()
+    assert not process_file(article, "_wechat-audio-receipt.json").exists()
 
 
 def test_published_audio_recovery_persists_without_audition(tmp_path):
@@ -399,7 +400,7 @@ def test_published_audio_recovery_persists_without_audition(tmp_path):
         "manual_audition_required": False,
         "remote_audio_bytes_verified": False,
     }
-    assert (article / "_wechat-published-audio-receipt.json").is_file()
+    assert process_file(article, "_wechat-published-audio-receipt.json").is_file()
     from scripts.release_to_draft import compare_wechat_published_audio_receipts
     assert compare_wechat_published_audio_receipts(
         receipt, receipt, expected_wechat_url="https://mp.weixin.qq.com/s/x"
@@ -532,7 +533,7 @@ def test_published_page_payload_chains_only_unobservable_draft_fields(tmp_path):
     assert payload["article_id"] == ""
     assert payload["article"]["content"].count("data:image/gif") == 0
     assert release_to_draft._image_sources(payload["article"]["content"]) == (
-        json.loads((article / "_publish-receipt.json").read_text(encoding="utf-8"))
+        json.loads(process_file(article, "_publish-receipt.json").read_text(encoding="utf-8"))
         ["remote_readback"]["image_sources"]
     )
     coverage = payload["evidence_coverage"]
@@ -609,7 +610,7 @@ def test_dual_audio_readback_persists_without_audition(tmp_path):
     assert errors == [] and receipt is not None
     assert "audition" not in receipt
     assert receipt["verification_scope"]["remote_audio_bytes_verified"] is False
-    assert (article / "_wechat-audio-receipt.json").is_file()
+    assert process_file(article, "_wechat-audio-receipt.json").is_file()
     from scripts.release_to_draft import compare_wechat_audio_receipts
     assert compare_wechat_audio_receipts(receipt, receipt) == []
 
@@ -869,8 +870,8 @@ def test_remote_mismatch_blocks_publish_receipt_but_preserves_attempt(tmp_path):
 
     assert receipt is None
     assert any("title" in error for error in errors)
-    assert (article / "_release-attempt.json").is_file()
-    assert not (article / "_publish-receipt.json").exists()
+    assert process_file(article, "_release-attempt.json").is_file()
+    assert not process_file(article, "_publish-receipt.json").exists()
 
 
 def test_retry_reads_existing_draft_instead_of_creating_duplicate(tmp_path):
@@ -914,7 +915,7 @@ def test_changed_ready_digest_requires_a_new_draft_attempt(tmp_path):
     def changed_preflight(root):
         ready, errors = _preflight(root)
         ready["manifest_digest"] = "changed-ready"
-        (root / "_publish-ready.json").write_text(json.dumps(ready), encoding="utf-8")
+        process_file(root, "_publish-ready.json", for_write=True).write_text(json.dumps(ready), encoding="utf-8")
         return ready, errors
 
     receipt, errors = release_to_draft(
@@ -965,10 +966,10 @@ def test_release_job_scope_cannot_expand_to_formal_publish(tmp_path):
     from scripts.release_to_draft import release_to_draft
 
     article = _article(tmp_path)
-    job = json.loads((article / "_release-job.json").read_text(encoding="utf-8"))
+    job = json.loads(process_file(article, "_release-job.json").read_text(encoding="utf-8"))
     job["scope"] = "formal-publish"
     job["formal_publish"] = True
-    (article / "_release-job.json").write_text(json.dumps(job), encoding="utf-8")
+    process_file(article, "_release-job.json", for_write=True).write_text(json.dumps(job), encoding="utf-8")
 
     receipt, errors = release_to_draft(
         article,
