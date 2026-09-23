@@ -1,5 +1,7 @@
 # 转 X（Twitter）文章
 
+> **适用边界（先查再转）**：X 只按篇显式触发，不因拿到正式链接自动执行；作者还可以在 profile `context.md` 的渠道偏好里声明哪类文章不转 X（例如「来源本身就在国外的新闻不转」——海外读者直接看原始信源，转过去意义不大）。动手前先读那一条，命中就不转，并在回复里说明原因；拿不准时问作者一句。X 目前不在 `distribute.py` 的渠道状态机里，产物与回执单独落 `dist/x/`。
+
 已定稿并发布公众号后，把整篇搬成 X 文章（Articles）。X 文章是 Premium 功能，只能走登录态浏览器——X API 没有文章接口，改资料接口也只对付费档开放，第三方 SaaS（OpenTweet / Upload-Post / Publora）都只发普通帖，走 cookie 打内部接口的 `bird` 自己就写着发帖会封号。2026-09-19 看完 12 个开源仓（宝玉 / 王树义 / 向阳乔木 / bird / tweet-cli / x-skills / viral-x-posts / x-twitter-growth / x-thread-skill / x-post-creater / social-post / x-user-skill-creator）的结论：不装任何一个，能用的规则并进本 skill；实施记录见 `docs/plans/2026-09-19-X发布链并入计划.md`。
 
 ## 入口
