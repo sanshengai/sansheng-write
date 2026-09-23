@@ -18,10 +18,11 @@ python "$SKILL/scripts/pipeline.py" status
 
 1. **选题与大纲**
    - 读取 `outline.md`、近三篇作品和必要信源。
-   - 写 `大纲.md` 与 `article-meta.yaml`。**`article-meta.yaml` 从
-     `templates/article-meta.template.yaml` 复制再改**，不要手写 —— 模板里带着
-     `infographic_subject` / `visual_profile` / `tags` 受控词表这些必填项的注释，
-     手写极易漏，而它们要到 `adopt-final` 才报错。
+   - 先建目录：`pipeline.py new "<选题名>" --genre news|tutorial|deep|promo`（资讯快讯 / 教程 / 深度 / 推广）。
+     它按文体从 `templates/article-meta.template.yaml` 与 profile 生成 `article-meta.yaml`（带受控词表注释，
+     文体相关字段预填、标题摘要等留空），**不复制上一篇的任何文件**——照抄上一篇会把旧值、渲染策略和
+     社媒风格一起继承下来。编号取数据目录、归档目录与作品库的最大序号加一。
+   - 写 `大纲.md`，按大纲逐项填 `article-meta.yaml`。
    - 「大纲 + 5 套标题/封面方案 + 开头候选」一包交作者拍板。作者选定后：
 
      ```bash

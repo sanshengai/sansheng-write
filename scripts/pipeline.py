@@ -868,6 +868,111 @@ def cmd_init(cwd: Path):
     print(f"   下一步：pipeline.py status")
 
 
+# ── new：按文体从模板与 profile 生成新篇骨架（2026-09-23 审计 E2）────────────
+# 「照抄上一篇」曾是事实上的模板机制：article-meta 带着上一篇的旧值、渲染策略与
+# 社媒风格一起被继承。new 只读模板与 profile，从不读上一篇的任何文件。
+GENRE_PRESETS: dict[str, dict] = {
+    "news": {
+        "label": "资讯快讯", "card": "执行卡-资讯快讯.md",
+        "fields": {"genre": "深度文", "category": "OBS", "outward_category": "news",
+                   "opening_strategy": "直入", "logic_bone": "CSA"},
+        "author_shots": True,
+    },
+    "tutorial": {
+        "label": "教程", "card": "执行卡-教程.md",
+        "fields": {"genre": "教程文", "category": "TUT", "outward_category": "tutorial",
+                   "opening_strategy": "直入", "logic_bone": "ASC"},
+    },
+    "deep": {
+        "label": "深度", "card": "",
+        "fields": {"genre": "深度文", "category": "OBS", "outward_category": "insight",
+                   "opening_strategy": "结论先行", "logic_bone": "CSA"},
+    },
+    "promo": {
+        "label": "推广", "card": "",
+        "fields": {"genre": "深度文", "outward_category": "share", "opening_strategy": "成果前置"},
+    },
+}
+
+
+def _fill_meta_field(text: str, key: str, value: str) -> str:
+    """把模板里顶层 ``key: ""`` 填成给定值，保留行尾注释。"""
+    pattern = re.compile(rf'^({re.escape(key)}:\s*)""', re.M)
+    filled, count = pattern.subn(lambda m: f'{m.group(1)}"{value}"', text, count=1)
+    return filled if count else text.rstrip("\n") + f'\n{key}: "{value}"\n'
+
+
+def _next_article_number(roots: list[Path], works_path: Path | None) -> int:
+    numbers = [0]
+    for root in roots:
+        if root and root.is_dir():
+            for child in root.iterdir():
+                head = child.name.split("-", 1)[0]
+                if child.is_dir() and head.isdigit():
+                    numbers.append(int(head))
+    if works_path and works_path.is_file():
+        try:
+            from works_registry import load_works
+            numbers += [int(w["seq"]) for w in load_works(works_path)
+                        if isinstance(w, dict) and str(w.get("seq", "")).isdigit()]
+        except Exception:  # noqa: BLE001 - 作品库读不了不影响按目录取号
+            pass
+    return max(numbers) + 1
+
+
+def cmd_new(topic: str, genre: str, *, dry_run: bool = False) -> Path | None:
+    from profile_config import brand, data_dir, physical_archive_dir, works_file
+
+    preset = GENRE_PRESETS[genre]
+    topic = re.sub(r"\s+", "", topic or "")
+    if not topic or any(ch in topic for ch in '/\\:*?"<>|') or topic[0].isdigit():
+        print(f"❌ 选题名不合法：{topic!r}（不能为空、不能以数字开头、不能含路径字符）")
+        raise SystemExit(2)
+    base = data_dir()
+    try:
+        archive = physical_archive_dir()
+    except Exception:  # noqa: BLE001 - 归档目录配置有误时只按数据目录与作品库取号
+        archive = None
+    try:
+        works = works_file()
+    except Exception:  # noqa: BLE001
+        works = None
+    number = _next_article_number([base] + ([archive] if archive else []), works)
+    article = base / f"{number}-{topic}"
+    if article.exists():
+        print(f"❌ 目录已存在：{article}")
+        raise SystemExit(2)
+
+    text = (SKILL_DIR / "templates" / "article-meta.template.yaml").read_text(encoding="utf-8")
+    default_style = str(((brand() or {}).get("writing") or {}).get("default_style") or "").strip()
+    fields = dict(preset["fields"])
+    if default_style:
+        fields["style"] = default_style
+    for key, value in fields.items():
+        text = _fill_meta_field(text, key, value)
+    if preset.get("author_shots"):
+        text = text.replace(
+            '# infographic_mode: "author-shots"\n',
+            'infographic_mode: "author-shots"   # 快讯以官方截图与作者供图为主；要生成信息图就删掉这行\n',
+            1,
+        )
+
+    print(f"🆕 {preset['label']}：{article}")
+    for key, value in fields.items():
+        print(f"   {key}: {value}")
+    if dry_run:
+        print("（dry-run：未创建任何文件）")
+        return article
+    (article / "素材").mkdir(parents=True)
+    (article / "article-meta.yaml").write_text(text, encoding="utf-8")
+    print("✅ 已生成 article-meta.yaml 与 素材/；没有复制任何上一篇的文件。")
+    card = preset.get("card")
+    if card and (SKILL_DIR / "references" / card).is_file():
+        print(f"   写作前先读执行卡：references/{card}")
+    print("   标题、导读、封面文字、摘要、tags 都留空，按大纲与标题阶段现填。")
+    return article
+
+
 # ── Verify 逻辑 ───────────────────────────────────────────────
 def _checkpoint_errors(stage: str, cwd: Path) -> list:
     """profile 启用的人工闸门断言（brand.yaml workflow.checkpoints，
@@ -4757,6 +4862,11 @@ def _main_impl():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init",   help="初始化 .state.json")
+    p_new = sub.add_parser("new", help="按文体从模板与 profile 生成新篇骨架（不复制上一篇）")
+    p_new.add_argument("topic", help="选题名（目录名去掉编号的部分）")
+    p_new.add_argument("--genre", required=True, choices=sorted(GENRE_PRESETS),
+                       help="news=资讯快讯 / tutorial=教程 / deep=深度 / promo=推广")
+    p_new.add_argument("--dry-run", action="store_true", help="只打印将生成的目录与字段")
     sub.add_parser("status", help="查看当前进度 + 下一步建议")
     sub.add_parser("next",   help="打印下一阶段操作说明")
     sub.add_parser(
@@ -5022,6 +5132,9 @@ def _main_impl():
     except _profile_config.WorkspaceBindingError as exc:
         parser.error(str(exc))
 
+    if args.cmd == "new":
+        cmd_new(args.topic, args.genre, dry_run=args.dry_run)
+        return
     if args.cmd == "distribute":
         import distribute
         os.chdir(cwd)
