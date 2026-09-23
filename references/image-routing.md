@@ -167,7 +167,9 @@ python "$SKILL/scripts/pipeline.py" seal visual
 
 渲染器 fallback 只能来自 `renderer-policy.json`；每次尝试必须复用同一 canonical prompt 与比例。全部失败就停，不调用未登记的宿主生图能力。
 
-🔴 **多数文章不需要 `renderer-policy.json`，删掉它才是正确配置。** 该文件不存在时自动走
+🔴 **出图默认模型的唯一真源是 profile `brand.yaml` 的 `image.renderers`**（2026-09-23 起）。文章目录不放 `renderer-policy.json` 时按它出图；profile 也没配时才落回 baoyu-image-gen 自己的默认。**不要从上一篇复制 `renderer-policy.json`**——`render-visuals` 发现与上一篇字节相同会提醒；这个文件只用于临时切换，写明原因与撤销条件。
+
+🔴 **多数文章不需要 `renderer-policy.json`，删掉它才是正确配置。** 该文件与 profile 默认都不存在时自动走
 `baoyu-image-gen`（Baoyu 视觉链默认渲染器）；它的语义是**覆盖默认**而非**确认默认**，
 凭空建一份就是在改行为。实证（2026-08-02）：照模板复制一份（模板曾预置
 `provider: sansheng-google`）就把渲染器静默换成 `gen_img.py`，封面从 1584×672 降到

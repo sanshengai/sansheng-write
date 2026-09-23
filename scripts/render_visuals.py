@@ -320,6 +320,39 @@ def _renderer_revision(renderer_dir: Path) -> str:
     return f"main.ts-sha256:{_sha256(renderer_dir / 'scripts/main.ts')}"
 
 
+def _profile_renderers() -> list[dict[str, Any]]:
+    """profile brand.yaml 的 image.renderers；读不到或未配置时返回空列表。"""
+    try:
+        try:
+            from .profile_config import brand
+        except ImportError:
+            from profile_config import brand
+        renderers = (brand().get("image") or {}).get("renderers")
+    except Exception:  # noqa: BLE001 - profile 不可用时走 baoyu 默认
+        return []
+    return [dict(item) for item in renderers if isinstance(item, dict)] if isinstance(renderers, list) else []
+
+
+def policy_copy_warning(cwd: Path) -> str:
+    """文章目录的 renderer-policy.json 与上一篇字节相同 → 多半是照抄，提醒删掉改用 profile 默认。"""
+    path = cwd / "renderer-policy.json"
+    if not path.is_file():
+        return ""
+    match = re.match(r"(\d+)-", cwd.name)
+    if not match:
+        return ""
+    number = int(match.group(1))
+    previous = sorted(
+        (int(m.group(1)), candidate)
+        for candidate in cwd.parent.glob("[0-9]*-*/renderer-policy.json")
+        if (m := re.match(r"(\d+)-", candidate.parent.name)) and int(m.group(1)) < number
+    )
+    if previous and previous[-1][1].read_bytes() == path.read_bytes():
+        return (f"renderer-policy.json 与上一篇 {previous[-1][1].parent.name} 字节相同，多半是照抄；"
+                "默认模型在 profile 的 image.renderers，确需临时切换时再放这个文件并写明原因")
+    return ""
+
+
 def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
     path = cwd / "renderer-policy.json"
     if path.is_file():
@@ -331,7 +364,10 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
         if not isinstance(renderers, list) or not renderers:
             return [], ["renderer-policy.json 必须包含非空 renderers 数组"]
     else:
-        renderers = [
+        # 2026-09-23 审计 V1：出图默认模型的唯一真源是 profile 的 image.renderers。
+        # 各篇不再复制 renderer-policy.json（107、108 都是抄上一篇的），文章目录里的
+        # 那份只用于临时切换。profile 没配时才落回 baoyu-image-gen 自己的默认。
+        renderers = _profile_renderers() or [
             {
                 "id": "baoyu-default",
                 "provider": None,
@@ -647,6 +683,9 @@ def render_visuals(
     policy, policy_errors = _load_policy(cwd)
     if policy_errors:
         return None, policy_errors
+    copy_warning = policy_copy_warning(cwd)
+    if copy_warning:
+        print(f"⚠️ {copy_warning}")
 
     command, revision, resolve_errors = resolve_renderer_command()
     if resolve_errors or command is None:
