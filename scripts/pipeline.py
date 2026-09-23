@@ -3083,6 +3083,146 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
     ]
 
 
+def _registry_records_by_seq(text: str) -> dict:
+    if _yaml is None or not text.strip():
+        return {}
+    data = _yaml.safe_load(text) or {}
+    works = data.get("works") if isinstance(data, dict) else data
+    out = {}
+    for rec in works or []:
+        if isinstance(rec, dict) and rec.get("seq") is not None:
+            out[rec.get("seq")] = rec
+    return out
+
+
+def _registry_changes_only_this_article(top: Path, works: Path, seq: int | None) -> tuple[bool, list]:
+    """作品库工作区版本与 HEAD 相比，是否只有本篇这一条记录变了。
+
+    作品库是多会话共用的文件；别的会话若也写了未提交的记录，自动提交会把它一起卷走。
+    这种情况宁可退回人工处理（审计 F5 的安全阀）。
+    """
+    try:
+        rel = works.resolve().relative_to(top).as_posix()
+    except ValueError:
+        return False, ["作品库不在官网工作树内"]
+    head = subprocess.run(
+        ["git", "-C", str(top), "show", f"HEAD:{rel}"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+    )
+    head_records = _registry_records_by_seq(head.stdout if head.returncode == 0 else "")
+    current_records = _registry_records_by_seq(works.read_text(encoding="utf-8"))
+    changed = sorted(
+        (key for key in set(head_records) | set(current_records)
+         if head_records.get(key) != current_records.get(key)),
+        key=lambda value: str(value),
+    )
+    return all(key == seq for key in changed), changed
+
+
+def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[str | None, list[str]]:
+    """把 finalize 刚写出的归档产物按文件级 pathspec 提交（审计 F5）。
+
+    此前 finalize 写完作品库与派生视图，紧接着就因「归档产物未提交」拒绝同步官网，
+    106、107、108 三篇首跑都这样失败，要人工提交再重跑。这里在同一步里提交：
+    只收作品库、三份派生视图与本篇目录，逐个文件列出，不用目录通配；作品库里若还有
+    别篇的未提交改动就不提交，退回人工。返回 (commit sha, 错误列表)。
+    """
+    from profile_config import works_file
+
+    top = _git_toplevel(website_cwd)
+    if top is None:
+        return None, ["官网工作目录不在 git 仓库内"]
+    works = Path(works_file()).resolve()
+    seq_str = cwd.name.split("-")[0]
+    seq = int(seq_str) if seq_str.isdigit() else None
+    only_ours, changed = _registry_changes_only_this_article(top, works, seq)
+    if not only_ours:
+        others = [str(item) for item in changed if item != seq]
+        return None, [f"作品库里除本篇外还有未提交的记录改动（seq={', '.join(others) or '?'}），"
+                      "不自动提交，避免卷入别的会话的改动"]
+    targets = [works] + [works.parent / name for name in
+                         ("articles.md", "works-dashboard.html", "recommend_articles.html")]
+    targets = [t for t in targets if t.exists()] + [cwd.resolve()]
+    probe = subprocess.run(
+        ["git", "-C", str(top), "status", "--porcelain", "-z", "--untracked-files=all", "--"]
+        + [str(t) for t in targets],
+        capture_output=True, timeout=60,
+    )
+    if probe.returncode != 0:
+        return None, [f"git status 失败：{probe.stderr.decode('utf-8', 'replace')[:200]}"]
+    files: list[str] = []
+    entries = probe.stdout.split(b"\0")
+    index = 0
+    while index < len(entries):
+        entry = entries[index].decode("utf-8", "replace")
+        index += 1
+        if len(entry) < 4:
+            continue
+        status, path = entry[:2], entry[3:]
+        if status[0] in "RC":
+            index += 1  # 改名条目后面跟着旧路径
+        if "D" in status:
+            continue
+        files.append(path)
+    if not files:
+        return None, []
+    pathspec = ("\0".join(files) + "\0").encode("utf-8")
+    add = subprocess.run(["git", "-C", str(top), "add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+                         input=pathspec, capture_output=True, timeout=120)
+    if add.returncode != 0:
+        return None, [f"git add 失败：{add.stderr.decode('utf-8', 'replace')[:200]}"]
+    message = f"chore(write): {code or cwd.name} 归档产物入库（finalize 自动文件级提交）"
+    commit = subprocess.run(
+        ["git", "-C", str(top), "commit", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
+        input=pathspec, capture_output=True, timeout=120,
+    )
+    if commit.returncode != 0:
+        return None, [f"git commit 失败：{commit.stderr.decode('utf-8', 'replace')[:200]}"]
+    head = subprocess.run(["git", "-C", str(top), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, timeout=30)
+    return (head.stdout or "").strip() or "unknown", []
+
+
+def _article_already_live(cwd: Path, code: str) -> bool:
+    """线上文章页已含本篇标题，且主题曲封面（与播客，若有）可访问，即视为已上线。
+
+    108 篇官网回执写「失败」，页面却已被别的会话的发布带上线；收尾再发一次整站只是
+    重复劳动（审计 F5）。profile 没配站点或网络不通时返回 False，照常走发布命令。
+    """
+    import html as _html
+    import urllib.request
+
+    site = str((brand().get("identity") or {}).get("site") or "").strip().rstrip("/")
+    if not site or os.getenv("SANSHENG_WRITE_WEBSITE_LIVE_CHECK", "").strip().lower() == "off":
+        return False
+    title = ""
+    meta_path = cwd / "article-meta.yaml"
+    if _yaml is not None and meta_path.is_file():
+        try:
+            title = str((_yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}).get("title") or "")
+        except Exception:  # noqa: BLE001
+            title = ""
+    if not title:
+        return False
+
+    def _get(url: str, method: str = "GET") -> tuple[int, str]:
+        req = urllib.request.Request(url, method=method, headers={"User-Agent": "sansheng-write/finalize"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read().decode("utf-8", "replace") if method == "GET" else ""
+                return resp.status, body
+        except Exception:  # noqa: BLE001
+            return 0, ""
+
+    status, body = _get(f"{site}/articles/{code.lower()}/")
+    if status != 200 or title not in _html.unescape(body):
+        return False
+    assets = [f"{site}/song-assets/{code}/cover.png"]
+    if (cwd / "dist" / "podcast" / "audio.mp3").is_file():
+        assets.append(f"{site}/song-assets/{code}/podcast.mp3")
+    return all(_get(url, "HEAD")[0] == 200 for url in assets)
+
+
 def _git_toplevel(path: Path) -> Path | None:
     try:
         probe = subprocess.run(
@@ -3123,6 +3263,8 @@ def _run_website_sync(
     wechat_url: str,
     *,
     runner=subprocess.run,
+    live_checker=None,
+    committer=None,
 ) -> bool:
     """Run the profile-owned website command only after archive verification."""
     publish = brand().get("publish") or {}
@@ -3216,24 +3358,48 @@ def _run_website_sync(
         print(f"❌ 官网同步前置检查失败：{resolution_error}")
         return False
     pending = _uncommitted_archive_outputs(cwd, website_cwd)
+    auto_commit = ""
     if pending:
+        commit_sha, commit_errors = (committer or _commit_archive_outputs)(cwd, website_cwd, code)
+        if commit_errors or not commit_sha:
+            _append_website_sync_attempt(
+                receipt_path,
+                {
+                    "status": "failed",
+                    "reason": "archive_outputs_uncommitted",
+                    "pending": pending[:20],
+                    "auto_commit_errors": commit_errors[:5],
+                    "created_at": _now_iso(),
+                },
+            )
+            print("❌ 官网同步前置检查失败：归档产物还没提交，构建会看不见本篇。")
+            for line in pending[:12]:
+                print(f"     {line}")
+            for error in commit_errors:
+                print(f"   自动提交未进行：{error}")
+            print("   官网发布从 commit 建隔离工作树，只认 commit 里的内容；"
+                  "留在工作区的作品库等于没写。")
+            print("   先用显式 pathspec 提交，再重跑 finalize："
+                  "git add <上列文件> && git commit -m \"chore(write): <N> 号归档产物入库\"")
+            return False
+        auto_commit = commit_sha
+        print(f"✅ 归档产物已按文件级 pathspec 自动提交：{commit_sha[:9]}")
+    if (live_checker or _article_already_live)(cwd, code):
         _append_website_sync_attempt(
             receipt_path,
             {
-                "status": "failed",
-                "reason": "archive_outputs_uncommitted",
-                "pending": pending[:20],
+                "status": "done",
+                "reason": "already_live",
+                "code": code,
+                "wechat_url": wechat_url,
+                "auto_commit": auto_commit,
                 "created_at": _now_iso(),
             },
         )
-        print("❌ 官网同步前置检查失败：归档产物还没提交，构建会看不见本篇。")
-        for line in pending[:12]:
-            print(f"     {line}")
-        print("   官网发布从 commit 建隔离工作树，只认 commit 里的内容；"
-              "留在工作区的作品库等于没写。")
-        print("   先用显式 pathspec 提交，再重跑 finalize："
-              "git add <上列文件> && git commit -m \"chore(write): <N> 号归档产物入库\"")
-        return False
+        print(f"✅ 线上已含本篇（文章页与音频资产均可访问），不重复发布：code={code}")
+        if auto_commit:
+            print("   刚才的归档提交还在本地，按项目规则同步到主线即可。")
+        return True
     try:
         completed = runner(
             command,
@@ -3267,6 +3433,7 @@ def _run_website_sync(
     receipt = {
         "status": "done" if completed.returncode == 0 else "failed",
         "created_at": _now_iso(),
+        "auto_commit": auto_commit,
         "code": values["code"],
         "wechat_url": wechat_url,
         "command_sha256": stable_digest({"command": command}),
