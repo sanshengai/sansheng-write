@@ -48,12 +48,53 @@ function recordLedger(imagePath, stage) {
     ledger[path.basename(imagePath)] = {
       sha256: sha256File(imagePath),
       stage,
+      // 「打过水印」单独成字段：台账一张图只留最新一笔，压缩会把 stage 覆盖成 compressed，
+      // 只看 stage 就分不清「压缩前打过水印」和「从没打过」（2026-09-23 第 108 篇封面漏水印）。
+      watermarked: stage === 'logo',
       at: new Date().toISOString(),
     };
     fs.writeFileSync(lp, JSON.stringify(ledger, null, 2) + '\n');
   } catch (e) {
     console.error(`  ⚠️ 台账写入失败（不拦流程）: ${e.message}`);
   }
+}
+
+// 台账说「这张图已经打过水印、且之后字节没被别人改过」才跳过。
+// 新记录有 watermarked 字段，照字段判；旧记录没有这个字段时保守沿用旧行为
+// （sha 相同即跳过），宁可漏打也不在历史成品上叠第二层 logo。
+function ledgerSaysWatermarked(rec, currentSha) {
+  if (!rec || rec.sha256 !== currentSha) return false;
+  if (typeof rec.watermarked === 'boolean') return rec.watermarked;
+  return true;
+}
+
+// ``@workspace/...`` 占位符：与 profile_config.resolve_config_path 同一约定——
+// 优先父进程传下来的已绑定工作树，其次显式 SANSHENG_WRITE_WORKSPACE_DIR，
+// 最后从当前目录（文章目录）向上找最近的 .git。此前 Node 侧把占位符当字面
+// 相对路径拼接，logo 目录恒找不到、打印一句就 exit 0（2026-09-23 审计 G1）。
+function nearestGitRoot(start) {
+  let dir = path.resolve(start);
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function resolveWorkspacePath(raw) {
+  if (!raw || !(raw === '@workspace' || raw.startsWith('@workspace/') || raw.startsWith('@workspace\\'))) {
+    return raw;
+  }
+  const root = (process.env.SANSHENG_WRITE_ACTIVE_WORKSPACE || '').trim()
+    || envOrDotenv('SANSHENG_WRITE_WORKSPACE_DIR')
+    || nearestGitRoot(process.cwd());
+  if (!root) {
+    throw new Error(`SANSHENG_WRITE_PROFILE_DIR 使用了 ${raw}，但当前目录不在任何 Git 工作树里；`
+      + '请在文章目录运行，或用 --logo <目录> 显式指定');
+  }
+  const suffix = raw.slice('@workspace'.length).replace(/^[\\/]/, '');
+  return path.join(root, ...suffix.split(/[\\/]+/).filter(Boolean));
 }
 
 // 读仓根 .env 里的一个键（Node 进程看不见 .env——Python 侧的 profile_config 才解析它。
@@ -77,10 +118,12 @@ function envOrDotenv(name) {
 // logo 目录来自你的 profile：优先 SANSHENG_WRITE_PROFILE_DIR（shell env → 仓根 .env）/brand，
 // 未配置时回退仓内 profile.example/brand（把 logo.png / logo-black.png 放进去即可）。
 // 也可用 --logo 显式覆盖。缺 logo 时本脚本打印说明后跳过（exit 0），不阻塞发布链。
-const _profileDir = envOrDotenv('SANSHENG_WRITE_PROFILE_DIR');
-const DEFAULT_LOGO_DIR = _profileDir
-  ? path.join(_profileDir, 'brand')
+const _profileRaw = envOrDotenv('SANSHENG_WRITE_PROFILE_DIR');
+const DEFAULT_LOGO_DIR = _profileRaw
+  ? path.join(resolveWorkspacePath(_profileRaw), 'brand')
   : path.resolve(__dirname, '../profile.example/brand');
+// 配置了私有 profile = 有意要品牌水印；此时找不到 logo 是配置错误，必须报错而不是静默跳过。
+const PROFILE_CONFIGURED = Boolean(_profileRaw);
 
 // 固化排除清单：① hero 等小图尺寸太小，打水印影响观感；② logo-white/logo-black 本身就是品牌 logo，
 // 给它再叠一层水印会 logo 套 logo（用 "素材/*.png" 通配批量加水印时会误伤名片 logo）
@@ -99,8 +142,8 @@ async function addLogo(imagePath, logoDir) {
     return;
   }
   const ledgerRec = readLedger(ledgerPathFor(imagePath))[path.basename(imagePath)];
-  if (ledgerRec && ledgerRec.sha256 === sha256File(imagePath)) {
-    console.log(`  ⏭  跳过 ${path.basename(imagePath)}（台账命中：已处理且字节未变，避免二次叠水印）`);
+  if (ledgerSaysWatermarked(ledgerRec, sha256File(imagePath))) {
+    console.log(`  ⏭  跳过 ${path.basename(imagePath)}（台账命中：已打过水印且字节未变，避免二次叠水印）`);
     return;
   }
   try {
@@ -191,7 +234,7 @@ function parseArgs(argv) {
     }
   }
 
-  return { globs: positional, logoDir: logoDir || DEFAULT_LOGO_DIR };
+  return { globs: positional, logoDir: logoDir || DEFAULT_LOGO_DIR, explicitLogo: Boolean(logoDir) };
 }
 
 function expandGlob(pattern) {
@@ -208,7 +251,7 @@ function expandGlob(pattern) {
 }
 
 async function main() {
-  const { globs, logoDir } = parseArgs(process.argv.slice(2));
+  const { globs, logoDir, explicitLogo } = parseArgs(process.argv.slice(2));
 
   if (!globs.length) {
     console.error('用法: node add_logo.js <image_glob> [<image_glob> ...] [--logo <logo_dir>]');
@@ -233,9 +276,15 @@ async function main() {
     process.exit(1);
   }
 
-  // 水印是可选环节：logo 目录/文件缺失 = 打印说明后整步跳过（exit 0），不阻塞发布链（G-4）
+  // 水印是可选环节：未配置私有 profile 且示例 logo 缺失 = 打印说明后跳过（exit 0）。
+  // 配置了私有 profile（或显式 --logo）却找不到 logo = 配置错误，exit 2，不再静默跳过。
   const hasLogo = fs.existsSync(path.join(logoDir, 'logo.png'))
     || fs.existsSync(path.join(logoDir, 'logo-black.png'));
+  if (!hasLogo && (PROFILE_CONFIGURED || explicitLogo)) {
+    console.error(`❌ 找不到品牌 logo：${logoDir} 下无 logo.png / logo-black.png。`);
+    console.error('   已配置私有 profile（或显式 --logo），说明这篇需要水印；请修正路径后重跑。');
+    process.exit(2);
+  }
   if (!hasLogo) {
     console.log(`⏭  未找到品牌 logo（${logoDir} 下无 logo.png / logo-black.png）—— 水印为可选环节，本步跳过。`);
     console.log('    想要水印：把 logo.png（白字，深底用）+ logo-black.png（深字，浅底用）放进你 profile 的 brand/ 目录，');

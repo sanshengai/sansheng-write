@@ -1133,6 +1133,48 @@ def _upstream_stage_errors(state: dict, stage: str) -> list[str]:
     return errors
 
 
+def _profile_logo_available() -> bool:
+    """profile 的 brand/ 下有 logo = 本品牌要求打水印。"""
+    try:
+        from profile_config import profile_dir
+        brand_dir = profile_dir() / "brand"
+    except Exception:  # noqa: BLE001 - profile 解析失败时不凭空要求水印
+        return False
+    return (brand_dir / "logo.png").exists() or (brand_dir / "logo-black.png").exists()
+
+
+def _watermark_ledger_errors(mat: Path) -> list[str]:
+    """封面与信息图必须在后处理台账里记为「已打水印」，且之后字节没变。
+
+    2026-09-23 第 108 篇：add_logo 找不到 logo 静默跳过、压缩把封面记进台账，
+    水印阶段只验「有 PNG」照样通过，封面无水印发了出去。改为核对台账。
+    旧台账（没有 watermarked 字段）按历史行为放行，不追溯已发布文章。
+    """
+    if not _profile_logo_available():
+        return []
+    import hashlib as _hashlib
+    try:
+        ledger = json.loads((mat / ".postprocess-ledger.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        ledger = {}
+    targets = [mat / "cover.png"] + sorted(mat.glob("infographic*.png"))
+    errors = []
+    for path in targets:
+        if not path.is_file():
+            continue
+        rec = ledger.get(path.name) if isinstance(ledger, dict) else None
+        current = _hashlib.sha256(path.read_bytes()).hexdigest()
+        if not isinstance(rec, dict) or rec.get("sha256") != current:
+            errors.append(
+                f"{path.name} 不在后处理台账里或台账之后又被改过：先跑 add_logo.js 再跑 compress_images.py"
+            )
+        elif rec.get("watermarked") is False:
+            errors.append(
+                f"{path.name} 没打上品牌水印（台账 watermarked=false）：检查 add_logo.js 输出的 logo 目录后重跑"
+            )
+    return errors
+
+
 def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tuple:
     """返回 (passed: bool, errors: list[str])。"""
     if legacy:
@@ -1555,12 +1597,12 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     errors.append(f"verify_no_bare_url 异常：{e}")
 
     elif stage == "logo":
-        # add_logo.js 原地覆盖图片，无法通过文件元数据判断；
-        # 只验证 AI 生图文件存在（确保 add_logo.js 有东西可处理）
         mat = cwd / "素材"
         pngs = list(mat.glob("*.png")) if mat.exists() else []
         if not pngs:
             errors.append("素材/ 下无 PNG 文件，add_logo.js 无输入")
+        else:
+            errors.extend(_watermark_ledger_errors(mat))
 
     elif stage == "publish":
         # 🔴 拆「草稿箱已推送」与「正式发布」两态。
@@ -3688,19 +3730,12 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     except Exception as exc:
         add("warn", "加粗密度", f"检查异常：{exc}")
 
-    # --- 5. 开篇重点标识（排版阶段的硬门，此处前移）---
-    body = re.sub(r"^---.*?---", "", text, count=1, flags=re.DOTALL)
-    opening = re.split(r"^## ", body, maxsplit=1, flags=re.MULTILINE)[0]
-    paragraphs = [p.strip() for p in opening.split("\n\n") if p.strip()]
-    naked = [
-        p[:30] for p in paragraphs
-        if len(re.sub(r"[^一-鿿]", "", p)) >= 40
-        and "**" not in p and "<mark" not in p
-        and not p.startswith(("#", "!", "<", "|", ">"))
-    ]
-    add("fail" if naked else "ok", "开篇重点标识",
-        f"{len(naked)} 个实质段零标识 → {naked[:2]}" if naked
-        else "开篇区实质段均有词组级标识")
+    # --- 5. 开篇重点标识（排版阶段的硬门，此处前移；与排版门共用同一判据）---
+    from contracts import audit_opening_anchors
+    opening_audit = audit_opening_anchors(text)
+    add("fail" if opening_audit["errors"] else "ok", "开篇重点标识",
+        "；".join(opening_audit["errors"]) if opening_audit["errors"]
+        else "开篇区实质段均有词组级标识，密度达标")
 
     # --- 6. 文末模块 ---
     try:

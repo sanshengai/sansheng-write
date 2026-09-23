@@ -2081,72 +2081,13 @@ def preflight_markdown(cwd: str):
         # 2) 数字有序列表 "1. " 在 H3 / H2 之间出现——应写成 ### 1. 形式（时间线要求）
         #    暂不强制，只作信息提示（有些场景不适合改 H3）
 
-    # 🟡 钩子区加粗下限审计；后从硬阻断降为软警告。
-    #    背景：曾把「读者第一段不想读第二段」归因为加粗锚点不足，于是上了 sys.exit(2) 硬门。
-    #    复盘（写作引擎"顺但没味道"诊断）判定这是因果倒置——决定"想读第二段"的是
-    #    首句钩子张力 + 句间承接（见 writing.md §句间引力），不是加粗密度；强制加粗反而把首段
-    #    切成均匀要点格，更像 PPT 不像人在说话。故此项降级为 warnings（提示不阻断），加粗"上限"
-    #    防刷屏仍由 verify_bold_density 保留。首段质量改由人/agent 判"首句张力+前两句承接"。
     body = re.sub(r'^---.*?---', '', text, count=1, flags=re.DOTALL)
 
-    # 🔴 检查范围从「前 3 段」扩到 **开篇区 = 正文开头 → 第一个 H2**
-    # （实证：有的开篇 7+ 段，第 4 段起照样是字墙）。
-    # 文案改正向：缺的不是"加粗量"，是「信息锚点四型」——专名首现/关键数字/
-    # 时间窗口/对比转折结论（详见 writing.md §信息锚点四型 + playbook
-    # opening_highlight_anchors，pinned 硬执行）。仍是 warning 不阻断
-    # （因果判定保留：决定读不读下去的是钩子张力，标识管的是"扫得到重点"）。
-    h2_split = re.split(r'^## ', body, maxsplit=1, flags=re.MULTILINE)
-    opening = h2_split[0]
-    op_paragraphs = []
-    for p in re.split(r'\n\s*\n', opening):
-        first = p.strip()
-        if not first or first.startswith('#') or first.startswith('!') \
-                or first.startswith('>') or first.startswith('<!--') \
-                or first.startswith('---'):
-            continue
-        # 图注/来源行等纯内联 HTML 块（<section>/<p> 小字行）不是正文段，
-        # 不参与开篇锚点统计与字数密度（曾踩坑：新闻配图图注被误判为正文段）
-        if re.match(r'<(section|p|div|figure|blockquote)[\s>]', first):
-            continue
-        text_only = re.sub(r'[*`~_]', '', first)
-        if len(text_only) < 30:
-            continue
-        op_paragraphs.append((first, text_only))
-
-    # 数 markdown `**` / `<mark>` / 主题色 span（font-weight:6X0）/ <strong>，兼容 md 内联 html
-    def _n_anchor(raw):
-        return (len(re.findall(r'\*\*[^*\n]+?\*\*', raw)) +
-                len(re.findall(r'<mark[^>]*>[^<]+?</mark>', raw)) +
-                len(re.findall(r'<span[^>]*font-weight:\s*6\d0[^>]*>', raw)) +
-                len(re.findall(r'<strong[^>]*>', raw)))
-    # 🔴 开篇重点标识：软警告 → **硬下限**（只设下限不设上限）。
-    #   要的是 (A) 词组级主题色标识 的下限，不是 (B) 整句口号加粗（B 仍受
-    #   verify_bold_density ≤2 上限约束）—— 两者不冲突，所以可同时硬。
-    #   读者手机快滑只扫主题色重点词 → 开篇区每个实质段（≥40字）必须 ≥1 处词组级标识，否则 exit 2。
-    if op_paragraphs:
-        substantive = [(raw, t) for raw, t in op_paragraphs if len(t) >= 40]
-        naked = [t[:36] for raw, t in substantive if _n_anchor(raw) == 0]
-        if naked:
-            errors.append(
-                f"🔴 开篇重点标识硬门（只下限不上限）：开篇区（→第一个 H2）有 "
-                f"{len(naked)}/{len(substantive)} 个实质段（≥40字）零词组级重点标识 → {naked[:3]}。"
-                f"读者手机快滑只扫主题色重点词，开篇每个实质段必须 ≥1 处词组级标识"
-                f"（信息锚点六型：①专名首现 ②关键数字 ③时间窗口 ④对比转折结论 ⑤入口/行动锚 ⑥落差/量级对比，"
-                f"出现即 **标**，事实型①②⑤⑥优先；≤15 字词组、不是整句口号，整句口号仍受 ≤2 上限约束）。"
-            )
-        # 🔴 开篇标识 存在性下限 → 追加**比例密度**下限。
-        #   存在性门只保证"每实质段至少 1 处"，"每段勉强 1 处 / 短段漏标"仍显稀疏；
-        #   补一道 writing.md 早有的"每 ~120 字 1 处"密度门，让开篇标识覆盖真达标（读者一眼扫核心）。
-        op_chars = sum(len(t) for _raw, t in op_paragraphs)
-        op_anchors = sum(_n_anchor(raw) for raw, _t in op_paragraphs)
-        need = -(-op_chars // 120)  # ceil(字数 / 120)
-        if op_chars >= 120 and op_anchors < need:
-            errors.append(
-                f"🔴 开篇标识密度门（比例密度）：开篇区约 {op_chars} 字仅 "
-                f"{op_anchors} 处主题色标识，低于下限 {need} 处（每 ~120 字 1 处）。"
-                f"读者一眼扫核心靠这些锚点——优先补事实型（①专名 ②数字 ⑤入口 ⑥落差），"
-                f"信息锚点六型见 writing.md §信息锚点六型。"
-            )
+    # 🔴 开篇重点标识：存在性下限 + 比例密度下限，均为硬门（只设下限不设上限）。
+    #    判据唯一实现在 contracts.audit_opening_anchors，pipeline.py preflight 调同一份
+    #    （2026-09-23 审计 G2：两处各写一份、口径不一，预检过而排版拦）。
+    from contracts import audit_opening_anchors
+    errors.extend(audit_opening_anchors(text)["errors"])
 
     # 🔴 文字墙警告（实证：~1500 字 0 个 H3 纯段落连排会劝退读者）：
     # H2 区块 ≥800 字且无 H3/图/列表/引用块 → 提示拆 H3（排版才有时间线格式可用）。

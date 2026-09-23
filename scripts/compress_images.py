@@ -66,14 +66,33 @@ def load_ledger(directory: Path) -> dict:
         return {}
 
 
-def record_ledger(path: Path, stage: str) -> None:
-    """把 path 的当前字节 sha 记进其所在目录的台账。失败只警告，不拦流程。"""
+def _carried_watermark(previous: dict | None, pre_sha: str | None) -> bool:
+    """压缩前的字节若与台账上一笔一致，就继承上一笔的「已打水印」。
+
+    台账一张图只留最新一笔，压缩会把 stage 覆盖成 compressed；不单独带着
+    watermarked 走，add_logo 就分不清「压缩前打过水印」和「从没打过」——
+    2026-09-23 第 108 篇封面正是先压缩后找不到 logo，结果永远被当成已处理。
+    """
+    if not previous or pre_sha is None or previous.get("sha256") != pre_sha:
+        return False
+    if isinstance(previous.get("watermarked"), bool):
+        return previous["watermarked"]
+    return previous.get("stage") == "logo"
+
+
+def record_ledger(path: Path, stage: str, *, pre_sha: str | None = None) -> None:
+    """把 path 的当前字节 sha 记进其所在目录的台账。失败只警告，不拦流程。
+
+    pre_sha：本次处理前的字节 sha，用来判断能否继承上一笔的 watermarked。
+    """
     try:
         directory = path.resolve().parent
         ledger = load_ledger(directory)
+        previous = ledger.get(path.name) if isinstance(ledger.get(path.name), dict) else None
         ledger[path.name] = {
             "sha256": _sha256(path),
             "stage": stage,
+            "watermarked": stage == "logo" or _carried_watermark(previous, pre_sha),
             "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         }
         _ledger_path(directory).write_text(
@@ -115,6 +134,7 @@ def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tupl
         return (size_mb, size_mb, "SKIP_UNCHANGED")
 
     orig_mb = path.stat().st_size / 1024 / 1024
+    pre_sha = _sha256(path)
     try:
         img = Image.open(path)
     except Exception as e:
@@ -141,7 +161,7 @@ def compress_one(path: Path, target_max_mb: float, verbose: bool = True) -> tupl
 
     new_mb = path.stat().st_size / 1024 / 1024
     tag = "RESIZE" if resized else "OPT   "
-    record_ledger(path, "compressed")
+    record_ledger(path, "compressed", pre_sha=pre_sha)
     if verbose:
         action = f"{tag} {path.name:30s} {orig_mb:.2f}MB -> {new_mb:.2f}MB ({(1-new_mb/orig_mb)*100:.0f}% saved)"
         print(action)

@@ -2660,6 +2660,69 @@ def verify_h2_subtitle_align(article_dir: str) -> dict:
     }
 
 
+# ===== 【第 15a 节】开篇重点标识（预检与排版门共用） =====
+# 2026-09-23 审计 G2：此前 pipeline.py preflight 与 format_layout.py 各有一份实现，
+# 一个只数汉字 ≥40、一个按总字符 ≥30 并另有每 120 字密度门——中英数字混排的首段
+# 在预检里被跳过、到排版才被拦，违背「预检前移全部静态检查」。现在两处都调这里。
+
+def _opening_anchor_count(raw: str) -> int:
+    """数 markdown `**` / `<mark>` / 主题色 span（font-weight:6X0）/ <strong>。"""
+    import re
+    return (len(re.findall(r'\*\*[^*\n]+?\*\*', raw)) +
+            len(re.findall(r'<mark[^>]*>[^<]+?</mark>', raw)) +
+            len(re.findall(r'<span[^>]*font-weight:\s*6\d0[^>]*>', raw)) +
+            len(re.findall(r'<strong[^>]*>', raw)))
+
+
+def audit_opening_anchors(md_text: str) -> dict:
+    """开篇区（正文开头 → 第一个 H2）的词组级重点标识：存在性下限 + 比例密度下限。
+
+    实质段 = 去掉 markdown 符号后 ≥40 字符的段落（中英数字一起算）；每个实质段至少 1 处
+    标识，开篇区整体每 ~120 字至少 1 处。只设下限不设上限（整句口号仍受加粗密度上限约束）。
+    返回 ``{"errors": [...], "naked": [...], "chars": int, "anchors": int, "need": int}``。
+    """
+    import re
+    body = re.sub(r'^---.*?---', '', md_text, count=1, flags=re.DOTALL)
+    opening = re.split(r'^## ', body, maxsplit=1, flags=re.MULTILINE)[0]
+    paragraphs = []
+    for p in re.split(r'\n\s*\n', opening):
+        first = p.strip()
+        if not first or first.startswith(('#', '!', '>', '<!--', '---', '|')):
+            continue
+        # 图注/来源行等纯内联 HTML 块不是正文段（曾把新闻配图图注误判为正文段）
+        if re.match(r'<(section|p|div|figure|blockquote)[\s>]', first):
+            continue
+        text_only = re.sub(r'[*`~_]', '', first)
+        if len(text_only) < 30:
+            continue
+        paragraphs.append((first, text_only))
+    result = {"errors": [], "naked": [], "chars": 0, "anchors": 0, "need": 0}
+    if not paragraphs:
+        return result
+    substantive = [(raw, t) for raw, t in paragraphs if len(t) >= 40]
+    naked = [t[:36] for raw, t in substantive if _opening_anchor_count(raw) == 0]
+    result["naked"] = naked
+    if naked:
+        result["errors"].append(
+            f"🔴 开篇重点标识硬门（只下限不上限）：开篇区（→第一个 H2）有 "
+            f"{len(naked)}/{len(substantive)} 个实质段（≥40字）零词组级重点标识 → {naked[:3]}。"
+            f"读者手机快滑只扫主题色重点词，开篇每个实质段必须 ≥1 处词组级标识"
+            f"（信息锚点六型：①专名首现 ②关键数字 ③时间窗口 ④对比转折结论 ⑤入口/行动锚 ⑥落差/量级对比，"
+            f"出现即 **标**，事实型①②⑤⑥优先；≤15 字词组、不是整句口号，整句口号仍受 ≤2 上限约束）。"
+        )
+    chars = sum(len(t) for _raw, t in paragraphs)
+    anchors = sum(_opening_anchor_count(raw) for raw, _t in paragraphs)
+    need = -(-chars // 120)
+    result.update(chars=chars, anchors=anchors, need=need)
+    if chars >= 120 and anchors < need:
+        result["errors"].append(
+            f"🔴 开篇标识密度门（比例密度）：开篇区约 {chars} 字仅 {anchors} 处主题色标识，"
+            f"低于下限 {need} 处（每 ~120 字 1 处）。优先补事实型（①专名 ②数字 ⑤入口 ⑥落差），"
+            f"信息锚点六型见 writing.md §信息锚点六型。"
+        )
+    return result
+
+
 # ===== 【第 15b 节】标题公式门 =====
 # ============================================================================
 # title.md 的唯一公式：`标签 | 可搜索关键词 + 一句把全文主旨浓缩到底的话`。
