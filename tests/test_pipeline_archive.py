@@ -36,19 +36,76 @@ def _write_pipeline_state(root):
     })
 
 
-def test_finalize_preflight_guides_published_recovery_when_audio_receipt_missing(
-    tmp_path, monkeypatch
-):
-    url = "https://mp.weixin.qq.com/s/x"
+def _audio_preflight_env(tmp_path, monkeypatch, *, published, draft=None):
+    """finalize 双音频预检：published / draft 分别是两条读回的返回值。"""
     _write_pipeline_state(tmp_path)
     monkeypatch.setattr(pipeline, "_archive_metadata", lambda *a, **k: ({}, {}, []))
     monkeypatch.setattr(pipeline, "_archive_source_errors", lambda *a, **k: [])
     monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: True)
+    calls = {"published": [], "draft": 0}
+
+    def fake_published(cwd, url, **kw):
+        calls["published"].append(kw)
+        return published
+
+    def fake_draft(*a, **k):
+        calls["draft"] += 1
+        if draft is None:
+            raise AssertionError("draft path used")
+        return draft
+
+    monkeypatch.setattr(release_to_draft, "verify_wechat_published_audio", fake_published)
+    monkeypatch.setattr(release_to_draft, "verify_wechat_audio", fake_draft)
+    monkeypatch.setattr(release_to_draft, "compare_wechat_audio_receipts", lambda *a, **k: [])
+    return calls
+
+
+def test_finalize_preflight_auto_runs_published_check_as_main_path(tmp_path, monkeypatch):
+    """审计 F4：草稿读回近 4 篇 4 次全败；有永久链接就直接正式文章补验。"""
+    url = "https://mp.weixin.qq.com/s/x"
+    calls = _audio_preflight_env(
+        tmp_path, monkeypatch,
+        published=({"proof_kind": "wechat_published_article_audio", "published_article_id": "a1"}, []),
+    )
+    assert pipeline._finalize_preflight_errors(tmp_path, url) == []
+    assert len(calls["published"]) == 1
+    assert calls["published"][0].get("persist", True) is True   # 凭证要落盘，续跑时复核
+    assert calls["draft"] == 0
+
+
+def test_finalize_preflight_reports_published_failure_and_guides_rerun(tmp_path, monkeypatch):
+    url = "https://mp.weixin.qq.com/s/x"
+    _audio_preflight_env(tmp_path, monkeypatch, published=(None, ["远端只找到 1 个播放器"]))
 
     errors = pipeline._finalize_preflight_errors(tmp_path, url)
 
-    assert any("wechat-published-audio-check" in error for error in errors)
-    assert any(url in error for error in errors)
+    assert any("远端只找到 1 个播放器" in error for error in errors)
+    assert any("wechat-published-audio-check" in error and url in error for error in errors)
+
+
+def test_finalize_preflight_falls_back_to_live_draft_receipt(tmp_path, monkeypatch):
+    url = "https://mp.weixin.qq.com/s/x"
+    (tmp_path / release_to_draft.AUDIO_RECEIPT_FILE).write_text("{}", encoding="utf-8")
+    calls = _audio_preflight_env(
+        tmp_path, monkeypatch,
+        published=(None, ["已发表内容接口暂不可用"]),
+        draft=({"audio_count": 2}, []),
+    )
+    assert pipeline._finalize_preflight_errors(tmp_path, url) == []
+    assert calls["draft"] == 1
+
+
+def test_finalize_preflight_reports_both_paths_when_draft_also_recycled(tmp_path, monkeypatch):
+    url = "https://mp.weixin.qq.com/s/x"
+    (tmp_path / release_to_draft.AUDIO_RECEIPT_FILE).write_text("{}", encoding="utf-8")
+    _audio_preflight_env(
+        tmp_path, monkeypatch,
+        published=(None, ["已发表内容接口暂不可用"]),
+        draft=(None, ["40007 invalid media_id"]),
+    )
+    errors = pipeline._finalize_preflight_errors(tmp_path, url)
+    assert any("已发表内容接口暂不可用" in error for error in errors)
+    assert any("40007" in error for error in errors)
 
 
 def test_finalize_preflight_accepts_fresh_published_audio_receipt(

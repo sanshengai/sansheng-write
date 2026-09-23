@@ -1087,6 +1087,26 @@ def _archive_source_errors(cwd: Path) -> list[str]:
     return errors
 
 
+def _draft_audio_recheck_errors(cwd: Path, state: dict, receipt_path: Path) -> list[str]:
+    """兜底：发布前留下的草稿凭证，草稿仍在时重新读回比对。"""
+    from release_to_draft import compare_wechat_audio_receipts, verify_wechat_audio
+
+    try:
+        audio_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return [f"双音频草稿凭证损坏：{exc}"]
+    expected_media = str(
+        (state.get("stages", {}).get("publish", {}) or {}).get("draft_media_id") or ""
+    )
+    fresh_receipt, fresh_errors = verify_wechat_audio(cwd, persist=False)
+    errors = [f"草稿凭证兜底复核失败：{error}" for error in fresh_errors]
+    if fresh_receipt is not None:
+        errors.extend(compare_wechat_audio_receipts(
+            audio_receipt, fresh_receipt, expected_media_id=expected_media,
+        ))
+    return errors
+
+
 def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
     """Fail before touching state/registries when the close-out cannot finish."""
     state = load_state(cwd)
@@ -1103,9 +1123,7 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
             from release_to_draft import (
                 AUDIO_RECEIPT_FILE,
                 PUBLISHED_AUDIO_RECEIPT_FILE,
-                compare_wechat_audio_receipts,
                 compare_wechat_published_audio_receipts,
-                verify_wechat_audio,
                 verify_wechat_published_audio,
             )
             published_receipt_path = cwd / PUBLISHED_AUDIO_RECEIPT_FILE
@@ -1129,35 +1147,37 @@ def _finalize_preflight_errors(cwd: Path, wechat_url: str) -> list[str]:
                         ))
                 except (json.JSONDecodeError, OSError) as exc:
                     errors.append(f"正式文章双音频凭证损坏：{exc}")
-            elif not receipt_path.is_file():
-                errors.append(
-                    "双音频尚无官方读回凭证；草稿仍存在时运行 pipeline.py "
-                    "wechat-audio-check；若文章已正式发布、草稿已被回收，"
-                    f"运行 pipeline.py wechat-published-audio-check {wechat_url} "
-                )
             else:
-                try:
-                    audio_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-                    expected_media = str(
-                        (state.get("stages", {}).get("publish", {}) or {}).get("draft_media_id") or ""
+                # 主路径（2026-09-23 审计 F4）：作者插完音频通常直接正式发布，草稿随即被
+                # 微信回收，草稿读回近 4 篇 4 次全败（40007）。finalize 手里已有永久链接，
+                # 这里直接做正式文章补验、落独立凭证；草稿凭证只在补验不过时兜底。
+                auto_receipt, auto_errors = verify_wechat_published_audio(cwd, wechat_url)
+                if auto_receipt is not None and not auto_errors:
+                    _log_audio_event(
+                        cwd, "wechat_published_audio_readback", "ok",
+                        f"article_id={auto_receipt.get('published_article_id')}; via=finalize",
                     )
-                    fresh_receipt, fresh_errors = verify_wechat_audio(cwd, persist=False)
-                    for error in fresh_errors:
-                        detail = f"正式发布前远端复核失败：{error}"
-                        if "40007" in str(error) or "invalid media_id" in str(error):
-                            detail += (
-                                "；草稿已被微信回收时，改用 pipeline.py "
-                                f"wechat-published-audio-check {wechat_url}"
-                            )
-                        errors.append(detail)
-                    if fresh_receipt is not None:
-                        errors.extend(compare_wechat_audio_receipts(
-                            audio_receipt,
-                            fresh_receipt,
-                            expected_media_id=expected_media,
-                        ))
-                except (json.JSONDecodeError, OSError) as exc:
-                    errors.append(f"双音频草稿凭证损坏：{exc}")
+                    print("✅ 双音频已用永久链接自动补验（正式文章凭证已落盘）。")
+                else:
+                    _log_audio_event(
+                        cwd, "wechat_published_audio_readback", "fail",
+                        f"errors={len(auto_errors)}; via=finalize", error_count=len(auto_errors),
+                    )
+                    auto_detail = [
+                        f"正式文章双音频自动补验未通过：{error}"
+                        for error in (auto_errors or ["读回未返回凭证"])
+                    ]
+                    draft_errors = (
+                        _draft_audio_recheck_errors(cwd, state, receipt_path)
+                        if receipt_path.is_file() else ["没有发布前草稿凭证可兜底"]
+                    )
+                    if draft_errors:
+                        errors.extend(auto_detail)
+                        errors.extend(draft_errors)
+                        errors.append(
+                            "修好后直接重跑 finalize（会自动再验一次）；单独诊断运行 "
+                            f"pipeline.py wechat-published-audio-check {wechat_url}"
+                        )
     except Exception as exc:
         errors.append(f"双音频 finalize 检查异常：{exc}")
     return errors
@@ -4498,8 +4518,8 @@ def cmd_release_to_draft(cwd: Path) -> None:
         print("⏸ 草稿仍需人工插入音频：")
         for role in handoff["roles"]:
             print(f"   • {role['label']} ← {role['source']}")
-        print("   保存后运行自动核验，无需作者确认试听：")
-        print("   pipeline.py wechat-audio-check")
+        print("   插好即可正式发布；拿到永久链接运行 finalize，它会自动补验双音频（无需确认试听）。")
+        print("   想在发布前自检：保存草稿后运行 pipeline.py wechat-audio-check（可选）")
     # 2026-09-23 作者要求：推到草稿箱的同一条汇报里就交付朋友圈文案，
     # 不等永久链接（文案本来就不放文章链接行）。这里只落基线；Agent 须按
     # publish.md §朋友圈内容协议改写、写回，再在同一条回复里逐字给出。

@@ -339,7 +339,10 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
         "status": "manual_insert_required",
         "roles": roles,
         "audition_required": False,
-        "next_command": "pipeline.py wechat-audio-check",
+        # 2026-09-23 审计 F4：作者插完音频直接发布是常态，finalize 用永久链接自动补验；
+        # 发布前草稿读回改为可选自检。
+        "next_command": "pipeline.py finalize <永久链接>",
+        "optional_precheck": "pipeline.py wechat-audio-check",
     }
     (cwd / AUDIO_HANDOFF_FILE).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

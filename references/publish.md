@@ -25,13 +25,13 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 
 只拿到 `media_id` 不算成功；不得手工登记，不得拆开调用低层接口。
 
-若 `podcast.wechat_embed: true`，草稿创建成功后会生成 `_wechat-audio-handoff.json`。作者在微信编辑器依次把主题曲与播客音频插入各自卡片并删除占位文字，保存后运行：
+若 `podcast.wechat_embed: true`，草稿创建成功后会生成 `_wechat-audio-handoff.json`。作者在微信编辑器依次把主题曲与播客音频插入各自卡片并删除占位文字，之后即可正式发布；`finalize <永久链接>` 会先自动做正式文章双音频补验（见本节末）。想在**发布前**自检，保存草稿后可选运行：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" wechat-audio-check
 ```
 
-无需作者确认试听，保存后直接自动核验。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；凭证如实记录自动核验范围，不声称已试听或已校验远端音频字节。
+无需作者确认试听。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；凭证如实记录自动核验范围，不声称已试听或已校验远端音频字节。这张草稿凭证只在正式文章补验不过、草稿又还在时给 `finalize` 兜底。
 
 正文比对**允许作者在微信编辑器里的小幅手改**（改几个字、顺一句话，不回传本地也行）：可见文字相似度 ≥ `BODY_DRIFT_TOLERANCE`（0.98，约 2% 字符）即放行，改动内容写进回执的 `body_drift` 留痕；删段、换章这类结构性改写仍会被拦。2026-09-16 第 99 篇定的规矩：作者把首句改了 7 个字后正式发布，逐字门把整条 finalize 卡死，回传本地又要重生成播客，两头都不对。
 
@@ -41,14 +41,14 @@ python "$SKILL/scripts/pipeline.py" wechat-audio-check
 - 图片：正式页图片必须是草稿回执图片的**顺序子序列**，最多少 `IMAGE_REMOVAL_TOLERANCE`（2）张且至少剩一张，放行并记 `image_drift`（删了哪几张）；换图、加图、换序、删太多一律拦。
 - 作品库与官网仍沿用本地 `article-meta.yaml` 的标题（正式标题只认这一处）；作者要同步改就走 `retitle`，不由核验器代改。
 
-若文章已经正式发布、草稿被微信回收并返回 `40007 invalid media_id`，不得伪造上述草稿凭证。直接对正式文章运行自动核验：
+正式文章补验是主路径（2026-09-23 审计 F4：作者插完音频都是直接发布，草稿随即被回收，草稿读回近 4 篇 4 次全败）。`finalize` 在前置检查里自动运行它；单独诊断时手动运行：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" wechat-published-audio-check \
   "https://mp.weixin.qq.com/s/..."
 ```
 
-命令优先通过官方 `freepublish/batchget` 与 `freepublish/getarticle` 精确绑定永久链接和 `article_id`。仅当账号对已发表内容 API 返回 `48001 api unauthorized` 时，才读取同一微信官方永久页：公开页验证最终正文、图片和双播放器，页面不可见的文章署名、封面 media_id 与评论设置由此前已完整通过的 `_publish-receipt.json` 承接；回执会显式记录两类字段的证据来源。随后生成独立的 `_wechat-published-audio-receipt.json`。这是一条证据来源不同、验收强度不降低的恢复路径；普通路径仍须在正式发布前完成草稿读回。
+命令优先通过官方 `freepublish/batchget` 与 `freepublish/getarticle` 精确绑定永久链接和 `article_id`。仅当账号对已发表内容 API 返回 `48001 api unauthorized` 时，才读取同一微信官方永久页：公开页验证最终正文、图片和双播放器，页面不可见的文章署名、封面 media_id 与评论设置由此前已完整通过的 `_publish-receipt.json` 承接；回执会显式记录两类字段的证据来源。随后生成独立的 `_wechat-published-audio-receipt.json`。证据来源不同、验收强度不降低；草稿被回收返回 `40007 invalid media_id` 时不得伪造草稿凭证。
 
 ### 阶段二：作者人工正式发布
 
