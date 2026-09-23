@@ -139,6 +139,33 @@ def _new_state(cwd: Path, stages: list[str]) -> dict:
     }
 
 
+# article-meta 里不影响成稿与发布的运营字段：改它们不应让 release job 失效。
+# 2026-09-23 第 108 篇：填主题曲生成单要改 music.style/gender/song_name，
+# 旧的整文件 sha256 绑定因此逼着重新 adopt-final，连带五个阶段重验（审计 F2）。
+META_OPERATIONAL_KEYS = frozenset({"music"})
+
+
+def meta_binding_digest(meta_file: Path) -> str:
+    """meta 的语义摘要：解析 YAML、去掉运营字段后取稳定摘要（注释与格式改动不再触发失效）。"""
+    import yaml
+
+    data = yaml.safe_load(Path(meta_file).read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        return stable_digest(data)
+    return stable_digest({k: v for k, v in data.items() if k not in META_OPERATIONAL_KEYS})
+
+
+def _meta_matches(job: dict, meta_file: Path) -> bool:
+    """新 job 按语义摘要核对；没有 meta_digest 的旧 job 仍按整文件 sha256（不追溯已发布文章）。"""
+    expected = str(job.get("meta_digest") or "")
+    if expected:
+        try:
+            return meta_binding_digest(meta_file) == expected
+        except Exception:  # noqa: BLE001 - 解析失败按不一致处理
+            return False
+    return sha256_file(meta_file) == str(job.get("meta_sha256") or "")
+
+
 def adopt_final(
     cwd: Path,
     final_path: Path = Path("定稿.md"),
@@ -236,6 +263,7 @@ def adopt_final(
         "final_path": final_rel,
         "semantic_sha256": str(approval_artifact.get("semantic_sha256") or ""),
         "meta_sha256": sha256_file(meta_file),
+        "meta_digest": meta_binding_digest(meta_file),
     }
     approval_evidence = {
         "path": "_draft-approval.md",
@@ -280,6 +308,7 @@ def adopt_final(
         ),
         "meta_path": meta_rel,
         "meta_sha256": sha256_file(meta_file),
+        "meta_digest": meta_binding_digest(meta_file),
         "checkpoint_digest": checkpoint["artifact_digest"],
         "approval_evidence": approval_evidence,
         "state_run_id": state["run_id"],
@@ -342,6 +371,8 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
                     errors.append("作者审批 subject 与 release job 定稿路径不一致")
                 if str(subject.get("meta_sha256") or "") != str(job.get("meta_sha256") or ""):
                     errors.append("作者审批 subject 与 release job meta 摘要不一致")
+                if str(subject.get("meta_digest") or "") != str(job.get("meta_digest") or ""):
+                    errors.append("作者审批 subject 与 release job meta 语义摘要不一致")
     for label, path_key, hash_key in (
         ("定稿", "final_path", "final_sha256"),
         ("article-meta", "meta_path", "meta_sha256"),
@@ -350,12 +381,14 @@ def validate_release_job(cwd: Path) -> tuple[dict | None, list[str]]:
         target = cwd / Path(rel)
         if not rel or not target.exists():
             errors.append(f"{label}文件缺失：{rel or '(空)'}")
-        elif sha256_file(target) != job.get(hash_key):
-            if label != "定稿":
+        elif label != "定稿":
+            if not _meta_matches(job, target):
                 errors.append(
                     f"{label}已变化，旧 release job 失效；需重新 adopt-final"
+                    "（运营字段 music 的改动不算，见 META_OPERATIONAL_KEYS）"
                 )
-                continue
+            continue
+        elif sha256_file(target) != job.get(hash_key):
             expected_author_hash = str(job.get("author_content_sha256") or "")
             actual_author_hash = author_content_sha256(
                 target.read_text(encoding="utf-8")
@@ -392,8 +425,7 @@ def rebind_release_job(cwd: Path) -> tuple[dict | None, bool, list[str]]:
     if author_hash != str(job.get("author_content_sha256") or ""):
         return None, False, ["定稿作者正文已变化，拒绝用机器重绑定掩盖；请重新 adopt-final"]
     next_final_sha = sha256_file(final)
-    next_meta_sha = sha256_file(meta)
-    if next_meta_sha != str(job.get("meta_sha256") or ""):
+    if not _meta_matches(job, meta):
         return None, False, ["article-meta.yaml 已变化，机器重绑定不接受内容配置漂移；请重新 adopt-final"]
     if next_final_sha == str(job.get("final_sha256") or ""):
         return job, False, []

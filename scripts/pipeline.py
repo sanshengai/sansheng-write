@@ -114,6 +114,22 @@ STAGE_ORDER = [
     "publish",
     "archive",
 ]
+# 阶段依赖表：某阶段产物变了，只作废真正依赖它的下游（2026-09-23 审计 F2）。
+# 此前按 STAGE_ORDER 线性连坐——正文加一处粗体，封面、主题曲、水印全部要重验；
+# 108 篇因此手动重验 9 次。retitle 走 outline，仍会作废全部下游。
+STAGE_DEPENDENTS = {
+    "outline":     ("writing", "cover", "infographic", "bgm", "layout", "logo", "publish", "archive"),
+    "writing":     ("infographic", "layout", "publish", "archive"),  # 作者供图模式的截图引用写在正文里
+    "cover":       ("logo", "publish", "archive"),
+    "infographic": ("layout", "logo", "publish", "archive"),
+    "bgm":         ("layout", "publish", "archive"),  # 音频卡写进定稿，草稿交接绑定音频哈希
+    "layout":      ("logo", "publish", "archive"),     # 视觉 QA 资产集合按成稿实际引用计算
+    "logo":        ("publish", "archive"),
+    "publish":     ("archive",),
+    "archive":     (),
+}
+# 封面上的文字来自 meta 的这些字段：改了它们，封面必须重出（retitle 之外的直接改 meta 也能被发现）。
+COVER_META_KEYS = ("title", "lead", "cover_identity", "cover_style", "cover_keywords")
 STAGE_LABELS = {
     "outline":     "选题 + 大纲",
     "writing":     "正文写作 + 标题锻造",
@@ -1800,6 +1816,18 @@ def _cross_check(cwd: Path, state: dict) -> list:
     return warnings
 
 
+def _cover_meta_subset(cwd: Path) -> dict:
+    """封面文字相关的 meta 字段；解析失败时返回空（不因 meta 读不了而误报漂移）。"""
+    meta_path = cwd / "article-meta.yaml"
+    if _yaml is None or not meta_path.is_file():
+        return {}
+    try:
+        meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+    return {key: meta.get(key) for key in COVER_META_KEYS if isinstance(meta, dict)}
+
+
 def _stage_artifact_digest(cwd: Path, stage: str) -> str:
     """返回阶段关键产物摘要；只含本阶段拥有的稳定输入/输出。"""
     if stage == "outline":
@@ -1812,6 +1840,10 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
         rows = []
         prefix = "素材/cover.png" if stage == "cover" else "素材/infographic"
         for rec in _read_gen_log(cwd, stage):
+            # 水印 / 压缩的补记属于 logo 阶段（其摘要直接看最终字节）；算进这里会让
+            # 后处理把上游封面标脏、连坐全链（2026-09-23 审计 F2）。
+            if rec.get("post_process"):
+                continue
             output = _norm_relpath(rec.get("output", ""))
             if output == prefix or (stage == "infographic" and output.startswith(prefix)):
                 prompt_rel = _norm_relpath(rec.get("prompt", ""))
@@ -1832,8 +1864,24 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
                     "record_id": rec.get("record_id") or "",
                 })
         latest = {row["output"]: row for row in rows}
-        return stable_digest([latest[k] for k in sorted(latest)]) if latest else ""
+        if not latest:
+            return ""
+        payload: object = [latest[k] for k in sorted(latest)]
+        if stage == "cover":
+            payload = {"renders": payload, "meta": _cover_meta_subset(cwd)}
+        return stable_digest(payload)
     if stage == "bgm":
+        manifest = cwd / "_music-manifest.json"
+        if manifest.is_file():
+            # 只认音乐清单绑定的那一首：交接复制到第一层的「播客 | 标题.mp3」、
+            # 音乐封面都不是主题曲产物，算进来会让 handoff 把自己标脏（审计 F2）。
+            rels = ["_music-manifest.json"]
+            try:
+                playback = json.loads(manifest.read_text(encoding="utf-8"))["theme"]["playback"]["path"]
+                rels.append(str(playback))
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+            return files_digest(cwd, rels)
         rels = [str(p.relative_to(cwd)) for p in cwd.glob("*.mp3")]
         rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*.mp3")]
         rels += [str(p.relative_to(cwd)) for p in (cwd / "素材").glob("*bgm*.png")]
@@ -1862,9 +1910,21 @@ def _stage_artifact_digest(cwd: Path, stage: str) -> str:
     return ""
 
 
+def _dependent_stages(stage: str) -> list[str]:
+    """按依赖表求传递闭包，并按 STAGE_ORDER 排序返回。"""
+    seen: set[str] = set()
+    frontier = list(STAGE_DEPENDENTS.get(stage, ()))
+    while frontier:
+        nxt = frontier.pop()
+        if nxt in seen:
+            continue
+        seen.add(nxt)
+        frontier.extend(STAGE_DEPENDENTS.get(nxt, ()))
+    return [name for name in STAGE_ORDER if name in seen]
+
+
 def _invalidate_downstream(state: dict, stage: str, reason: str) -> None:
-    start = STAGE_ORDER.index(stage) + 1
-    for downstream in STAGE_ORDER[start:]:
+    for downstream in _dependent_stages(stage):
         info = state["stages"].setdefault(downstream, {"status": "pending"})
         if info.get("status") in {"done", "skip", "dirty"}:
             info["status"] = "dirty"
