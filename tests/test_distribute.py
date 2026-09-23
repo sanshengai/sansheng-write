@@ -308,14 +308,14 @@ def fake_browser(monkeypatch, tmp_path):
     script.write_text("// fake", encoding="utf-8")
     calls = []
 
-    def fake_call(argv):
+    def fake_call(argv, log_path=None, **_kw):
         calls.append(argv)
         return fake_call.rc
 
     fake_call.rc = 0
     monkeypatch.setattr(distribute, "resolve_post_script", lambda ch, cfg: script)
     monkeypatch.setattr(distribute, "_find_bun", lambda: "bun")
-    monkeypatch.setattr(distribute.subprocess, "call", fake_call)
+    monkeypatch.setattr(distribute, "_run_fill_script", fake_call)
     return fake_call, calls
 
 
@@ -360,7 +360,7 @@ def test_小红书填充成功后写凭证(article, all_enabled, fake_browser):
     receipt = json.loads(
         (distribute.channel_dir(article, "xhs") / distribute.RECEIPT_FILE).read_text(encoding="utf-8"))
     assert receipt["mode"] == "assisted"
-    assert distribute.get_status(article, "xhs") == "dispatched"
+    assert distribute.get_status(article, "xhs") == "filled"   # 填好≠发出，作者确认后才是 sent
 
 
 def test_微博文案走位置参数而非_content(article, all_enabled, fake_browser):
@@ -539,3 +539,60 @@ def test_微博固定风格不一致被拦(article, monkeypatch, all_enabled, tm
         kwargs["pages"] = {"01.md": "主标题：一句\n支撑文字：两句"}
     _weibo_style_setup(article, monkeypatch, all_enabled, tmp_path, **kwargs)
     assert distribute.cmd_verify(article, "weibo") == 2
+
+
+
+# ===== 两态派发与作者确认（2026-09-23 审计 D1）=====
+
+def _script(tmp_path, body: str) -> list[str]:
+    path = tmp_path / "fill.py"
+    path.write_text(body, encoding="utf-8")
+    return [sys.executable, str(path)]
+
+
+def test_fill_returns_as_soon_as_marker_appears(tmp_path):
+    import time
+    argv = _script(tmp_path, "import time,sys\nprint('Post composed. click the publish button', flush=True)\ntime.sleep(30)\n")
+    started = time.monotonic()
+    assert distribute._run_fill_script(argv, tmp_path / "d.log", timeout=20, poll=0.1) == 0
+    assert time.monotonic() - started < 10, "看到标志行就该返回，不能等浏览器关掉"
+
+
+def test_fill_reports_script_exit_code(tmp_path):
+    argv = _script(tmp_path, "import sys\nprint('need login')\nsys.exit(3)\n")
+    assert distribute._run_fill_script(argv, tmp_path / "d.log", timeout=20, poll=0.1) == 3
+
+
+def test_fill_times_out(tmp_path):
+    argv = _script(tmp_path, "import time\ntime.sleep(30)\n")
+    assert distribute._run_fill_script(argv, tmp_path / "d.log", timeout=1, poll=0.1) == -1
+
+
+def test_confirm_moves_filled_to_sent(article, all_enabled, fake_browser):
+    distribute.cmd_plan(article)
+    _write_social(article)
+    _write_images(article)
+    distribute.cmd_verify(article, "weibo")
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 0
+    assert distribute.get_status(article, "weibo") == "filled"
+    assert distribute.cmd_confirm(article, "weibo", "https://weibo.com/x/1") == 0
+    assert distribute.get_status(article, "weibo") == "sent"
+    receipt = json.loads((distribute.channel_dir(article, "weibo") / distribute.RECEIPT_FILE).read_text(encoding="utf-8"))
+    assert receipt["confirmed_by"] == "author" and receipt["post_url"] == "https://weibo.com/x/1"
+
+
+def test_confirm_refuses_unfilled_channel(article, all_enabled):
+    distribute.cmd_plan(article)
+    assert distribute.cmd_confirm(article, "weibo") == 2
+
+
+def test_replan_keeps_filled_channel(article, all_enabled, fake_browser):
+    """finalize 重跑 plan 不能把「已填好」退回 planned，否则会再填一次、重复发帖。"""
+    distribute.cmd_plan(article)
+    _write_social(article)
+    _write_images(article)
+    distribute.cmd_verify(article, "weibo")
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 0
+    distribute.cmd_plan(article)
+    assert distribute.get_status(article, "weibo") == "filled"
+    assert distribute.cmd_dispatch(article, "weibo", confirm=True) == 2

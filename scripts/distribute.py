@@ -104,7 +104,12 @@ RECEIPT_FILE = "_receipt.json"
 DIST_DIRNAME = "dist"
 
 # 状态机：一条单向链，任何一环缺证据都不允许跳到下一环
-STATUSES = ("pending", "planned", "drafted", "verified", "dispatched")
+# filled = 已填进发布框、等作者点发送；sent = 作者确认已发出（2026-09-23 审计 D1）。
+# dispatched 仍用于自动发布的渠道（播客 RSS）。
+STATUSES = ("pending", "planned", "drafted", "verified", "filled", "sent", "dispatched")
+FILL_TIMEOUT_SECONDS = 600
+# 发布脚本填好内容后打印的标志行（weibo-post.ts / xiaohongshu-post.ts）。
+FILLED_MARKERS = ("Post composed", "已填好", "请检查", "click the publish button")
 
 
 # ===== 【第 2 节】配置解析（私有值的唯一入口） =====
@@ -433,10 +438,11 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
         }
         channel_dir(article_dir, ch).mkdir(parents=True, exist_ok=True)
         # finalize 可安全重跑：已有同源 receipt 的渠道不能被 plan 从 dispatched
-        # 倒退到 planned，更不能因此触发重复发布。
+        # 倒退到 planned，更不能因此触发重复发布。filled 同样不倒退——作者可能已经
+        # 点了发送、只是还没 confirm，重新填一遍就是重复发帖。
         receipt = channel_dir(article_dir, ch) / RECEIPT_FILE
         already_dispatched = (
-            get_status(article_dir, ch) == "dispatched"
+            get_status(article_dir, ch) in ("dispatched", "sent", "filled")
             and receipt.is_file()
             and not _is_drifted(article_dir, ch)
         )
@@ -914,16 +920,11 @@ def _dispatch_assisted(article_dir: Path, channel: str) -> int:
     print(f"[distribute] {CHANNELS[channel]['label']}：打开 Chrome 填入…")
     print(f"             脚本：{script}")
     print(f"             文案 {len(parsed['body'])} 字 + {len(images)} 图")
-    try:
-        rc = subprocess.call(argv)
-    except OSError as e:
-        print(f"[distribute] ✗ 启动发布脚本失败：{e}", file=sys.stderr)
-        return 2
-
+    rc = _run_fill_script(argv, channel_dir(article_dir, channel) / "dispatch.log")
     if rc != 0:
-        print(f"[distribute] ✗ 填充失败（exit {rc}）", file=sys.stderr)
+        print(f"[distribute] ✗ 填充失败（{'超时' if rc == -1 else f'exit {rc}'}）", file=sys.stderr)
         print("             首次使用需先在弹出的 Chrome 里手动登录一次；", file=sys.stderr)
-        print("             或 Chrome 正被占用，关掉后重跑。", file=sys.stderr)
+        print("             或 Chrome 正被占用，关掉后重跑。日志：dispatch.log", file=sys.stderr)
         return 2
 
     _write_json(channel_dir(article_dir, channel) / RECEIPT_FILE, {
@@ -932,10 +933,60 @@ def _dispatch_assisted(article_dir: Path, channel: str) -> int:
         "script": str(script),
         "filled_at": _now(),
         "images": [str(i) for i in images],
-        "note": "内容已填入发布框；正式发布由作者在浏览器中点击完成",
+        "note": "内容已填入发布框；正式发布由作者在浏览器中点击完成，发出后运行 distribute confirm",
     })
-    set_status(article_dir, channel, "dispatched")
-    print(f"[distribute] ✓ 已填好 → 去弹出的 Chrome 检查内容后点「{'发布' if channel == 'xhs' else '发送'}」")
+    set_status(article_dir, channel, "filled")
+    button = "发布" if channel == "xhs" else "发送"
+    print(f"[distribute] ✓ 已填好 → 去弹出的 Chrome 检查内容后点「{button}」")
+    print(f"             发出后告诉 Agent，或运行：distribute confirm {channel} [--url 帖子链接]")
+    return 0
+
+
+def _run_fill_script(argv: list[str], log_path: Path, *, timeout: float = FILL_TIMEOUT_SECONDS,
+                     poll: float = 1.0) -> int:
+    """后台启动发布脚本，看到「已填好」标志行就返回，浏览器与脚本留着等作者点发送。
+
+    2026-09-23 审计 D1：此前 subprocess.call 同步等待，而 weibo-post.ts 填好后因浏览器
+    仍开着不退出，108 篇挂了 4 小时。这里输出写日志文件（不用管道，避免缓冲区写满卡住），
+    轮询到标志行即返回 0；脚本自己先退出时按退出码；超时返回 -1。
+    """
+    import time
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as log:
+        try:
+            proc = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as e:
+            print(f"[distribute] ✗ 启动发布脚本失败：{e}", file=sys.stderr)
+            return 2
+    deadline = time.monotonic() + timeout
+    while True:
+        text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+        if any(marker in text for marker in FILLED_MARKERS):
+            return 0
+        code = proc.poll()
+        if code is not None:
+            return code
+        if time.monotonic() > deadline:
+            return -1
+        time.sleep(poll)
+
+
+def cmd_confirm(article_dir: Path, channel: str, url: str = "") -> int:
+    """作者确认已在平台点了发送：filled → sent，并把确认写进回执。"""
+    if channel not in CHANNELS:
+        print(f"[distribute] ✗ 未知渠道 {channel!r}", file=sys.stderr)
+        return 2
+    status = get_status(article_dir, channel)
+    if status not in ("filled", "dispatched"):
+        print(f"[distribute] ✗ 当前状态 {status}，只有「已填好」的渠道才能确认发送", file=sys.stderr)
+        return 2
+    receipt_path = channel_dir(article_dir, channel) / RECEIPT_FILE
+    receipt = _read_json(receipt_path) or {"channel": channel}
+    receipt.update({"sent_at": _now(), "confirmed_by": "author", "post_url": url or ""})
+    _write_json(receipt_path, receipt)
+    set_status(article_dir, channel, "sent")
+    print(f"[distribute] ✓ {CHANNELS[channel]['label']} 已记为发送" + (f"：{url}" if url else ""))
     return 0
 
 
@@ -990,7 +1041,7 @@ def cmd_status(article_dir: Path) -> int:
         enabled = channel_enabled(ch)
         status = (st["channels"].get(ch) or {}).get("status", "pending")
         mark = {"pending": "·", "planned": "○", "drafted": "◐",
-                "verified": "◑", "dispatched": "●"}.get(status, "?")
+                "verified": "◑", "filled": "◕", "sent": "●", "dispatched": "●"}.get(status, "?")
         if _is_drifted(article_dir, ch):
             mark, status = "⚠", f"{status}（定稿已变更，需重做）"
         rows.append((mark, spec["label"], spec["dispatch_mode"],
@@ -1025,6 +1076,10 @@ def main(argv: list[str] | None = None) -> int:
     p_ver = sub.add_parser("verify", help="校验渠道文案（不通过 exit 2）")
     p_ver.add_argument("channel")
 
+    p_con = sub.add_parser("confirm", help="作者已在平台点了发送：已填好 → 已发送")
+    p_con.add_argument("channel")
+    p_con.add_argument("--url", default="", help="发出后的帖子链接（可选）")
+
     p_dis = sub.add_parser("dispatch", help="派发到渠道（默认 dry-run）")
     p_dis.add_argument("channel")
     p_dis.add_argument("--confirm", action="store_true",
@@ -1049,6 +1104,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_verify(article_dir, args.channel)
     if args.cmd == "dispatch":
         return cmd_dispatch(article_dir, args.channel, args.confirm)
+    if args.cmd == "confirm":
+        return cmd_confirm(article_dir, args.channel, args.url)
     return 2
 
 

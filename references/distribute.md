@@ -154,10 +154,18 @@ python scripts/distribute.py --dir <文章目录> dispatch weibo
 # 预填浏览器；仍不点击最终发布按钮
 python scripts/distribute.py --dir <文章目录> dispatch xhs --confirm
 python scripts/distribute.py --dir <文章目录> dispatch weibo --confirm
+
+# 作者在浏览器点了发送之后
+python scripts/distribute.py --dir <文章目录> confirm weibo --url <帖子链接>
 ```
 
 `verify` 会检查渠道专属目录、张数、3:4 / 1:1 比例、文案长度、标签格式与小红书导流风险。
 定稿发生变化后，旧文案与旧图片自动视为过期，必须重新 plan、verify。
+
+辅助渠道分两态：`dispatch --confirm` 看到发布脚本打印「已填好」就返回，状态记 `filled`，
+浏览器留着等作者检查、点发送（不再同步等脚本退出——浏览器开着它不会退，108 篇因此挂了 4 小时，
+日志在渠道目录 `dispatch.log`）；作者说发了，再 `confirm` 记为 `sent`。`filled` 不会被
+重跑的 `plan` 退回，也不能再次 `dispatch`，避免作者已发未确认时重复发帖。
 
 ## 7. 播客
 
