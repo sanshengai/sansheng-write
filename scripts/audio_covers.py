@@ -51,6 +51,19 @@ except ImportError:  # pragma: no cover - direct script execution
     from music_manifest import MUSIC_MANIFEST_FILE
     from render_visuals import _load_policy, resolve_renderer_command
 
+try:
+    # 46px 盲配（references/music.md §验收：盲配测试）；依赖链最终会拉到 Pillow
+    # （经 visual_qa_claude → visual_qa）。公开 Skill 用户可能没装全这条链，
+    # 任何 import 失败都不该拖垮本模块的基本出图能力，所以整体降级为 None，
+    # 调用处按「盲配不可用」处理（warning，不拦交付）。
+    try:
+        from .cover_blind_match import recheck_existing as recheck_blind_match, run_blind_match
+    except ImportError:
+        from cover_blind_match import recheck_existing as recheck_blind_match, run_blind_match
+except Exception:  # pragma: no cover - 环境缺依赖时的兜底
+    run_blind_match = None
+    recheck_blind_match = None
+
 PODCAST_MANIFEST = Path("dist/podcast/audio.manifest.json")
 PROMPT_DIR = Path("素材/prompts")
 GEN_LOG = ".gen-log.jsonl"
@@ -441,6 +454,22 @@ def _render_one(
     return errors
 
 
+def _recheck_blind_match(article_dir: Path, stage_paths: dict[str, Path]) -> list[str]:
+    """封面都已存在时沿用已有盲配结论：配错的结论不因重跑 handoff 而消失。"""
+    if recheck_blind_match is None:
+        return []
+    try:
+        title = _article_context(article_dir)[0]
+    except (OSError, ValueError, yaml.YAMLError):
+        title = ""
+    outcome = recheck_blind_match(
+        article_dir, stage_paths, article_title=title, exclude_seq=_article_number(article_dir),
+    )
+    for warning in outcome.get("warnings") or []:
+        print(f"⚠️ {warning}", file=sys.stderr)
+    return list(outcome.get("errors") or [])
+
+
 def ensure_audio_covers(
     article_dir: Path, *, force: bool = False
 ) -> tuple[list[Path], list[str]]:
@@ -459,15 +488,17 @@ def ensure_audio_covers(
 
     ready: list[Path] = []
     pending: list[tuple[str, Path]] = []
+    stage_paths: dict[str, Path] = {}
     for stage, kind in jobs:
         target = cover_output(article_dir, kind=kind, force=force)
         if target.is_file() and target.stat().st_size > 0 and not force:
             ready.append(target)
+            stage_paths[stage] = target
         else:
             pending.append((stage, target))
     if not pending:
         write_thumb_sheet(article_dir, ready)
-        return ready, []
+        return ready, _recheck_blind_match(article_dir, stage_paths)
 
     try:
         title, digest, body = _article_context(article_dir)
@@ -485,6 +516,7 @@ def ensure_audio_covers(
         return ready, policy_errors
     (article_dir / PROMPT_DIR).mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
+    newly_generated: dict[str, Path] = {}
     for stage, target in pending:
         prompt = (build_theme_cover_prompt(song, digest, article_title=title, plan=plan[stage])
                   if stage == "theme_cover" else
@@ -499,8 +531,29 @@ def ensure_audio_covers(
             failures.extend(item_errors)
         else:
             ready.append(target)
-    if not failures:
-        write_thumb_sheet(article_dir, ready)
+            stage_paths[stage] = target
+            newly_generated[stage] = target
+    if failures:
+        return ready, failures
+
+    write_thumb_sheet(article_dir, ready)
+
+    # 只有本次真的新出了封面（含 --force 重出）才跑盲配（references/music.md
+    # §验收：盲配测试）；单纯复用已有封面时 pending 早已在上面清空并直接 return，
+    # 走不到这里。盲配对象是当前就位的两张（或仅有的那一张），不止新出的那张——
+    # 判断力是「两张放在一起分不分得开」，只测新的那张会漏掉「新旧两张现在撞了」。
+    if newly_generated:
+        if run_blind_match is None:
+            print("⚠️ cover_blind_match 不可用（依赖缺失），已跳过 46px 盲配", file=sys.stderr)
+        else:
+            outcome = run_blind_match(
+                article_dir, stage_paths, article_title=title, exclude_seq=_article_number(article_dir),
+            )
+            for warning in outcome.get("warnings") or []:
+                print(f"⚠️ {warning}", file=sys.stderr)
+            blind_errors = outcome.get("errors") or []
+            if blind_errors:
+                failures.extend(blind_errors)
     return ready, failures
 
 

@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -57,6 +58,11 @@ def renderer(monkeypatch):
         return []
 
     monkeypatch.setattr(covers, "_render_one", render)
+    # 盲配（cover_blind_match.run_blind_match）默认打桩成「跳过、不报错」：
+    # 这里的既有用例只关心出图与规划校验，不关心盲配本身；盲配自己的行为
+    # （pass/fail/degraded/skipped/接线）由 test_cover_blind_match.py 与
+    # 本文件底部两条接线用例专门覆盖。
+    monkeypatch.setattr(covers, "run_blind_match", lambda *a, **kw: {"status": "skipped", "errors": [], "warnings": []})
     return prompts
 
 
@@ -267,3 +273,86 @@ def test_glyph_subject_may_describe_its_letters(tmp_path, monkeypatch):
     renderer(monkeypatch)
     ready, errors = covers.ensure_audio_covers(root)
     assert not errors and len(ready) == 1
+
+
+# ---------- 接线：只有本次新出了封面才跑盲配 ----------
+
+def test_blind_match_runs_when_new_cover_generated(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    plan(root)
+    podcast = root / covers.PODCAST_MANIFEST
+    podcast.parent.mkdir(parents=True)
+    podcast.write_text("{}")
+    renderer(monkeypatch)
+    calls = []
+
+    def fake_blind_match(article_dir, stage_paths, *, article_title, exclude_seq=None):
+        calls.append((article_dir, dict(stage_paths), article_title, exclude_seq))
+        return {"status": "pass", "errors": [], "warnings": []}
+
+    monkeypatch.setattr(covers, "run_blind_match", fake_blind_match)
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and len(ready) == 2
+    assert len(calls) == 1
+    called_dir, called_paths, called_title, called_seq = calls[0]
+    assert called_dir == root
+    assert set(called_paths) == {"theme_cover", "podcast_cover"}
+    assert called_title == "Jev 处理小判断"
+    assert called_seq == 106  # article() 用的目录名前缀 "106-..."
+
+
+def test_blind_match_failure_surfaces_as_error_without_dropping_ready(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    plan(root)
+    renderer(monkeypatch)
+    monkeypatch.setattr(
+        covers, "run_blind_match",
+        lambda *a, **kw: {"status": "fail", "errors": ["theme_cover 盲配未通过：模型判给了别篇"], "warnings": []},
+    )
+    ready, errors = covers.ensure_audio_covers(root)
+    assert errors == ["theme_cover 盲配未通过：模型判给了别篇"]
+    # 图已经真实渲染出来（供人工检查后改 plan --force 重出），不因盲配失败被抹掉。
+    assert ready == [root / covers.THEME_COVER]
+
+
+def test_blind_match_not_called_when_covers_reused(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    target = root / covers.THEME_COVER
+    target.parent.mkdir(exist_ok=True)
+    target.write_bytes(b"already-there")
+    renderer(monkeypatch)
+    calls = []
+    monkeypatch.setattr(covers, "run_blind_match", lambda *a, **kw: calls.append(1) or {"status": "pass", "errors": [], "warnings": []})
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and ready == [target]
+    assert calls == []
+
+
+def test_blind_match_unavailable_dependency_only_warns(tmp_path, monkeypatch, capsys):
+    root = article(tmp_path)
+    plan(root)
+    renderer(monkeypatch)
+    monkeypatch.setattr(covers, "run_blind_match", None)
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and len(ready) == 1
+    assert "cover_blind_match 不可用" in capsys.readouterr().err
+
+
+def test_reused_covers_keep_recorded_blind_match_failure(tmp_path, monkeypatch):
+    """配错后直接重跑 handoff：封面没变，结论照样拦，不再调模型。"""
+    from scripts import cover_blind_match as bm
+
+    root = article(tmp_path)
+    target = root / covers.THEME_COVER
+    target.write_bytes(b"cover-that-failed")
+    (root / bm.BLINDMATCH_FILE).write_text(json.dumps({
+        "status": "fail",
+        "cover_sha256": {"theme_cover": hashlib.sha256(b"cover-that-failed").hexdigest()},
+        "results": [{"image": "theme_cover", "chosen_title": "别篇", "confidence": "high",
+                     "description": "通用太阳", "correct": False}],
+    }), encoding="utf-8")
+    renderer(monkeypatch)
+    monkeypatch.setattr(bm, "_invoke_model", lambda *a, **k: (_ for _ in ()).throw(AssertionError("model called")))
+    ready, errors = covers.ensure_audio_covers(root)
+    assert ready == [target]
+    assert errors and "通用太阳" in errors[0]

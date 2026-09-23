@@ -178,12 +178,24 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 出图后脚本写 `_audio-cover-thumbs.png`（256 / 128 / 64 / 46 px）。形式验收照旧：46 px 下轮廓还在、
 两张一眼分开、和前三篇并排不像同一套、没有多余文字或第二件道具。
 
-**新增盲配**：派一个没有本文上下文的看图子 Agent，只给 46 px 的两张缩略图和一份打乱顺序的
-6 个标题（本篇 + 作品库最近 5 篇），问「这两张各属于哪篇」。**两张都配对才算过**；配错就说明
-图没画出锚点，改 `subject` / `identity` 后 `--force` 重出。这一步是图版的「换题检查」——
-歌词要求换到别篇不成立，封面同理。结论（子 Agent 的原答、配对结果、改了什么）写进
-`_audio-cover-review.md`。修改已有封面走 `--force` 或 handoff 的 `--regenerate-covers`；
-不自动改动历史已发布图片。
+**盲配已自动接入 `ensure_audio_covers`（2026-09-23，`cover_blind_match.py`）**：只要本次真的新出了
+封面（含 `--force` 重出），就自动把当前就位的封面各缩到 46×46 再放大到 138×138（不会因此看到超出
+46 px 的细节），派一个没有本文上下文的独立 `claude -p` 进程，连同打乱顺序的候选标题（本篇 + 作品库
+`works.yaml` 最近 5 篇，按文章目录名哈希取固定种子，可复现）一起问「这几张各属于哪篇」。**全部配对
+才算过**；配错时 `ensure_audio_covers` / `handoff-assets` 直接报错停下，错误信息带模型看到的具体
+描述，照着改 `_audio-cover-plan.json` 对应封面的 `subject` / `identity` 后 `--force` 重出。这一步是
+图版的「换题检查」——歌词要求换到别篇不成立，封面同理。
+
+机器凭证写 `_audio-cover-blindmatch.json`（时间、模型、封面 SHA-256、打乱后的候选表、每张图的选择与
+模型原话、pass/fail）。结论绑定封面哈希：封面没变时重跑 handoff 沿用原结论——配错照样拦、不重复调模型；
+换过封面才重判；没有凭证的历史文章不补跑。配对成功或失败时再在 `_audio-cover-review.md` 追加一段人读摘要（只追加，不覆盖已有
+内容）。作品库读不到时不算失败，退化为「本篇 + 占位干扰标题」继续跑，凭证里 `degraded` 标注原因。
+找不到 `claude` 可执行文件（复用 `SANSHENG_WRITE_VISUAL_QA_CLAUDE` 指定路径）或缺 Pillow 时也不算
+失败，只打印一条 warning、凭证记 `skipped`——公开 Skill 用户可能没配这条链，不能因此拦住基本出图。
+显式关闭用 `SANSHENG_WRITE_BLIND_MATCH=off`；判分模型默认 `claude-sonnet-5`（`SANSHENG_WRITE_BLIND_MATCH_MODEL`
+可覆盖），比精修视觉复核用的 opus 更便宜，因为这里只是一次简单判断。
+
+修改已有封面走 `--force` 或 handoff 的 `--regenerate-covers`；不自动改动历史已发布图片。
 
 ## 接入微信文章
 
