@@ -20,10 +20,12 @@ try:
     from .evidence import build_visual_manifest, sha256_file
     from .profile_config import identity, load_secret, visual_profile
     from .evidence import stable_digest
+    from .visual_pixel_checks import compute_cover_pixel_checks
 except ImportError:  # pragma: no cover - direct script execution
     from evidence import build_visual_manifest, sha256_file
     from profile_config import identity, load_secret, visual_profile
     from evidence import stable_digest
+    from visual_pixel_checks import compute_cover_pixel_checks
 
 
 QA_REQUEST_FILE = "_visual-qa-request.json"
@@ -490,6 +492,15 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         }:
             errors.append(f"{rel} 使用本地确定性模板 renderer，违反原生生成合同")
             continue
+        # 🔴 只给 cover 算：ghost 层与水印都是封面专属的版式约定（正文/信息图
+        # 没有 ghost 行，hero 甚至不打水印，见 add_logo.js SKIP_FILES）。
+        # compute_cover_pixel_checks 内部吞掉所有异常，绝不因为辅助测量失败
+        # 拖垮整条 QA 请求构建；只报告不裁决，见 visual_pixel_checks.py 顶部说明。
+        pixel_checks = (
+            compute_cover_pixel_checks(image_path)
+            if str(asset["stage"]) == "cover"
+            else None
+        )
         assets.append(
             {
                 "path": rel,
@@ -499,6 +510,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
                 "required_text": expected[rel],
                 "text_occurrence": "exactly-once",
                 "pixel_metrics": metrics,
+                **({"pixel_checks": pixel_checks} if pixel_checks is not None else {}),
                 "generation": {
                     "producer": asset.get("producer") or "",
                     "renderer": asset.get("renderer") or "",
@@ -691,6 +703,33 @@ def validate_qa_result(
     return errors
 
 
+def _merge_pixel_checks(qa: dict[str, Any], request: dict[str, Any]) -> None:
+    """把 `build_qa_request` 阶段算好的确定性像素测量原样并入最终 qa 记录。
+
+    🔴 只搬运，不裁决：这里不读也不改任何 `checks`/`status`，只是让
+    `_visual-qa.json`/`.md` 自包含 ghost 层与水印的辅助测量，省得排查时
+    还要另外去翻 `_visual-qa-request.json`。真正「只报告不拦截」的边界在
+    `visual_pixel_checks.py` 模块顶部说明，以及本文件从不把这里的结果并入
+    `validation_findings`。
+    """
+    qa_assets = qa.get("assets")
+    if not isinstance(qa_assets, list):
+        return
+    pixel_checks_by_path = {
+        str(asset.get("path") or ""): asset.get("pixel_checks")
+        for asset in request.get("assets", [])
+        if isinstance(asset, dict) and asset.get("pixel_checks") is not None
+    }
+    if not pixel_checks_by_path:
+        return
+    for asset in qa_assets:
+        if not isinstance(asset, dict):
+            continue
+        checks = pixel_checks_by_path.get(str(asset.get("path") or ""))
+        if checks is not None:
+            asset["pixel_checks"] = copy.deepcopy(checks)
+
+
 def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
     reviewer = qa["reviewer"]
     lines = [
@@ -703,6 +742,17 @@ def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
         "",
     ]
     for asset in qa["assets"]:
+        pixel_checks = asset.get("pixel_checks")
+        pixel_lines: list[str] = []
+        if isinstance(pixel_checks, dict) and "error" not in pixel_checks:
+            ghost_note = (pixel_checks.get("ghost_layer") or {}).get("note")
+            watermark_note = (pixel_checks.get("watermark") or {}).get("note")
+            if ghost_note or watermark_note:
+                pixel_lines.append("- 🔍 像素自动测量（仅报告，不参与发布判定）：")
+                if ghost_note:
+                    pixel_lines.append(f"  - {ghost_note}")
+                if watermark_note:
+                    pixel_lines.append(f"  - {watermark_note}")
         lines.extend(
             [
                 f"## {asset['path']}",
@@ -713,6 +763,7 @@ def _write_markdown(cwd: Path, qa: dict[str, Any]) -> None:
                     for check in asset["checks"]
                 ],
                 f"- 备注：{asset.get('notes') or '无'}",
+                *pixel_lines,
                 "",
             ]
         )
@@ -812,6 +863,8 @@ def run_visual_qa(
         return None, [f"独立视觉复核 JSON 解析失败：{exc}"]
     if not isinstance(qa, dict):
         return None, ["独立视觉复核 JSON 顶层必须为对象"]
+    # 只搬运不裁决：合并 build_qa_request 阶段算好的像素测量，绝不影响下面的校验。
+    _merge_pixel_checks(qa, request)
     validation_errors = validate_qa_result(cwd, qa, request=request)
     # QA 结果无论成败都落盘留痕，便于定位到底哪张图、哪条规则未通过；
     # errors 原样返回，失败结果不能进入 seal 或发布。

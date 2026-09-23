@@ -227,6 +227,8 @@ def _build_prompt(asset: dict[str, Any]) -> str:
     required_checks = asset.get("required_checks") or []
     metrics = asset.get("pixel_metrics") or {}
     source_layers = asset.get("authorized_source_layers") or []
+    pixel_checks = asset.get("pixel_checks") or {}
+    ghost_measurement = pixel_checks.get("ghost_layer") or {}
 
     lines = [
         "你是一名独立的视觉验收员。附件里是一张待验收的图，请逐项如实核对。",
@@ -238,6 +240,18 @@ def _build_prompt(asset: dict[str, Any]) -> str:
         f"## 目标风格：{asset.get('target_style')}",
         f"## 实际像素：{metrics.get('width')}×{metrics.get('height')}",
         "",
+    ]
+    if "ghost_layer_subdued" in required_checks and ghost_measurement.get("note"):
+        lines += [
+            "## 自动像素测量（仅供参考，不替代你的目测判断）",
+            f"- {ghost_measurement['note']}",
+            "这是程序在标题正上方粗略估算出来的数字，可能被光束/渐变等背景装饰干扰，"
+            "不是精确测量。`ghost_layer_subdued` 仍必须由你独立看图判断：不能因为这个"
+            "数字落在范围内就不看图直接判 true，也不能只因为它超出范围就判 false ——"
+            "以你实际看到的画面为准，这行数字只是参考。",
+            "",
+        ]
+    lines += [
         "## 文字白名单（expected_text）",
         "这是允许出现在图上的全部文字，是严格上限；白名单之外不得出现任何可读字符。"
         "白名单内的产品名、公司名或账号署名不是违规。",

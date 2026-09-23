@@ -402,3 +402,38 @@ def test_visual_seal_binds_structured_qa_and_exact_final_image_bytes(tmp_path):
     receipt, errors = seal_visual_receipt(article)
     assert receipt is None
     assert any("sha256" in error or "字节" in error for error in errors)
+
+
+def test_cover_pixel_checks_are_attached_but_never_gate_the_result(tmp_path):
+    """2026-09-23 审计 G4：ghost 层/水印的像素测量必须只挂在 cover 资产上、
+    只报告不拦截。这份 fixture 封面是纯色测试图（无 ghost、无水印），
+    测量必须诚实报"没测到"而不是编造数字；即便测量结果全是"没测到"，
+    QA 依旧必须整体 pass —— 这两项测量任何时候都不参与发布判定。
+    """
+    from scripts.visual_qa import build_qa_request, run_visual_qa
+
+    article = _article(tmp_path)
+    request, request_errors = build_qa_request(article)
+    assert request_errors == []
+
+    cover = next(asset for asset in request["assets"] if asset["stage"] == "cover")
+    non_cover = [asset for asset in request["assets"] if asset["stage"] != "cover"]
+
+    assert "pixel_checks" in cover
+    assert set(cover["pixel_checks"]) >= {"ghost_layer", "watermark"}
+    # ghost 行 / 水印都是封面专属版式（hero 甚至被 add_logo.js 显式排除在外），
+    # 不应该悄悄出现在 hero / infographic 资产上。
+    assert all("pixel_checks" not in asset for asset in non_cover)
+    # fixture 封面是纯色，两项测量都应诚实报「没测到」，不是瞎猜一个数字。
+    assert cover["pixel_checks"]["ghost_layer"]["detected"] is False
+    assert cover["pixel_checks"]["watermark"]["likely_present"] is False
+
+    qa, run_errors = run_visual_qa(article, reviewer_command=_reviewer(tmp_path))
+
+    assert run_errors == []
+    assert qa["status"] == "pass"  # 像素测量结果无论如何都不能把 pass 变成 fail
+    cover_result = next(a for a in qa["assets"] if a["path"] == "素材/cover.png")
+    assert cover_result["pixel_checks"]["ghost_layer"]["contract_verdict"] == "not_detected"
+    markdown = (article / "_visual-qa.md").read_text(encoding="utf-8")
+    assert "像素自动测量" in markdown
+    assert "仅报告，不参与发布判定" in markdown
