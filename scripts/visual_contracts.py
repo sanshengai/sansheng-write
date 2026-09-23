@@ -25,7 +25,7 @@ COVER_GHOST_MIN_TERMS = 2
 COVER_GHOST_MAX_TERMS = 3
 COVER_GHOST_TERM_MAX_CHARS = 14
 COVER_GHOST_MAX_CHARS = 32
-# 胶囊标签：2 项必填，第 3 项可选（作者认可的第 75/76 篇封面都是三标签）。
+# 胶囊标签：2 项必填，第 3 项可选（作者认可的封面范例都是三标签）。
 COVER_TAG_MAX_COUNT = 3
 
 

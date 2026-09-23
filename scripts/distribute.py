@@ -482,7 +482,7 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
 def _weibo_style_problems(article_dir: Path) -> list[str]:
     """profile 固定了微博卡片风格时，逐字核对本篇用的就是那一份。
 
-    2026-09-23 第 108 篇：风格只写在每篇自己的提示词里，107 换成纯文字卡、108 又照抄 107，
+    曾经一次教训：风格只写在每篇自己的提示词里，某一篇换成纯文字卡、下一篇又照抄了它，
     作者判「这么丑」。风格真源放 profile，本篇 prompts/style.md 必须与它逐字一致，
     每页提示词必须写「主视觉：」——纯文字卡不算信息卡。
     """
@@ -947,7 +947,7 @@ def _run_fill_script(argv: list[str], log_path: Path, *, timeout: float = FILL_T
     """后台启动发布脚本，看到「已填好」标志行就返回，浏览器与脚本留着等作者点发送。
 
     2026-09-23 审计 D1：此前 subprocess.call 同步等待，而 weibo-post.ts 填好后因浏览器
-    仍开着不退出，108 篇挂了 4 小时。这里输出写日志文件（不用管道，避免缓冲区写满卡住），
+    仍开着不退出，曾挂了 4 小时。这里输出写日志文件（不用管道，避免缓冲区写满卡住），
     轮询到标志行即返回 0；脚本自己先退出时按退出码；超时返回 -1。
     """
     import time

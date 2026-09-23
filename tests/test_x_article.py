@@ -209,10 +209,10 @@ def test_sources_without_closing_marker_stop_at_next_comment(tmp_path: Path):
 def test_post_matches_rejects_someone_elses_post():
     cap = "同样 10 万元本金、年化 8% 投 30 年：年费 0.15% 的宽基指数滚到约 96.6 万"
     title = "我用 AI 蒸馏了 15 本投资大师经典"
-    assert xa.post_matches("叁笙早安AI @han_zi34380 · 1分钟 同样 10 万元本金、年化 8% 投 30 年：年费 0.15%…", cap, title)
+    assert xa.post_matches("示例账号 @example_handle · 1分钟 同样 10 万元本金、年化 8% 投 30 年：年费 0.15%…", cap, title)
     assert xa.post_matches("文章 我用 AI 蒸馏了 15 本投资大师经典，普通人该懂的理念全在这", "", title)
     # 09-19 实证：Premium+ 失效后发布静默失败，主页首条是上一篇（封号文），不能当成本篇
-    assert not xa.post_matches("叁笙早安AI · 3分钟 Anthropic 的透明度报告：2025 下半年封禁 145 万个账号", cap, title)
+    assert not xa.post_matches("示例账号 · 3分钟 Anthropic 的透明度报告：2025 下半年封禁 145 万个账号", cap, title)
     assert not xa.post_matches("", cap, title)
 
 

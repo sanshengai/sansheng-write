@@ -140,7 +140,7 @@ def _new_state(cwd: Path, stages: list[str]) -> dict:
 
 
 # article-meta 里不影响成稿与发布的运营字段：改它们不应让 release job 失效。
-# 2026-09-23 第 108 篇：填主题曲生成单要改 music.style/gender/song_name，
+# 2026-09-23 曾经一次：填主题曲生成单要改 music.style/gender/song_name，
 # 旧的整文件 sha256 绑定因此逼着重新 adopt-final，连带五个阶段重验（审计 F2）。
 META_OPERATIONAL_KEYS = frozenset({"music"})
 
@@ -224,7 +224,7 @@ def adopt_final(
         else _new_state(cwd, pipeline.STAGE_ORDER)
     )
     state["mode"] = "release-from-final"
-    # 🔴 2026-08-14 第 89 篇实跑修正：这里原本把**所有**阶段无差别重置成 pending。
+    # 🔴 2026-08-14 实跑修正：这里原本把**所有**阶段无差别重置成 pending。
     #    走完整流程的文章在 adopt-final 之前，cover / infographic / bgm / layout /
     #    logo 往往已经 verify 通过（且视觉字节已 seal），一律清空等于逼作者把
     #    五个阶段重验一遍 —— 那一次实测就白跑了一轮。

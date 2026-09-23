@@ -69,7 +69,7 @@ INFOGRAPHIC_LAYOUTS = {
 
 
 # ============================================================================
-# 视觉任务单的三条「编译期预防」检查（2026-08-14 第 89 篇实跑后新增）
+# 视觉任务单的三条「编译期预防」检查（2026-08-14 实跑后新增）
 #
 # 背景：那一篇机械链共发起 45 次生图，其中 39 次是重渲 —— 必要量的 7.5 倍，
 # 同时也是撞 429 限流的主因。逐次复盘后，其中约 30 次可由下面三条纯字符串
@@ -126,7 +126,7 @@ _TEXT_OVERLAP_MAX = 1
 def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[str]:
     """同一张图里的中文短句之间，共享的连续字符不得超过 1 个。
 
-    2026-08-15 实测（Banana 2，第 89 篇四张信息图，每张 3-6 次）：
+    2026-08-15 实测（Banana 2，四张信息图，每张 3-6 次）：
 
         条目间最长公共子串   首过率
               0             6/6  = 100%
@@ -181,10 +181,10 @@ def _text_overlap_errors(label: str, title: str, expected: list[str]) -> list[st
 def _layout_composition_errors(
     label: str, layout: str, aspect_ratio: str, expected: list[str]
 ) -> list[str]:
-    """版式三条（2026-08-16 第 90 篇实跑新增 —— 单张图吃掉 7 次渲染的根因）。
+    """版式三条（2026-08-16 实跑新增 —— 单张图吃掉 7 次渲染的根因）。
 
     前三条闸门管的是「文字会不会被渲坏」；这三条管的是**版式会不会诱导模型出错**，
-    是同源但不同层的问题。第 90 篇 infographic-03 连废 6 版，逐版归因：
+    是同源但不同层的问题。一次实跑中 infographic-03 连废 6 版，逐版归因：
 
       v1  竖排三栏  → 标题被渲两遍（模型把整图标题当成第一栏的栏标题）
       v2  竖排三栏  → 标题降格成栏标签，与另两条并列，语义层级塌了
@@ -211,7 +211,7 @@ def _layout_composition_errors(
         if vertical:
             errors.append(
                 f"{label}.layout 在 {ratio} 宽图里写了竖向结构「{vertical.group(0)}」——"
-                f"竖栏会诱导模型把中文也竖着排（第 90 篇实测：竖排三栏连废 3 版，"
+                f"竖栏会诱导模型把中文也竖着排（实测：竖排三栏连废 3 版，"
                 f"其中一版整段中文竖排且被桥体压住）。宽图请写横向布局："
                 f"「runs horizontally across…」「three equal parts left to right」"
             )
@@ -227,7 +227,7 @@ def _layout_composition_errors(
         errors.append(
             f"{label}.layout 划出了 {len(parts)} 个视觉分区（{sorted(parts)}），"
             f"但 expected_text 只有 {len(labels)} 条标签 —— 模型会给没标签的那个分区"
-            f"**自己补一个**，补出来的通常是重复某条现有标签（第 90 篇实测：三栏两标签，"
+            f"**自己补一个**，补出来的通常是重复某条现有标签（实测：三栏两标签，"
             f"「各管一段」被渲了两遍）。每个分区各给一条专属标签，或把分区合并"
         )
 
@@ -240,7 +240,7 @@ def _layout_composition_errors(
     if edge:
         errors.append(
             f"{label}.layout 让主体「{edge.group(0)}」横贯到画面边缘 —— crop_safe 会判失败"
-            f"（第 90 篇实测：河道贯到边，QA 当场打回）。改成「a generous band of empty "
+            f"（实测：河道贯到边，QA 当场打回）。改成「a generous band of empty "
             f"ivory clay frames all four edges」这类**先留白再放主体**的写法"
         )
     return errors
@@ -491,7 +491,7 @@ def validate_visual_plan(plan: dict, *, infographic_mode: str = "generated") -> 
                     errors.append(
                         f"{label}.expected_text[{text_index}] 疑似重复字：{value}"
                     )
-            # 🔴 2026-08-14 第 89 篇实跑新增：expected_text 之间、以及与 title 之间
+            # 🔴 2026-08-14 实跑新增：expected_text 之间、以及与 title 之间
             #    不得互相包含。否则渲出来该词会出现两次，直接违反 visual-qa 的
             #    required_text「整图恰好出现一次」硬门 —— 而这一刀要等图渲完才砍下来。
             #    实测代价：标题「走量的和攻坚的」含标签「走量」「攻坚」，白渲 8 次。
@@ -508,7 +508,7 @@ def validate_visual_plan(plan: dict, *, infographic_mode: str = "generated") -> 
         # 与上一条同源：物象要具体，但不能是自带文字的物件（2026-08-16 实证）
         errors.extend(_layout_textual_prop_errors(label, _layout_raw))
         # 第四类：版式（横图别竖排 / 分区数=标签数 / 主体别贴边）——
-        # 前三类管「文字被渲坏」，这一类管「版式诱导模型出错」（第 90 篇 7 次渲染的根因）
+        # 前三类管「文字被渲坏」，这一类管「版式诱导模型出错」（一次实跑中 7 次渲染的根因）
         errors.extend(_layout_composition_errors(
             label, _layout_raw, str(item.get("aspect_ratio") or ""),
             [str(x) for x in (item.get("expected_text") or [])],
@@ -660,7 +660,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     tag_count = {2: "two", 3: "three"}.get(len(text["tags"]), str(len(text["tags"])))
     ghost = text.get("ghost") or ""
     # 肖像满幅出血时右区要被 cover_portrait.py 清场再贴图，ghost 只留在左区；
-    # 常规蒙太奇则允许它像第 76 篇那样横贯到右区拼贴后面。
+    # 常规蒙太奇则允许它像实拍案例那样横贯到右区拼贴后面。
     ghost_extent = (
         "stays inside the left text zone"
         if wants_portrait(meta)
@@ -692,11 +692,11 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
     #    prompt 的同一套实证规则（frontmatter 已由渲染层剥离；否定式清到 1 条；
     #    色号 8 处 → 2 处；「写给工具链的话」全部撤掉）。压缩不碰三样东西：
     #    ① 画布锚定的字号规格（12%-14% 等）——2026-07 修过的真 bug，去掉会复发
-    #      （第 81 篇 L1 只有画布高 8%，主次颠倒）；测试钉的是锚点契约本身。
+    #      （曾有实例 L1 只有画布高 8%，主次颠倒）；测试钉的是锚点契约本身。
     #    ② 胶囊 + ghost 的层级规格（见下），保证三层文字主次分明。
     #    ③ logo 否定式——唯一保留的否定：画出品牌字是法律/品牌风险，宁可无效不可漏写。
     #    banned terms 门（largest / extra-black / ultra-black）依旧有效，改词时避开。
-    # 🔴 2026-09-16 作者复核（对照第 75/76 篇与第 94/98/99 篇）后定案两处：
+    # 🔴 2026-09-16 作者复核（对照多篇历史封面）后定案两处：
     #    ① 恢复标题后方的半隐英文 ghost 层。07-28 因 ghost 比 L1 大而整层删掉，
     #      结果后续封面「特别单一、没有质感」。现在 ghost 锚定为 ≤ L1 cap height、
     #      纯白 8%-14% 不透明，文案由 lead.ghost 显式给定。
@@ -717,7 +717,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "- A slightly larger left text zone, a slightly smaller right evidence collage, "
         "one narrow quiet gutter between them.\n\n"
         "## VISIBLE TEXT (exhaustive)\n"
-        # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比（第 81 篇实测教训）。
+        # 🔴 字号必须锚在**画布**上，不能只给相对 L1 的百分比（实测教训）。
         f"- Main Chinese headline: {title} -- pure white, heaviest weight, the single "
         "dominant element. Its cap height MUST be 12%-14% of the canvas height, its "
         "line spans 70%-90% of the left zone width, compact and vertically centered "

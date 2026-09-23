@@ -724,7 +724,7 @@ def test_dual_audio_readback_rejects_player_outside_podcast_card(tmp_path):
 
 
 def test_dual_audio_readback_tolerates_author_title_shortening_and_one_image_removal(tmp_path):
-    """第 103 篇：作者在微信侧把标题缩短、删掉文末二维码后发布，不该把 finalize 卡死。"""
+    """一次实例：作者在微信侧把标题缩短、删掉文末二维码后发布，不该把 finalize 卡死。"""
     from scripts.release_to_draft import verify_wechat_audio
 
     article = _dual_audio_article(tmp_path)

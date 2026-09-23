@@ -31,7 +31,7 @@ SANSHENG_WRITE_VISUAL_QA_COMMAND=["python3","-X","utf8","<绝对路径>/scripts/
 ```
 
 - 🔴 **Claude Code 自己就能看图，只是不能生图**（2026-09-19 作者拍板「不用通过 codex 看图，
-  Claude Code 自己看图就好」）。这道闸不依赖 Codex 额度：第 103 篇实跑时 Codex 的
+  Claude Code 自己看图就好」）。这道闸不依赖 Codex 额度：有一次实跑时 Codex 的
   usage limit 把复核卡了两小时，图早就渲好了，纯粹在等一个别家的看图进程。
 - `visual_qa_claude.py` 每张图各起一个全新的 `claude -p --tools Read --add-dir <图目录>`
   无头进程（不带当前会话上下文，独立性与 codex 版同级）；默认模型 `claude-opus-5`，
@@ -42,7 +42,7 @@ SANSHENG_WRITE_VISUAL_QA_COMMAND=["python3","-X","utf8","<绝对路径>/scripts/
   明确拒绝），别照抄历史文章 `_visual-qa.json` 里记的模型名。
 - `visual_qa_openai.py` 是第三个后端：任意 OpenAI 兼容 `/chat/completions` 视觉模型（默认取
   `OPENAI_BASE_URL` / `OPENAI_API_KEY`，可用 `SANSHENG_WRITE_VISUAL_QA_BASE_URL` / `_API_KEY` 单独指定，
-  模型默认 `gpt-5.6-terra`）。第 105 篇实跑：Claude 与 Codex 都不方便时走中转，6 张图约 2 分钟，
+  模型默认 `gpt-5.6-terra`）。另一次实跑：Claude 与 Codex 都不方便时走中转，6 张图约 2 分钟，
   合同与判据同样全部复用 codex 版；`json_schema` 不被中转接受时自动退到 `json_object`。
 - `-X utf8` **不能省**：子进程被 `capture_output` 管道接走后默认走 GBK，打中文直接崩。
 - 复核模型必须与生图模型不同族；`visual_qa.py::validate_qa_result` 会拿两边 model 求交集。

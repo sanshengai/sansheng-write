@@ -45,7 +45,7 @@ python "$SKILL/scripts/pipeline.py" preflight
 H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP READ / SOURCES、
 金句库来源标记、`visual-plan.json` 合法性。
 
-🔴 **为什么单列一条元指令**：89 号实跑账本 —— `verify_publish` 反复 8 轮、
+🔴 **为什么单列一条元指令**：一次实跑账本 —— `verify_publish` 反复 8 轮、
 `verify_layout` 6 轮、`format_layout` 4 轮。逐条复盘，卡住的**全是纯静态检查**，
 却散落在链条各处：开篇标识要等排版才报（迟 3 个阶段）、金句库来源标记要等
 `finalize` 才报（迟 5 个阶段）。每迟报一个阶段 = 一次「回头改 → 重跑中间所有步骤」。
@@ -55,6 +55,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 
 | 意图（含该行必要约束） | 读 |
 |---|---|
+| 🔴 写资讯快讯 / 教程（先读执行卡；其余大文档只在拿不准时按卡上出处查） | 执行卡-资讯快讯.md / 执行卡-教程.md（`scripts/exec_cards.py check` 守着与源章节同步） |
 | 新选题 / 写篇文章 / 聊方向 | outline.md |
 | 展开正文 / 继续写 / 改稿（写前先跑 `prep_writing.py` 聚合 `_prep-context.md` 再走 7 步准备） | writing.md + style-routes.md 对应章 + profile/corpus/authors/{X}.compact.md |
 | 给几版开头盲选 / 挑开头 / 换开头（2-3 版钩子 A/B/C 盲选不给理由，**创作阶段的盲选停顿点；主题曲另有手动交接等待，见 music.md**） | writing.md §开头候选盲选 |

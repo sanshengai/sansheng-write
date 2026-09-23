@@ -131,8 +131,8 @@
 
 ### 4a. 列数限制
 
-- **最多 2 列**：3 列及以上在手机端严重挤压变形
-- **超过 2 列** → 必须改写为列表、分段卡片或纵向排列
+- 已不再硬禁 3 列：`format_layout.py --table` 按列数与内容自动分流（≥3 列转 11px 横滑表，2 列「术语|释义」型转术语卡，2 列对称数据保留表格），细则见 layout-reference.md「一、列数与宽度」。
+- 3 列以上在手机端字号会缩到 11px，能拆成两张表或改成列表时优先拆。
 
 ### 4b. 列宽控制（🔴 2026-09-15 现行方案：section 版 CSS 表，列宽写在 `display:table-cell` 上）
 
@@ -140,7 +140,7 @@
 
 **现行根治方案**：`format_layout.py --table` 不再输出 `<table>`，每行渲染成一张 100% 宽的 `display:table` section，每格 `display:table-cell` 带 `width`（每行都写）。列宽值优先用 `article-meta.yaml` 的 `table_widths`；没填就按内容像素需求分配（短列只拿自己需要的，长列均摊折行）。写法见 [layout-reference.md「微信兼容表格写法」](layout-reference.md)。
 
-> ⚠️ 历史方案都别再用：`<colgroup>`（表头上方冒一行空虚线格）、「宽度写进首行 th/td + table-layout:fixed」（2026-06-26，草稿预览正常、发布后被清成等宽，直到 101 号线上核对才发现）。
+> ⚠️ 历史方案都别再用：`<colgroup>`（表头上方冒一行空虚线格）、「宽度写进首行 th/td + table-layout:fixed」（2026-06-26，草稿预览正常、发布后被清成等宽，直到线上核对才发现）。
 
 ### 4c. 表格样式规范
 

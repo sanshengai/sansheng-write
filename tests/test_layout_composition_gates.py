@@ -1,6 +1,6 @@
-"""版式三闸（2026-08-16 第 90 篇实跑固化）。
+"""版式三闸（2026-08-16 实跑固化）。
 
-背景：前三类闸门管「文字会不会被渲坏」，但第 90 篇 infographic-03 仍连废 6 版，
+背景：前三类闸门管「文字会不会被渲坏」，但曾有一次 infographic-03 仍连废 6 版，
 根因全在**版式**——竖排三栏诱导中文竖排、三栏只给两标签导致模型自补、
 主体横贯到边被 crop_safe 打回。这三条各自独立可测，只在宽图/多分区时触发。
 """
@@ -44,7 +44,7 @@ def test_wide_image_horizontal_layout_passes():
 # ── ② 分区数 vs 标签数 ─────────────────────────────────────────────────────
 
 def test_three_parts_two_labels_is_rejected():
-    """第 90 篇实测：三栏两标签 → 模型自补一个，「各管一段」渲两遍。"""
+    """实测：三栏两标签 → 模型自补一个，「各管一段」渲两遍。"""
     errs = check("x", "In the left part one stone. In the middle part three stones. "
                       "In the right part one bridge.",
                  "16:9", ["各管一段", "整条焊死"])

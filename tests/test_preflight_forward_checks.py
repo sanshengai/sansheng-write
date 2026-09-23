@@ -1,6 +1,6 @@
-"""preflight 前移三检（2026-08-16 第 90 篇耗时归因后固化）。
+"""preflight 前移三检（2026-08-16 耗时归因后固化）。
 
-第 90 篇实测：排版阶段耗时 24.9 分钟，全花在三轮重排上——
+一次实测：排版阶段耗时 24.9 分钟，全花在三轮重排上——
 裸 URL、DEEP READ 缺入口两条要等 `format_layout --all` 才报，每报一条就得
 重转一次 HTML；锚点劈段要等 `assemble-release` 才报，那时配图与 BGM 都已跑完。
 这三条**全是纯静态检查**，前移到 preflight（写完正文即可跑）零质量代价。
@@ -76,7 +76,7 @@ def _plan(anchor):
 
 
 def test_anchor_mid_paragraph_is_caught(tmp_path):
-    """第 90 篇真实翻车：锚点是段落中间那句，装配会把整段劈成两半。"""
+    """真实翻车案例：锚点是段落中间那句，装配会把整段劈成两半。"""
     body = "开头。\n\n它治这个不靠多加规则，靠换供给。写之前，它先把你的原话存起来。\n"
     d = _article(tmp_path, body, _plan("它治这个不靠多加规则，靠换供给。"))
     assert _fails(pipeline._preflight_checks(d), "锚点")

@@ -137,7 +137,7 @@ def test_assemble_release_with_empty_plan_keeps_author_prose(tmp_path):
 
 
 def test_visual_manifest_author_shots_mode_does_not_demand_four_infographics(tmp_path):
-    """102 篇实测：visual-qa 的证据集合硬要 ≥4 张 infographic*.png，author-shots 模式下
+    """实测：visual-qa 的证据集合硬要 ≥4 张 infographic*.png，author-shots 模式下
     永远凑不出来。该模式证据集只收封面 + Hero；混入 infographic*.png 仍要拦。"""
     from scripts import evidence
 

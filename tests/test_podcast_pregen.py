@@ -1,6 +1,6 @@
 """播客预生成（audit-P4）：取件短路、链接补写、漂移防护、pregen 闸门。
 
-背景：NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段（89 篇它
+背景：NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段（曾经它
 一失败官网同步晚了 5 小时）。定稿冻结点预生成 + finalize 取件把它移出关键路径。
 """
 import json

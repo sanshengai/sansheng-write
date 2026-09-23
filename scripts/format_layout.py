@@ -926,7 +926,7 @@ def _render_section_table(header, rows, ncols: int, widths, *, row_width: str,
 
     🔴 为什么不用 <table>：微信编辑器保存/发布时会把 <td>/<th> 上的 width（inline
     style 与 width 属性都一样）整个清掉，再配上它自己注入的 table-layout:fixed，
-    结果永远等宽——2026-09-15 抓 3 篇已发布文章核对（46/94/100/101 号），线上 0 个
+    结果永远等宽——2026-09-15 抓已发布文章核对，线上 0 个
     单元格还留着 width。而同一批文章里推荐阅读卡 `section{display:table-cell;width:64%}`
     原样存活。所以列宽只有写在 section 上才到得了读者手机。
     行内不用 display:table-row（线上无存活证据），改成每行各自一张 100% 宽的
@@ -1336,7 +1336,7 @@ def process_footer(html):
         result = subprocess.run(
             # 🔴 必须把文章目录传给子进程：它默认按自己的 cwd（SCRIPT_DIR）绑定
             # workspace，在子 worktree 里会绑到 skill 自身目录 → 作品库找不到 →
-            # 「未找到任何文章」→ 推荐卡与关注卡整段跳过（2026-09-14 第 99 篇实证）。
+            # 「未找到任何文章」→ 推荐卡与关注卡整段跳过（2026-09-14 实证）。
             [sys.executable, str(gen_script), "html", "--dir", os.getcwd()],
             capture_output=True,
             text=True,
@@ -2321,7 +2321,7 @@ def run(args):
         md_path = os.path.join(cwd, "定稿.md")
 
         # A 层：写作前参考汇总 _prep-context.md。2026-09-23 审计 G3 起只提示不拦：
-        # 这道门只能验「文件在」，写完再补跑也放行，证明不了写作前用过；108 篇就是
+        # 这道门只能验「文件在」，写完再补跑也放行，证明不了写作前用过；曾有一篇就是
         # 排版时被拦、补跑后放行。现在由 adopt-final 自动补跑，这里只提醒。
         if os.path.exists(md_path):
             prep_path = os.path.join(cwd, "_prep-context.md")

@@ -46,7 +46,7 @@ def _clean_binding(monkeypatch):
 def _workspace(tmp_path: Path, name: str, brand_name: str) -> tuple[Path, Path]:
     root = tmp_path / name
     (root / ".git").mkdir(parents=True)
-    article = root / "文稿成品" / "97-测试"
+    article = root / "articles" / "97-测试"
     article.mkdir(parents=True)
     profile = root / "profile"
     profile.mkdir()
@@ -60,8 +60,8 @@ def _workspace(tmp_path: Path, name: str, brand_name: str) -> tuple[Path, Path]:
 def _configure_tokens(monkeypatch):
     values = {
         "SANSHENG_WRITE_PROFILE_DIR": "@workspace/profile",
-        "SANSHENG_WRITE_DATA_DIR": "@workspace/文稿成品",
-        "SANSHENG_WRITE_WORKS_FILE": "@workspace/文稿成品/作品库.yaml",
+        "SANSHENG_WRITE_DATA_DIR": "@workspace/articles",
+        "SANSHENG_WRITE_WORKS_FILE": "@workspace/articles/作品库.yaml",
         "SANSHENG_WRITE_FLYWHEEL_DIR": "@workspace/private/flywheel",
         "SANSHENG_WRITE_GOLDEN_LINES_FILE": "@workspace/prompts/金句库.md",
     }
@@ -90,8 +90,8 @@ def test_workspace_tokens_fail_closed_until_article_is_bound(tmp_path, monkeypat
     root, article = _workspace(tmp_path, "tree-a", "甲品牌")
     assert pc.bind_workspace(article) == root
     assert pc.profile_dir() == root / "profile"
-    assert pc.data_dir() == root / "文稿成品"
-    assert pc.works_file() == root / "文稿成品" / "作品库.yaml"
+    assert pc.data_dir() == root / "articles"
+    assert pc.works_file() == root / "articles" / "作品库.yaml"
     assert pc.flywheel_dir() == root / "private" / "flywheel"
     assert pc.golden_lines_file() == root / "prompts" / "金句库.md"
 
@@ -102,20 +102,20 @@ def test_dynamic_paths_and_render_brand_follow_rebinding(tmp_path, monkeypatch):
     root_b, article_b = _workspace(tmp_path, "tree-b", "乙品牌")
 
     _bind_both(article_a)
-    assert Path(wr.WORKS_FILE) == root_a / "文稿成品" / "作品库.yaml"
-    assert Path(package_wr.WORKS_FILE) == root_a / "文稿成品" / "作品库.yaml"
-    assert Path(articles.ARTICLES_MD) == root_a / "文稿成品" / "articles.md"
-    assert Path(dashboard.DASHBOARD_FILE) == root_a / "文稿成品" / "works-dashboard.html"
-    assert Path(recommend.ARTICLES_DB_PATH) == root_a / "文稿成品" / "articles.md"
+    assert Path(wr.WORKS_FILE) == root_a / "articles" / "作品库.yaml"
+    assert Path(package_wr.WORKS_FILE) == root_a / "articles" / "作品库.yaml"
+    assert Path(articles.ARTICLES_MD) == root_a / "articles" / "articles.md"
+    assert Path(dashboard.DASHBOARD_FILE) == root_a / "articles" / "works-dashboard.html"
+    assert Path(recommend.ARTICLES_DB_PATH) == root_a / "articles" / "articles.md"
     assert Path(learn_edits.LESSONS_FILE) == root_a / "private" / "flywheel" / "lessons.yaml"
     assert "甲品牌" in articles.render_md([])
     assert "甲品牌作品库" in dashboard.build_html([])
 
     _bind_both(article_b)
-    assert Path(wr.WORKS_FILE) == root_b / "文稿成品" / "作品库.yaml"
-    assert Path(articles.ARTICLES_MD) == root_b / "文稿成品" / "articles.md"
-    assert Path(dashboard.DASHBOARD_FILE) == root_b / "文稿成品" / "works-dashboard.html"
-    assert Path(recommend.ARTICLES_DB_PATH) == root_b / "文稿成品" / "articles.md"
+    assert Path(wr.WORKS_FILE) == root_b / "articles" / "作品库.yaml"
+    assert Path(articles.ARTICLES_MD) == root_b / "articles" / "articles.md"
+    assert Path(dashboard.DASHBOARD_FILE) == root_b / "articles" / "works-dashboard.html"
+    assert Path(recommend.ARTICLES_DB_PATH) == root_b / "articles" / "articles.md"
     assert Path(learn_edits.VOICE_CORPUS_FILE) == root_b / "profile" / "corpus" / "voice-samples.md"
     assert "乙品牌" in articles.render_md([])
     assert "乙品牌作品库" in dashboard.build_html([])
@@ -155,12 +155,12 @@ def test_non_git_absolute_paths_keep_working_without_binding(tmp_path, monkeypat
 
 def test_explicit_workspace_supports_non_git_article_dir(tmp_path, monkeypatch):
     root = tmp_path / "plain-workspace"
-    article = root / "文稿成品" / "1-test"
+    article = root / "articles" / "1-test"
     article.mkdir(parents=True)
     monkeypatch.setenv("SANSHENG_WRITE_WORKSPACE_DIR", str(root))
-    monkeypatch.setenv("SANSHENG_WRITE_DATA_DIR", "@workspace/文稿成品")
+    monkeypatch.setenv("SANSHENG_WRITE_DATA_DIR", "@workspace/articles")
     assert pc.bind_workspace(article) == root
-    assert pc.data_dir() == root / "文稿成品"
+    assert pc.data_dir() == root / "articles"
 
 
 def test_explicit_workspace_must_be_absolute(tmp_path, monkeypatch):
@@ -206,7 +206,7 @@ def test_active_workspace_propagates_to_real_child_process(tmp_path, monkeypatch
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == [str(root), str(root / "文稿成品")]
+    assert result.stdout.splitlines() == [str(root), str(root / "articles")]
 
 
 def test_format_layout_loads_theme_only_after_target_workspace_binding(tmp_path, monkeypatch):

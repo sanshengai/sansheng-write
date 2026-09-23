@@ -116,7 +116,7 @@ STAGE_ORDER = [
 ]
 # 阶段依赖表：某阶段产物变了，只作废真正依赖它的下游（2026-09-23 审计 F2）。
 # 此前按 STAGE_ORDER 线性连坐——正文加一处粗体，封面、主题曲、水印全部要重验；
-# 108 篇因此手动重验 9 次。retitle 走 outline，仍会作废全部下游。
+# 曾因此手动重验 9 次。retitle 走 outline，仍会作废全部下游。
 STAGE_DEPENDENTS = {
     "outline":     ("writing", "cover", "infographic", "bgm", "layout", "logo", "publish", "archive"),
     "writing":     ("infographic", "layout", "publish", "archive"),  # 作者供图模式的截图引用写在正文里
@@ -875,7 +875,7 @@ GENRE_PRESETS: dict[str, dict] = {
     "news": {
         "label": "资讯快讯", "card": "执行卡-资讯快讯.md",
         "fields": {"genre": "深度文", "category": "OBS", "outward_category": "news",
-                   "opening_strategy": "直入", "logic_bone": "CSA"},
+                   "opening_strategy": "直入", "logic_bone": "ASC"},   # outline.md 步骤 3.5：资讯类用 ASC
         "author_shots": True,
     },
     "tutorial": {
@@ -1150,7 +1150,7 @@ def _log_audio_event(cwd: Path, event: str, verdict: str, detail: str,
 def _golden_line_errors(cwd: Path, golden: Path) -> list[str]:
     """金句库必须有本篇标记，且带本篇标记的每一句都逐字出自定稿正文。
 
-    2026-09-23 审计 G3：此前只查 ``*(文章名)*`` 标记在不在，第 108 篇为过门补了一条
+    2026-09-23 审计 G3：此前只查 ``*(文章名)*`` 标记在不在，曾为了过门补了一条
     正文里根本没有的「金句」。比对时去掉加粗星号与空白，其余逐字。
     """
     import re as _re
@@ -1314,7 +1314,7 @@ def _profile_logo_available() -> bool:
 def _watermark_ledger_errors(mat: Path) -> list[str]:
     """封面与信息图必须在后处理台账里记为「已打水印」，且之后字节没变。
 
-    2026-09-23 第 108 篇：add_logo 找不到 logo 静默跳过、压缩把封面记进台账，
+    2026-09-23 曾经一次：add_logo 找不到 logo 静默跳过、压缩把封面记进台账，
     水印阶段只验「有 PNG」照样通过，封面无水印发了出去。改为核对台账。
     旧台账（没有 watermarked 字段）按历史行为放行，不追溯已发布文章。
     """
@@ -1419,7 +1419,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     )
 
                 bd = verify_bold_density(text)
-                # 🔴 2026-08-14 放宽（sandy 拍板）：软硬双阈值。
+                # 🔴 2026-08-14 放宽（作者拍板）：软硬双阈值。
                 #    'soft_over' = 略超软上限，只提示不阻断（"稍微超就超一点"）；
                 #    只有真刷屏（超硬上限）或整句加粗超额才拦。
                 _bd_verdict = bd.get("verdict")
@@ -1904,7 +1904,7 @@ def _cross_check(cwd: Path, state: dict) -> list:
     # 4. stages 顺序逻辑（不强制阻断，只提醒）
     # 🔴 2026-08-14：release-from-final 模式下 outline 被标 adopted（不是 done），
     #    于是它后面每个 done 阶段都会刷一条「可能是手动 skip 残留」——
-    #    89 号实跑一次刷了 8 行，全是误报，我还专门去查了一遍才确认无事。
+    #    有一次实跑刷了 8 行，全是误报，我还专门去查了一遍才确认无事。
     #    这种模式下的顺序本来就与常规不同，不该套用同一句猜测性文案。
     stages = state.get("stages", {})
     is_release_from_final = state.get("mode") == "release-from-final"
@@ -3138,7 +3138,7 @@ _PROGRESS_NOISE = re.compile(
 def _diagnostic_tail(*streams: str, lines: int = 25, limit: int = 2000) -> str:
     """取**尾部**若干条有效行 —— 报错在末尾，不在开头。
 
-    🔴 2026-08-14 第 89 篇实跑教训：原实现是
+    🔴 2026-08-14 实跑教训：原实现是
     ``(stderr or stdout).strip()[:500]``，从**开头**截 500 字。而
     ``git worktree add`` 会先刷几百行 ``Updating files: NN%``，于是屏幕上
     永远只有进度条，真正的失败原因（世界史 canonical 门禁）一次都没露过面。
@@ -3241,7 +3241,7 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
         return []
     if probe.returncode != 0:
         return []
-    # 🔴 2026-08-16 第 90 篇实跑修：**本检查自己写的回执要排除掉**。
+    # 🔴 2026-08-16 实跑修：**本检查自己写的回执要排除掉**。
     #    `_append_website_sync_attempt` 每次失败都会更新 `_website-sync-receipt.json`，
     #    而它就在被扫描的文章目录里 —— 于是「提交回执 → 重跑 → 回执又被更新 → 又判未提交」
     #    形成死循环，实测卡了三轮才靠人工绕开。回执是**本次运行的产物**，不是
@@ -3258,7 +3258,7 @@ def _closing_rule_problems(cwd: Path, text: str) -> list[str] | None:
     """按 profile 的 writing.closing_types_allowed / closing_no_question_ending 检查结尾。
 
     profile 没声明时返回 None（不检查，公开 Skill 默认不设限）。品牌规则「不写没有下一步
-    动作的结尾」与技能收尾菜单里的「未答之问 / hook_question」冲突，105 篇以反问收尾。
+    动作的结尾」与技能收尾菜单里的「未答之问 / hook_question」冲突，曾有文章以反问收尾。
     """
     import re as _re
 
@@ -3325,7 +3325,7 @@ def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[st
     """把 finalize 刚写出的归档产物按文件级 pathspec 提交（审计 F5）。
 
     此前 finalize 写完作品库与派生视图，紧接着就因「归档产物未提交」拒绝同步官网，
-    106、107、108 三篇首跑都这样失败，要人工提交再重跑。这里在同一步里提交：
+    连续三篇首跑都这样失败，要人工提交再重跑。这里在同一步里提交：
     只收作品库、三份派生视图与本篇目录，逐个文件列出，不用目录通配；作品库里若还有
     别篇的未提交改动就不提交，退回人工。返回 (commit sha, 错误列表)。
     """
@@ -3388,7 +3388,7 @@ def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[st
 def _article_already_live(cwd: Path, code: str) -> bool:
     """线上文章页已含本篇标题，且主题曲封面（与播客，若有）可访问，即视为已上线。
 
-    108 篇官网回执写「失败」，页面却已被别的会话的发布带上线；收尾再发一次整站只是
+    曾有一篇官网回执写「失败」，页面却已被别的会话的发布带上线；收尾再发一次整站只是
     重复劳动（审计 F5）。profile 没配站点或网络不通时返回 False，照常走发布命令。
     """
     import html as _html
@@ -3442,7 +3442,7 @@ def _git_toplevel(path: Path) -> Path | None:
 def _website_cwd_for_article(cwd: Path, configured_cwd: str) -> Path:
     """官网同步命令的工作目录：文章所在的那份检出优先于 profile 写死的主仓路径。
 
-    🔴 2026-09-18 第 102 篇实测：profile 写的是主仓 `/Users/sandy/Cowork`，文章却在
+    🔴 2026-09-18 实测：profile 写的是主仓路径，文章却在
     git worktree 里生产。archive 把作品库/派生视图写进 worktree，主仓那份没有本篇；
     未提交检查 `git -C 主仓 status -- <worktree 路径>` 因路径不在仓内静默返回空，
     发布脚本在主仓跑完还回了 returncode 0 —— 一路全绿，文章根本没进官网。
@@ -3718,7 +3718,7 @@ FINALIZE_STEPS: tuple[tuple[str, str], ...] = (
 def _report_finalize_abort(state: dict, failed_step: str) -> None:
     """中断时把**后面还没跑的步骤**点名喊出来。
 
-    🔴 2026-08-14 第 89 篇实跑教训：finalize 在 distribution（播客）上
+    🔴 2026-08-14 实跑教训：finalize 在 distribution（播客）上
     SystemExit(3) 退出，屏幕上只有一行播客的报错。人看到播客失败就以为
     「补跑一次播客即可」，手动补跑后收工 —— 而 website_sync 排在它后面，
     从头到尾没执行过。结果是文章正文被别的部署顺带带上了线、配图和音频
@@ -3978,7 +3978,7 @@ def cmd_podcast_pregen(cwd: Path):
     """定稿冻结点预生成播客音频（2026-08-16 审计 P4）。
 
     NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段、堵住后面的
-    官网同步（89 篇它一失败，官网晚了 5 小时）。本命令允许在**最后一个会改写
+    官网同步（曾因它一失败，官网晚了 5 小时）。本命令允许在**最后一个会改写
     `定稿.md` 的机械步骤之后**（assemble-release 的信息图机器块 + BGM 的
     AUDIO-CARD 都已注入）生成同级 PODCAST-CARD 与音频；finalize 的 distribution 步靠
     `podcast_episode.cmd_generate` 的预生成短路直接取件。
@@ -4043,7 +4043,7 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
 
     返回 [(级别, 检查名, 说明)]，级别 ∈ {"fail", "warn", "ok"}。
 
-    🔴 2026-08-14 第 89 篇实跑后新增。那一篇的实测账本：
+    🔴 2026-08-14 实跑后新增。那一次的实测账本：
     verify_publish 反复 8 轮、verify_layout 6 轮、format_layout 4 轮。
     逐条复盘发现，卡住我的东西全是**纯静态检查**，却被放在链条末端：
 
@@ -4224,7 +4224,7 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
         except Exception as exc:
             add("warn", "visual-plan.json", f"检查异常：{exc}")
 
-    # --- 9. 裸 URL 前移（2026-08-16 第 90 篇实跑：这条本来只在 format_layout 报，
+    # --- 9. 裸 URL 前移（2026-08-16 实跑：这条本来只在 format_layout 报，
     #        每报一次就要重转一次 HTML 再重排，实测吃掉一整轮 ≈ 8 分钟）---
     if text:
         # Markdown 版等价检查：正文里的完整 URL 必须在 link-card / deep-read 块内。
@@ -4483,7 +4483,7 @@ def summarize_render_attempts(rows: list) -> dict:
     """把尝试日志汇总成「每张渲了几次 / 浪费了多少」。
 
     必要量 = 图数（每张至少渲一次）。浪费 = 实际渲染数 − 必要量。
-    第 89 篇的真实数字是 45 次调用、6 张图 —— 浪费 39 次，占 87%。
+    一次实跑的真实数字是 45 次调用、6 张图 —— 浪费 39 次，占 87%。
     那次是靠事后手工数出来的；有了这个函数就不用再数。
     """
     renders = [r for r in rows if r.get("kind") == "render"]
@@ -5271,7 +5271,7 @@ def _main_impl():
                 label = asset.get("label") or asset.get("role") or "文件"
                 if rel:
                     print(f"   {label}：{target / rel}")
-        # 🔴 主仓镜像（2026-09-18）：作者只在主仓 文稿成品/ 找成品；worktree 里的
+        # 🔴 主仓镜像（2026-09-18）：作者只在主仓成品目录找成品；worktree 里的
         # mp3/mp4/作者供图被 .gitignore 挡住、合回主线带不过去，必须在这里落到主仓。
         if not getattr(args, "no_mirror", False):
             from handoff_assets import mirror_deliverables_to_archive_root

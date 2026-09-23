@@ -39,7 +39,7 @@ WHITE = "#FFFFFF"
 
 # 字体按角色给候选清单，首个存在的生效：Windows 微软雅黑 / 楷体，macOS 用户目录的
 # Noto CJK 或系统自带 Hiragino / 黑体，Linux 的 Noto CJK。原先写死 C:\Windows\Fonts，
-# 在 Mac 上 truetype 直接 "cannot open resource"（2026-09-20 第 103 篇实证）。
+# 在 Mac 上 truetype 直接 "cannot open resource"（2026-09-20 实证）。
 # 元组第二项是 .ttc 里的字面索引（Hiragino Sans GB.ttc 的 2 号是 W6 粗体）。
 FONT_CANDIDATES: dict[str, list[tuple[Path, int]]] = {
     "regular": [

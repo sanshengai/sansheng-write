@@ -55,6 +55,8 @@ AI 倾向窄词汇、高频词；真人会在**同一段内**自然混搭书面�
 
 ### 1.5 收尾菜单（先删后选）
 
+profile 可以收窄这张菜单：`writing.closing_types_allowed` 列出本品牌允许的收尾类型，`writing.closing_no_question_ending: true` 禁止以问句收尾，preflight「结尾落点」按这两项检查；有配置时只从白名单里选。
+
 先做**删除测试**：删掉最后 1-2 段，如果没少一个新发现、必要后果、动作或画面，就直接删。确实需要结尾时，再根据内容和情绪弧线从下表选最自然的一种。**这是菜单，不是轮换配额**——不要求与近 3 篇强制不同类型。`scene_callback` 只在开头意象经过全文后意义发生变化时使用，不为形式闭环硬回扣。`expectant_blessing` 仍频控。
 
 <!-- meta-audit C6：收尾多样性 6→8 种，加第 9 种 expectant_blessing -->

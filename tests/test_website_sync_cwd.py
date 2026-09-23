@@ -1,4 +1,4 @@
-"""官网同步 cwd 必须跟着文章所在的 git 检出走（2026-09-18 第 102 篇假绿实证）。"""
+"""官网同步 cwd 必须跟着文章所在的 git 检出走（2026-09-18 假绿实证）。"""
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +17,7 @@ def _init_repo(path: Path) -> Path:
 def test_article_in_other_checkout_wins_over_configured_main(tmp_path, capsys):
     main = _init_repo(tmp_path / "main")
     wt = _init_repo(tmp_path / "wt")
-    article = wt / "文稿成品" / "1-篇"
+    article = wt / "成品" / "1-篇"
     article.mkdir(parents=True)
     assert pipeline._website_cwd_for_article(article, str(main)) == wt.resolve()
     assert "官网同步改在文章所在检出执行" in capsys.readouterr().out
@@ -25,7 +25,7 @@ def test_article_in_other_checkout_wins_over_configured_main(tmp_path, capsys):
 
 def test_same_checkout_keeps_configured_cwd(tmp_path):
     main = _init_repo(tmp_path / "main")
-    article = main / "文稿成品" / "1-篇"
+    article = main / "成品" / "1-篇"
     article.mkdir(parents=True)
     assert pipeline._website_cwd_for_article(article, str(main)) == main
 

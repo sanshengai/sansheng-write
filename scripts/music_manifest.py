@@ -309,7 +309,7 @@ THEME_DURATION_TARGET = (150.0, 210.0)
 def theme_duration_hint(duration_seconds: float | None) -> str:
     """主题曲时长超出生成单目标（150–210 秒）时给一句提示；只提示不拦截。
 
-    2026-09-23 第 108 篇主题曲 135 秒，全链没有任何提示（审计 V4）。要不要重生成由作者定。
+    2026-09-23 曾有一次主题曲 135 秒，全链没有任何提示（审计 V4）。要不要重生成由作者定。
     """
     if duration_seconds is None:
         return ""

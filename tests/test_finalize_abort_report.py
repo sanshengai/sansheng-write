@@ -1,6 +1,6 @@
 """finalize 中断时必须点名「后面还有哪几步没跑」。
 
-第 89 篇的实跑事故：finalize 在 distribution（播客）上 SystemExit(3)，屏幕上
+一次实跑事故：finalize 在 distribution（播客）上 SystemExit(3)，屏幕上
 只有一行播客报错。人据此判断「补跑一次播客就行」，补完收工 —— 而排在它后面的
 website_sync 从头到尾没执行。文章正文被别人一次不相干的部署顺带带上了线，配图
 和音频却从没上传，线上整页破图，零报警。
@@ -28,7 +28,7 @@ def test_abort_lists_every_unrun_downstream_step(capsys):
     out = capsys.readouterr().out
 
     assert "没有走完" in out
-    assert "website_sync" in out, "官网同步没跑就必须点名，这正是第 89 篇踩的坑"
+    assert "website_sync" in out, "官网同步没跑就必须点名，这正是曾经踩过的坑"
     assert "重跑 finalize" in out
 
 
@@ -73,7 +73,7 @@ def test_finalize_actually_calls_the_report_on_distribution_failure(
     """钉住调用点，不只钉函数。
 
     只测 _report_finalize_abort 本身是不够的：把 cmd_finalize 里那行调用删掉，
-    单元测试照样全绿 —— 函数写对了却没接上，正是第 89 篇那类「零报警」缺陷的
+    单元测试照样全绿 —— 函数写对了却没接上，正是那类「零报警」缺陷的
     温床。这条测试走真实的 cmd_finalize 控制流。
     """
     url = "https://mp.weixin.qq.com/s/TESTONLY"

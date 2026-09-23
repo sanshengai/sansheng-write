@@ -198,7 +198,7 @@ def _nlm_bin() -> str:
 
 
 def _try_auto_login() -> bool:
-    """登录态失效时自动弹浏览器授权（2026-07-30 sandy 拍板固化的规则）：
+    """登录态失效时自动弹浏览器授权（2026-07-30 作者拍板固化的规则）：
     检测到过期不再只提示「请运行 nlm login」，而是直接替作者拉起 `nlm login`
     （启动 Chrome 走 CDP，作者在旁时点一下即完成）。无人值守环境可用
     SANSHENG_NLM_NO_AUTOLOGIN=1 关回纯提示模式。登录成功后做一次只读探针确认。"""
@@ -281,7 +281,7 @@ def remote_episode_stem(title: str, day: str | None = None) -> str:
 
     作者可见的「播客 | 标题.mp3」只用于本地上传交接，不能当远端名：
     OpenSSH 9+ 的 scp 默认走 SFTP，不经远端 shell，引号会原样进路径
-    （2026-09-23 第 108 篇上传失败）；空格和 ``|`` 进 RSS enclosure URL 也不干净。
+    （2026-09-23 曾有一次上传失败）；空格和 ``|`` 进 RSS enclosure URL 也不干净。
     """
     # 去掉「资讯 | 」这类分类前缀：它是公众号栏目标签，不是节目名，放进远端文件名只增加噪音。
     bare = re.sub(r"^\s*[^|｜]{1,4}\s*[|｜]\s*", "", title or "", count=1) or title
@@ -326,7 +326,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
 
     # 🔴 2026-08-16 预生成短路（审计 P4）：`pipeline.py podcast-pregen` 允许在
     #    定稿冻结点就后台生成音频（NotebookLM 实测 ~18 分钟，是 finalize 串行链
-    #    里最大的阻塞项，89 篇它一失败官网同步跟着晚了 5 小时）。finalize 到点
+    #    里最大的阻塞项，曾因它一失败官网同步跟着晚了 5 小时）。finalize 到点
     #    再调本函数时，只要「音频在 + 同源生成凭证有效 + source_digest
     #    与当前定稿一致」就直接取件：不重进 NotebookLM，只把预生成时还拿不到的
     #    永久链接补进 sidecar/shownotes。定稿在预生成后又被改过（digest 漂移）
@@ -375,7 +375,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     except Exception as e:                                  # noqa: BLE001
         msg = str(e)
         if "Authentication expired" in msg or "nlm login" in msg or "认证" in msg:
-            # 🔴 2026-08-14 第 89 篇实跑修的假失败：这里原本自动登录成功后走
+            # 🔴 2026-08-14 实跑修的假失败：这里原本自动登录成功后走
             #    `pass`，**没有 return/continue**，于是直接掉进下面那行
             #    「连接预检失败」并 return 1 —— 浏览器授权明明成功了（拿到 38 个
             #    cookie），流程却报错退出，还提示作者「请运行 nlm login」。

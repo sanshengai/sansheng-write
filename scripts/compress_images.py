@@ -71,7 +71,7 @@ def _carried_watermark(previous: dict | None, pre_sha: str | None) -> bool:
 
     台账一张图只留最新一笔，压缩会把 stage 覆盖成 compressed；不单独带着
     watermarked 走，add_logo 就分不清「压缩前打过水印」和「从没打过」——
-    2026-09-23 第 108 篇封面正是先压缩后找不到 logo，结果永远被当成已处理。
+    2026-09-23 曾有一次封面正是先压缩后找不到 logo，结果永远被当成已处理。
     """
     if not previous or pre_sha is None or previous.get("sha256") != pre_sha:
         return False

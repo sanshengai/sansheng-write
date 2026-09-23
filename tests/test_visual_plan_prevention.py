@@ -1,6 +1,6 @@
 """视觉任务单的三条「编译期预防」检查。
 
-2026-08-14 第 89 篇实跑：机械链共发起 45 次生图，其中 39 次是重渲（必要量的
+2026-08-14 实跑：机械链共发起 45 次生图，其中 39 次是重渲（必要量的
 7.5 倍），同时是撞 429 的主因。逐次复盘发现约 30 次可由纯字符串检查在编译期
 拦掉。本文件用**当时真实失败的那些任务单**做用例 —— 每条都必须能拦住当初那版。
 """
@@ -107,7 +107,7 @@ def test_layout_without_node_count_passes():
 # --- 回归保护：三条检查不得被悄悄摘掉 ---
 
 def test_all_three_checks_catch_the_original_failing_plans():
-    """把第 89 篇最初那版任务单喂进来，三条必须全部报错。"""
+    """把那次实跑最初那版任务单喂进来，三条必须全部报错。"""
     bad_title, bad_labels = "走量的和攻坚的", ["走量", "攻坚"]
     bad_layout = ("Single vertical timeline, eight ordered stops, exactly one short "
                   "label per stop, with no plate and no punctuation")

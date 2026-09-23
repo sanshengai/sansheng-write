@@ -99,8 +99,8 @@ python scripts/distribute.py --dir <文章目录> plan --only xhs,weibo
 
 🔴 **profile 固定了风格就只用它**（`distribute.channels.<渠道>.style_file`）：本篇 `dist/<渠道>/prompts/style.md`
 必须从该文件原样复制，每页提示词 = `style.md` + 本页内容，且每页写明「主视觉：」——纯文字卡不算信息卡。
-`verify` 逐字核对，不一致直接拦。**不要从上一篇的 prompts 复制风格**：2026-09-23 第 108 篇照抄 107 的
-纯文字卡，偏离了 95–106 篇一直在用的黏土主视觉风格，发出去才被作者发现。
+`verify` 逐字核对，不一致直接拦。**不要从上一篇的 prompts 复制风格**：曾经一次直接照抄了上一篇的
+纯文字卡，偏离了此前一直在用的黏土主视觉风格，发出去才被作者发现。
 
 profile 没配 `style_file` 时的默认基线：低饱和、克制的编辑设计，每页仍要有一个主视觉。
 
@@ -163,7 +163,7 @@ python scripts/distribute.py --dir <文章目录> confirm weibo --url <帖子链
 定稿发生变化后，旧文案与旧图片自动视为过期，必须重新 plan、verify。
 
 辅助渠道分两态：`dispatch --confirm` 看到发布脚本打印「已填好」就返回，状态记 `filled`，
-浏览器留着等作者检查、点发送（不再同步等脚本退出——浏览器开着它不会退，108 篇因此挂了 4 小时，
+浏览器留着等作者检查、点发送（不再同步等脚本退出——浏览器开着它不会退，曾因此挂了 4 小时，
 日志在渠道目录 `dispatch.log`）；作者说发了，再 `confirm` 记为 `sent`。`filled` 不会被
 重跑的 `plan` 退回，也不能再次 `dispatch`，避免作者已发未确认时重复发帖。
 

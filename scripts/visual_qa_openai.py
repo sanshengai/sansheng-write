@@ -4,7 +4,7 @@
 契约与 `visual_qa_codex.py` 完全一致（`--request` / `--output`、同一套提示词、
 同一套结构化裁决），只把「codex exec 看图」换成对任意 OpenAI 兼容
 `/chat/completions` 端点的视觉调用。用途：Codex 订阅额度被生图或别的任务打满时，
-复核这道闸不必跟着停 —— 2026-09-19 第 105 篇实跑：生图已切到中转，复核却仍卡在
+复核这道闸不必跟着停 —— 2026-09-19 实跑：生图已切到中转，复核却仍卡在
 Codex 的 usage limit 上等两小时，就是本文件的由来。
 
 配置（仓根 .env 或 shell env）：

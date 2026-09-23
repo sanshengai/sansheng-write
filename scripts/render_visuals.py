@@ -365,7 +365,7 @@ def _load_policy(cwd: Path) -> tuple[list[dict[str, Any]], list[str]]:
             return [], ["renderer-policy.json 必须包含非空 renderers 数组"]
     else:
         # 2026-09-23 审计 V1：出图默认模型的唯一真源是 profile 的 image.renderers。
-        # 各篇不再复制 renderer-policy.json（107、108 都是抄上一篇的），文章目录里的
+        # 各篇不再复制 renderer-policy.json（曾连续两篇都是抄上一篇的），文章目录里的
         # 那份只用于临时切换。profile 没配时才落回 baoyu-image-gen 自己的默认。
         renderers = _profile_renderers() or [
             {

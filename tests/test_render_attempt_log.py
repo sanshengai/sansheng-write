@@ -117,8 +117,8 @@ def test_summary_on_empty_input_does_not_divide_by_zero():
     assert s["waste_ratio"] == 0.0
 
 
-def test_summary_reproduces_the_89th_article_numbers():
-    """把第 89 篇的真实形态喂进去：6 张图、45 次渲染 → 浪费 39 次（87%）。
+def test_summary_reproduces_a_real_run_numbers():
+    """把一次实跑的真实形态喂进去：6 张图、45 次渲染 → 浪费 39 次（87%）。
 
     那次是事后手工数出来的，正是这个函数要替掉的活。
     """

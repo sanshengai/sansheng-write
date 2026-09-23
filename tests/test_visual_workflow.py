@@ -305,7 +305,7 @@ def test_compiler_injects_contract_and_builds_baoyu_batch(tmp_path):
     assert "narrow quiet gutter" in cover
     assert "CONDITION × SIGNAL × LEVER" not in cover
     # 🔴 2026-09-16：配方特征必须要求 ghost 层存在且克制。07-28 曾把它写成
-    #    「no ghost words」，封面从此没了质感（作者对照第 75/76 与 94/98/99 篇的反馈）。
+    #    「no ghost words」，封面从此没了质感（作者对照多篇历史封面的反馈）。
     traits = visual_profile("montage-evidence")["required_visual_traits"]
     assert any("ghost line behind the headline" in trait for trait in traits)
     assert not any("no ghost" in trait for trait in traits)

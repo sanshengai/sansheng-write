@@ -1,6 +1,6 @@
 """水印与后处理台账（2026-09-23 审计 G1）。
 
-第 108 篇的真实顺序：add_logo 因 ``@workspace/`` 没被 Node 解析、找不到 logo
+曾有一次的真实顺序：add_logo 因 ``@workspace/`` 没被 Node 解析、找不到 logo
 静默跳过 → compress 把封面记进台账（stage=compressed）→ 再跑 add_logo 时
 「sha 相同即跳过」，封面永远没有水印，而水印阶段验收只看「素材里有 PNG」。
 这里用真实的 node + jimp 跑 add_logo.js，把这条链路钉住。
@@ -99,7 +99,7 @@ def test_workspace_placeholder_resolves_and_stamps(tmp_path):
 
 @needs_node
 def test_compress_first_then_logo_still_stamps(tmp_path):
-    """第 108 篇的顺序：先压缩（无水印）再打水印，必须真的打上。"""
+    """曾有一次的顺序：先压缩（无水印）再打水印，必须真的打上。"""
     _, article = _workspace(tmp_path)
     cover = article / "素材" / "cover.png"
     ci.compress_one(cover, 2.0, verbose=False)

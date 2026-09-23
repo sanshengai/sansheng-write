@@ -38,6 +38,7 @@ def test_new_news_article_from_template_not_previous(roots):
     meta = yaml.safe_load(text)
     assert meta["title"] == "" and meta["digest"] == ""
     assert meta["outward_category"] == "news" and meta["category"] == "OBS"
+    assert meta["logic_bone"] == "ASC" and meta["opening_strategy"] == "直入"   # outline.md 步骤 3.5
     assert meta["style"] == "示例作者"
     assert meta["infographic_mode"] == "author-shots"
     assert (article / "素材").is_dir()

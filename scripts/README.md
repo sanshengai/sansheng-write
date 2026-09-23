@@ -102,10 +102,11 @@ grep -n "# ===== 【第" scripts/contracts.py
 
 ## scan_polish_signals.py -- 只读扫描软/硬门命中
 
-对 `文稿成品/` 或单篇文章目录里的每篇 `定稿.md` 跑 `verify_anti_ai_blacklist`，打印 hard/soft 计数与最多 20 条抽样。不写盘、不改定稿。
+对数据目录（默认取 profile 解析结果）或单篇文章目录里的每篇 `定稿.md` 跑 `verify_anti_ai_blacklist`，打印 hard/soft 计数与最多 20 条抽样。不写盘、不改定稿。
 
 ```bash
-python scripts/scan_polish_signals.py --dir 文稿成品
+python scripts/scan_polish_signals.py            # 默认扫 profile 数据目录
+python scripts/scan_polish_signals.py --dir <文章目录>
 ```
 
 ## 跨脚本契约（改动前必看）

@@ -1,7 +1,7 @@
 """finalize 官网同步：归档产物自动文件级提交 + 已上线识别（2026-09-23 审计 F5）。
 
-106、107、108 三篇首跑都失败于「归档产物未提交」——finalize 自己刚写的作品库，
-紧接着又因为没提交而拒绝同步官网。108 篇的页面其实早被别的会话的发布带上线，
+连续三篇首跑都失败于「归档产物未提交」——finalize 自己刚写的作品库，
+紧接着又因为没提交而拒绝同步官网。其中一篇的页面其实早被别的会话的发布带上线，
 回执却一直是 failed。
 """
 import json
@@ -30,7 +30,7 @@ def _registry(records: list[dict]) -> str:
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     repo = tmp_path / "Cowork"
-    data = repo / "文稿成品"
+    data = repo / "成品"
     data.mkdir(parents=True)
     _git(repo, "init", "-q")
     _git(repo, "config", "user.email", "t@example.invalid")
@@ -57,17 +57,17 @@ def test_autocommit_takes_only_this_article_files(repo):
     sha, errors = pipeline._commit_archive_outputs(article, repo_dir, "OBS-99")
     assert not errors and sha
     committed = set(_git(repo_dir, "show", "--name-only", "--pretty=format:", "HEAD").split())
-    assert "文稿成品/作品库.yaml" in committed
-    assert "文稿成品/articles.md" in committed
-    assert "文稿成品/2-新文章/定稿.md" in committed
-    assert "文稿成品/2-新文章/素材/cover.png" in committed
+    assert "成品/作品库.yaml" in committed
+    assert "成品/articles.md" in committed
+    assert "成品/2-新文章/定稿.md" in committed
+    assert "成品/2-新文章/素材/cover.png" in committed
     assert "别人的草稿.md" not in committed
     assert "别人的草稿.md" in _git(repo_dir, "status", "--porcelain")
 
 
 def test_autocommit_refuses_when_registry_has_other_changes(repo):
     repo_dir, article = repo
-    registry = repo_dir / "文稿成品" / "作品库.yaml"
+    registry = repo_dir / "成品" / "作品库.yaml"
     registry.write_text(
         _registry([{"seq": 1, "title": "旧文-被别的会话改了"},
                    {"seq": 2, "title": "新文章", "code": "OBS-99"}]),

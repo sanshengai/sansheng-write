@@ -21,8 +21,8 @@ def _article(root: Path, name: str = "98-测试文章") -> Path:
 
 
 def test_archive_article_verifies_then_deletes_source(tmp_path):
-    source = _article(tmp_path / "worktree" / "文稿成品")
-    archive_root = tmp_path / "permanent" / "文稿成品"
+    source = _article(tmp_path / "worktree" / "成品")
+    archive_root = tmp_path / "permanent" / "成品"
     archive_root.mkdir(parents=True)
 
     receipt = pa.archive_article(source, archive_root, delete_source=True)
@@ -40,8 +40,8 @@ def test_archive_article_verifies_then_deletes_source(tmp_path):
 
 
 def test_existing_target_conflict_aborts_without_overwrite_or_delete(tmp_path):
-    source = _article(tmp_path / "worktree" / "文稿成品")
-    archive_root = tmp_path / "permanent" / "文稿成品"
+    source = _article(tmp_path / "worktree" / "成品")
+    archive_root = tmp_path / "permanent" / "成品"
     target = archive_root / source.name
     target.mkdir(parents=True)
     conflict = target / "article-meta.yaml"
@@ -56,8 +56,8 @@ def test_existing_target_conflict_aborts_without_overwrite_or_delete(tmp_path):
 
 
 def test_existing_identical_target_is_idempotent_and_preserves_target_only_files(tmp_path):
-    source = _article(tmp_path / "worktree" / "文稿成品")
-    archive_root = tmp_path / "permanent" / "文稿成品"
+    source = _article(tmp_path / "worktree" / "成品")
+    archive_root = tmp_path / "permanent" / "成品"
     archive_root.mkdir(parents=True)
     target = archive_root / source.name
     shutil.copytree(source, target)
@@ -74,8 +74,8 @@ def test_existing_identical_target_is_idempotent_and_preserves_target_only_files
 
 
 def test_source_change_during_copy_aborts_before_target_placement(tmp_path, monkeypatch):
-    source = _article(tmp_path / "worktree" / "文稿成品")
-    archive_root = tmp_path / "permanent" / "文稿成品"
+    source = _article(tmp_path / "worktree" / "成品")
+    archive_root = tmp_path / "permanent" / "成品"
     archive_root.mkdir(parents=True)
     real_copytree = pa.shutil.copytree
 
@@ -98,7 +98,7 @@ def test_source_change_during_copy_aborts_before_target_placement(tmp_path, monk
 
 
 def test_archive_root_cannot_contain_source(tmp_path):
-    source = _article(tmp_path / "文稿成品")
+    source = _article(tmp_path / "成品")
 
     with pytest.raises(pa.PhysicalArchiveError, match="不能互相包含"):
         pa.archive_article(source, source.parent)
@@ -109,7 +109,7 @@ def test_physical_archive_config_requires_external_absolute_path(tmp_path, monke
     pc._reset_cache_for_tests()
     assert pc.physical_archive_dir() == (tmp_path / "archive").resolve()
 
-    monkeypatch.setenv("SANSHENG_WRITE_ARCHIVE_DIR", "@workspace/文稿成品")
+    monkeypatch.setenv("SANSHENG_WRITE_ARCHIVE_DIR", "@workspace/成品")
     pc._reset_cache_for_tests()
     with pytest.raises(pc.WorkspaceBindingError, match="不能使用 @workspace"):
         pc.physical_archive_dir()
@@ -121,8 +121,8 @@ def test_physical_archive_config_requires_external_absolute_path(tmp_path, monke
 
 
 def test_pipeline_refuses_physical_archive_before_registry_verifies(tmp_path, monkeypatch):
-    source = _article(tmp_path / "worktree" / "文稿成品")
-    archive_root = tmp_path / "permanent" / "文稿成品"
+    source = _article(tmp_path / "worktree" / "成品")
+    archive_root = tmp_path / "permanent" / "成品"
     archive_root.mkdir(parents=True)
     monkeypatch.setattr(pipeline, "load_state", lambda cwd: {"stages": {}})
     monkeypatch.setattr(

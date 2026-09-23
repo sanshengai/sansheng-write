@@ -1,6 +1,6 @@
 """官网同步失败时必须看得见真正的报错。
 
-第 89 篇实跑：`_run_website_sync` 用 capture_output 跑发布脚本，失败时打印
+一次实跑：`_run_website_sync` 用 capture_output 跑发布脚本，失败时打印
 `(stderr or stdout)[:500]` —— 从**开头**截。而 `git worktree add` 会先刷几百行
 `Updating files: NN%`，于是屏幕上永远只有进度条；receipt 里又只存 sha256，
 不存输出本身。结果是唯一一份诊断信息被丢掉，为了看到真正那行

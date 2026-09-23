@@ -121,13 +121,13 @@ def test_concrete_word_beats_abstract_word_in_same_layout():
 
 
 # ── 与既有闸门的联动 ──────────────────────────────────────────────────────
-def test_ninth_ninth_article_plan_would_be_caught_on_both_counts():
-    """第 89 篇那份任务单，两条新闸门都该抓到。"""
+def test_overlapping_scene_plan_would_be_caught_on_both_counts():
+    """那次实跑那份任务单，两条新闸门都该抓到。"""
     overlap = vw._text_overlap_errors(
         "infographic-01", "一个月，八次更新",
         ["八次更新", "中国五个", "美国三个"])
     scene = vw._layout_concrete_subject_errors("infographic-01", ABSTRACT_01)
-    assert overlap and scene, "89 篇的 01 应当被两条闸门同时拦下"
+    assert overlap and scene, "那一版的 01 应当被两条闸门同时拦下"
 
 
 def _plan(layout, title, expected):

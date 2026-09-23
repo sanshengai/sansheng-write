@@ -128,7 +128,7 @@ table_widths:
 
 > 🔴 **2026-09-15 现行方案：section 版 CSS 表，不再输出 `<table>`。** `format_layout.py --table` 自动完成，作者照常写 Markdown 表即可。
 >
-> **为什么**：微信编辑器保存 / 发布时会把 `<td>` / `<th>` 上的 `width`（inline style 和 `width` 属性一样）整个清掉，再配上它注入的 `table-layout:fixed`，结果永远等宽。证据：2026-09-15 抓 46 / 94 / 100 / 101 号四篇已发布文章，线上 `<td>/<th>` 里 **0 个** 还留着 width（本地发布稿有 12 个）；`draft/add → draft/get` 回读时 width 都还在，说明清洗发生在编辑器保存那一步，不在 API。同一批文章里推荐阅读卡的 `<section style="display:table-cell; width:64%">` 原样存活——列宽只有写在 section 上才到得了读者手机。
+> **为什么**：微信编辑器保存 / 发布时会把 `<td>` / `<th>` 上的 `width`（inline style 和 `width` 属性一样）整个清掉，再配上它注入的 `table-layout:fixed`，结果永远等宽。证据：2026-09-15 抓四篇已发布文章，线上 `<td>/<th>` 里 **0 个** 还留着 width（本地发布稿有 12 个）；`draft/add → draft/get` 回读时 width 都还在，说明清洗发生在编辑器保存那一步，不在 API。同一批文章里推荐阅读卡的 `<section style="display:table-cell; width:64%">` 原样存活——列宽只有写在 section 上才到得了读者手机。
 >
 > 历史：2026-04 的 `<colgroup>` 方案会在表头上方渲染出一行空虚线格（空行 bug）；2026-06-26 的「宽度写进首行单元格 + table-layout:fixed」在草稿箱预览正常，但发布后被清洗，一直没人回头核对线上页。
 

@@ -3,7 +3,7 @@
 
 用法：
     python scripts/scan_polish_signals.py
-    python scripts/scan_polish_signals.py --dir 文稿成品
+    python scripts/scan_polish_signals.py --dir <数据目录>
     python scripts/scan_polish_signals.py --dir path/to/一篇文章
 
 对每篇定稿.md 跑 verify_anti_ai_blacklist，打印 hard/soft 计数与最多 20 条抽样。
@@ -30,12 +30,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="只读扫描 polish 软/硬门命中")
     parser.add_argument(
         "--dir",
-        default="文稿成品",
-        help="文章根目录或文稿成品/（默认：文稿成品）",
+        default="",
+        help="文章根目录或单篇文章目录（默认：profile 解析出的数据目录）",
     )
     parser.add_argument("--sample", type=int, default=20, help="抽样条数上限")
     args = parser.parse_args()
-    root = Path(args.dir)
+    if args.dir:
+        root = Path(args.dir)
+    else:
+        from profile_config import bind_workspace, data_dir
+        bind_workspace(Path.cwd())
+        root = data_dir()
     if not root.is_absolute():
         root = Path.cwd() / root
     if not root.exists():

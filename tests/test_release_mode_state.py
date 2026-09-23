@@ -1,4 +1,4 @@
-"""release-from-final 模式下的状态处理（第 89 篇实跑修的两处）。
+"""release-from-final 模式下的状态处理（一次实跑修的两处）。
 
 1. adopt-final 原本把**所有**阶段无差别重置成 pending。走完整流程的文章在
    adopt-final 之前，cover/infographic/bgm/layout/logo 往往已经 verify 通过、
@@ -88,7 +88,7 @@ def test_outline_and_writing_are_still_taken_over(tmp_path):
 def test_adopted_counts_as_completed_upstream(tmp_path):
     """adopted 是合法的「已了结」状态，不能让后面每个 done 都报顺序异常。
 
-    这是第 89 篇刷出 8 行误报的直接原因：outline=adopted 不被认作已完成，
+    这是曾经刷出 8 行误报的直接原因：outline=adopted 不被认作已完成，
     于是它后面 8 个阶段挨个报一遍「可能是手动 skip 残留」。
     这里刻意**不设** mode，好让断言直接压在状态元组上（否则会被
     release-from-final 分支遮掉，单点变异打不红）。

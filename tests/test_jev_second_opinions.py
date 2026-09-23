@@ -96,7 +96,7 @@ def test_anti_ai_paragraph_split_skips_headings_lists_and_short():
 
 
 def test_anti_ai_skips_endmatter_templates():
-    raw = f"{HUMAN_PARA}\n\n<!-- SANSHENG-DEEP-READ -->\n\nDEEP READ\n继续往下读\n这篇讲的是一辆车怎么改写账本，更多请看叁笙早安 AI。\n"
+    raw = f"{HUMAN_PARA}\n\n<!-- SANSHENG-DEEP-READ -->\n\nDEEP READ\n继续往下读\n这篇讲的是一辆车怎么改写账本，更多请看示例站点。\n"
     paras = contracts.jev_ai_tone_paragraphs(contracts._strip_for_scan(contracts._cut_endmatter(raw)))
     assert [p[:4] for _, p in paras] == [HUMAN_PARA[:4]]
     assert contracts._cut_endmatter("无标记全文") == "无标记全文"

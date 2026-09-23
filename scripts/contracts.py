@@ -1307,11 +1307,11 @@ def verify_pos_ratio(text: str, sample_chars: int = 300) -> dict:
 
 # ===== 【第 8 节】加粗密度门 =====
 # ============================================================================
-# v5 新增（45 号实跑暴露 P1-4/P1-5）：verify_bold_density
+# v5 新增（一次实跑暴露 P1-4/P1-5）：verify_bold_density
 # 关联：writing.md §加粗与重点标识（整句加粗口径的唯一机器真源即本函数）
 #
-# 🔴 2026-08-14 放宽（sandy 拍板）：原来是「按字数分四档 + 固定上限 + 超一个就 exit」，
-#    89 号实跑暴露两个真问题：
+# 🔴 2026-08-14 放宽（作者拍板）：原来是「按字数分四档 + 固定上限 + 超一个就 exit」，
+#    一次实跑暴露两个真问题：
 #    ① 档位是阶跃的 —— 4973 字上限 35、5001 字上限 45，多写两句话上限突然涨 10，
 #       写作期得围着档位边界打转，这是被工具牵着走。
 #    ② 硬门没有弹性 —— 超 1 处和超 30 处同样判死，逼着为凑指标去删有用的标识。
@@ -1593,7 +1593,7 @@ def verify_publish_assets(article_dir: str) -> dict:
     #    AUDIO-CARD (BGM 2026-06-18 复活；对历史归档文章软兜底，硬存在校验
     #    见 pipeline.py verify bgm)。状态感知：读 .state.json 的 bgm 阶段——
     #      · 若 stages.bgm.status == 'done'（本文已声明产出 BGM）→ AUDIO-CARD 缺失判 error；
-    #      · 若 bgm 为 pending/skip/无 state（历史 34/36/40 号归档文章无 bgm=done）→ 维持软兜底放行。
+    #      · 若 bgm 为 pending/skip/无 state（部分历史归档文章无 bgm=done）→ 维持软兜底放行。
     #    历史 golden 基线仍含/不含 AUDIO-CARD 块均不误伤：缺失只在 bgm=done 时才硬拦。
     bgm_status = _stage_status('bgm')
     audio_marks = list(re.finditer(r'<!-- AUDIO-CARD-START -->', text))
@@ -2532,7 +2532,7 @@ def verify_final_html(html_path: str) -> dict:
 
 # ===== 【第 14.5 节】裸 URL 门 =====
 # ============================================================================
-# verify_no_bare_url（2026-07-11 · sandy 报排版翻车后固化）
+# verify_no_bare_url（2026-07-11 · 作者报排版翻车后固化）
 # 根因：微信对「含一个放不下的长 token（URL）」的行做两端对齐，把该行前面的中文
 #   撑成大字间距（截图实证的「分散对齐」）；被拉散的 URL 读者还长按选不中、无法复制。
 #   模板（link-card.html / deep-read-section.html）用 word-break:break-all + 左对齐浅框
@@ -2718,7 +2718,7 @@ def audit_opening_anchors(md_text: str) -> dict:
         result["errors"].append(
             f"🔴 开篇标识密度门（比例密度）：开篇区约 {chars} 字仅 {anchors} 处主题色标识，"
             f"低于下限 {need} 处（每 ~120 字 1 处）。优先补事实型（①专名 ②数字 ⑤入口 ⑥落差），"
-            f"信息锚点六型见 writing.md §信息锚点六型。"
+            f"信息锚点六型见 writing.md「信息锚点六型」一段。"
         )
     return result
 
@@ -2826,8 +2826,8 @@ def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> di
             violations.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
 
     warnings: list[str] = []
-    # 唯一公式的结构：竖杠后是「关键词锚点：一句话」。2026-09-23 审计 G5：103 篇
-    # 「全网最好的初中英语学习网站（限时免费）」无冒号、无专名锚点，只得到自夸词软提示。
+    # 唯一公式的结构：竖杠后是「关键词锚点：一句话」。2026-09-23 审计 G5：曾有标题
+    # 「全网最好的某某学习网站（限时免费）」无冒号、无专名锚点，只得到自夸词软提示。
     anchor, colon, sentence = body.partition('：')
     if not colon:
         anchor, colon, sentence = body.partition(':')

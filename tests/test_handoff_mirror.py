@@ -1,5 +1,5 @@
 """主仓镜像（2026-09-18）：worktree 里生产的 mp3/mp4/作者供图被 .gitignore 挡住，
-合回主线带不到主仓 文稿成品/；handoff-assets 必须自动镜像过去，且不覆盖不同内容。"""
+合回主线带不到主仓 成品/；handoff-assets 必须自动镜像过去，且不覆盖不同内容。"""
 import sys
 from pathlib import Path
 
@@ -9,7 +9,7 @@ from handoff_assets import mirror_deliverables_to_archive_root  # noqa: E402
 
 
 def _article(root: Path) -> Path:
-    art = root / "wt" / "文稿成品" / "12-篇名"
+    art = root / "wt" / "成品" / "12-篇名"
     (art / "素材" / "视频").mkdir(parents=True)
     (art / "素材" / "作者素材").mkdir(parents=True)
     (art / "dist" / "podcast").mkdir(parents=True)
@@ -24,7 +24,7 @@ def _article(root: Path) -> Path:
 
 def test_mirror_copies_ignored_deliverables_and_is_idempotent(tmp_path):
     art = _article(tmp_path)
-    root = tmp_path / "主仓" / "文稿成品"
+    root = tmp_path / "主仓" / "成品"
     target, copied, errors = mirror_deliverables_to_archive_root(art, root)
     assert errors == []
     assert target == root / "12-篇名"
@@ -40,7 +40,7 @@ def test_mirror_copies_ignored_deliverables_and_is_idempotent(tmp_path):
 
 def test_mirror_refuses_to_overwrite_different_content(tmp_path):
     art = _article(tmp_path)
-    root = tmp_path / "主仓" / "文稿成品"
+    root = tmp_path / "主仓" / "成品"
     (root / "12-篇名").mkdir(parents=True)
     (root / "12-篇名" / "歌.mp3").write_bytes(b"older-different-song")
     _, copied, errors = mirror_deliverables_to_archive_root(art, root)
@@ -50,7 +50,7 @@ def test_mirror_refuses_to_overwrite_different_content(tmp_path):
 
 
 def test_mirror_noop_when_article_already_under_root_or_root_unset(tmp_path):
-    root = tmp_path / "主仓" / "文稿成品"
+    root = tmp_path / "主仓" / "成品"
     art = root / "12-篇名"
     art.mkdir(parents=True)
     (art / "歌.mp3").write_bytes(b"song")

@@ -1,6 +1,6 @@
 """`pipeline.py preflight`：把静态检查前移。
 
-2026-08-14 第 89 篇实跑账本：verify_publish 反复 8 轮、verify_layout 6 轮、
+2026-08-14 实跑账本：verify_publish 反复 8 轮、verify_layout 6 轮、
 format_layout 4 轮。逐条复盘发现，卡住的东西全是**纯静态检查**，却被放在链条
 末端 —— 金句库缺来源标记要等到 finalize 才报，迟了整整五个阶段。
 
@@ -21,7 +21,7 @@ from pipeline import _preflight_checks  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _both_checkpoints_on(monkeypatch):
-    """闸门锚点检查依赖 profile 配置；测试里固定成双闸开，与 sandy profile 一致。"""
+    """闸门锚点检查依赖 profile 配置；测试里固定成双闸开，与作者 profile 一致。"""
     import profile_config
 
     monkeypatch.setattr(

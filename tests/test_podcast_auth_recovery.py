@@ -1,6 +1,6 @@
 """登录态失效 → 自动登录成功后必须继续跑，而不是掉进失败分支。
 
-第 89 篇实跑踩到的假失败：自动登录拿到了 38 个 cookie、独立跑 `nlm notebook
+一次实跑踩到的假失败：自动登录拿到了 38 个 cookie、独立跑 `nlm notebook
 list` 也通，流程却打印「连接预检失败」并 return 1，还反过来叫作者去手跑
 `nlm login`。根因是登录成功分支写了个裸 `pass`，没有 return/continue，于是
 顺着控制流掉进了 else 的失败处理。

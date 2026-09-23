@@ -33,9 +33,9 @@ python "$SKILL/scripts/pipeline.py" wechat-audio-check
 
 无需作者确认试听。只有官方 `draft/get` 再次确认两个原生播放器、卡片顺序、播放器身份与全文其余字段均未变化，才生成 `_wechat-audio-receipt.json`；凭证如实记录自动核验范围，不声称已试听或已校验远端音频字节。这张草稿凭证只在正式文章补验不过、草稿又还在时给 `finalize` 兜底。
 
-正文比对**允许作者在微信编辑器里的小幅手改**（改几个字、顺一句话，不回传本地也行）：可见文字相似度 ≥ `BODY_DRIFT_TOLERANCE`（0.98，约 2% 字符）即放行，改动内容写进回执的 `body_drift` 留痕；删段、换章这类结构性改写仍会被拦。2026-09-16 第 99 篇定的规矩：作者把首句改了 7 个字后正式发布，逐字门把整条 finalize 卡死，回传本地又要重生成播客，两头都不对。
+正文比对**允许作者在微信编辑器里的小幅手改**（改几个字、顺一句话，不回传本地也行）：可见文字相似度 ≥ `BODY_DRIFT_TOLERANCE`（0.98，约 2% 字符）即放行，改动内容写进回执的 `body_drift` 留痕；删段、换章这类结构性改写仍会被拦。2026-09-16 定的规矩：作者把首句改了 7 个字后正式发布，逐字门把整条 finalize 卡死，回传本地又要重生成播客，两头都不对。
 
-同一精神也覆盖**作者在微信侧缩短标题、删掉一两张图**（2026-09-19 第 103 篇：「（限时免费）」改成「（限免）」并删掉文末入口二维码后发布，title / image_count / image_identity 三道逐字门把 finalize 卡死）。只在人工插音频之后的两条双音频核验路径里生效，首次 `draft/get` 读回仍逐字逐图比对：
+同一精神也覆盖**作者在微信侧缩短标题、删掉一两张图**（2026-09-19 一次实跑中：「（限时免费）」改成「（限免）」并删掉文末入口二维码后发布，title / image_count / image_identity 三道逐字门把 finalize 卡死）。只在人工插音频之后的两条双音频核验路径里生效，首次 `draft/get` 读回仍逐字逐图比对：
 
 - 标题：相似度 ≥ `TITLE_DRIFT_TOLERANCE`（0.8），或纯删 / 纯增 ≤ `TITLE_PURE_EDIT_MAX_CHARS`（4）个字，放行并记 `title_drift`；换成另一个标题仍拦。
 - 图片：正式页图片必须是草稿回执图片的**顺序子序列**，最多少 `IMAGE_REMOVAL_TOLERANCE`（2）张且至少剩一张，放行并记 `image_drift`（删了哪几张）；换图、加图、换序、删太多一律拦。
@@ -121,7 +121,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - 每个逻辑句是一段；段落之间恰好一个空行（两个 `\n`），句子内部不得插入换行。
 - 每段首尾无普通空白、不可见零宽字符或 BOM；网址必须与所属句保持同一段。
 - 文件末尾只保留一个换行。聊天交付必须从首句 emoji 开始，不添加 Markdown 包装。
-- 🔴 **不放公众号文章链接行**（2026-07-30 sandy 拍板）：朋友圈从公众号文章点「分享」时，微信自动带文章卡片与链接，📖 文章 URL 行是冗余，不写。
+- 🔴 **不放公众号文章链接行**（2026-07-30 作者拍板）：朋友圈从公众号文章点「分享」时，微信自动带文章卡片与链接，📖 文章 URL 行是冗余，不写。
 - 🔴 **网站只出现一次**：引流尾巴一行同时承载品牌名与域名（`writing.moments_cta`，本身已含域名），不得再单独追加一行 🔗 裸网址。骨架 = 钩子 → 价值 → 引流尾巴（含域名）；中间的「价值」按内容协议可展开成数段，不再限死三行。
 - 🔴 **聊天交付必须独占最终消息**：状态、解释和其他路径都在 commentary 里先说完；
   final 只逐字输出 `_moments-copy.md`，不得在它前后追加分隔线、播客状态或任何说明。
@@ -155,7 +155,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - `article-meta.yaml.source_url` 可填完整 URL、`default` 或 `treasure`。
 - 默认阅读原文地址来自 profile 的 `publish.source_url_default`。
 - 官网同步来自 profile 的 `publish.website_command`；相对路径命令应同时配置 `publish.website_cwd` 或 `SANSHENG_WRITE_WEBSITE_CWD`。
-- 🔴 `{code}` 不得为空。CODE 必须从**本 worktree** 的 `文稿成品/作品库.yaml` 读出；空 CODE 会让 HTML 上线而 `song-assets` 因未授权不上线，主题曲 / 播客 404（2026-08-21 OBS-30）。2026-09-22 起 `article-assets`（封面、正文图）随全站包自动上传、只增不删，不再依赖 CODE。
+- 🔴 `{code}` 不得为空。CODE 必须从**本 worktree** 的成品目录下 `作品库.yaml` 读出；空 CODE 会让 HTML 上线而 `song-assets` 因未授权不上线，主题曲 / 播客 404（2026-08-21 OBS-30）。2026-09-22 起 `article-assets`（封面、正文图）随全站包自动上传、只增不删，不再依赖 CODE。
 - 朋友圈尾巴来自 `writing.moments_cta` 和 `identity.site`。
 
 缺微信凭证、远端读回失败或官网命令失败都应明确阻断；不存在“先发布、以后再补证据”的降级路径。

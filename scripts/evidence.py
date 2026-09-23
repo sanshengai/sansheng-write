@@ -660,7 +660,7 @@ def _approval_anchor(cwd: Path, gate: str) -> tuple[dict, list[str]]:
     if not path or not path.exists():
         return {}, [f"缺 {name or gate + ' approval anchor'}"]
     text = path.read_text(encoding="utf-8")
-    # 🔴 2026-08-14 第 89 篇实跑修正：否决词此前**扫全文**，把「记录里提到拒绝」
+    # 🔴 2026-08-14 实跑修正：否决词此前**扫全文**，把「记录里提到拒绝」
     #    和「审批结论是拒绝」混为一谈 —— 我在审读记录里如实写了「未采纳冷读的
     #    某条建议（会违反品牌铁律）」，其中「拒绝」二字命中，整份审批被判 rejected，
     #    闸门当场拦死。**审读记录写得越认真越容易被罚**，这是反向激励。
