@@ -473,6 +473,35 @@ def cmd_plan(article_dir: Path, only: str = "") -> int:
 
 # ===== 【第 6 节】verify —— 硬门 =====
 
+def _weibo_style_problems(article_dir: Path) -> list[str]:
+    """profile 固定了微博卡片风格时，逐字核对本篇用的就是那一份。
+
+    2026-09-23 第 108 篇：风格只写在每篇自己的提示词里，107 换成纯文字卡、108 又照抄 107，
+    作者判「这么丑」。风格真源放 profile，本篇 prompts/style.md 必须与它逐字一致，
+    每页提示词必须写「主视觉：」——纯文字卡不算信息卡。
+    """
+    rel = str((distribute_channel("weibo") or {}).get("style_file") or "").strip()
+    if not rel:
+        return []
+    source = pc.profile_dir() / rel
+    if not source.is_file():
+        return [f"profile 配置的微博风格文件不存在：{source}"]
+    prompts = channel_dir(article_dir, "weibo") / "prompts"
+    style = prompts / "style.md"
+    if not style.is_file():
+        return [f"缺 {style}：从 {source} 原样复制，每页提示词 = style.md + 本页内容；不要抄上一篇"]
+    problems: list[str] = []
+    if style.read_text(encoding="utf-8").strip() != source.read_text(encoding="utf-8").strip():
+        problems.append(f"{style.name} 与 profile 固定风格 {rel} 不一致；重新复制，不要改写或沿用上一篇")
+    pages = sorted(p for p in prompts.glob("*.md") if p.name != "style.md")
+    if not pages:
+        problems.append(f"{prompts} 下没有逐页提示词")
+    missing = [p.name for p in pages if "主视觉：" not in p.read_text(encoding="utf-8")]
+    if missing:
+        problems.append(f"这些页没写「主视觉：」（纯文字卡不合格）：{'、'.join(missing)}")
+    return problems
+
+
 def parse_social_copy(article_dir: Path) -> dict:
     """解析 dist/社媒文案.txt，返回 {"xhs": {...}, "weibo": {...}}。
 
@@ -776,6 +805,7 @@ def cmd_verify(article_dir: Path, channel: str) -> int:
             if bad:
                 problems.append(f"标签缺尾部井号：{' '.join(bad[:3])}（微博是 #话题#）")
             problems.extend(_social_image_problems(article_dir, channel, cons))
+            problems.extend(_weibo_style_problems(article_dir))
 
         if len(parsed["tags"]) < cons.get("tag_min", 2):
             problems.append(f"标签只有 {len(parsed['tags'])} 个，少于 {cons.get('tag_min', 2)} 个")

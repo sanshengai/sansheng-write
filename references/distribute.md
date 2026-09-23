@@ -97,9 +97,12 @@ python scripts/distribute.py --dir <文章目录> plan --only xhs,weibo
 6. 错字、漏字或版式失败时，修正 canonical prompt 后整张重渲；不做后期补丁。
 7. 全套完成后逐张检查：文字、观点、页序、比例、重复内容、logo、一致性与缩略图可读性。
 
-推荐视觉基线是低饱和、克制的编辑设计：米白 / 灰蓝 / 棕红等有限色板，正文高对比，强调色
-只服务关键数字或结论。retro、notion、minimal 等只是视觉语言，不决定页面信息密度；页面布局
-应在 sparse、comparison、flow、list、dense 等结构之间按内容切换。
+🔴 **profile 固定了风格就只用它**（`distribute.channels.<渠道>.style_file`）：本篇 `dist/<渠道>/prompts/style.md`
+必须从该文件原样复制，每页提示词 = `style.md` + 本页内容，且每页写明「主视觉：」——纯文字卡不算信息卡。
+`verify` 逐字核对，不一致直接拦。**不要从上一篇的 prompts 复制风格**：2026-09-23 第 108 篇照抄 107 的
+纯文字卡，偏离了 95–106 篇一直在用的黏土主视觉风格，发出去才被作者发现。
+
+profile 没配 `style_file` 时的默认基线：低饱和、克制的编辑设计，每页仍要有一个主视觉。
 
 ## 5. 文案文件格式
 

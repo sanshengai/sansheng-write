@@ -499,3 +499,43 @@ def test_计划里给出各渠道的引流口径(article, all_enabled):
     plan = json.loads((distribute.dist_dir(article) / distribute.PLAN_FILE).read_text(encoding="utf-8"))
     assert "零引流" in plan["channels"]["xhs"]["divert_policy"]
     assert plan["channels"]["weibo"]["divert_url"] == WECHAT_URL
+
+
+# ===== 微博固定风格（2026-09-23） =====
+
+STYLE = "暖米白背景，黏土主视觉信息卡。"
+
+
+def _weibo_style_setup(article, monkeypatch, all_enabled, tmp_path, *, style=STYLE, pages=None):
+    profile = tmp_path / "profile"
+    (profile / "social").mkdir(parents=True)
+    (profile / "social" / "weibo-card-style.md").write_text(STYLE, encoding="utf-8")
+    all_enabled["weibo"]["style_file"] = "social/weibo-card-style.md"
+    monkeypatch.setattr(distribute.pc, "profile_dir", lambda: profile)
+    distribute.cmd_plan(article)
+    _write_social(article)
+    _write_images(article)
+    prompts = distribute.channel_dir(article, "weibo") / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    if style is not None:
+        (prompts / "style.md").write_text(style, encoding="utf-8")
+    for name, text in (pages or {"01.md": "主标题：一句\n主视觉：一只陶土天平"}).items():
+        (prompts / name).write_text(text, encoding="utf-8")
+
+
+def test_微博固定风格一致时通过(article, monkeypatch, all_enabled, tmp_path):
+    _weibo_style_setup(article, monkeypatch, all_enabled, tmp_path)
+    assert distribute.cmd_verify(article, "weibo") == 0
+
+
+@pytest.mark.parametrize("case", ["缺风格文件", "风格被改写", "纯文字卡"])
+def test_微博固定风格不一致被拦(article, monkeypatch, all_enabled, tmp_path, case):
+    kwargs = {}
+    if case == "缺风格文件":
+        kwargs["style"] = None
+    elif case == "风格被改写":
+        kwargs["style"] = "米色纸，只放黑字，不要图标。"
+    else:
+        kwargs["pages"] = {"01.md": "主标题：一句\n支撑文字：两句"}
+    _weibo_style_setup(article, monkeypatch, all_enabled, tmp_path, **kwargs)
+    assert distribute.cmd_verify(article, "weibo") == 2
