@@ -2798,8 +2798,12 @@ def _title_width(text: str) -> float:
     return width
 
 
-def audit_title_contract(title: str) -> dict:
-    """扫单个标题，返回 {'verdict', 'violations', 'notes'}。纯函数，便于测试。"""
+def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> dict:
+    """扫单个标题，返回 {'verdict', 'violations', 'notes'}。纯函数，便于测试。
+
+    structure_exempt_reason：作者指定标题且在审批记录里写明「标题公式豁免：原因」时传入，
+    「锚点：一句话」结构问题降为 warning（审计 G5）。
+    """
     import re
 
     title = (title or '').strip()
@@ -2822,6 +2826,18 @@ def audit_title_contract(title: str) -> dict:
             violations.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
 
     warnings: list[str] = []
+    # 唯一公式的结构：竖杠后是「关键词锚点：一句话」。2026-09-23 审计 G5：103 篇
+    # 「全网最好的初中英语学习网站（限时免费）」无冒号、无专名锚点，只得到自夸词软提示。
+    anchor, colon, sentence = body.partition('：')
+    if not colon:
+        anchor, colon, sentence = body.partition(':')
+    if not colon or not anchor.strip() or not sentence.strip():
+        issue = ('缺「关键词锚点：一句话」结构（竖杠后应是专名锚点 + 全角冒号 + 一句由正文兑现的话）'
+                 ' → 见 title.md §唯一公式')
+        if structure_exempt_reason:
+            warnings.append(f'{issue}；已按审批记录豁免：{structure_exempt_reason}')
+        else:
+            violations.append(issue)
     for pattern, diagnosis, fix in _TITLE_SOFT:
         hit = re.search(pattern, body)
         if hit:
@@ -2933,7 +2949,13 @@ def verify_title_contract(article_dir: str) -> dict:
     except Exception as exc:
         return {'verdict': 'skip', 'violations': [], 'warnings': [],
                 'notes': f'article-meta.yaml 解析失败：{exc}'}
-    return audit_title_contract(str(meta.get('title') or ''))
+    exempt = ''
+    approval = Path(article_dir) / '_blueprint-approval.md'
+    if approval.exists():
+        import re as _re
+        hit = _re.search(r'^标题公式豁免[：:]\s*(.+)$', approval.read_text(encoding='utf-8'), _re.M)
+        exempt = hit.group(1).strip() if hit else ''
+    return audit_title_contract(str(meta.get('title') or ''), structure_exempt_reason=exempt)
 
 
 def verify_cover_title_pair(article_dir: str) -> dict:

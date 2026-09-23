@@ -2320,17 +2320,13 @@ def run(args):
 
         md_path = os.path.join(cwd, "定稿.md")
 
-        # A 层：断言 prep_writing.py 跑过（_prep-context.md 存在且非空）
-        # 跳过 prep 直接写 = 排版硬门 fail —— A 从「自觉」变「不做走不下去」
+        # A 层：写作前参考汇总 _prep-context.md。2026-09-23 审计 G3 起只提示不拦：
+        # 这道门只能验「文件在」，写完再补跑也放行，证明不了写作前用过；108 篇就是
+        # 排版时被拦、补跑后放行。现在由 adopt-final 自动补跑，这里只提醒。
         if os.path.exists(md_path):
             prep_path = os.path.join(cwd, "_prep-context.md")
             if not os.path.exists(prep_path) or os.path.getsize(prep_path) == 0:
-                log("❌ A 层前置门：_prep-context.md 不存在或为空")
-                log("   写作前必须先跑：python $SKILL/scripts/prep_writing.py")
-                sys.exit(2)
-            elif os.path.getmtime(prep_path) > os.path.getmtime(md_path):
-                log("⚠️ _prep-context.md 的 mtime 晚于 定稿.md —— "
-                    "prep 可能在写作后才补跑（重排版场景可忽略）")
+                log("⚠️ 未见 _prep-context.md：写作前应先跑 prep_writing.py（adopt-final 会自动补跑）")
 
         # 冷读外审门（🔴 2026-06-10 P1-7）：断言 _stutter-list.md 存在且非空。
         # 该文件由一个不带写作上下文（无大纲/种子/会话历史）的全新 subagent

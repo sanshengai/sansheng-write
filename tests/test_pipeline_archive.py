@@ -19,7 +19,7 @@ import release_to_draft
 
 def _allow_golden(monkeypatch, tmp_path, article_name):
     golden = tmp_path / f"golden-{article_name}.md"
-    golden.write_text(f"- 一句。 *({article_name})*\n", encoding="utf-8")
+    golden.write_text(f"- 正文。 *({article_name})*\n", encoding="utf-8")  # 金句须出自定稿原句（审计 G3）
     monkeypatch.setattr(pc, "golden_lines_file", lambda: golden)
     return golden
 

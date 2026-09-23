@@ -1040,6 +1040,40 @@ def _log_audio_event(cwd: Path, event: str, verdict: str, detail: str,
         pass
 
 
+def _golden_line_errors(cwd: Path, golden: Path) -> list[str]:
+    """金句库必须有本篇标记，且带本篇标记的每一句都逐字出自定稿正文。
+
+    2026-09-23 审计 G3：此前只查 ``*(文章名)*`` 标记在不在，第 108 篇为过门补了一条
+    正文里根本没有的「金句」。比对时去掉加粗星号与空白，其余逐字。
+    """
+    import re as _re
+
+    marker = f"*({cwd.name})*"
+    if not golden.exists():
+        return [f"金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）"]
+    lines = [line for line in golden.read_text(encoding="utf-8").splitlines() if marker in line]
+    if not lines:
+        return [f"金句库缺本篇来源标记 {marker}（文件：{golden}）；请先追加：- <定稿里的原句> {marker}"]
+    final = cwd / "定稿.md"
+    if not final.exists():
+        return []
+
+    quote_marks = {ord(c): None for c in "「」『』“”‘’\"'《》"}
+
+    def _norm(text: str) -> str:
+        # 引号、书名号与句末标点的差别不算改写；其余逐字（历史 131 条里 41 条是另写，见审计 G3）
+        text = _re.sub(r"\s+", "", text.replace("**", "")).translate(quote_marks)
+        return text.rstrip("。．.!！?？")
+
+    body = _norm(final.read_text(encoding="utf-8"))
+    errors = []
+    for line in lines:
+        quote = line.replace(marker, "").strip().lstrip("-").strip()
+        if quote and _norm(quote) not in body:
+            errors.append(f"金句「{quote[:40]}」不在定稿正文里：金句库只收正文原句，不为过门另写")
+    return errors
+
+
 def _archive_source_errors(cwd: Path) -> list[str]:
     """Check folder identity and golden-line source before archive writes anything."""
     from profile_config import golden_lines_file
@@ -1049,17 +1083,7 @@ def _archive_source_errors(cwd: Path) -> list[str]:
     if not seq_text.isdigit():
         errors.append("无法从文件夹名解析 seq（应形如 47-选题名）")
 
-    golden = golden_lines_file()
-    marker = f"*({cwd.name})*"
-    if not golden.exists():
-        errors.append(
-            f"金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）"
-        )
-    elif marker not in golden.read_text(encoding="utf-8"):
-        errors.append(
-            f"金句库缺本篇来源标记 {marker}（文件：{golden}）；"
-            f"请先追加：- <本篇金句> {marker}"
-        )
+    errors.extend(_golden_line_errors(cwd, Path(golden_lines_file())))
     return errors
 
 
@@ -1689,14 +1713,7 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                 elif RWD.DASHBOARD_FILE.read_text(encoding="utf-8") != expected_dashboard:
                     errors.append(f"派生看板已过期：{RWD.DASHBOARD_FILE}")
 
-                golden = golden_lines_file()
-                marker = f"*({cwd.name})*"
-                if not golden.exists():
-                    errors.append(
-                        f"金句库不存在：{golden}（可用 SANSHENG_WRITE_GOLDEN_LINES_FILE 指向现有真源）"
-                    )
-                elif marker not in golden.read_text(encoding="utf-8"):
-                    errors.append(f"金句库尚未沉淀本篇：缺标记 {marker}（文件：{golden}）")
+                errors.extend(_golden_line_errors(cwd, Path(golden_lines_file())))
         except Exception as e:
             errors.append(f"归档校验失败：{e}")
 
@@ -3083,6 +3100,37 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
     ]
 
 
+def _closing_rule_problems(cwd: Path, text: str) -> list[str] | None:
+    """按 profile 的 writing.closing_types_allowed / closing_no_question_ending 检查结尾。
+
+    profile 没声明时返回 None（不检查，公开 Skill 默认不设限）。品牌规则「不写没有下一步
+    动作的结尾」与技能收尾菜单里的「未答之问 / hook_question」冲突，105 篇以反问收尾。
+    """
+    import re as _re
+
+    writing_cfg = (brand().get("writing") or {})
+    allowed = writing_cfg.get("closing_types_allowed")
+    no_question = bool(writing_cfg.get("closing_no_question_ending"))
+    if not allowed and not no_question:
+        return None
+    problems: list[str] = []
+    if allowed:
+        closing_type = ""
+        meta_path = cwd / "article-meta.yaml"
+        if _yaml is not None and meta_path.is_file():
+            meta = _yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            closing_type = str(meta.get("closing_type") or "").strip()
+        if closing_type and closing_type not in allowed:
+            problems.append(f"收尾类型「{closing_type}」不在 profile 允许清单里（{' / '.join(allowed)}）")
+    if no_question:
+        body = _re.split(r"<!-- (?:SANSHENG-DEEP-READ|SANSHENG-SOURCES|AUDIO-CARD|PODCAST-CARD)", text)[0]
+        paragraphs = [p.strip() for p in _re.split(r"\n\s*\n", body) if p.strip()]
+        paragraphs = [p for p in paragraphs if not p.startswith(("#", "!", "<", "|", ">", "---"))]
+        if paragraphs and paragraphs[-1].rstrip("*_ 」”\"'").endswith(("？", "?")):
+            problems.append("正文最后一段以问句收尾；品牌规则要求结尾落在动作或判断上")
+    return problems
+
+
 def _registry_records_by_seq(text: str) -> dict:
     if _yaml is None or not text.strip():
         return {}
@@ -3986,16 +4034,25 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
             "已使用模板标记" if has
             else "正文有外部依据但缺 SANSHENG-SOURCES 标记")
 
+    # --- 6b. 结尾落点（profile 声明的收尾规则；2026-09-23 审计 Q3）---
+    try:
+        closing_problems = _closing_rule_problems(cwd, text)
+        if closing_problems is not None:
+            add("fail" if closing_problems else "ok", "结尾落点",
+                "；".join(closing_problems) if closing_problems
+                else "收尾类型与结尾句符合 profile 规则")
+    except Exception as exc:
+        add("warn", "结尾落点", f"检查异常：{exc}")
+
     # --- 7. 金句库来源标记（finalize 的前置，迟报五个阶段）---
     try:
         from profile_config import golden_lines_file
         gl = Path(golden_lines_file())
         if gl.exists():
-            marker = f"*({cwd.name})*"
-            has = marker in gl.read_text(encoding="utf-8")
-            add("ok" if has else "fail", "金句库来源标记",
-                f"已登记 {marker}" if has
-                else f"缺 {marker} —— finalize 会拦，现在补最省事")
+            golden_errors = _golden_line_errors(cwd, gl)
+            add("fail" if golden_errors else "ok", "金句库来源标记",
+                "；".join(golden_errors) + " —— finalize 会拦，现在补最省事" if golden_errors
+                else f"已登记 *({cwd.name})*，且均出自定稿原句")
     except Exception as exc:
         add("warn", "金句库来源标记", f"检查异常：{exc}")
 
@@ -4124,6 +4181,17 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
         "✅ 已接管作者定稿并生成 _release-job.json："
         f"job_id={job['job_id']}，scope={job['scope']}"
     )
+    prep = cwd / "_prep-context.md"
+    if not prep.exists() or prep.stat().st_size == 0:
+        # 审计 G3：写作前参考汇总由接管自动补齐，不再作为排版硬门。
+        result = subprocess.run(
+            [sys.executable, str(SKILL_DIR / "scripts" / "prep_writing.py"), "--dir", str(cwd)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+        )
+        if result.returncode == 0 and prep.exists():
+            print("✅ 已自动补跑 prep_writing.py（_prep-context.md）")
+        else:
+            print("⚠️ 自动补跑 prep_writing.py 未成功，不影响发布链；需要时手动运行")
 
 
 def cmd_verify_release_job(cwd: Path) -> None:

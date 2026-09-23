@@ -35,7 +35,7 @@ def _isolated_golden_lines(tmp_path_factory, monkeypatch):
     import profile_config
 
     gl = tmp_path_factory.mktemp("gl") / "金句库.md"
-    gl.write_text("# 金句库\n\n- 一句话 *(90-t)*\n", encoding="utf-8")
+    gl.write_text("# 金句库\n\n- 连着出了四个大模型 *(90-t)*\n", encoding="utf-8")
     monkeypatch.setattr(profile_config, "golden_lines_file", lambda: str(gl))
 
 
@@ -55,7 +55,7 @@ def _article(tmp_path: Path, **kw) -> Path:
     (art / "定稿.md").write_text(body, encoding="utf-8")
 
     (art / "article-meta.yaml").write_text(
-        'title: "精选 | 标题"\npart_subtitles:\n  - "副标"\n'
+        'title: "精选 | 模型横评：四个模型一次看完"\npart_subtitles:\n  - "副标"\n'
         "endmatter:\n  deep_read: false\n  sources: false\n",
         encoding="utf-8",
     )
@@ -103,7 +103,7 @@ def test_deep_read_required_when_enabled(tmp_path):
     """真实case：文末模块此前也要等排版才报。"""
     art = _article(tmp_path)
     (art / "article-meta.yaml").write_text(
-        'title: "精选 | 标题"\npart_subtitles:\n  - "副标"\n'
+        'title: "精选 | 模型横评：四个模型一次看完"\npart_subtitles:\n  - "副标"\n'
         "endmatter:\n  deep_read: true\n  sources: false\n",
         encoding="utf-8",
     )
@@ -115,7 +115,7 @@ def test_sources_required_when_factcheck_exists(tmp_path):
     art = _article(tmp_path)
     (art / "_fact-check.md").write_text("核了 58 条\n", encoding="utf-8")
     (art / "article-meta.yaml").write_text(
-        'title: "精选 | 标题"\npart_subtitles:\n  - "副标"\n'
+        'title: "精选 | 模型横评：四个模型一次看完"\npart_subtitles:\n  - "副标"\n'
         "endmatter:\n  deep_read: false\n  sources: auto\n",
         encoding="utf-8",
     )
