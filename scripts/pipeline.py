@@ -4489,6 +4489,18 @@ def cmd_compile_visuals(cwd: Path) -> None:
     )
 
 
+def cmd_compile_stylebook_preview(cwd: Path, plan: str, stylebook_root: str) -> None:
+    from stylebook_preview import compile_preview
+
+    result, errors = compile_preview(cwd, Path(plan), stylebook_root=stylebook_root or None)
+    if errors:
+        print("❌ 画风手册预编译失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 画风手册预编译 {result['new_image_count']} 张；预览证据：{result['path']}")
+
+
 def cmd_assemble_release(cwd: Path) -> None:
     from assemble_release import assemble_release_markdown
 
@@ -5077,6 +5089,12 @@ def _main_impl():
         "compile-visuals",
         help="把受限 visual-plan.json 编译为 canonical prompts 与 render batch",
     )
+    p_sb = sub.add_parser(
+        "compile-stylebook-preview",
+        help="显式预编译画风手册 v3 文章配图计划；不进入现有发布链",
+    )
+    p_sb.add_argument("--plan", required=True, help="画风手册 v3 计划 JSON")
+    p_sb.add_argument("--stylebook-root", default="", help="画风手册已安装本体；默认找共享 Skill 入口")
     sub.add_parser(
         "assemble-release",
         help="按 visual-plan 位置幂等装配信息图引用，不改变作者正文",
@@ -5301,6 +5319,8 @@ def _main_impl():
         cmd_release_check(cwd)
     elif args.cmd == "compile-visuals":
         cmd_compile_visuals(cwd)
+    elif args.cmd == "compile-stylebook-preview":
+        cmd_compile_stylebook_preview(cwd, args.plan, args.stylebook_root)
     elif args.cmd == "assemble-release":
         cmd_assemble_release(cwd)
     elif args.cmd == "render-visuals":

@@ -26,6 +26,19 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 
 ## 1. 生成受限视觉任务单
 
+### 画风手册显式预编译（接入试用期）
+
+文章希望试用叁笙画风手册时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
+
+```bash
+python "$SKILL/scripts/pipeline.py" compile-stylebook-preview \
+  --plan stylebook-plan.json --stylebook-root /已安装的/sansheng-stylebook
+```
+
+该入口检查 `source.path` 必须指向本篇 `定稿.md`、原文字节 SHA-256、全文 `coverage` 和逐张编译合同，输出 `素材/stylebook-preview-<计划摘要>.json`：每张的完整编译词、清单、实际画风手册文件摘要及真实 `producer` 均在其中。0 张新增图也能得到明确预览证据。预览的 `renderer=null`、`plan_review=not_run` 是实际状态；须另按画风手册规则执行独立 `plan-review` 和实际图片核对。旧预览不会被不同本体静默覆盖。
+
+当前这一步只验证内容规划与画风编译的消费者输入，**不**生成图片，不写 `visual-plan.json`、`render-batch.json` 或发布封存回执。它不能替代下面的 `compile-visuals` / `render-visuals` 主链，不能凭预览回执进入微信草稿。画风手册可按内容建议 0 张或多张正文图，而下面的既有主链固定封面、Hero 和至少 4 张信息图；正式迁移要先把这两套数量、样式、文字及封存合同分路验收，不能把新图假记为宝玉出图。未显式试用时继续走下述现行主链。
+
 根据定稿写 `visual-plan.json`。只允许以下结构：
 
 - 封面：`2.35:1`，`montage-evidence`。
