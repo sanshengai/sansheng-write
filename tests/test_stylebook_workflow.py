@@ -11,7 +11,7 @@ import pytest
 from scripts.assemble_release import author_content_sha256, assemble_release_markdown
 from scripts.evidence import build_visual_manifest
 from scripts.render_visuals import render_visuals
-from scripts.stylebook_workflow import validate, collect_host_result, digest
+from scripts.stylebook_workflow import validate, collect_host_result, digest, produce_candidate
 from scripts.visual_workflow import compile_visual_plan, validate_visual_plan
 
 
@@ -121,9 +121,12 @@ def test_actual_cli_cannot_claim_pending_requests_as_rendered(tmp_path, monkeypa
     assert pending.returncode == 3 and "尚未生成成品" in pending.stdout
 
 
-def host_result_fixture(tmp_path, monkeypatch):
+def host_result_fixture(tmp_path, monkeypatch, *, text=None):
     from PIL import Image
-    setup_plan(tmp_path, monkeypatch)
+    plan = setup_plan(tmp_path, monkeypatch)
+    if text is not None:
+        plan["cover"]["text"] = text
+        (tmp_path / "visual-plan.json").write_text(json.dumps(plan, ensure_ascii=False))
     _, errors = compile_visual_plan(tmp_path)
     assert not errors
     pending, errors = render_visuals(tmp_path)
@@ -214,3 +217,99 @@ def test_second_candidate_preserves_first_and_detects_damaged_saved_raw(tmp_path
     (tmp_path / second["raw_path"]).write_bytes(b"damaged")
     refused, errors = collect_host_result(tmp_path, path)
     assert refused is None and any("拒绝覆盖" in value for value in errors)
+
+
+def test_production_exports_real_pixels_and_preserves_pending_qa(tmp_path, monkeypatch):
+    path, _, raw = host_result_fixture(tmp_path, monkeypatch)
+    collected, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    made, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert not errors, errors
+    assert made["status"] == "produced_pending_qa"
+    from PIL import Image
+    with Image.open(tmp_path / made["files"]["main"]) as image:
+        assert image.width > image.height
+    assert made["outputs"]["main"]["sha256"] == hashlib.sha256((tmp_path / made["files"]["main"]).read_bytes()).hexdigest()
+    assert not (tmp_path / "素材/cover.png").exists()
+    assert raw.exists()
+    repeated, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert not errors and repeated["production_id"] == made["production_id"]
+    (tmp_path / made["files"]["main"]).write_bytes(b"replacement")
+    refused, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert refused is None and any("拒绝覆盖" in value for value in errors)
+
+
+@pytest.mark.parametrize("mutation", ["raw", "receipt", "plan", "article"])
+def test_production_rejects_stale_or_replaced_inputs(tmp_path, monkeypatch, mutation):
+    path, _, _ = host_result_fixture(tmp_path, monkeypatch)
+    collected, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    receipt = Path(collected["receipt_path"])
+    if mutation == "raw":
+        (tmp_path / collected["raw_path"]).write_bytes(b"replacement")
+    elif mutation == "receipt":
+        value = json.loads(receipt.read_text())
+        value["id"] = "01"
+        receipt.write_text(json.dumps(value))
+    elif mutation == "article":
+        (tmp_path / "定稿.md").write_text("changed")
+    else:
+        plan = json.loads((tmp_path / "visual-plan.json").read_text())
+        plan["cover"]["content"]["subject"] += " changed"
+        (tmp_path / "visual-plan.json").write_text(json.dumps(plan))
+    made, errors = produce_candidate(tmp_path, receipt)
+    assert made is None and errors
+    assert not (tmp_path / "素材/stylebook-final").exists()
+
+
+def test_production_detects_article_mutation_during_actual_export(tmp_path, monkeypatch):
+    import importlib
+    path, _, _ = host_result_fixture(tmp_path, monkeypatch)
+    collected, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    exporter = importlib.import_module("stylebook.export")
+    original = exporter.export
+
+    def changing_export(*args, **kwargs):
+        result = original(*args, **kwargs)
+        (tmp_path / "定稿.md").write_text("changed during production")
+        return result
+
+    monkeypatch.setattr(exporter, "export", changing_export)
+    made, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert made is None and any("过程中" in value for value in errors)
+    assert not (tmp_path / "素材/stylebook-final").exists()
+
+
+def test_actual_overlay_tracks_font_bytes_and_rejects_font_change_during_export(tmp_path, monkeypatch):
+    import importlib
+    from PIL import Image, ImageFont
+    spec = {"mode": "overlay", "items": [{"text": "来源", "box": [0.1, 0.1, 0.5, 0.5], "require_blank": True,
+                                         "font_px": 48, "min_px": 40}]}
+    path, _, _ = host_result_fixture(tmp_path, monkeypatch, text=spec)
+    collected, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    overlay = importlib.import_module("stylebook.overlay")
+    try:
+        font = overlay._font("regular", 48, "sans")
+    except ValueError:
+        pytest.skip("当前环境未安装真实中文字体")
+    test_font = tmp_path / "real-font-copy.otf"
+    test_font.write_bytes(Path(font.path).read_bytes())
+    monkeypatch.setattr(overlay, "_font", lambda weight, size, family="sans": ImageFont.truetype(str(test_font), size, index=font.index))
+    made, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert not errors, errors
+    assert made["dependencies_sha256"][str(test_font)] == hashlib.sha256(test_font.read_bytes()).hexdigest()
+    with Image.open(tmp_path / made["files"]["main"]) as image:
+        assert min(image.convert("L").getextrema()) < 80  # Blank ivory raw acquired visible lettering.
+    exporter = importlib.import_module("stylebook.export")
+    original = exporter.export
+
+    def changing_font(*args, **kwargs):
+        result = original(*args, **kwargs)
+        test_font.write_bytes(test_font.read_bytes() + b"changed")
+        return result
+
+    monkeypatch.setattr(exporter, "export", changing_font)
+    refused, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
+    assert refused is None and any("过程中" in value for value in errors)

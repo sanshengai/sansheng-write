@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -314,3 +315,96 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
                 "collected_at": datetime.now(timezone.utc).isoformat()}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         return None, [f"画风手册宿主结果回收失败：{exc}"]
+
+
+def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, list[str]]:
+    """Make a versioned final candidate from a current raw receipt, pending QA."""
+    cwd = Path(cwd).resolve()
+    try:
+        raw_receipt_path = Path(raw_receipt_path).resolve()
+        receipt = json.loads(raw_receipt_path.read_text())
+        if not selected(receipt) or receipt.get("producer") != PRODUCER or receipt.get("status") != "raw_collected_pending_production":
+            raise ValueError("须选择画风手册实际回收的原始候选凭证")
+        expected_parent = cwd / "素材/stylebook-results" / receipt["request_id"] / receipt["id"]
+        if raw_receipt_path.parent != expected_parent or raw_receipt_path.stem != digest(receipt):
+            raise ValueError("原始候选凭证已改变或不在本篇不可变结果目录")
+        host_path = cwd / receipt["host_request_path"]
+        host = json.loads(host_path.read_text())
+        pending, errors = generation_requests(cwd, only={item["id"] for item in host["requests"]})
+        if errors:
+            return None, errors
+        current_host = {key: value for key, value in pending.items() if key != "path"}
+        if host != current_host or digest(host) != receipt["host_request_digest"] or pending["request_id"] != receipt["request_id"]:
+            raise ValueError("原始候选对应的计划/请求已失效，不能制作")
+        batch = json.loads((cwd / "素材/render-batch.json").read_text())
+        task = next(item for item in batch["tasks"] if item["id"] == receipt["id"])
+        host_task = next(item for item in host["requests"] if item["id"] == receipt["id"])
+        if digest(task) != receipt["task_digest"] or digest(host_task["call"]) != receipt["actual_call_digest"]:
+            raise ValueError("原始候选未绑定当前完整制作任务")
+        raw = (cwd / receipt["raw_path"]).resolve()
+        if not raw.is_relative_to((cwd / "素材/stylebook-raw" / receipt["request_id"]).resolve()) or sha(raw) != receipt["raw_sha256"]:
+            raise ValueError("原始图片路径或字节已改变")
+        root, _ = _peer()
+        export = importlib.import_module("stylebook.export")
+        overlay_module = importlib.import_module("stylebook.overlay")
+        textspec = importlib.import_module("stylebook.textspec")
+        formats = importlib.import_module("stylebook.data").formats()
+        manifest = task["manifest"]
+        spec = manifest.get("text", {})
+        mode = spec.get("mode", formats[manifest["format"]].get("text", {}).get("default", "none"))
+        overlay = spec if mode in ("overlay", "hybrid") else None
+        dependencies = {str(raw): sha(raw), str(raw_receipt_path): sha(raw_receipt_path),
+                        str(host_path): sha(host_path), str(Path(__file__).resolve()): sha(Path(__file__))}
+        for path in (cwd / "定稿.md", cwd / "visual-plan.json", cwd / "素材/render-batch.json"):
+            dependencies[str(path)] = sha(path)
+        dependencies.update({str((root / path).resolve()): value for path, value in batch["method_source"]["files"].items()})
+        # Bind the actual font files selected by the same resolver used to draw.
+        fonts = []
+        if overlay:
+            for item in textspec.overlay_items(overlay):
+                family, weight = item.get("font_family", "sans"), item.get("weight", "regular")
+                font = overlay_module._font(weight, item.get("font_px", 48), family)
+                path = Path(font.path).resolve()
+                dependencies[str(path)] = sha(path)
+                fonts.append({"family": family, "weight": weight, "path": str(path), "index": font.index})
+            for layer in overlay.get("image_layers", []):
+                path = (cwd / layer["path"]).resolve()
+                if not path.is_relative_to(cwd):
+                    raise ValueError("图层路径越出文章目录")
+                dependencies[str(path)] = sha(path)
+        for module in (export, overlay_module, textspec):
+            path = Path(module.__file__).resolve()
+            if not path.is_relative_to(root):
+                raise ValueError("实际制作模块与选定画风手册不同")
+            dependencies[str(path)] = sha(path)
+        import PIL
+        with tempfile.TemporaryDirectory(prefix="stylebook-production-", dir=cwd / "素材") as scratch:
+            produced = export.export(raw, manifest["format"], Path(scratch) / "final.png", overlay=overlay, overlay_root=cwd)
+            if any(sha(Path(path)) != value for path, value in dependencies.items()):
+                raise ValueError("最终制作过程中输入或制作方法改变")
+            outputs = {"main": {"sha256": sha(produced.main)}}
+            outputs.update({f"extra-{n}": {"sha256": sha(path)} for n, path in enumerate(produced.extras)})
+            identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
+                        "status": "produced_pending_qa", "request_id": batch["request_id"], "id": receipt["id"],
+                        "raw_receipt": str(raw_receipt_path.relative_to(cwd)), "raw_receipt_sha256": sha(raw_receipt_path),
+                        "task_digest": digest(task), "manifest": manifest, "dependencies_sha256": dependencies,
+                        "fonts": fonts, "pillow_version": PIL.__version__, "warnings": produced.warnings, "outputs": outputs}
+            production_id = digest(identity)
+            dest = cwd / "素材/stylebook-final" / batch["request_id"] / receipt["id"] / production_id
+            dest.mkdir(parents=True, exist_ok=True)
+            files = [("main", produced.main)] + [(f"extra-{n}", path) for n, path in enumerate(produced.extras)]
+            for key, path in files:
+                target = dest / path.name
+                payload = path.read_bytes()
+                if target.exists():
+                    if target.read_bytes() != payload:
+                        raise ValueError("已保存最终候选被改变，拒绝覆盖")
+                else:
+                    with target.open("xb") as stream:
+                        stream.write(payload)
+            record = {**identity, "production_id": production_id,
+                      "files": {key: str((dest / path.name).relative_to(cwd)) for key, path in files}}
+            _immutable(dest / "production.json", record)
+        return {**record, "receipt_path": str(dest / "production.json")}, []
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as exc:
+        return None, [f"画风手册最终候选制作失败：{exc}"]

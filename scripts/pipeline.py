@@ -4550,6 +4550,18 @@ def cmd_collect_stylebook_result(cwd: Path, result: str) -> None:
     print(f"✅ 已回收 {receipt['id']} 原始候选图：{receipt['receipt_path']}；来源为宿主回执，最终制作与 QA 尚未完成")
 
 
+def cmd_produce_stylebook_candidate(cwd: Path, raw_receipt: str) -> None:
+    from stylebook_workflow import produce_candidate
+
+    receipt, errors = produce_candidate(cwd, cwd / raw_receipt)
+    if errors:
+        print("❌ 最终候选制作失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 已制作 {receipt['id']} 最终候选：{receipt['receipt_path']}；待独立 QA，不代表验收通过")
+
+
 def cmd_select_visuals(cwd: Path, specs: list[str]) -> None:
     from render_visuals import select_visual_candidates
 
@@ -5119,6 +5131,8 @@ def _main_impl():
         help="回收与完整宿主请求一致的原始候选图；不替代最终制作与 QA",
     )
     p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
+    p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
+    p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
     p_rv = sub.add_parser(
         "render-visuals",
         help="探测并调用已配置 renderer 渲染视觉资产，失败时只按配置降级",
@@ -5351,6 +5365,8 @@ def _main_impl():
         )
     elif args.cmd == "collect-stylebook-result":
         cmd_collect_stylebook_result(cwd, args.result)
+    elif args.cmd == "produce-stylebook-candidate":
+        cmd_produce_stylebook_candidate(cwd, args.raw_receipt)
     elif args.cmd == "select-visuals":
         cmd_select_visuals(cwd, args.selections)
     elif args.cmd == "visual-qa":
