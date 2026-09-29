@@ -16,8 +16,14 @@
 
 接着运行 `pipeline.py render-visuals`：对当前原文、任务、方法、参考图和实际编译词重新核验，输出完整内置生图调用参数。`--only 01` 只准备指定图片。CLI 返回码 **3** 表示 `pending_host`，尚未生成成品；实际底层模型和费用保留 null。宿主不能将这一步当作生成成功或继续封存。
 
+## 回收宿主原始输出
+
+宿主按保存的 `call` 完整调用 `image_gen.imagegen` 后，将实际返回说明与输出文件保存为结果 JSON，再运行 `pipeline.py collect-stylebook-result --result <结果.json>`。结果字段为：`schema_version: 1`、`backend: image_gen.imagegen`、`invocation_status: succeeded`、`host_request_path`（本篇不可变请求路径）、`host_request_digest`（该 JSON 对象的 canonical SHA，调用 `stylebook_workflow.digest` 计算）、`request_id`、`id`、完整 `call`、非空 `tool_output`（实际返回说明）、`output: {path, sha256}`（PNG 原始输出；相对路径从结果 JSON 所在目录解析）。不能把旧样图或最终排字图填入原始输出。所有候选按字节摘要保存，重复回收同一结果幂等，不覆盖已有候选。
+
+CLI 能核对请求、原文、方法、参考图与输出字节，但无法独立证明宿主工具曾执行，因此记录 `source_strength: host_attested`、`independent_invocation_verified: false`。回收只达到 `raw_collected_pending_production`；不生成最终成品或通过 QA 的凭证。
+
 ## 尚未完成的正式消费者
 
-宿主实际调用的回收、最终制作与逐图 QA、装配、seal 及发布检查仍在实施。当前新路线的装配、旧宝玉 QA 和旧视觉凭证入口明确拒绝；旧预览、待生图请求与手工复制的历史样图不能进入正式 seal。默认路线尚未切换，写作正式可用不能由编译测试通过推断。
+最终制作与逐图 QA、装配、seal 及发布检查仍在实施。当前新路线的装配、旧宝玉 QA 和旧视觉凭证入口明确拒绝；旧预览、待生图请求与手工复制的历史样图不能进入正式 seal。默认路线尚未切换，写作正式可用不能由编译测试通过推断。
 
 真实文章验收须继续完成：全文计划独立复核 → 实际生图及来源 → 最终排字/结构制作 → 绑定最终字节的 QA → 作者正文不变的装配 → seal → 整篇阅读候选。公众号提交只在另有对应授权及发布合同满足时执行。

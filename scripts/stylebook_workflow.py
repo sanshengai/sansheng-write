@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 WORKFLOW = "stylebook-v1"
@@ -238,3 +239,78 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         return {**receipt, "path": str(dest)}, []
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return None, [f"画风手册实际生成请求失败：{exc}"]
+
+
+def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list[str]]:
+    """Collect a host-attested raw result; this is neither final QA nor a seal.
+
+    The tool runs in the calling agent, outside this CLI's process. A submitted
+    tool response is an attestation, not cryptographic proof of its invocation.
+    """
+    cwd = Path(cwd).resolve()
+    try:
+        from PIL import Image
+        result_path = Path(result_path).resolve()
+        submitted_bytes = result_path.read_bytes()
+        submitted = json.loads(submitted_bytes)
+        if not isinstance(submitted, dict) or type(submitted.get("schema_version")) is not int or submitted["schema_version"] != 1:
+            raise ValueError("宿主结果须为 schema_version=1 对象")
+        if submitted.get("backend") != "image_gen.imagegen" or submitted.get("invocation_status") != "succeeded":
+            raise ValueError("缺实际宿主生图成功回执；pending/失败不能回收")
+        if not isinstance(submitted.get("tool_output"), str) or not submitted["tool_output"].strip():
+            raise ValueError("缺宿主工具实际返回的 output_hint/输出说明")
+        host_path = (cwd / submitted["host_request_path"]).resolve()
+        if host_path.parent != (cwd / "素材/stylebook-requests").resolve():
+            raise ValueError("宿主请求必须是本篇保存的不可变请求")
+        host = json.loads(host_path.read_text())
+        ids = {item["id"] for item in host["requests"]}
+        expected, errors = generation_requests(cwd, only=ids)
+        if errors:
+            return None, errors
+        expected = {key: value for key, value in expected.items() if key != "path"}
+        if host != expected or submitted.get("host_request_digest") != digest(expected):
+            raise ValueError("宿主请求已改变或与当前编译输入不一致")
+        image_id = submitted["id"]
+        task = next((item for item in expected["requests"] if item["id"] == image_id), None)
+        if task is None or submitted.get("request_id") != expected["request_id"] or submitted.get("call") != task["call"]:
+            raise ValueError("宿主实际调用参数/图片 ID 与完整请求不一致")
+        output = submitted.get("output")
+        if not isinstance(output, dict) or not isinstance(output.get("path"), str):
+            raise ValueError("缺实际输出文件")
+        source = (result_path.parent / output["path"]).resolve()
+        raw = source.read_bytes()
+        raw_sha = hashlib.sha256(raw).hexdigest()
+        if not raw or output.get("sha256") != raw_sha:
+            raise ValueError("实际输出缺失/为空/摘要不一致")
+        with Image.open(source) as picture:
+            if picture.format != "PNG":
+                raise ValueError("宿主原始输出必须是 PNG，不得将成品转换后冒充原始输出")
+            dimensions = list(picture.size)
+            picture.verify()
+        # Retain every candidate, even when the same task is regenerated.
+        parent = cwd / Path(task["raw_destination"]).parent
+        destination = parent / f"{image_id}-{raw_sha}.png"
+        parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            if destination.read_bytes() != raw:
+                raise ValueError("已有原始输出损坏，拒绝覆盖")
+        else:
+            with destination.open("xb") as stream:
+                stream.write(raw)
+        if source.read_bytes() != raw or result_path.read_bytes() != submitted_bytes:
+            raise ValueError("回收期间宿主结果或源图片已改变")
+        identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
+                    "status": "raw_collected_pending_production", "request_id": expected["request_id"],
+                    "id": image_id, "backend": expected["backend"], "actual_model": None, "actual_cost": None,
+                    "source_strength": "host_attested", "independent_invocation_verified": False,
+                    "host_request_path": str(host_path.relative_to(cwd)), "host_request_digest": digest(expected),
+                    "task_digest": task["task_digest"], "actual_call_digest": digest(task["call"]),
+                    "submitted_result": submitted, "submitted_result_sha256": hashlib.sha256(submitted_bytes).hexdigest(),
+                    "raw_path": str(destination.relative_to(cwd)), "raw_sha256": raw_sha, "dimensions": dimensions}
+        receipt = cwd / "素材/stylebook-results" / expected["request_id"] / image_id / f"{digest(identity)}.json"
+        # Do not let a timestamp turn an identical re-import into a new result.
+        _immutable(receipt, identity)
+        return {**identity, "receipt_path": str(receipt),
+                "collected_at": datetime.now(timezone.utc).isoformat()}, []
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return None, [f"画风手册宿主结果回收失败：{exc}"]

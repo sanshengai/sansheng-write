@@ -11,7 +11,7 @@ import pytest
 from scripts.assemble_release import author_content_sha256, assemble_release_markdown
 from scripts.evidence import build_visual_manifest
 from scripts.render_visuals import render_visuals
-from scripts.stylebook_workflow import validate
+from scripts.stylebook_workflow import validate, collect_host_result, digest
 from scripts.visual_workflow import compile_visual_plan, validate_visual_plan
 
 
@@ -119,3 +119,98 @@ def test_actual_cli_cannot_claim_pending_requests_as_rendered(tmp_path, monkeypa
     assert compiled.returncode == 0, compiled.stdout + compiled.stderr
     pending = subprocess.run([sys.executable, str(entry), "--dir", str(tmp_path), "render-visuals"], capture_output=True, text=True)
     assert pending.returncode == 3 and "尚未生成成品" in pending.stdout
+
+
+def host_result_fixture(tmp_path, monkeypatch):
+    from PIL import Image
+    setup_plan(tmp_path, monkeypatch)
+    _, errors = compile_visual_plan(tmp_path)
+    assert not errors
+    pending, errors = render_visuals(tmp_path)
+    assert not errors
+    host = {key: value for key, value in pending.items() if key != "path"}
+    image = tmp_path / "actual-tool-output.png"
+    Image.new("RGB", (128, 128), "ivory").save(image)
+    task = host["requests"][0]
+    submitted = {"schema_version": 1, "backend": "image_gen.imagegen", "invocation_status": "succeeded",
+                 "host_request_path": str(Path(pending["path"]).relative_to(tmp_path)),
+                 "host_request_digest": digest(host), "request_id": host["request_id"], "id": task["id"],
+                 "call": task["call"], "tool_output": "Synthetic tool response for tests only",
+                 "output": {"path": str(image), "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}}
+    path = tmp_path / "host-result.json"
+    path.write_text(json.dumps(submitted))
+    return path, submitted, image
+
+
+def test_collect_preserves_exact_raw_and_host_boundary_without_final_receipt(tmp_path, monkeypatch):
+    path, _, image = host_result_fixture(tmp_path, monkeypatch)
+    result, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    assert result["status"] == "raw_collected_pending_production"
+    assert result["source_strength"] == "host_attested"
+    assert result["independent_invocation_verified"] is False
+    assert result["actual_model"] is None and result["actual_cost"] is None
+    assert (tmp_path / result["raw_path"]).read_bytes() == image.read_bytes()
+    old_receipt = Path(result["receipt_path"]).read_bytes()
+    again, errors = collect_host_result(tmp_path, path)
+    assert not errors and again["receipt_path"] == result["receipt_path"]
+    assert Path(result["receipt_path"]).read_bytes() == old_receipt
+    assert not (tmp_path / "素材/cover.png").exists()
+    manifest, errors = build_visual_manifest(tmp_path)
+    assert not manifest and errors
+
+
+@pytest.mark.parametrize("mutation", ["pending", "prompt", "hash", "no_output", "empty", "non_image", "old_source", "wrong_task", "host_request"])
+def test_collect_rejects_mutants_at_actual_consumer(tmp_path, monkeypatch, mutation):
+    path, result, image = host_result_fixture(tmp_path, monkeypatch)
+    if mutation == "pending":
+        result["invocation_status"] = "pending"
+    elif mutation == "prompt":
+        result["call"]["prompt"] += " abbreviated"
+    elif mutation == "hash":
+        result["output"]["sha256"] = "0" * 64
+    elif mutation == "no_output":
+        result["tool_output"] = ""
+    elif mutation in ("empty", "non_image"):
+        image.write_bytes(b"" if mutation == "empty" else b"not a picture")
+        result["output"]["sha256"] = hashlib.sha256(image.read_bytes()).hexdigest()
+    elif mutation == "old_source":
+        (tmp_path / "定稿.md").write_text("作者改稿了")
+    elif mutation == "wrong_task":
+        result["id"] = "unknown"
+    else:
+        host_path = tmp_path / result["host_request_path"]
+        host = json.loads(host_path.read_text())
+        host["requests"][0]["call"]["prompt"] += " forged"
+        host_path.write_text(json.dumps(host))
+    path.write_text(json.dumps(result))
+    collected, errors = collect_host_result(tmp_path, path)
+    assert collected is None and errors
+    assert not (tmp_path / "素材/stylebook-results").exists()
+
+
+def test_actual_collect_cli_reports_raw_only(tmp_path, monkeypatch):
+    path, _, _ = host_result_fixture(tmp_path, monkeypatch)
+    entry = Path(__file__).resolve().parents[1] / "scripts/pipeline.py"
+    run = subprocess.run([sys.executable, str(entry), "--dir", str(tmp_path), "collect-stylebook-result", "--result", str(path)],
+                         capture_output=True, text=True)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "最终制作与 QA 尚未完成" in run.stdout
+
+
+def test_second_candidate_preserves_first_and_detects_damaged_saved_raw(tmp_path, monkeypatch):
+    from PIL import Image
+    path, submitted, image = host_result_fixture(tmp_path, monkeypatch)
+    first, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    first_raw = (tmp_path / first["raw_path"]).read_bytes()
+    Image.new("RGB", (128, 128), "navy").save(image)
+    submitted["output"]["sha256"] = hashlib.sha256(image.read_bytes()).hexdigest()
+    path.write_text(json.dumps(submitted))
+    second, errors = collect_host_result(tmp_path, path)
+    assert not errors and second["raw_path"] != first["raw_path"]
+    assert (tmp_path / first["raw_path"]).read_bytes() == first_raw
+    assert Path(first["receipt_path"]).exists()
+    (tmp_path / second["raw_path"]).write_bytes(b"damaged")
+    refused, errors = collect_host_result(tmp_path, path)
+    assert refused is None and any("拒绝覆盖" in value for value in errors)

@@ -4538,6 +4538,18 @@ def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
     )
 
 
+def cmd_collect_stylebook_result(cwd: Path, result: str) -> None:
+    from stylebook_workflow import collect_host_result
+
+    receipt, errors = collect_host_result(cwd, cwd / result)
+    if errors:
+        print("❌ 宿主生图结果回收失败：")
+        for error in errors:
+            print(f"   • {error}")
+        raise SystemExit(2)
+    print(f"✅ 已回收 {receipt['id']} 原始候选图：{receipt['receipt_path']}；来源为宿主回执，最终制作与 QA 尚未完成")
+
+
 def cmd_select_visuals(cwd: Path, specs: list[str]) -> None:
     from render_visuals import select_visual_candidates
 
@@ -5102,6 +5114,11 @@ def _main_impl():
         "assemble-release",
         help="按 visual-plan 位置幂等装配信息图引用，不改变作者正文",
     )
+    p_collect_sb = sub.add_parser(
+        "collect-stylebook-result",
+        help="回收与完整宿主请求一致的原始候选图；不替代最终制作与 QA",
+    )
+    p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
     p_rv = sub.add_parser(
         "render-visuals",
         help="探测并调用已配置 renderer 渲染视觉资产，失败时只按配置降级",
@@ -5332,6 +5349,8 @@ def _main_impl():
             getattr(args, "only", "") or "",
             getattr(args, "candidates", 1),
         )
+    elif args.cmd == "collect-stylebook-result":
+        cmd_collect_stylebook_result(cwd, args.result)
     elif args.cmd == "select-visuals":
         cmd_select_visuals(cwd, args.selections)
     elif args.cmd == "visual-qa":
