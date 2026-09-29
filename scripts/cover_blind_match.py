@@ -30,6 +30,9 @@
 - `SANSHENG_WRITE_BLIND_MATCH_MODEL`       盲配用的模型，默认 `claude-sonnet-5`
   （比 `visual_qa_claude.DEFAULT_MODEL` 的 opus 更便宜；这是一次简单判断，不是精修视觉复核）
 - `SANSHENG_WRITE_VISUAL_QA_CLAUDE`        claude 可执行文件，复用视觉 QA 同一个变量
+- `SANSHENG_WRITE_BLIND_MATCH_TRANSPORT`  默认 claude；显式 codex 使用独立 Codex CLI
+- `SANSHENG_WRITE_BLIND_MATCH_CODEX`      Codex 可执行文件，默认 codex；该路径必须显式配置
+  `SANSHENG_WRITE_BLIND_MATCH_MODEL`，不复用 Claude 默认模型。配置或调用失败会拦交付。
   （公开 Skill 用户如果没配 Claude Code CLI，两处一起找不到，一起跳过，不新增一条配置）
 
 找不到 claude 可执行文件、或 Pillow 缺失，都不拦交付：写一条 warning，凭证里记
@@ -70,6 +73,8 @@ COVER_PLAN_FILENAME = "_audio-cover-plan.json"
 ENV_OFF = "SANSHENG_WRITE_BLIND_MATCH"
 ENV_MODEL = "SANSHENG_WRITE_BLIND_MATCH_MODEL"
 ENV_CLAUDE = "SANSHENG_WRITE_VISUAL_QA_CLAUDE"
+ENV_TRANSPORT = "SANSHENG_WRITE_BLIND_MATCH_TRANSPORT"
+ENV_CODEX = "SANSHENG_WRITE_BLIND_MATCH_CODEX"
 DEFAULT_MODEL = "claude-sonnet-5"
 
 THUMB_SMALL = 46
@@ -296,6 +301,81 @@ def _invoke_model(
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _invoke_codex(
+    image_paths: dict[str, Path],
+    prompt: str,
+    schema: dict[str, Any],
+    *,
+    model: str,
+    codex_bin: str,
+    timeout: int = TIMEOUT,
+    retry_timeout: int = RETRY_TIMEOUT,
+    retry_pause: int = RETRY_PAUSE,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """独立 Codex 进程只接收盲题和缩略图，不读取文章上下文。"""
+    if not image_paths:
+        return None, "没有需要盲配的封面图"
+    if not model.strip():
+        return None, f"Codex 盲配必须显式配置 {ENV_MODEL}"
+    workdir = Path(tempfile.mkdtemp(prefix="cover-blind-match-codex-"))
+    try:
+        schema_path = workdir / "schema.json"
+        schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
+        answer_path = workdir / "answer.json"
+        cmd = [
+            codex_bin, "exec", "--model", model,
+            "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check",
+            "--ignore-user-config", "--color", "never",
+            "--output-schema", str(schema_path),
+            "--output-last-message", str(answer_path),
+        ]
+        for path in image_paths.values():
+            cmd += ["--image", str(path.resolve())]
+        labels = "\n".join(
+            f"- 附件 {n}：{STAGE_LABELS.get(key, key)}（{key}）"
+            for n, key in enumerate(image_paths, 1)
+        )
+        full_prompt = (
+            prompt + "\n\n## 附件顺序\n" + labels
+            + "\n\n图片已直接附上。只依据这些附件逐张判断并回 JSON；"
+            "不要读取其他文件、运行命令或调用外部工具。"
+        )
+        completed = None
+        last_error = ""
+        for attempt, budget in enumerate((timeout, retry_timeout)):
+            if attempt:
+                time.sleep(retry_pause)
+            # 每次调用都必须重新产出结论，不能消费失败调用留下的答案。
+            if answer_path.exists():
+                answer_path.unlink()
+            try:
+                completed = subprocess.run(
+                    cmd, cwd=str(workdir), input=full_prompt, capture_output=True,
+                    text=True, encoding="utf-8", errors="replace", timeout=budget, check=False,
+                )
+            except subprocess.TimeoutExpired:
+                completed, last_error = None, f"codex 超时（>{budget}s）"
+                continue
+            if completed.returncode == 0:
+                break
+            tail = (completed.stderr or completed.stdout or "").strip()[-600:]
+            last_error = f"codex exit={completed.returncode}：{tail}"
+        if completed is None or completed.returncode != 0:
+            return None, f"{last_error}（含重试一次）"
+        if not answer_path.is_file():
+            return None, "codex 没有写出结论文件"
+        raw = answer_path.read_text(encoding="utf-8").strip()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            return None, f"结论不是合法 JSON：{exc}；原文前 300 字：{raw[:300]}"
+        if not isinstance(payload, dict):
+            return None, "结论 JSON 顶层必须是对象"
+        return payload, None
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def _judge(
     payload: Any, candidates: list[dict[str, Any]], image_keys: list[str]
 ) -> tuple[list[dict[str, Any]], bool, str | None]:
@@ -428,8 +508,30 @@ def run_blind_match(
         _write_credential(article_dir, {"schema_version": 1, "at": at, "status": "skipped", "skipped_reason": "skipped_by_env"})
         return {"status": "skipped", "errors": [], "warnings": [f"{ENV_OFF}=off，已跳过 46px 盲配"]}
 
-    claude_bin = _resolve_claude(os.getenv(ENV_CLAUDE, "").strip())
-    if not claude_bin or not Path(claude_bin).is_file():
+    transport = os.getenv(ENV_TRANSPORT, "").strip().lower() or "claude"
+    model = os.getenv(ENV_MODEL, "").strip()
+    if transport not in {"claude", "codex"}:
+        reason = f"未知盲配 transport：{transport}"
+        _write_credential(article_dir, {"schema_version": 1, "at": at, "transport": transport,
+                                      "status": "error", "reason": reason})
+        return {"status": "error", "errors": [reason], "warnings": []}
+    if transport == "codex":
+        codex_name = os.getenv(ENV_CODEX, "").strip() or "codex"
+        codex_bin = shutil.which(codex_name) or codex_name
+        reason = ""
+        if not model:
+            reason = f"Codex 盲配必须显式配置 {ENV_MODEL}"
+        elif not Path(codex_bin).is_file():
+            reason = f"找不到可用的 codex 可执行文件：{codex_bin}"
+        if reason:
+            _write_credential(article_dir, {"schema_version": 1, "at": at, "transport": transport,
+                                          "model": model, "status": "error", "reason": reason})
+            return {"status": "error", "errors": [reason], "warnings": []}
+        claude_bin = ""
+    else:
+        model = model or DEFAULT_MODEL
+        claude_bin = _resolve_claude(os.getenv(ENV_CLAUDE, "").strip())
+    if transport == "claude" and (not claude_bin or not Path(claude_bin).is_file()):
         _write_credential(article_dir, {"schema_version": 1, "at": at, "status": "skipped", "skipped_reason": "claude_cli_not_found"})
         return {
             "status": "skipped", "errors": [],
@@ -447,10 +549,9 @@ def run_blind_match(
     candidates, degraded, degraded_reason = build_candidates(
         article_dir, article_title, exclude_seq=exclude_seq,
     )
-    model = os.getenv(ENV_MODEL, "").strip() or DEFAULT_MODEL
     seed = _seed_from_name(article_dir.name)
     base: dict[str, Any] = {
-        "schema_version": 1, "at": at, "model": model, "seed": seed,
+        "schema_version": 1, "at": at, "model": model, "transport": transport, "seed": seed,
         "cover_sha256": digests,
         "candidates": candidates, "degraded": degraded, "degraded_reason": degraded_reason,
     }
@@ -474,7 +575,10 @@ def run_blind_match(
 
         prompt = _build_prompt(candidates, image_keys)
         schema = _build_schema(image_keys)
-        payload, error = _invoke_model(thumbs, prompt, schema, model=model, claude_bin=claude_bin)
+        if transport == "codex":
+            payload, error = _invoke_codex(thumbs, prompt, schema, model=model, codex_bin=codex_bin)
+        else:
+            payload, error = _invoke_model(thumbs, prompt, schema, model=model, claude_bin=claude_bin)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

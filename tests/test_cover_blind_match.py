@@ -445,3 +445,125 @@ def test_invoke_model_retries_after_timeout(tmp_path):
     )
 
     assert error is None and payload == verdict
+
+
+def _fake_codex(tmp_path, behavior="pass"):
+    """真实子进程契约夹具：不调用模型，只模拟 CLI 输出文件。"""
+    exe = tmp_path / "fake-codex"
+    verdict = {"choices": [
+        {"image": "theme_cover", "chosen_index": 2, "confidence": "high", "description": "蓝色屏幕"},
+        {"image": "podcast_cover", "chosen_index": 2, "confidence": "medium", "description": "会场"},
+    ]}
+    exe.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        f"root = pathlib.Path({str(tmp_path)!r})\n"
+        f"behavior = {behavior!r}\n"
+        f"verdict = {verdict!r}\n"
+        "args = sys.argv[1:]\n"
+        "prompt = sys.stdin.read()\n"
+        "schema = json.loads(pathlib.Path(args[args.index('--output-schema') + 1]).read_text())\n"
+        "(root / 'invocation.json').write_text(json.dumps({'args': args, 'prompt': prompt, 'schema': schema, 'cwd': str(pathlib.Path.cwd())}))\n"
+        "answer = pathlib.Path(args[args.index('--output-last-message') + 1])\n"
+        "marker = root / 'called-once'\n"
+        "if behavior == 'retry_stale':\n"
+        "    if not marker.exists():\n"
+        "        marker.write_text('1')\n"
+        "        answer.write_text(json.dumps(verdict))\n"
+        "        sys.exit(1)\n"
+        "    sys.exit(0)\n"
+        "if behavior == 'nonzero_stale':\n"
+        "    answer.write_text(json.dumps(verdict))\n"
+        "    sys.exit(1)\n"
+        "if behavior == 'empty': answer.write_text('')\n"
+        "elif behavior == 'malformed': answer.write_text('not-json')\n"
+        "elif behavior == 'array': answer.write_text('[]')\n"
+        "elif behavior == 'pass': answer.write_text(json.dumps(verdict))\n"
+        "# missing 不写文件；stdout 的伪结论也不得成为有效答案。\n"
+        "sys.stdout.write(json.dumps(verdict))\n",
+        encoding="utf-8",
+    )
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+    return exe, verdict
+
+
+def test_codex_transport_preserves_blind_prompt_schema_and_attachment_order(tmp_path):
+    exe, verdict = _fake_codex(tmp_path)
+    covers = _cover_pair(tmp_path)
+    prompt = bm._build_prompt(_candidates(target_index=2), list(covers))
+    schema = bm._build_schema(list(covers))
+    payload, error = bm._invoke_codex(
+        covers, prompt, schema, model="explicit-model", codex_bin=str(exe), retry_pause=0,
+    )
+    assert error is None and payload == verdict
+    call = json.loads((tmp_path / "invocation.json").read_text())
+    args = call["args"]
+    assert args[0] == "exec"
+    assert args[args.index("--model") + 1] == "explicit-model"
+    assert args[args.index("--sandbox") + 1] == "read-only"
+    for flag in ("--ephemeral", "--skip-git-repo-check", "--ignore-user-config"):
+        assert flag in args
+    attached = [args[n + 1] for n, arg in enumerate(args) if arg == "--image"]
+    assert attached == [str(path.resolve()) for path in covers.values()]
+    assert call["prompt"].startswith(prompt + "\n\n")
+    assert "附件 1：主题曲封面（theme_cover）" in call["prompt"]
+    assert "附件 2：播客封面（podcast_cover）" in call["prompt"]
+    assert "is_target" not in call["prompt"]
+    assert call["schema"] == schema
+    assert Path(call["cwd"]) != tmp_path
+    assert not Path(call["cwd"]).exists()  # 临时调用现场已回收。
+
+
+@pytest.mark.parametrize("behavior, expected", [
+    ("missing", "没有写出结论文件"),
+    ("empty", "不是合法 JSON"),
+    ("malformed", "不是合法 JSON"),
+    ("array", "顶层必须是对象"),
+    ("nonzero_stale", "exit=1"),
+    ("retry_stale", "没有写出结论文件"),
+])
+def test_codex_transport_rejects_missing_invalid_or_stale_answers(tmp_path, behavior, expected):
+    exe, _ = _fake_codex(tmp_path, behavior)
+    covers = _cover_pair(tmp_path)
+    payload, error = bm._invoke_codex(
+        covers, "blind prompt", bm._build_schema(list(covers)),
+        model="explicit-model", codex_bin=str(exe), retry_pause=0,
+    )
+    assert payload is None and expected in error
+
+
+def test_codex_requires_explicit_model_without_invoking_cli(tmp_path, monkeypatch):
+    monkeypatch.setenv(bm.ENV_TRANSPORT, "codex")
+    monkeypatch.delenv(bm.ENV_MODEL, raising=False)
+    monkeypatch.setattr(bm, "_invoke_codex", _must_not_invoke)
+    covers = _cover_pair(tmp_path)
+    outcome = bm.run_blind_match(tmp_path, covers, article_title="本篇")
+    assert outcome["status"] == "error"
+    assert bm.ENV_MODEL in outcome["errors"][0]
+
+
+def test_codex_missing_cli_is_error_not_skipped(tmp_path, monkeypatch):
+    monkeypatch.setenv(bm.ENV_TRANSPORT, "codex")
+    monkeypatch.setenv(bm.ENV_MODEL, "explicit-model")
+    monkeypatch.setenv(bm.ENV_CODEX, str(tmp_path / "missing-codex"))
+    monkeypatch.setattr(bm, "_invoke_codex", _must_not_invoke)
+    outcome = bm.run_blind_match(tmp_path, _cover_pair(tmp_path), article_title="本篇")
+    assert outcome["status"] == "error" and outcome["errors"]
+    assert not outcome["warnings"]
+
+
+@pytest.mark.parametrize("target_index, expected_status", [(2, "pass"), (1, "fail")])
+def test_codex_selected_transport_keeps_original_judge_and_real_credential(tmp_path, monkeypatch, target_index, expected_status):
+    exe, _ = _fake_codex(tmp_path)
+    monkeypatch.setenv(bm.ENV_TRANSPORT, "codex")
+    monkeypatch.setenv(bm.ENV_MODEL, "explicit-model")
+    monkeypatch.setenv(bm.ENV_CODEX, str(exe))
+    monkeypatch.setattr(bm, "_resolve_claude", _must_not_invoke)
+    _patch_candidates(monkeypatch, _candidates(target_index=target_index))
+    covers = _cover_pair(tmp_path)
+    outcome = bm.run_blind_match(tmp_path, covers, article_title="本篇")
+    assert outcome["status"] == expected_status
+    record = json.loads(process_file(tmp_path, bm.BLINDMATCH_FILE).read_text())
+    assert record["transport"] == "codex" and record["model"] == "explicit-model"
+    assert record["cover_sha256"] == bm._cover_digests(covers)
+    assert record["status"] == expected_status
