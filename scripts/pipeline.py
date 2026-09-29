@@ -4524,6 +4524,9 @@ def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
+    if receipt.get("status") == "pending_host":
+        print(f"⏳ 待宿主实际生图，{len(receipt['requests'])} 份完整请求：{receipt['path']}；尚未生成成品或凭证")
+        raise SystemExit(3)
     scope = f"，本轮重渲 {sorted(selected)}，其余沿用" if selected else ""
     candidate_note = (
         f"；已生成 {candidates} 组候选，需运行 select-visuals 后才能进入视觉 QA"

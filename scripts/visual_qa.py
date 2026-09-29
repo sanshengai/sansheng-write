@@ -432,6 +432,12 @@ def _style_contracts(cwd: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
 
 def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     cwd = cwd.resolve()
+    try:
+        from .stylebook_workflow import selected_at
+    except ImportError:
+        from stylebook_workflow import selected_at
+    if selected_at(cwd):
+        return None, ["画风手册正式成品与来源尚未接入；待生图请求不能使用旧宝玉 QA 合同"]
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
     )

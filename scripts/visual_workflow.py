@@ -408,9 +408,17 @@ def validate_visual_plan(plan: dict, *, infographic_mode: str = "generated") -> 
     信息图 ≥4 的合同改由作者供图兑现（见 author_shots.py），此处要求 `infographics` 为空；
     默认 `generated` 行为不变。
     """
+    if isinstance(plan, dict) and plan.get("schema_version") == 2:
+        try:
+            from .stylebook_workflow import validate
+        except ImportError:
+            from stylebook_workflow import validate
+        return validate(plan)
     errors: list[str] = []
     if not isinstance(plan, dict):
         return ["visual-plan.json 顶层必须是对象"]
+    if plan.get("workflow"):
+        errors.append("旧 schema_version=1 不接受新增 workflow；新路线须显式选择 schema_version=2")
     if plan.get("schema_version") != 1:
         errors.append("visual plan schema_version 必须为 1")
 
@@ -995,6 +1003,12 @@ def _infographic_prompt(item: dict, style: str, recipe: dict) -> str:
 def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd).resolve()
     plan, errors = _load_json(cwd / VISUAL_PLAN_FILE, VISUAL_PLAN_FILE)
+    if not errors and plan.get("schema_version") == 2:
+        try:
+            from .stylebook_workflow import compile_plan
+        except ImportError:
+            from stylebook_workflow import compile_plan
+        return compile_plan(cwd, plan)
     meta, meta_errors = _load_meta(cwd)
     errors.extend(meta_errors)
     errors.extend(author_shots.mode_errors(meta))

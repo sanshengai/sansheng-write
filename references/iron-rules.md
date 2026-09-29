@@ -18,6 +18,8 @@
 
 ## 视觉
 
+以下固定 producer、数量、材质与 renderer 规则适用于默认 schema1。显式 schema2 画风手册合同见 `stylebook-contract.md`，目前仍停在编译/待生图，新路径不能凭预览或 pending 请求进入发布；旧规则不全局放宽。
+
 1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 renderer。
 2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。`infographic_mode: author-shots` 时信息图为 0 张，`visual-plan.json` 的 `infographics` 必须为空，封面与 Hero 合同不变。
 3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。

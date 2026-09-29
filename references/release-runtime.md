@@ -29,6 +29,8 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 
 ### 画风手册显式预编译（接入试用期）
 
+新增的正式合同采用同一 `visual-plan.json` 的 schema2，已接入 `compile-visuals` 与明确返回 pending 的 `render-visuals`；完整字段和实际边界见 [stylebook-contract.md](stylebook-contract.md)。实际生成来源、QA、装配与 seal 尚在实施，新合同不能发布。以下隔离预览入口继续保留。
+
 文章希望试用叁笙画风手册时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
 
 ```bash

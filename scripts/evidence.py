@@ -168,6 +168,12 @@ def build_visual_manifest(
     """
 
     cwd = Path(cwd)
+    try:
+        from .stylebook_workflow import selected_at
+    except ImportError:
+        from stylebook_workflow import selected_at
+    if selected_at(cwd):
+        return {}, ["画风手册正式成品凭证尚未完成；预览或待生图请求不能作为旧宝玉视觉凭证"]
     errors: list[str] = []
     assets: list[dict] = []
     specs: list[tuple[str, str, set[str]]] = []

@@ -671,6 +671,14 @@ def render_visuals(
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """Render all compiled tasks and record immutable, truthful provenance."""
     cwd = cwd.resolve()
+    try:
+        from .stylebook_workflow import selected_at, generation_requests
+    except ImportError:
+        from stylebook_workflow import selected_at, generation_requests
+    if selected_at(cwd):
+        if candidate_count != 1:
+            return None, ["画风手册正式路径暂不接受批量随机候选；按单图有原因返修"]
+        return generation_requests(cwd, only)
     if candidate_count > 1:
         return _render_visual_candidates(
             cwd,
