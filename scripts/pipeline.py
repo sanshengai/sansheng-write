@@ -4585,6 +4585,31 @@ def cmd_select_visuals(cwd: Path, specs: list[str]) -> None:
     print(f"✅ 已选中 {len(receipt['assets'])} 张生成式候选图；现在可运行 visual-qa")
 
 
+def cmd_review_stylebook_candidate(cwd: Path, production: str) -> None:
+    from stylebook_review import review_candidate
+
+    report, errors = review_candidate(cwd, cwd / production)
+    if errors:
+        print("❌ 独立候选验收失败：" + "；".join(errors))
+        raise SystemExit(2)
+    print(f"{'✅' if report['passed'] else '❌'} 最终候选独立验收：{report['report_path']}")
+    if not report["passed"]:
+        for problem in report["verdict"]["problems"]:
+            print(f"   • {problem}")
+        raise SystemExit(1)
+
+
+def cmd_reject_stylebook_candidate(cwd: Path, production: str, reason: str) -> None:
+    from stylebook_acceptance import reject_candidate
+
+    try:
+        objection = reject_candidate(cwd, cwd / production, reason)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"❌ 候选异议登记失败：{exc}")
+        raise SystemExit(2)
+    print(f"✅ 已登记实际候选问题：{objection['path']}；该候选不能凭模型绿灯继续交付")
+
+
 def cmd_visual_qa(cwd: Path) -> None:
     from visual_qa import run_visual_qa
 
@@ -5133,6 +5158,11 @@ def _main_impl():
     p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
+    p_review_sb = sub.add_parser("review-stylebook-candidate", help="独立看图并验收当前最终候选，保留失败报告")
+    p_review_sb.add_argument("--production", required=True, help="最终制作 production.json")
+    p_reject_sb = sub.add_parser("reject-stylebook-candidate", help="记录实际候选问题，模型绿灯不能覆盖")
+    p_reject_sb.add_argument("--production", required=True, help="最终制作 production.json")
+    p_reject_sb.add_argument("--reason", required=True, help="实际观察到的问题")
     p_rv = sub.add_parser(
         "render-visuals",
         help="探测并调用已配置 renderer 渲染视觉资产，失败时只按配置降级",
@@ -5367,6 +5397,10 @@ def _main_impl():
         cmd_collect_stylebook_result(cwd, args.result)
     elif args.cmd == "produce-stylebook-candidate":
         cmd_produce_stylebook_candidate(cwd, args.raw_receipt)
+    elif args.cmd == "review-stylebook-candidate":
+        cmd_review_stylebook_candidate(cwd, args.production)
+    elif args.cmd == "reject-stylebook-candidate":
+        cmd_reject_stylebook_candidate(cwd, args.production, args.reason)
     elif args.cmd == "select-visuals":
         cmd_select_visuals(cwd, args.selections)
     elif args.cmd == "visual-qa":
