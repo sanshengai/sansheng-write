@@ -143,6 +143,7 @@ def _article(root: Path) -> Path:
             {
                 "plan_digest": stable_digest(plan),
                 "validator_hashes": {
+                    "visual_inputs.py": _sha(scripts_dir / "visual_inputs.py"),
                     "visual_qa.py": _sha(scripts_dir / "visual_qa.py"),
                     "visual_qa_codex.py": _sha(scripts_dir / "visual_qa_codex.py"),
                 }

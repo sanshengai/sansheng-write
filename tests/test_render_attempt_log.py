@@ -155,7 +155,7 @@ def test_render_stats_prints_summary(tmp_path, capsys):
     pipeline.cmd_render_stats(tmp_path)
     out = capsys.readouterr().out
     assert "infographic-01" in out
-    assert "浪费" in out
+    assert "额外渲染" in out
     assert "最费的一张" in out
 
 

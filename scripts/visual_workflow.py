@@ -641,6 +641,7 @@ _RIGHT_ZONE_BLEED = (
 
 
 def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
+    divider = "thin slash dividers" if (item.get("layout_options") or {}).get("tag_separator", "slash") == "slash" else "wide whitespace separators and no slash or vertical bar"
     text = _cover_text(meta, item)
     title = text["line1"]
     subtitle = text["line2"]
@@ -664,7 +665,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         "aspect_ratio": "2.35:1",
         "expected_text_sha256": _expected_text_digest(expected),
     }
-    tags = " / ".join(text["tags"])
+    tags = (" / " if (item.get("layout_options") or {}).get("tag_separator", "slash") == "slash" else "   ").join(text["tags"])
     tag_count = {2: "two", 3: "three"}.get(len(text["tags"]), str(len(text["tags"])))
     ghost = text.get("ghost") or ""
     # 肖像满幅出血时右区要被 cover_portrait.py 清场再贴图，ghost 只留在左区；
@@ -736,8 +737,7 @@ def _cover_prompt(item: dict, meta: dict, recipe: dict) -> str:
         f"- Tags {tags} -- exactly these {tag_count}, in ONE auto-fit QUIET pill under "
         "the subtitle: near-black translucent body, hairline border in that same accent "
         "at low opacity, FLAT MATTE frosted body, matte like clay rather than glossy "
-        "like glass, white tag text at 30%-34% of headline cap height with thin slash "
-        "dividers; the softest text layer.\n"
+        f"like glass, white tag text at 30%-34% of headline cap height with {divider}; the softest text layer.\n"
         f"- Ghost line behind the headline: {ghost} -- ONE line of condensed industrial "
         "uppercase English, pure white at 8%-14% opacity, cap height 80%-100% of the "
         "headline cap height, partly overlapped by the Chinese headline block: "
@@ -845,6 +845,7 @@ def _native_raster_contract(material: str) -> str:
 
 
 def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
+    frame = "Include one clear dotted frame." if (item.get("layout_options") or {}).get("frame", "dotted") == "dotted" else "Do not include frames or borders."
     expected = [str(item.get("title") or "").strip()]
     pictorial_facts = "\n".join(
         f"- {str(fact).strip()}" for fact in item.get("visual_facts") or [] if str(fact).strip()
@@ -902,7 +903,8 @@ def _hero_prompt(item: dict, style: str, recipe: dict) -> str:
         "Build one clean metaphor from the approved title and the following source facts. "
         "Use facts only as textless objects, spaces and causal relations; never render any "
         "fact sentence, number, label or proper noun as visible text. Keep all essential "
-        "objects inside a generous 8% crop-safe margin and include one clear dotted frame.\n"
+        "objects inside a generous 8% crop-safe margin. "
+        f"{frame}\n"
         f"{pictorial_facts or '- Use a single textless causal metaphor.'}\n"
     )
 
@@ -1011,6 +1013,17 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         return compile_plan(cwd, plan)
     meta, meta_errors = _load_meta(cwd)
     errors.extend(meta_errors)
+    try:
+        from .visual_inputs import validate_scene_inputs, bind_references
+    except ImportError:
+        from visual_inputs import validate_scene_inputs, bind_references
+    errors.extend(validate_scene_inputs(plan))
+    reference_contracts = {}
+    for stage in ("cover", "hero"):
+        try:
+            reference_contracts[stage] = bind_references(cwd, plan.get(stage) or {})
+        except ValueError as exc:
+            errors.append(f"{stage} {exc}")
     errors.extend(author_shots.mode_errors(meta))
     errors.extend(
         validate_visual_plan(plan, infographic_mode=author_shots.infographic_mode(meta))
@@ -1145,6 +1158,7 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         # Baoyu 依赖的字节级锚点：校验侧会重新解析磁盘上的 Baoyu 文档并比对，
         # 不一致即拒绝发布（producer_chain 字符串本身证明不了任何事）。
         **baoyu_anchors,
+        "reference_images": reference_contracts,
         "plan_digest": stable_digest(plan),
         "jobs": 1,
         "tasks": tasks,
@@ -1182,11 +1196,13 @@ def compile_visual_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         ],
         "style": style,
         "validator_hashes": {
+            "visual_inputs.py": _file_sha256(Path(__file__).with_name("visual_inputs.py")),
             "visual_qa.py": _file_sha256(Path(__file__).with_name("visual_qa.py")),
             "visual_qa_codex.py": _file_sha256(
                 Path(__file__).with_name("visual_qa_codex.py")
             ),
         },
+        "reference_images": reference_contracts,
         "plan_digest": stable_digest(plan),
         "batch": batch,
         "prompt_count": len(tasks),

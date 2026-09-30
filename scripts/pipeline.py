@@ -71,7 +71,10 @@ _SCRIPTS_DIR = _os.path.dirname(_os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from article_paths import process_file, process_rel  # noqa: E402
+try:
+    from .article_paths import process_file, process_rel  # noqa: E402
+except ImportError:
+    from article_paths import process_file, process_rel  # noqa: E402
 from evidence import (  # noqa: E402
     CHECKPOINT_RECEIPT_FILE,
     FINAL_PROMPT_PREFIX,
@@ -376,7 +379,7 @@ def _visual_prompt_errors(prompt_text: str, recipe: dict, label: str) -> list[st
         flags=re.I,
     )
     forbidden_hits = set()
-    for line in body.splitlines():
+    for line in re.split(r"[;；。\n]", body):
         if negative_marker.search(line):
             continue
         low = line.lower()
@@ -3519,12 +3522,19 @@ def _article_already_live(cwd: Path, code: str) -> bool:
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 body = resp.read().decode("utf-8", "replace") if method == "GET" else ""
-                return resp.status, body
+                return resp.status, body, resp.headers.get("Content-Type", "")
         except Exception:  # noqa: BLE001
             return 0, ""
 
-    status, body = _get(f"{site}/articles/{code.lower()}/")
+    response = _get(f"{site}/articles/{code.lower()}/")
+    status, body = response[:2]
     if status != 200 or title not in _html.unescape(body):
+        return False
+    try:
+        from .website_evidence import media_errors
+    except ImportError:
+        from website_evidence import media_errors
+    if media_errors(cwd, code, site, body, _get):
         return False
     assets = [f"{site}/song-assets/{code}/cover.png"]
     if (cwd / "dist" / "podcast" / "audio.mp3").is_file():
@@ -3583,6 +3593,15 @@ def _run_website_sync(
         or str(publish.get("website_cwd") or "").strip()
     )
     receipt_path = process_file(cwd, "_website-sync-receipt.json", for_write=True)
+    # 队列请求已被受理时只验收/查询该请求，不能重新发起。
+    try:
+        previous = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    latest = previous.get("latest") or {}
+    if latest.get("deployment_state") in {"queued", "running"}:
+        print("⏳ 已有官网部署任务尚未结清；请用 Website 的状态入口查询并更新本篇回执，不重复提交。")
+        return False
     if not template:
         _append_website_sync_attempt(
             receipt_path,
@@ -3595,6 +3614,12 @@ def _run_website_sync(
         print("⏭ 官网同步未配置，已记录 skipped（不影响公开 Skill 使用）")
         return True
 
+    try:
+        from .delivery_snapshot import write_snapshot, website_input_digest
+    except ImportError:
+        from delivery_snapshot import write_snapshot, website_input_digest
+    media_snapshot = write_snapshot(cwd)
+    media_digest = website_input_digest(cwd)
     website_cwd = _website_cwd_for_article(cwd, configured_cwd)
     if not website_cwd.is_dir():
         _append_website_sync_attempt(
@@ -3637,6 +3662,7 @@ def _run_website_sync(
     values = {
         "code": code,
         "article_dir": str(cwd),
+        "media_manifest": str(process_file(cwd, "_delivery-snapshot.json")),
         "wechat_url": wechat_url,
     }
     try:
@@ -3693,12 +3719,14 @@ def _run_website_sync(
             return False
         auto_commit = commit_sha
         print(f"✅ 归档产物已按文件级 pathspec 自动提交：{commit_sha[:9]}")
-    if (live_checker or _article_already_live)(cwd, code):
+    can_reuse_live = live_checker is not None or latest.get("media_input_digest") == media_digest
+    if can_reuse_live and (live_checker or _article_already_live)(cwd, code):
         _append_website_sync_attempt(
             receipt_path,
             {
                 "status": "done",
                 "reason": "already_live",
+                "media_input_digest": media_digest,
                 "code": code,
                 "wechat_url": wechat_url,
                 "auto_commit": auto_commit,
@@ -3739,8 +3767,18 @@ def _run_website_sync(
         )
         print(f"❌ 官网同步命令异常：{str(exc)[:500]}")
         return False
+    try:
+        from .website_evidence import deployment_state
+    except ImportError:
+        from website_evidence import deployment_state
+    deploy_state = deployment_state(completed.stdout or "")
+    live_ok = completed.returncode == 0 and deploy_state not in {"queued", "running", "failed"} and (live_checker or _article_already_live)(cwd, code)
     receipt = {
-        "status": "done" if completed.returncode == 0 else "failed",
+        "status": "done" if live_ok else ("pending" if completed.returncode == 0 and deploy_state != "failed" else "failed"),
+        "deployment_state": deploy_state,
+        "job_id": (re.search(r"JOB_ID\s*=\s*([^\s]+)", completed.stdout or "")[1] if re.search(r"JOB_ID\s*=\s*([^\s]+)", completed.stdout or "") else ""),
+        "media_snapshot_sha256": stable_digest(media_snapshot),
+        "media_input_digest": media_digest,
         "created_at": _now_iso(),
         "auto_commit": auto_commit,
         "code": values["code"],
@@ -3760,6 +3798,9 @@ def _run_website_sync(
         print(f"❌ 官网同步失败（exit={completed.returncode}）：")
         print(receipt["tail"])
         print(f"   完整回执：{receipt_path}")
+        return False
+    if not live_ok:
+        print(f"⏳ 官网同步尚未完成：deployment_state={deploy_state or '入口媒体待验收'}；已保存回执，查询现有任务后续跑，不重复发起部署。")
         return False
     print(f"✅ 官网同步完成：code={values['code'] or '(无编号)'}")
     return True
@@ -3865,6 +3906,7 @@ def _finalize_input_digest(cwd: Path, wechat_url: str) -> str:
         PUBLISH_RECEIPT_FILE,
         "_wechat-audio-receipt.json",
         "_wechat-published-audio-receipt.json",
+        "_website-media.json",
     ]
     files = {
         rel: sha256_file(process_file(cwd, rel)) if process_file(cwd, rel).is_file() else ""
@@ -3925,6 +3967,12 @@ def _mark_finalize_step(cwd: Path, state: dict, step: str) -> None:
         "status": "done",
         "completed_at": _now_iso(),
     }
+    if step == "website_sync":
+        try:
+            from .delivery_snapshot import website_input_digest
+        except ImportError:
+            from delivery_snapshot import website_input_digest
+        state["steps"][step]["media_input_digest"] = website_input_digest(cwd)
     state["updated_at"] = _now_iso()
     process_file(cwd, FINALIZE_STATE_FILE, for_write=True).write_text(
         json.dumps(state, ensure_ascii=False, indent=2) + "\n",
@@ -4006,13 +4054,23 @@ def cmd_finalize(wechat_url: str, cwd: Path) -> None:
             )
             print("↻ 检测到播客晚于旧官网步骤生成，官网同步将重新执行。")
 
-    if _finalize_step_done(state, "website_sync"):
-        print("⏭ finalize 续跑：官网已同步，跳过。")
+    try:
+        from .delivery_snapshot import website_input_digest
+    except ImportError:
+        from delivery_snapshot import website_input_digest
+    website_binding = ((state.get("steps") or {}).get("website_sync") or {}).get("media_input_digest")
+    if _finalize_step_done(state, "website_sync") and website_binding == website_input_digest(cwd):
+        print("⏭ finalize 续跑：官网已同步且媒体字节未变化，跳过。")
     else:
         if not _run_website_sync(cwd, wechat_url):
             raise SystemExit(2)
         _mark_finalize_step(cwd, state, "website_sync")
 
+    try:
+        from .delivery_snapshot import write_snapshot
+    except ImportError:
+        from delivery_snapshot import write_snapshot
+    write_snapshot(cwd)
     print("✅ 发布后闭环完成：归档已验、朋友圈文案已出、播客已处理、官网已同步。")
 
 
@@ -4448,6 +4506,11 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
                   "pipeline.py approve draft --words 逐字落盘，不再手写审批文件。")
     except OSError:
         pass
+    try:
+        from .delivery_snapshot import write_snapshot
+    except ImportError:
+        from delivery_snapshot import write_snapshot
+    write_snapshot(cwd)
     # 审计 F3：生成单在接管后立即交付，作者生成音乐与配图并行，不等配图做完。
     if not (cwd / "MiniMax-主题曲生成单.md").exists() and not process_file(cwd, "_music-manifest.json").exists():
         print("🎵 下一步先交付 MiniMax-主题曲生成单.md（references/music.md），再开始配图——"
@@ -4701,8 +4764,21 @@ def cmd_reject_stylebook_candidate(cwd: Path, production: str, reason: str) -> N
 def cmd_visual_qa(cwd: Path) -> None:
     from visual_qa import run_visual_qa
 
+    from visual_qa import QA_FILE, QA_REQUEST_FILE, _request_sha256
+    qa_path = process_file(cwd, QA_FILE)
+    before_mtime = qa_path.stat().st_mtime_ns if qa_path.is_file() else None
     qa, errors = run_visual_qa(cwd)
-    _log_qa_verdict(cwd, qa, errors)
+    audit = qa
+    if audit is None and errors:
+        # run_visual_qa 保留 None 的失败接口；仅读取当前 request 绑定的本次结果。
+        from visual_qa import QA_FILE, QA_REQUEST_FILE, _request_sha256
+        try:
+            candidate = json.loads(process_file(cwd, QA_FILE).read_text(encoding="utf-8"))
+            if qa_path.stat().st_mtime_ns != before_mtime and candidate.get("validation_findings") == errors and candidate.get("request_sha256") == _request_sha256(process_file(cwd, QA_REQUEST_FILE)):
+                audit = candidate
+        except (OSError, ValueError):
+            pass
+    _log_qa_verdict(cwd, audit, errors)
     if errors:
         print("❌ 视觉 QA 未通过：")
         for error in errors:
@@ -4750,6 +4826,7 @@ def summarize_render_attempts(rows: list) -> dict:
         "necessary": needed,
         "wasted": max(0, total - needed),
         "waste_ratio": (total - needed) / total if total else 0.0,
+        "unattributed_qa_failures": sum(r.get("label") == "(batch)" and r.get("outcome") == "fail" for r in qa_rows),
         "per_label": {
             k: {**v, "models": sorted(v["models"]),
                 "distinct_outputs": len(v["distinct_outputs"])}
@@ -4770,8 +4847,9 @@ def cmd_render_stats(cwd: Path) -> None:
     s = summarize_render_attempts(rows)
     print("=== 生图重渲统计 ===")
     print(f"  实际渲染 {s['total_renders']} 次 ｜ 图 {s['assets']} 张 ｜ "
-          f"必要量 {s['necessary']} 次 ｜ 浪费 {s['wasted']} 次"
+          f"必要量 {s['necessary']} 次 ｜ 额外渲染 {s['wasted']} 次"
           f"（{s['waste_ratio'] * 100:.0f}%）")
+    print(f"  未归属到单图的批次失败：{s['unattributed_qa_failures']} 次")
     print()
     print(f"  {'图':22} {'渲染':>4} {'成功':>4} {'失败':>4} {'QA打回':>6} {'不同产物':>8}")
     print("  " + "-" * 56)
@@ -4803,31 +4881,52 @@ def _log_qa_verdict(cwd: Path, qa, errors: list) -> None:
         return
     try:
         history = read_attempts(cwd)
+        try:
+            from .visual_retry import input_digest
+        except ImportError:
+            from visual_retry import input_digest
         assets = (qa or {}).get("assets") or []
+        required_by_path = {}
+        try:
+            request = json.loads(process_file(cwd, "_visual-qa-request.json").read_text(encoding="utf-8"))
+            required_by_path = {a["path"]: set(a.get("required_checks") or []) for a in request.get("assets") or []}
+        except (OSError, ValueError, KeyError):
+            pass
         # 逐张记：哪张图的哪几项检查没过
         for asset in assets:
             label = Path(str(asset.get("path") or "")).stem or "?"
+            digest = input_digest(cwd, label)
             checks = asset.get("checks") or {}
+            if not isinstance(checks, dict):
+                checks = {}
             failed = sorted(
                 name for name, value in (checks.items()
                                          if isinstance(checks, dict) else [])
                 if (value.get("pass") if isinstance(value, dict) else value) is False
             )
+            failed = sorted(set(failed) | (required_by_path.get(asset.get("path"), set()) - set(checks)))
+            asset_errors = [str(e) for e in errors if str(asset.get("path") or "?") in str(e)]
             log_attempt(cwd, {
                 "kind": "qa_verdict",
                 "ts": _now_iso(),
                 "label": label,
                 "seq": next_seq(history, label),
-                "outcome": "fail" if failed else "ok",
+                "outcome": "fail" if failed or asset_errors else "ok",
                 "failed_checks": failed,
+                "input_digest": digest,
+                "output_sha256": asset.get("sha256"),
+                "render_seq": sum(r.get("kind") == "render" and r.get("label") == label for r in history),
+                "errors": asset_errors,
+                "request_sha256": (qa or {}).get("request_sha256"),
                 "reviewer": str(((qa or {}).get("reviewer") or {}).get("model") or ""),
             })
         # 结构性错误（缺记录、字节不符…）不挂在某一张上，单独记一条
-        if errors and not assets:
+        unassigned_errors = [str(e) for e in errors if not any(str(a.get("path") or "?") in str(e) for a in assets)]
+        if unassigned_errors:
             log_attempt(cwd, {
                 "kind": "qa_verdict", "ts": _now_iso(), "label": "(batch)",
                 "seq": 0, "outcome": "fail",
-                "errors": [str(e)[:200] for e in errors[:10]],
+                "errors": [str(e)[:200] for e in unassigned_errors[:10]],
             })
     except Exception:                                         # noqa: BLE001
         # 观测失败绝不改变 QA 的判定结果
@@ -5545,6 +5644,11 @@ def _main_impl():
             ),
             revision=getattr(args, "revision", "") or "",
         )
+        try:
+            from .delivery_snapshot import write_snapshot
+        except ImportError:
+            from delivery_snapshot import write_snapshot
+        write_snapshot(cwd)
         if errors or target is None:
             print("❌ 手工上传包导出失败：")
             for error in errors:

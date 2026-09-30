@@ -94,7 +94,7 @@ def test_website_sync_autocommits_then_runs_command(repo, monkeypatch):
 
     ok = pipeline._run_website_sync(article, "https://mp.weixin.qq.com/s/X",
                                     runner=lambda *a, **k: ran.append(a) or R(),
-                                    live_checker=lambda c, code: False)
+                                    live_checker=lambda c, code: bool(ran))
     assert ok and ran
     receipt = json.loads(process_file(article, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["latest"]["status"] == "done" and receipt["latest"]["auto_commit"]

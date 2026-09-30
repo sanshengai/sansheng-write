@@ -85,7 +85,8 @@ def _run(tmp_path, monkeypatch, stdout, returncode):
     monkeypatch.setattr(pipeline, "_uncommitted_archive_outputs", lambda c, w: [])
     return pipeline._run_website_sync(
         tmp_path, "https://mp.weixin.qq.com/s/X",
-        runner=lambda *a, **k: r)
+        runner=lambda *a, **k: r,
+        live_checker=(lambda c, code, calls=iter([False, True]): next(calls)) if returncode == 0 else (lambda c, code: False))
 
 
 def test_failure_prints_the_real_error(tmp_path, monkeypatch, capsys):

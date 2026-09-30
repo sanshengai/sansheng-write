@@ -43,7 +43,10 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from article_paths import PROCESS_DIR, process_file  # noqa: E402
+try:
+    from .article_paths import PROCESS_DIR, process_file  # noqa: E402
+except ImportError:
+    from article_paths import PROCESS_DIR, process_file  # noqa: E402
 from visual_qa import _fully_segmented_by_allowed  # noqa: E402
 
 # 走 ChatGPT 账号的 codex 只放行部分模型 —— `gpt-5.6-codex` 会被服务端 400 拒掉
@@ -234,14 +237,19 @@ def _build_prompt(asset: dict[str, Any]) -> str:
     lines = [
         "你是一名独立的视觉验收员。附件里是一张待验收的图，请逐项如实核对。",
         "",
-        "⚠️ 你的职责是**挑毛病**，不是放行。任何一项你不能亲眼确认，就判 false 并在 notes 里说明。",
-        "宁可误杀，不可放过 —— 放行一张有杂字或裁切的图，代价远大于让作者重出一次。",
+        "逐项依据当前合同和可见证据判断；不能确认的项仍判 false，并说明是图像缺陷、缺少参考还是附件无法读取。",
+        "不得凭个人审美或对陌生产品的记忆增加合同以外的标准；文字错误、杂字、裁切和身份不符仍须拒绝。",
         "",
         f"## 图片用途：{asset.get('stage')}",
         f"## 目标风格：{asset.get('target_style')}",
         f"## 实际像素：{metrics.get('width')}×{metrics.get('height')}",
         "",
     ]
+    lines += [f"## 本图布局选项：{json.dumps(contract.get('layout_options') or {}, ensure_ascii=False)}"]
+    for index, ref in enumerate(asset.get("reference_images") or [], 2):
+        lines += [f"附件{index}是身份参考图，比较用途：{ref['purpose']}；来源：{ref['source_url']}。"]
+    if asset.get("reference_images"):
+        lines += ["附件1才是待验收图。参考图不计入待验收资产，不继承其文字、配色或布局，不豁免附件1的任何检查。"]
     if "ghost_layer_subdued" in required_checks and ghost_measurement.get("note"):
         lines += [
             "## 自动像素测量（仅供参考，不替代你的目测判断）",
@@ -392,6 +400,12 @@ def _review_one(
             # 但 checks 照样给 true）。这种失败不报错、只是悄悄把闸门架空，最危险。
             # 走 stdin 则完全绕开 shell 解析：codex exec 在 PROMPT 缺省时从 stdin 读指令。
         ]
+        try:
+            from .visual_inputs import reference_paths
+        except ImportError:
+            from visual_inputs import reference_paths
+        for reference in reference_paths(article_dir, asset):
+            cmd.extend(["--image", str(reference)])
         # 非零退出（限流 / 网络抖动 / codex 偶发崩溃）重试一次：旧行为是单张
         # 失败即整轮 QA 判失败（上游 assets 集合对不上 request），一张 429 废一轮。
         # 只重试非零退出；超时不重试（预算不够），契约类失败（JSON 坏 / traits

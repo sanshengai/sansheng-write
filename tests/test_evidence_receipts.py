@@ -136,6 +136,7 @@ def _visual_bundle(root: Path) -> Path:
                     json.loads((root / "visual-plan.json").read_text(encoding="utf-8"))
                 ),
                 "validator_hashes": {
+                    "visual_inputs.py": sha256_file(scripts_dir / "visual_inputs.py"),
                     "visual_qa.py": sha256_file(scripts_dir / "visual_qa.py"),
                     "visual_qa_codex.py": sha256_file(
                         scripts_dir / "visual_qa_codex.py"

@@ -33,6 +33,8 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 接管、执行或恢复文章流水线时，先跑 `python "$SKILL/scripts/pipeline.py" status`；只读查看或独立的局部文案修改不因进入文章目录就启动流水线。局部改稿完成后不自行重跑下游，下一次恢复时由摘要检测变化并重验。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
 
+**制作前素材计划与返工诊断：** 新闻正文、主封面、Hero、音乐/播客封面和视频逐项决策，已明确的作者选择不重复问。相同输入连续两次被同项打回，先按 visual-qa.md 诊断，再修输入或有理由返修；禁止机械循环生图。官网排队不算完成，正式入口须覆盖声明媒体；当前交付快照与可点击链接见 release-runtime.md。
+
 **长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段与预计耗时；命令是阻塞式调用，返回前无法插播——命令返回后（或分批调用间隙）报告进度，进行中状态可查 `素材/.render-attempt-*.json` 与 `.gen-log.jsonl` 增量。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
 
 ## 🔎 静态预检（写完正文就跑，别等被打回）

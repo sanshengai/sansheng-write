@@ -23,7 +23,10 @@ try:
     from .evidence import stable_digest
     from .visual_pixel_checks import compute_cover_pixel_checks
 except ImportError:  # pragma: no cover - direct script execution
-    from article_paths import process_file
+    try:
+        from .article_paths import process_file
+    except ImportError:
+        from article_paths import process_file
     from evidence import build_visual_manifest, sha256_file
     from profile_config import identity, load_secret, visual_profile
     from evidence import stable_digest
@@ -458,6 +461,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         errors.append(f"视觉编译凭证不可用：{exc}")
     expected_validator_hashes = compile_receipt.get("validator_hashes") or {}
     current_validator_hashes = {
+        "visual_inputs.py": sha256_file(Path(__file__).with_name("visual_inputs.py")),
         "visual_qa.py": sha256_file(Path(__file__)),
         "visual_qa_codex.py": sha256_file(Path(__file__).with_name("visual_qa_codex.py")),
     }
@@ -516,6 +520,22 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
             if str(asset["stage"]) == "cover"
             else None
         )
+        try:
+            from .visual_inputs import bind_references, layout_options
+        except ImportError:
+            from visual_inputs import bind_references, layout_options
+        plan = json.loads((cwd / "visual-plan.json").read_text(encoding="utf-8"))
+        item = plan.get(str(asset["stage"])) or {}
+        try:
+            references = bind_references(cwd, item)
+            if references != (compile_receipt.get("reference_images") or {}).get(str(asset["stage"]), []):
+                errors.append(f"{rel} 参考图与编译冻结清单不同，须核对后重新编译")
+                continue
+        except ValueError as exc:
+            errors.append(f"{rel} {exc}")
+            continue
+        if asset["stage"] in {"cover", "hero"}:
+            contract["style_contract"]["layout_options"] = layout_options(item, str(asset["stage"]))
         assets.append(
             {
                 "path": rel,
@@ -523,6 +543,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
                 "stage": asset["stage"],
                 "expected_text": allowed.get(rel, expected[rel]),
                 "required_text": expected[rel],
+                "reference_images": references,
                 "text_occurrence": "exactly-once",
                 "pixel_metrics": metrics,
                 **({"pixel_checks": pixel_checks} if pixel_checks is not None else {}),
@@ -597,6 +618,14 @@ def final_byte_errors(
     }
     errors: list[str] = []
     for rel, expected_asset in expected.items():
+        try:
+            from .visual_inputs import reference_paths
+        except ImportError:
+            from visual_inputs import reference_paths
+        try:
+            reference_paths(cwd, expected_asset)
+        except ValueError as exc:
+            errors.append(f"{rel} 参考图合同失效：{exc}")
         got = actual.get(rel)
         if not got:
             continue
@@ -865,6 +894,17 @@ def run_visual_qa(
         json.dumps(request, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    # 保存当次图像字节，避免下一次 render 覆盖后只剩哈希而无法复盘。
+    import uuid
+    history = process_file(cwd, QA_FILE, for_write=True).parent / "visual-qa-history"
+    images_dir = history / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    run_id = uuid.uuid4().hex
+    (history / f"{run_id}.request.json").write_text(json.dumps(request, ensure_ascii=False, indent=2) + "\n")
+    for asset in request["assets"]:
+        for declared in [asset, *(asset.get("reference_images") or [])]:
+            source = cwd / declared.get("path", declared.get("file", ""))
+            (images_dir / f"{declared['sha256']}{source.suffix}").write_bytes(source.read_bytes())
     command = reviewer_command
     if command is None:
         command, resolve_errors = _resolve_reviewer_command()
@@ -918,6 +958,8 @@ def run_visual_qa(
     candidate.write_text(
         json.dumps(qa, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    (history / f"{run_id}.json").write_text(
+        json.dumps({"request": request, "result": qa, "errors": validation_errors}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     final_path = process_file(cwd, QA_FILE, for_write=True)
     candidate.replace(final_path)
     _write_markdown(cwd, qa)

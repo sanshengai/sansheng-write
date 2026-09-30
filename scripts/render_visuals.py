@@ -92,7 +92,7 @@ def read_attempts(cwd: Path) -> list[dict]:
 
 def next_seq(rows: list[dict], label: str) -> int:
     """该 label 在本文累计的下一个渲染序号（从 1 起）。"""
-    return sum(1 for r in rows if r.get("label") == label) + 1
+    return sum(1 for r in rows if r.get("label") == label and r.get("kind", "render") == "render") + 1
 
 
 def log_attempt(cwd: Path, record: dict) -> None:
@@ -147,8 +147,11 @@ def renderer_prompt_file(prompt_path: Path, material: Path, stem: str) -> Path:
     body_dir = material / ".render-body"
     body_dir.mkdir(parents=True, exist_ok=True)
     body_path = body_dir / f"{stem}.md"
-    body_path.write_text(
-        prompt_body(prompt_path.read_text(encoding="utf-8")), encoding="utf-8")
+    full_prompt = prompt_path.read_bytes()
+    history = material / "render-input-history"
+    history.mkdir(parents=True, exist_ok=True)
+    (history / f"{hashlib.sha256(full_prompt).hexdigest()}.md").write_bytes(full_prompt)
+    body_path.write_text(prompt_body(full_prompt.decode("utf-8")), encoding="utf-8")
     return body_path
 
 
@@ -679,6 +682,13 @@ def render_visuals(
         if candidate_count != 1:
             return None, ["画风手册正式路径暂不接受批量随机候选；按单图有原因返修"]
         return generation_requests(cwd, only)
+    try:
+        from .visual_retry import retry_errors
+    except ImportError:
+        from visual_retry import retry_errors
+    diagnostic_errors = retry_errors(cwd, read_attempts(cwd), only)
+    if diagnostic_errors:
+        return None, diagnostic_errors
     if candidate_count > 1:
         return _render_visual_candidates(
             cwd,
@@ -825,23 +835,33 @@ def render_visuals(
             encoding="utf-8",
         )
         assert command is not None
-        completed = subprocess.run(
-            [
-                *command,
-                "--batchfile",
-                str(attempt_path),
-                "--jobs",
-                str(attempt_batch["jobs"]),
-                "--json",
-            ],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=1800,
-            check=False,
-        )
+        if attempt_number == 1:
+            diagnostic_errors = retry_errors(cwd, read_attempts(cwd), only, consume=True)
+            if diagnostic_errors:
+                return None, diagnostic_errors
+        try:
+            completed = subprocess.run(
+                [
+                    *command,
+                    "--batchfile",
+                    str(attempt_path),
+                    "--jobs",
+                    str(attempt_batch["jobs"]),
+                    "--json",
+                ],
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=1800,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            for task in attempt_batch.get("tasks") or []:
+                label = str(task.get("id") or "?")
+                log_attempt(cwd, {"kind": "render", "label": label, "seq": next_seq(read_attempts(cwd), label), "outcome": "renderer_timeout", "ts": _now()})
+            return None, ["生图进程超时：已记录 renderer_timeout；先查服务状态，不把超时归为视觉质量失败。"]
         returncode = completed.returncode
         payload = _parse_json_output(completed.stdout)
         results = payload.get("results", []) if payload else []

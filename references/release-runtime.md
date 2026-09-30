@@ -204,3 +204,17 @@ python "$SKILL/scripts/pipeline.py" finalize \
 - 图片或 prompt 改动：重新 `visual-qa`、`seal visual`、`release-to-draft`；标题、正文、播客提示词或生成参数改动还必须重跑 `podcast-pregen`。
 - 草稿已创建但读回失败：不得删除 attempt，不得手工登记 media ID。
 - 需要换 provider：只改 `renderer-policy.json`，不得改 canonical prompt 或图片比例。
+
+## 素材计划与当前交付状态（2026-09-30）
+
+`adopt-final` 后先检查自动生成的 `_asset-plan.json` 和 `_delivery-snapshot.json`，把正文来源模式、主封面、Hero、主题曲生成单/音频/封面、播客音频/封面以及视频逐项定下来。新闻正文不用额外生图，不意味着取消主封面或音频封面；已明确的作者选择直接录入计划。接管默认只生成待核对的角色计划，不伪造验收或来源。
+
+当前快照记录本篇正文引用文件、SHA、位置、实际音乐 manifest、播客文件与网站视频清单；`present_unverified` 只代表文件存在。来源和适用渠道等编辑信息写入计划，关键发布判断继续读取原有权威 manifest/回执。主题曲生成单仍在配图前交作者，同步作曲。
+
+接管、`handoff-assets` 和 `finalize` 收尾刷新 `交付状态.md`，统一给真实可点击 Markdown 文件链接；路径有空格用 `<绝对路径>`。回复还须包含已有的草稿/正式链接和剩余人工操作。不要用旧手写“候选/未发布”清单报告当前完成状态。
+
+Writer 负责精确本篇媒体交接，Website 负责受管上传、R2/Cloudflare CDN、正式站发布和状态查询。profile `publish.website_command` 保持兼容，并支持 `{media_manifest}` 指向当前快照；不在公开 Writer 写死私有桶、凭证或另造全站发布器。声明的视频通过 `_website-media.json` 交接，使用网站自己的 HTML `<video>` 播放器。
+
+官网命令 exit 0 只代表命令正常结束；输出 `JOB_STATE=queued|running` 时回执为 pending，不结清 finalize、不重复发起任务。Agent 用 Website 状态入口查询同一任务后，以真实状态更新本篇回执并续跑（不要求作者手工操作）；成功后仍验当前正文及正式文章入口和本篇声明的正文图片、主题曲、播客、视频。部署 state、正文/图片/音频/视频验收分别报告，不能以封面可访问代替歌曲可播放。无官网 profile 仍记录 skipped，不影响通用 Skill。
+
+官网完成记录绑定当前正文及媒体输入哈希。同名图片、音频或视频内容变化后，必须重新同步验收；旧记录缺少绑定也不能直接跳过。待处理任务的 job ID 在前置检查失败时仍须保留。

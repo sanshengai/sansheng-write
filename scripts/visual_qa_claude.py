@@ -40,7 +40,10 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from article_paths import PROCESS_DIR, process_file  # noqa: E402
+try:
+    from .article_paths import PROCESS_DIR, process_file  # noqa: E402
+except ImportError:
+    from article_paths import PROCESS_DIR, process_file  # noqa: E402
 from visual_qa import _fully_segmented_by_allowed  # noqa: E402
 from visual_qa_codex import (  # noqa: E402
     _build_prompt,
@@ -115,15 +118,21 @@ def _review_one(
     if not image_path.is_file():
         return {"path": rel, "_error": f"图片不存在：{image_path}"}
 
+    try:
+        from .visual_inputs import reference_paths
+    except ImportError:
+        from visual_inputs import reference_paths
+    references = reference_paths(article_dir, asset)
     required_checks = list(asset.get("required_checks") or [])
     schema = _build_schema(required_checks)
     prompt = (
         _build_prompt(asset)
         + "\n\n## 图片位置\n"
         + f"待验收的图片在本机路径：{image_path}\n"
-        + "先用 Read 工具把这张图完整看一遍（只读这一个文件，不要读别的文件、不要运行命令），"
+        + "先用 Read 工具把这张图完整看一遍（只读下方明确列出的图片文件，不要读别的文件、不要运行命令），"
         + "再按上面的合同逐项判定。"
     )
+    prompt += "\n参考图路径（按附件顺序）：" + "\n".join(str(p) for p in references)
     workdir = Path(tempfile.mkdtemp(prefix="visual-qa-claude-"))
     try:
         cmd = [
@@ -140,6 +149,8 @@ def _review_one(
             "--no-session-persistence",
             "--strict-mcp-config",
         ]
+        for parent in sorted({str(p.parent) for p in references} - {str(image_path.parent)}):
+            cmd.extend(["--add-dir", parent])
         completed = None
         for budget in (PER_ASSET_TIMEOUT, RETRY_TIMEOUT):
             if completed is not None:

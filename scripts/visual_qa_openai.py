@@ -103,6 +103,14 @@ def _review_one_openai(
             ],
         }
     ]
+    try:
+        from .visual_inputs import reference_paths
+    except ImportError:
+        from visual_inputs import reference_paths
+    for reference in reference_paths(article_dir, asset):
+        ref_mime = mimetypes.guess_type(str(reference))[0] or "image/png"
+        ref_b64 = base64.b64encode(reference.read_bytes()).decode("ascii")
+        messages[0]["content"].append({"type": "image_url", "image_url": {"url": f"data:{ref_mime};base64,{ref_b64}", "detail": "high"}})
     # 首选 json_schema 强约束；中转不支持时（400）退到 json_object，提示词本身已要求只输出 JSON。
     formats: list[dict[str, Any]] = [
         {"type": "json_schema", "json_schema": {"name": "visual_qa", "schema": schema, "strict": True}},
