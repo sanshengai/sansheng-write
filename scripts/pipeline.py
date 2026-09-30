@@ -966,6 +966,14 @@ def cmd_new(topic: str, genre: str, *, dry_run: bool = False) -> Path | None:
     if article.exists():
         print(f"❌ 目录已存在：{article}")
         raise SystemExit(2)
+    try:  # 飞轮：开新篇前提醒有没有待提炼的改稿
+        import flywheel_hooks as _fw
+        _pending = _fw.pending_items()
+        if _pending:
+            print(f"🔁 飞轮里有 {len(_pending)} 篇待学习的改稿（{'、'.join(p['article'] for p in _pending[:3])}）：开写前先读 references/learn-edits.md「日常提炼」，"
+                  "提炼 1–2 条候选规则并请作者确认，再写新稿。")
+    except Exception:  # noqa: BLE001
+        pass
 
     text = (SKILL_DIR / "templates" / "article-meta.template.yaml").read_text(encoding="utf-8")
     default_style = str(((brand() or {}).get("writing") or {}).get("default_style") or "").strip()
@@ -2994,6 +3002,16 @@ def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = "", *,
         raise SystemExit(2)
     if anchor_path is not None:
         print(f"📝 已按作者原话生成 {anchor_path.name}")
+    if gate == "draft":
+        try:  # 飞轮：作者拍板定稿的那一刻自动比对初稿
+            import flywheel_hooks as _fw
+            _item = _fw.queue_learning(cwd)
+            if _item["status"] == "pending":
+                print("🔁 作者改过稿，已排入飞轮待学习队列")
+            elif _item["status"] == "no_baseline":
+                print("⚠️ 没有 AI 初稿快照，这一篇学不到东西（以后交稿前先运行 pipeline.py deliver-draft）")
+        except Exception as _exc:  # noqa: BLE001
+            print(f"⚠️ 飞轮排队跳过：{type(_exc).__name__}")
     print(
         f"✅ 已封存 {gate} 审批：source_mode={source_mode} "
         f"digest={receipt['artifact_digest'][:12]}"
@@ -4511,6 +4529,14 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
     except ImportError:
         from delivery_snapshot import write_snapshot
     write_snapshot(cwd)
+    try:  # 飞轮：定稿时自动比对 AI 初稿，排队等下一篇开写前提炼
+        import flywheel_hooks as _fw
+        _item = _fw.queue_learning(cwd, Path(final_path))
+        print({"pending": "🔁 作者改过稿，已排入飞轮待学习队列（下一篇开写前提炼候选规则、请作者确认）",
+               "no_baseline": "⚠️ 没有 AI 初稿快照，这一篇学不到东西（以后交稿前先运行 pipeline.py deliver-draft）",
+               "unchanged": "ℹ️ 定稿与初稿相同，无需学习"}.get(_item["status"], f"飞轮：{_item['status']}"))
+    except Exception as _exc:  # noqa: BLE001
+        print(f"⚠️ 飞轮排队跳过：{type(_exc).__name__}")
     # 审计 F3：生成单在接管后立即交付，作者生成音乐与配图并行，不等配图做完。
     if not (cwd / "MiniMax-主题曲生成单.md").exists() and not process_file(cwd, "_music-manifest.json").exists():
         print("🎵 下一步先交付 MiniMax-主题曲生成单.md（references/music.md），再开始配图——"
@@ -5201,6 +5227,10 @@ def _main_impl():
     p_new.add_argument("--genre", required=True, choices=sorted(GENRE_PRESETS),
                        help="news=资讯快讯 / tutorial=教程 / deep=深度 / promo=推广")
     p_new.add_argument("--dry-run", action="store_true", help="只打印将生成的目录与字段")
+    sub.add_parser("deliver-draft", help="把稿子交给作者之前存一份 AI 初稿基线（飞轮；已存在则重存）")
+    p_lq = sub.add_parser("learn-queue", help="查看 / 处理飞轮里待学习的改稿")
+    p_lq.add_argument("action", nargs="?", default="list", choices=["list", "done", "dismiss"])
+    p_lq.add_argument("article", nargs="?", default="")
     sub.add_parser("status", help="查看当前进度 + 下一步建议")
     sub.add_parser("next",   help="打印下一阶段操作说明")
     sub.add_parser(
@@ -5490,6 +5520,12 @@ def _main_impl():
     if not cwd.is_dir():
         parser.error(f"文章目录不存在：{cwd}")
     _TELEMETRY.update(stage=f"pipeline.{args.cmd}", article=cwd.name)
+    if args.cmd not in {"new", "init", "deliver-draft"}:  # 飞轮：第一次碰到这篇稿时自动存 AI 初稿基线，不靠 Agent 自觉
+        try:
+            import flywheel_hooks as _fw
+            _fw.snapshot_ai_draft(cwd)
+        except Exception:  # noqa: BLE001  飞轮不能拖垮流水线
+            pass
     # 路径配置可能使用 @workspace/...。必须等文章目录确定后再绑定，
     # 且要早于 distribute 等延迟 import，避免同一进程把数据静默写回 main。
     import profile_config as _profile_config
@@ -5577,6 +5613,20 @@ def _main_impl():
         cmd_finalize(args.wechat_url, cwd)
     elif args.cmd == "moments-copy":
         cmd_moments_copy(cwd)
+    elif args.cmd == "deliver-draft":
+        import flywheel_hooks as _fw
+        meta = _fw.snapshot_ai_draft(cwd, force=True, basis="deliver_draft")
+        print(f"📸 已存 AI 初稿基线（{meta['chars']} 字，sha {meta['sha256'][:12]}）" if meta else "⚠️ 没有可存的稿子（定稿.md 不存在或太短）")
+    elif args.cmd == "learn-queue":
+        import flywheel_hooks as _fw
+        if args.action == "list":
+            items = _fw.pending_items()
+            print(json.dumps(items, ensure_ascii=False, indent=2) if items else "没有待学习的改稿")
+            if _fw.stalled():
+                print("⚠️ 飞轮可能断了：最近 5 篇定稿都没有可比对的 AI 初稿基线；稿子交给作者前请运行 pipeline.py deliver-draft。")
+        else:
+            _fw.mark(args.article or cwd.name, "done" if args.action == "done" else "dismissed")
+            print(f"已标记 {args.article or cwd.name}：{args.action}")
     elif args.cmd == "adopt-final":
         cmd_adopt_final(cwd, args.final, args.meta)
     elif args.cmd == "verify-release-job":

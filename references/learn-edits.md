@@ -99,3 +99,15 @@ python "$SKILL/scripts/learn_edits.py" build
 ```
 
 脚本输出 `✅ playbook.md 更新完成` 后，向用户汇报学习成果（列出提取了哪些新规则，以及哪些老规则得到了强化）。
+
+---
+
+## 日常提炼（自动排队，作者确认后才入库；2026-09-30 起）
+
+飞轮不再等作者说“学习一下”：
+
+1. **存基线**：稿子交给作者之前运行 `pipeline.py deliver-draft`（存 `过程记录/_ai-draft.md`）。忘了也没关系——流水线第一次碰到这篇稿时会自动存一份，但那可能已经晚于作者的改动，所以交稿前手动存最稳。
+2. **自动比对**：作者拍板 `approve draft`，或 `adopt-final` 接管定稿时，脚本自动比对基线与定稿，生成 `过程记录/_learn-diff.txt`，并排进 `<profile>/flywheel/pending_learn.jsonl`。没有基线会明确提示“学不到东西”，连续 5 篇缺基线会报“飞轮可能断了”（`pipeline.py learn-queue`）。
+3. **开写前提炼**：`pipeline.py new` 会提醒有待学习的改稿。读对应 `_learn-diff.txt`，按下面 Step 3 的分层指引提炼 **1–2 条**候选规则；同义的复用已有 key。
+4. **问作者一次**：一句话列出候选规则和一处真实改动（原句→改后），问“这几条要不要写进经验库？”。作者确认的才追加到 `lessons.yaml`，跑 `learn_edits.py build`；不要的丢弃。然后 `pipeline.py learn-queue done <文章目录名>`。
+5. **不当作作者本人的声音**：作者只是让 Agent 按意见改稿时（终稿并非作者亲笔），diff 会是“Agent 执行意见后的样子”。提炼时只记改稿方向，不灌声纹库（diff 已默认 `--no-promote-voice`）。
