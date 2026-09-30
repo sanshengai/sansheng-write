@@ -1,6 +1,6 @@
-# 画风手册文章合同（显式试用）
+# 画风手册文章合同（schema2，新文章推荐路线）
 
-仅作者明确选择叁笙画风手册时使用。继续用本篇 `visual-plan.json`；无选择时旧 schema1 宝玉合同原样运行。画风手册 peer Skill 必须已安装，环境变量 `SANSHENG_STYLEBOOK_ROOT` 可指定实际本体。
+新文章的配图默认走这条路线：`visual-plan.json` 写成 schema2，`renderer.backend` 用 `stylebook-service`（无人值守，经画风手册调用 Codex 内置生图，走订阅额度）。旧 schema1 宝玉合同保留给历史文章和显式选择，原样运行。画风手册 peer Skill 必须已安装，环境变量 `SANSHENG_STYLEBOOK_ROOT` 可指定实际本体。
 
 ## 当前可执行的步骤
 
@@ -10,11 +10,11 @@
 - `article_plan`：画风手册 v3/wxillus 的完整文章计划，`source.path` 指向当前 `定稿.md`。全文 coverage、原文引用和图意按画风手册验证，允许零张正文图。
 - `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 及封面一致。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风手册原有显式规则。
 - `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
-- `renderer.backend`：`host-imagegen` 或 `stylebook-service`。当前正式适配只会为前者创建待宿主执行的请求；后者明确报未实现，不自动换后端。
+- `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风手册的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。
 
 在本篇目录运行 `pipeline.py compile-visuals`。新路径输出 `素材/render-batch.json`、`素材/visual-compile-receipt.json` 和 `素材/stylebook-requests/<摘要>.json`；历史请求不可覆盖。保存完整编译词、参考图职责与实际文件摘要、制作清单、画风方法文件和适配器摘要；原文字节另存于不可变 `素材/stylebook-sources/<原文摘要>.md`。编译方言的 model 不充当实际调用模型。
 
-接着运行 `pipeline.py render-visuals`：对当前原文、任务、方法、参考图和实际编译词重新核验，输出完整内置生图调用参数。`--only 01` 只准备指定图片。CLI 返回码 **3** 表示 `pending_host`，尚未生成成品；实际底层模型和费用保留 null。宿主不能将这一步当作生成成功或继续封存。
+接着运行 `pipeline.py render-visuals`：对当前原文、任务、方法、参考图和实际编译词重新核验。`stylebook-service` 后端会立刻出图并把原始底图收回（返回码 0，状态 `raw_collected_pending_production`，下一步 `produce-stylebook-candidate`）；`host-imagegen` 后端输出完整内置生图调用参数，`--only 01` 只准备指定图片，CLI 返回码 **3** 表示 `pending_host`，尚未生成成品，实际底层模型和费用保留 null，宿主不能把这一步当作生成成功或继续封存。
 
 ## 回收宿主原始输出
 

@@ -144,15 +144,13 @@ def main() -> int:
     # ---------- 第 ② 档 ----------
     print("\n【② + 排版】一键排版 / 契约门 / 组件模板 / 微信 HTML")
     tier2 = []
+    md_ok = (Path(__file__).parent / "md_render.py").is_file() and (Path(__file__).parent / "_vendor" / "markdown_it").is_dir()
+    print(f"  {OK if md_ok else BAD}内置 Markdown 排版  md_render.py + _vendor（不再需要 bun / Node.js / baoyu）")
+    tier2.append(md_ok)
     for label, ok, how in [
-        ("bun",            _bin("bun"),   "https://bun.sh  （跑 markdown→HTML 转换器）"),
-        ("Node.js 18+",    _bin("node"),  "https://nodejs.org  （配图加 logo 水印）"),
-        ("jimp (npm)",     (Path(__file__).parent / "node_modules" / "jimp").is_dir(),
-                           "cd scripts && npm install"),
+        ("Node.js 18+ (可选)", _bin("node"), "仅旧路径的配图加 logo 水印用；新流程不需要"),
     ]:
-        print(f"  {OK if ok else WARN}{label:<14}" + ("" if ok else f"缺 -- {how}"))
-        tier2.append(ok)
-    print(f"  {WARN}markdown→HTML 转换器：本 skill 不捆绑，需自装（见 README 依赖矩阵）")
+        print(f"  {OK if ok else WARN}{label:<18}" + ("" if ok else f"未装 -- {how}"))
 
     # ---------- 第 ③ 档 ----------
     print("\n【③ 全自动】配图 / BGM / 官方读回草稿")
@@ -168,11 +166,11 @@ def main() -> int:
         )
         renderer_ready = bool(renderer_probe.get("ok"))
         print(
-            f"  {OK if renderer_ready else BAD}baoyu-image-gen renderer  "
+            f"  {OK if renderer_ready else WARN}baoyu-image-gen renderer（旧路径，可选）  "
             + (
                 f"能力探测通过（{revision[:12]}）"
                 if renderer_ready
-                else f"不可用 -- {renderer_probe.get('error')}"
+                else f"未启用 -- 新流程默认走叁笙画风手册 + Codex，无需它（{renderer_probe.get('error')}）"
             )
         )
     except Exception as exc:

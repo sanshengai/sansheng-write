@@ -50,6 +50,7 @@ def plan(root, **changes):
 
 def renderer(monkeypatch):
     prompts = []
+    monkeypatch.setenv("SANSHENG_WRITE_IMAGE_ROUTE", "baoyu")  # 这些用例验证旧路径的渲染桩
     monkeypatch.setattr(covers, "resolve_renderer_command", lambda: (["fake-renderer"], "test", []))
     monkeypatch.setattr(covers, "_load_policy", lambda _root: ([{}], []))
 
@@ -358,3 +359,44 @@ def test_reused_covers_keep_recorded_blind_match_failure(tmp_path, monkeypatch):
     ready, errors = covers.ensure_audio_covers(root)
     assert ready == [target]
     assert errors and "通用太阳" in errors[0]
+
+
+def test_default_route_is_the_stylebook_and_baoyu_is_an_explicit_legacy_switch(monkeypatch, tmp_path):
+    monkeypatch.delenv("SANSHENG_WRITE_IMAGE_ROUTE", raising=False)
+    monkeypatch.setattr(covers, "_stylebook_root", lambda: tmp_path)
+    assert covers.image_route() == "stylebook"
+    monkeypatch.setenv("SANSHENG_WRITE_IMAGE_ROUTE", "baoyu")
+    assert covers.image_route() == "baoyu"
+    monkeypatch.delenv("SANSHENG_WRITE_IMAGE_ROUTE")
+    monkeypatch.setattr(covers, "_stylebook_root", lambda: None)
+    assert covers.image_route() == "baoyu"  # 没装画风手册时不会静默失败，退回旧脚本并由旧路径自己报缺依赖
+
+
+def test_stylebook_route_generates_covers_through_raw_generate(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    plan(root)
+    monkeypatch.delenv("SANSHENG_WRITE_IMAGE_ROUTE", raising=False)
+    sb = tmp_path / "sb"
+    (sb / "scripts").mkdir(parents=True)
+    (sb / "scripts/sb.py").write_text(
+        "import sys, json\nfrom pathlib import Path\n"
+        "a = sys.argv\nout = Path(a[a.index('-o') + 1])\nassert 'raw-generate' in a and a[a.index('--aspect') + 1] == '1:1'\n"
+        "out.write_bytes(b'x' * 5000)\nprint(json.dumps({'ok': True, 'provider': 'codex', 'model': 'codex-builtin', 'seconds': 2, 'tokens': 1}))\n")
+    monkeypatch.setattr(covers, "_stylebook_root", lambda: sb)
+    monkeypatch.setattr(covers, "run_blind_match", lambda *a, **kw: {"status": "skipped", "errors": [], "warnings": []})
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not errors and len(ready) == 1 and ready[0].read_bytes().startswith(b"xxxx")
+    logged = (process_file(root, covers.GEN_LOG) if hasattr(covers, "GEN_LOG") else None)
+    assert "stylebook-service" in "".join(p.read_text(encoding="utf-8") for p in root.rglob("*.jsonl") if "render" in p.name or "gen" in p.name)
+
+
+def test_stylebook_route_failure_is_reported_not_swallowed(tmp_path, monkeypatch):
+    root = article(tmp_path)
+    plan(root)
+    monkeypatch.delenv("SANSHENG_WRITE_IMAGE_ROUTE", raising=False)
+    sb = tmp_path / "sb"
+    (sb / "scripts").mkdir(parents=True)
+    (sb / "scripts/sb.py").write_text("import json, sys\nprint(json.dumps({'ok': False, 'kind': 'quota', 'error': '额度用完'}))\nsys.exit(2)\n")
+    monkeypatch.setattr(covers, "_stylebook_root", lambda: sb)
+    ready, errors = covers.ensure_audio_covers(root)
+    assert not ready and any("quota" in e for e in errors)

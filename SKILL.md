@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 # 中文长文写作系统
 
-运行要求：Python 3.10+、Node.js 18+ 与 baoyu-skills；renderer 凭证按 `image-routing.md` 配置。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
+运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走叁笙画风手册（同级安装 `sansheng-stylebook`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 

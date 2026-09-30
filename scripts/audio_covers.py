@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -457,6 +458,47 @@ def _render_one(
     return errors
 
 
+def _stylebook_root() -> Path | None:
+    try:
+        from .stylebook_preview import _skill_root
+    except ImportError:  # pragma: no cover - direct script execution
+        from stylebook_preview import _skill_root
+    try:
+        root = _skill_root(os.environ.get("SANSHENG_STYLEBOOK_ROOT"))
+    except Exception:  # noqa: BLE001 - 没装画风手册就退回旧路径
+        return None
+    return root if (root / "scripts/sb.py").is_file() else None
+
+
+def image_route() -> str:
+    """封面出图走哪条路：默认画风手册（Codex 订阅额度）；SANSHENG_WRITE_IMAGE_ROUTE=baoyu 才走旧的宝玉脚本。"""
+    want = os.environ.get("SANSHENG_WRITE_IMAGE_ROUTE", "").strip().lower()
+    if want == "baoyu":
+        return "baoyu"
+    return "stylebook" if _stylebook_root() else "baoyu"
+
+
+def _render_one_stylebook(article_dir: Path, *, stage: str, prompt_file: Path, output: Path, timeout: int = 1800) -> list[str]:
+    root = _stylebook_root()
+    if root is None:
+        return [f"{stage}：找不到画风手册本体（SANSHENG_STYLEBOOK_ROOT）"]
+    cmd = [sys.executable, str(root / "scripts/sb.py"), "raw-generate", "--prompt-file", str(prompt_file), "--aspect", "1:1",
+           "--size", "1024x1024", "-o", str(output), "--tag", f"audio-cover:{stage}"]
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                              check=False, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [f"{stage} 出图调用失败：{exc}"]
+    lines = [x for x in (done.stdout or "").splitlines() if x.strip().startswith("{")]
+    meta = json.loads(lines[-1]) if lines else {}
+    if done.returncode != 0 or not meta.get("ok") or not output.is_file() or output.stat().st_size == 0:
+        return [f"{stage} 出图失败：{meta.get('kind', done.returncode)} {meta.get('error', (done.stderr or '')[-200:])}"]
+    _log(article_dir, {"stage": stage, "renderer": "stylebook-service", "provider": meta.get("provider"), "model": meta.get("model"),
+                       "seconds": meta.get("seconds"), "tokens": meta.get("tokens"), "attempt": meta.get("attempts", 1),
+                       "output": str(output.relative_to(article_dir)), "prompt": str(prompt_file.relative_to(article_dir))})
+    return []
+
+
 def _recheck_blind_match(article_dir: Path, stage_paths: dict[str, Path]) -> list[str]:
     """封面都已存在时沿用已有盲配结论：配错的结论不因重跑 handoff 而消失。"""
     if recheck_blind_match is None:
@@ -511,12 +553,15 @@ def ensure_audio_covers(
     except (OSError, ValueError, yaml.YAMLError) as exc:
         return ready, [str(exc)]
 
-    command, _revision, errors = resolve_renderer_command()
-    if errors or command is None:
-        return ready, errors
-    renderers, policy_errors = _load_policy(article_dir)
-    if policy_errors:
-        return ready, policy_errors
+    route = image_route()
+    command, renderers = None, []
+    if route == "baoyu":
+        command, _revision, errors = resolve_renderer_command()
+        if errors or command is None:
+            return ready, errors
+        renderers, policy_errors = _load_policy(article_dir)
+        if policy_errors:
+            return ready, policy_errors
     (article_dir / PROMPT_DIR).mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
     newly_generated: dict[str, Path] = {}
@@ -526,10 +571,13 @@ def ensure_audio_covers(
                   build_podcast_cover_prompt(title, digest, plan=plan[stage]))
         prompt_file = article_dir / PROMPT_DIR / f"{target.stem}.md"
         prompt_file.write_text(prompt + "\n", encoding="utf-8")
-        item_errors = _render_one(
-            article_dir, stage=stage, prompt_file=prompt_file,
-            output=target, command=command, renderers=renderers,
-        )
+        if route == "stylebook":
+            item_errors = _render_one_stylebook(article_dir, stage=stage, prompt_file=prompt_file, output=target)
+        else:
+            item_errors = _render_one(
+                article_dir, stage=stage, prompt_file=prompt_file,
+                output=target, command=command, renderers=renderers,
+            )
         if item_errors:
             failures.extend(item_errors)
         else:
