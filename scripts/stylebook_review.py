@@ -45,9 +45,27 @@ def production_inputs(cwd: Path, production_path: Path) -> tuple[dict, dict, dic
     batch_path = cwd / "素材/render-batch.json"
     batch = json.loads(batch_path.read_text())
     task = next(item for item in batch["tasks"] if item["id"] == record["id"])
-    if digest(task) != record["task_digest"] or task["manifest"] != record["manifest"]:
+    if digest(task) != record["task_digest"]:
         raise ValueError("最终候选与当前完整任务不一致")
     dependencies = record["dependencies_sha256"]
+    manifest = task["manifest"]
+    if "text_layout" in record:
+        try:
+            from . import stylebook_layout
+        except ImportError:
+            import stylebook_layout
+        layout_path = (cwd / record["text_layout"]["path"]).resolve()
+        layout = json.loads(layout_path.read_text())
+        expected_path = cwd / "素材/stylebook-layouts" / f"{digest(layout)}.json"
+        if (layout_path != expected_path or sha(layout_path) != record["text_layout"]["sha256"]
+                or record.get("production_method") != "refit_generated_raw_lettering"
+                or str(layout_path) not in dependencies
+                or str(Path(stylebook_layout.__file__).resolve()) not in dependencies):
+            raise ValueError("排字调整缺确切布局及实际制作方法绑定")
+        manifest = stylebook_layout.apply_layout(manifest, layout)
+    if manifest != record["manifest"]:
+        raise ValueError("最终候选文字或内容与当前任务及排字调整不一致")
+    task = {**task, "manifest": manifest}
     try:
         from . import stylebook_source
     except ImportError:

@@ -4550,6 +4550,16 @@ def cmd_collect_stylebook_result(cwd: Path, result: str) -> None:
     print(f"✅ 已回收 {receipt['id']} 原始候选图：{receipt['receipt_path']}；来源为宿主回执，最终制作与 QA 尚未完成")
 
 
+def cmd_refit_stylebook_candidate(cwd: Path, raw_receipt: str, layout: str) -> None:
+    from stylebook_layout import refit_candidate
+
+    receipt, errors = refit_candidate(cwd, cwd / raw_receipt, cwd / layout)
+    if errors:
+        print("❌ 排字调整失败：" + "；".join(errors))
+        raise SystemExit(2)
+    print(f"✅ 已调整 {receipt['id']} 最终排字：{receipt['receipt_path']}；原始生图来源保留，须重新验收")
+
+
 def cmd_produce_stylebook_candidate(cwd: Path, raw_receipt: str) -> None:
     from stylebook_workflow import produce_candidate
 
@@ -5187,6 +5197,9 @@ def _main_impl():
     p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
+    p_refit_sb = sub.add_parser("refit-stylebook-candidate", help="基于实际原始底图调整排字位置或字号，保留完整来源")
+    p_refit_sb.add_argument("--raw-receipt", required=True, help="本篇当前实际回收的原始图片凭证 JSON")
+    p_refit_sb.add_argument("--layout", required=True, help="只含文字区位置、字号与对齐的调整 JSON")
     p_review_sb = sub.add_parser("review-stylebook-candidate", help="独立看图并验收当前最终候选，保留失败报告")
     p_review_sb.add_argument("--production", required=True, help="最终制作 production.json")
     sub.add_parser("review-stylebook-plan", help="独立完整阅读原文，复核正文配图计划和封面主题")
@@ -5430,6 +5443,8 @@ def _main_impl():
         cmd_collect_stylebook_result(cwd, args.result)
     elif args.cmd == "produce-stylebook-candidate":
         cmd_produce_stylebook_candidate(cwd, args.raw_receipt)
+    elif args.cmd == "refit-stylebook-candidate":
+        cmd_refit_stylebook_candidate(cwd, args.raw_receipt, args.layout)
     elif args.cmd == "review-stylebook-candidate":
         cmd_review_stylebook_candidate(cwd, args.production)
     elif args.cmd == "review-stylebook-plan":
