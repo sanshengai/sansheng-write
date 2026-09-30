@@ -124,7 +124,11 @@ def assemble_release_markdown(
     if errors or plan is None:
         return None, errors
     if plan.get("schema_version") == 2:
-        return None, ["画风手册当前只有编译/待生图请求；正式生成来源、最终 QA 和装配尚未完成，不能使用旧装配合同"]
+        try:
+            from .stylebook_assembly import assemble
+        except ImportError:
+            from stylebook_assembly import assemble
+        return assemble(cwd)
     draft = cwd / "定稿.md"
     try:
         original = draft.read_text(encoding="utf-8")

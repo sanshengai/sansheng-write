@@ -48,7 +48,12 @@ def production_inputs(cwd: Path, production_path: Path) -> tuple[dict, dict, dic
     if digest(task) != record["task_digest"] or task["manifest"] != record["manifest"]:
         raise ValueError("最终候选与当前完整任务不一致")
     dependencies = record["dependencies_sha256"]
-    required = [cwd / "定稿.md", cwd / "visual-plan.json", batch_path, raw_receipt,
+    try:
+        from . import stylebook_source
+    except ImportError:
+        import stylebook_source
+    source = stylebook_source.current_source(cwd, batch, json.loads((cwd / "visual-plan.json").read_text()))
+    required = [source, Path(stylebook_source.__file__).resolve(), cwd / "visual-plan.json", batch_path, raw_receipt,
                 cwd / raw["raw_path"], host_path]
     if not isinstance(dependencies, dict) or any(str(path.resolve()) not in dependencies for path in required):
         raise ValueError("制作凭证缺少原文、计划、原始输出或请求依赖")

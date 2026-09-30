@@ -12,7 +12,7 @@
 - `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
 - `renderer.backend`：`host-imagegen` 或 `stylebook-service`。当前正式适配只会为前者创建待宿主执行的请求；后者明确报未实现，不自动换后端。
 
-在本篇目录运行 `pipeline.py compile-visuals`。新路径输出 `素材/render-batch.json`、`素材/visual-compile-receipt.json` 和 `素材/stylebook-requests/<摘要>.json`；历史请求不可覆盖。保存完整编译词、参考图职责与实际文件摘要、制作清单、画风方法文件和适配器摘要。编译方言的 model 不充当实际调用模型。
+在本篇目录运行 `pipeline.py compile-visuals`。新路径输出 `素材/render-batch.json`、`素材/visual-compile-receipt.json` 和 `素材/stylebook-requests/<摘要>.json`；历史请求不可覆盖。保存完整编译词、参考图职责与实际文件摘要、制作清单、画风方法文件和适配器摘要；原文字节另存于不可变 `素材/stylebook-sources/<原文摘要>.md`。编译方言的 model 不充当实际调用模型。
 
 接着运行 `pipeline.py render-visuals`：对当前原文、任务、方法、参考图和实际编译词重新核验，输出完整内置生图调用参数。`--only 01` 只准备指定图片。CLI 返回码 **3** 表示 `pending_host`，尚未生成成品；实际底层模型和费用保留 null。宿主不能将这一步当作生成成功或继续封存。
 
@@ -34,6 +34,10 @@ CLI 能核对请求、原文、方法、参考图与输出字节，但无法独�
 
 运行 `pipeline.py select-stylebook-group --plan-review <全文报告.json> --report cover=<封面报告.json> --report 01=<正文图报告.json>` 选择完整组。`--report` 可重复；必须恰好覆盖本篇全部图片 ID。入口重新检查全文报告、每张最终图的独立 QA、已知异议及是否属于同一当前制作请求，保留不可变选图快照，并写入当前 `素材/stylebook-selection.json`。原文、计划、成品、报告、方法或实际问题改变后，`stylebook_group.verify_group` 会拒绝旧选择。选中整组状态仍是 `group_selected_pending_assembly`，不代表装配或发布通过。
 
-装配、seal 及发布检查仍在实施。当前新路线的装配、旧宝玉 QA 和旧视觉凭证入口明确拒绝；旧预览、待生图请求与手工复制的历史样图不能进入正式 seal。默认路线尚未切换，写作正式可用不能由编译测试通过推断。
+运行 `pipeline.py assemble-release` 会先重新核对完整选图，再将选定封面与正文图放到正式引用路径，并按每张图的确切位置引用插入机器图片块。冻结原文保持原字节；定稿中的作者字符保留顺序，不移动原始照片、截图或音频块。引用必须唯一命中段首或段末；含糊位置拒绝装配。装配结果、当前选图及最终图片摘要写入不可变 `素材/stylebook-assemblies/<摘要>.json`，当前凭证为 `素材/stylebook-assembly.json`，状态仍是 `assembled_pending_release_review`。
+
+`stylebook_assembly.verify_assembly` 重新复核全文及逐图验收、当前选择、冻结原文和实际成品，要求定稿逐字等于从冻结原文重建的装配结果。正文摘要相同但替换了图片引用、多插了机器块、改变了正文或成品字节时均拒绝。各图 QA 与全文报告绑定冻结来源，合法插图不会使其失效；原文改稿须重新制定计划、编译并验收。旧请求没有冻结来源时明确失效，不自动补造历史凭证。
+
+seal 及发布检查仍在实施。当前旧宝玉 QA 和旧视觉凭证入口明确拒绝；旧预览、待生图请求与手工复制的历史样图不能进入正式 seal。默认路线尚未切换，写作正式可用不能由编译测试通过推断。
 
 真实文章验收须继续完成：全文计划独立复核 → 实际生图及来源 → 最终排字/结构制作 → 绑定最终字节的 QA → 作者正文不变的装配 → seal → 整篇阅读候选。公众号提交只在另有对应授权及发布合同满足时执行。

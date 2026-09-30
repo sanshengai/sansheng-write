@@ -30,6 +30,9 @@ def mocked_reviewer(monkeypatch, *, failing=False, change=None):
                   "must_not_see": [{"item": item, "present": False, "why": "synthetic test answer"} for item in bans],
                   "transcribed_text": expected, "content_match": {"ok": True, "why": "synthetic test answer"},
                   "_reviewer": "test-only-doubao"}
+        if contract.get("_content_point_expectations"):
+            result["point_match"] = [{"index": index, "ok": True, "why": "synthetic point answer"}
+                                     for index in range(1, len(contract["_content_point_expectations"]) + 1)]
         if contract.get("_square_crop_expectation"):
             result["square_crop"] = {"ok": True, "why": "synthetic square answer"}
         if contract.get("_thumbnail_expectation"):

@@ -22,14 +22,20 @@ def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
         raise ValueError("；".join(errors))
     root, modules = _peer()
     plan = json.loads((cwd / "visual-plan.json").read_text())
-    errors, _ = modules["plan"].check(plan["article_plan"], base_path=cwd)
+    try:
+        from . import stylebook_source
+    except ImportError:
+        import stylebook_source
+    batch = json.loads((cwd / "素材/render-batch.json").read_text())
+    article = stylebook_source.current_source(cwd, batch, plan)
+    adapted = copy.deepcopy(plan["article_plan"])
+    adapted["source"]["path"] = str(article.relative_to(cwd))
+    errors, _ = modules["plan"].check(adapted, base_path=cwd)
     if errors:
         raise ValueError("；".join(errors))
-    article = cwd / "定稿.md"
     quote = plan["cover"].get("source", {}).get("quote")
     if not isinstance(quote, str) or not quote.strip() or quote not in article.read_text():
         raise ValueError("封面须给出可在全文中核对的依据原句")
-    adapted = copy.deepcopy(plan["article_plan"])
     adapted["cover_brief"] = plan["cover"]
     files = {"article": article, "visual_plan": cwd / "visual-plan.json",
              "adapter": Path(__file__).resolve()}
@@ -39,7 +45,6 @@ def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
         if not path.is_relative_to(root):
             raise ValueError("全文复核模块与选定画风手册不同")
         files[name] = path
-    batch = json.loads((cwd / "素材/render-batch.json").read_text())
     for path in batch["method_source"]["files"]:
         files[f"method:{path}"] = (root / path).resolve()
     for task in batch["tasks"]:
@@ -66,7 +71,7 @@ def review_article_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         peer = importlib.import_module("stylebook.qa.plan_review")
         binding = importlib.import_module("stylebook.qa.binding")
         snapshot = binding.snapshot("article-plan", files=files, values=values)
-        review = peer.review(plan, cwd / "定稿.md")
+        review = peer.review(plan, files["article"])
         if not str(review.get("_reviewer", "")).strip():
             raise ValueError("全文独立复核缺实际模型标识")
         passed = qualified(review, plan)

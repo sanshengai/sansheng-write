@@ -136,6 +136,11 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
         source_path = Path(plan["article_plan"]["source"]["path"])
         if (cwd / source_path).resolve() != article:
             return None, ["article_plan.source.path 必须指向当前 定稿.md"]
+        try:
+            from . import stylebook_source
+        except ImportError:
+            import stylebook_source
+        frozen = stylebook_source.freeze_source(cwd, plan["source"])
         root, modules = _peer()
         problems, warnings = modules["plan"].check(plan["article_plan"], base_path=cwd)
         if problems:
@@ -175,7 +180,9 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
         anchor["digest"] = digest(anchor["files"])
         identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
                     "status": "compiled_pending_render", "renderer": plan["renderer"],
-                    "source": plan["source"], "plan_digest": digest(plan), "method_source": anchor,
+                    "source": plan["source"], "source_snapshot": str(frozen.relative_to(cwd)),
+                    "source_methods": stylebook_source.methods(),
+                    "plan_digest": digest(plan), "method_source": anchor,
                     "adapter_sha256": sha(Path(__file__)), "warnings": warnings, "tasks": tasks}
         request_id = digest(identity)
         dest = cwd / "素材" / "stylebook-requests" / f"{request_id}.json"
@@ -203,8 +210,11 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
             raise ValueError("编译请求已改变，须重新 compile-visuals")
         if batch.get("producer") != PRODUCER or not selected(batch) or batch.get("plan_digest") != digest(plan):
             raise ValueError("编译请求不属于当前画风手册计划")
-        if sha(cwd / "定稿.md") != batch["source"]["sha256"]:
-            raise ValueError("原文已改变，编译请求失效")
+        try:
+            from .stylebook_source import current_source
+        except ImportError:
+            from stylebook_source import current_source
+        current_source(cwd, batch, plan)
         anchor = batch["method_source"]
         root = Path(anchor["root"])
         if anchor["digest"] != digest(anchor["files"]) or any(sha(root / rel) != value for rel, value in anchor["files"].items()):
@@ -355,7 +365,13 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
         overlay = spec if mode in ("overlay", "hybrid") else None
         dependencies = {str(raw): sha(raw), str(raw_receipt_path): sha(raw_receipt_path),
                         str(host_path): sha(host_path), str(Path(__file__).resolve()): sha(Path(__file__))}
-        for path in (cwd / "定稿.md", cwd / "visual-plan.json", cwd / "素材/render-batch.json"):
+        try:
+            from . import stylebook_source
+        except ImportError:
+            import stylebook_source
+        plan = json.loads((cwd / "visual-plan.json").read_text())
+        source = stylebook_source.current_source(cwd, batch, plan)
+        for path in (source, Path(stylebook_source.__file__).resolve(), cwd / "visual-plan.json", cwd / "素材/render-batch.json"):
             dependencies[str(path)] = sha(path)
         dependencies.update({str((root / path).resolve()): value for path, value in batch["method_source"]["files"].items()})
         # Bind the actual font files selected by the same resolver used to draw.
@@ -382,6 +398,10 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
             produced = export.export(raw, manifest["format"], Path(scratch) / "final.png", overlay=overlay, overlay_root=cwd)
             if any(sha(Path(path)) != value for path, value in dependencies.items()):
                 raise ValueError("最终制作过程中输入或制作方法改变")
+            try:
+                stylebook_source.current_source(cwd, batch, plan)
+            except ValueError as exc:
+                raise ValueError(f"最终制作过程中原文或装配内容改变：{exc}") from exc
             outputs = {"main": {"sha256": sha(produced.main)}}
             outputs.update({f"extra-{n}": {"sha256": sha(path)} for n, path in enumerate(produced.extras)})
             identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
