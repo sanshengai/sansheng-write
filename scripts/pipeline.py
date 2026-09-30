@@ -140,7 +140,7 @@ STAGE_LABELS = {
     "cover":       "视觉任务单 + 封面（sansheng-write.visual-planner）",
     "infographic": "Hero + 信息图 ≥ 4 张（visual planner 编译，baoyu-image-gen 渲染）",
     "bgm":         "主题音乐（_music-manifest.json 绑定真实来源）",
-    "layout":      "微信排版（baoyu-skills:baoyu-markdown-to-html + format_layout.py）",
+    "layout":      "微信排版（内置 md_render.py + format_layout.py）",
     "logo":        "品牌水印（add_logo.js）",
     "publish":     "草稿事务（预检 + draft/add + 官方 draft/get 读回）",
     "archive":     "发布后沉淀（pipeline.py archive 写作品库 + 自动刷新 articles.md/看板/推荐）",
@@ -183,9 +183,9 @@ STAGE_HINTS = {
     "layout": (
         f'⓪ python "{_skill_path("scripts/normalize_cjk_punctuation.py")}" 定稿.md'
         "（中文半角标点转全角，MD→HTML 前置；done writing 已自动跑过则 0 处、空跑）\n"
-        "① /baoyu-skills:baoyu-markdown-to-html 定稿.md --theme default --color '#2F6F8F' --keep-title\n"
+        f'① python "{_skill_path("scripts/md_render.py")}" 定稿.md --color \'#2F6F8F\' --keep-title   （或 pipeline.py render-html）\n'
         "     （#2F6F8F 是占位色，format_layout 会整体换成 profile 的 colors.primary；别改成品牌色，否则替换对不上）\n"
-        "     🔴 必带 --keep-title：本 skill 正文无 H1（标题在 frontmatter），baoyu 默认会把首个 H2 当标题吃掉\n"
+        "     🔴 必带 --keep-title：本 skill 正文无 H1（标题在 frontmatter），不带会把首个 H2 当标题吃掉\n"
         "        → H2 少一个、format_layout 报「H2≠part_subtitles」退出（详见 layout.md，曾两次踩坑）\n"
         f'  ② python "{_skill_path("scripts/format_layout.py")}" 定稿.html --all \\\n'
         "       --lead-line1 '...' --lead-line2 '...' --lead-subtitle '...' --lead-tag1 '...' --lead-tag2 '...'\n"
@@ -5194,7 +5194,7 @@ def cmd_retitle(new_title: str, cwd: Path):
     print(f"✅ 标题已改为「{new_title}」，已同步：{'、'.join(changed)}")
     print("⚠️ 后续必做（retitle 不代劳）：")
     print("   ① 自查 lead 导读栏（line1/line2）与 digest 要不要跟着改")
-    print("   ② 重跑排版链：normalize → baoyu-markdown-to-html → format_layout.py 定稿.html --all --check")
+    print("   ② 重跑排版链：normalize → md_render.py（pipeline.py render-html）→ format_layout.py 定稿.html --all --check")
     print("   ③ 重推草稿箱（会新增草稿而非覆盖，推完去后台删旧草稿）")
     print("   ④ 若已 archive，作品库标题需手动核对")
 
@@ -5231,6 +5231,7 @@ def _main_impl():
     p_lq = sub.add_parser("learn-queue", help="查看 / 处理飞轮里待学习的改稿")
     p_lq.add_argument("action", nargs="?", default="list", choices=["list", "done", "dismiss"])
     p_lq.add_argument("article", nargs="?", default="")
+    sub.add_parser("render-html", help="定稿.md → 定稿.html（内置渲染，占位主题色，等价于旧的 baoyu-markdown-to-html）")
     sub.add_parser("status", help="查看当前进度 + 下一步建议")
     sub.add_parser("next",   help="打印下一阶段操作说明")
     sub.add_parser(
@@ -5613,6 +5614,12 @@ def _main_impl():
         cmd_finalize(args.wechat_url, cwd)
     elif args.cmd == "moments-copy":
         cmd_moments_copy(cwd)
+    elif args.cmd == "render-html":
+        import md_render as _md
+        info = _md.render_file(cwd / "定稿.md", primary="#2F6F8F", keep_title=True)
+        print(f"✅ 已生成 {Path(info['htmlPath']).name}（标题《{info['title']}》，{len(info['images'])} 张图）"
+              + (f"；旧文件备份为 {Path(info['backupPath']).name}" if info["backupPath"] else "")
+              + "。下一步：format_layout.py 定稿.html --all")
     elif args.cmd == "deliver-draft":
         import flywheel_hooks as _fw
         meta = _fw.snapshot_ai_draft(cwd, force=True, basis="deliver_draft")

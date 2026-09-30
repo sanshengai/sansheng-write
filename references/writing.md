@@ -893,7 +893,7 @@ python -c "import sys; sys.path.insert(0,'$SKILL/scripts'); from contracts impor
 
 按当前定稿状态，从下面这组选项里挑 3-5 条贴合的：
 
-- **进入排版**（→ baoyu-markdown-to-html 转 `定稿.html` → `format_layout.py --all` 一键品牌化处理 → 走 [layout.md](layout.md)）
+- **进入排版**（→ `pipeline.py render-html` 转 `定稿.html` → `format_layout.py --all` 一键品牌化处理 → 走 [layout.md](layout.md)）
 - **再磨一轮**（针对你不满意的某个 H2 模块或某段 — 读 [anti-ai-filter.md](anti-ai-filter.md) 的对应层做精修，不重写整篇）
 - **先磨标题**（→ references/title.md，5 个候选 + 排序 -- 标题选定后再排版，封面图与导读栏要用最终标题）
 - **生成封面**（→ 封面已锁定 `montage-evidence` 单风格，无需选风格、无近 3 篇回避；按 [cover-styles.md](cover-styles.md) montage-evidence 模板直接生成）

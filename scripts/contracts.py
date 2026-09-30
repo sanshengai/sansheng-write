@@ -1544,7 +1544,7 @@ def verify_publish_assets(article_dir: str) -> dict:
         else:
             passed += 1
     else:
-        # 兜底：允许走 H1（baoyu-markdown-to-html 会从 H1 取 title），
+        # 兜底：允许走 H1（md_render 会从 H1 取 title），
         # 但缺 description 则警告
         if re.search(r'^# .+', text, re.MULTILINE):
             warnings.append('定稿.md 无 frontmatter（H1 可作 title 兜底，但缺 description）')

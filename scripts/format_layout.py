@@ -4,7 +4,7 @@
 format_layout.py — 微信公众号排版自动后处理脚手架
 =================================================
 
-职责：将 baoyu-markdown-to-html 输出的原始 HTML 清洗为满足 layout.md 全部规范的最终发布版。
+职责：将 md_render.py（内置，输出结构沿用 baoyu-md）输出的原始 HTML 清洗为满足 layout.md 全部规范的最终发布版。
 设计原则：
   1. 高幂等性 —— 重复执行不叠加不破坏
   2. 模块化 —— --all 全跑，或 --h2 / --table / --lead / --footer / --colors / --takeaway 按需单跑

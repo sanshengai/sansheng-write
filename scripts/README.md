@@ -17,7 +17,7 @@ grep -n "# ===== 【第" scripts/contracts.py
 
 ## format_layout.py -- 排版引擎（2434 行 / 20 节）
 
-把 baoyu-markdown-to-html 的原始 HTML，清洗为满足 `references/layout.md` 规范的最终发布版。确定性、幂等。
+把 `md_render.py` 输出的原始 HTML，清洗为满足 `references/layout.md` 规范的最终发布版。确定性、幂等。
 入口：`main()`（CLI）→ `run()`（编排各 `process_*` 阶段）。
 
 | 节 | 区块 | 说明 |

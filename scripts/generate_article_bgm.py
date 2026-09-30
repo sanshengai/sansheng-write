@@ -581,7 +581,7 @@ def insert_audio_card(article_path: Path, style_name: str, song_name: str):
         html_content = html_path.read_text(encoding="utf-8")
         if "<!-- AUDIO-CARD-START -->" not in html_content and "本文主题曲" not in html_content:
             print("\n  ⚠️  检测到 定稿.html 已存在但不含音频卡片。卡片已写入 定稿.md，")
-            print("  ⚠️  发布前请重新走排版管线（baoyu-markdown-to-html + format_layout.py --all）。\n")
+            print("  ⚠️  发布前请重新走排版管线（pipeline.py render-html + format_layout.py --all）。\n")
 
 
 def main():
