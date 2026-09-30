@@ -7,11 +7,28 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from scripts.stylebook_reading import CHECKS, context, accept_reading, verify_reading
+from scripts.stylebook_reading import CHECKS, context, accept_reading, verify_reading, check_author_text
 from scripts.stylebook_release import reading_errors
 from scripts.stylebook_workflow import sha
 from scripts import pipeline
 from test_stylebook_evidence import completed
+
+
+def test_quoted_list_parser_compatibility_preserves_wording_checks(tmp_path):
+    (tmp_path/'定稿.md').write_text('> **划重点**\n> - 官方后台:数据准\n> - 成本为 -5 元\n')
+    html = '<blockquote><strong>划重点</strong><ul><li>官方后台:数据准</li><li>成本为 -5 元</li></ul></blockquote>'
+    assert check_author_text(tmp_path, html)
+    for changed in [html.replace('数据准', ''), html.replace('-5', '5'),
+                    '<blockquote>划重点<ul><li>成本为 -5 元</li><li>官方后台:数据准</li></ul></blockquote>']:
+        with pytest.raises(ValueError, match='作者文字'):
+            check_author_text(tmp_path, changed)
+
+
+def test_code_list_marker_is_author_text(tmp_path):
+    (tmp_path/'定稿.md').write_text('```text\n> 标题\n> - 原样代码\n```\n')
+    assert check_author_text(tmp_path, '<pre>&gt; 标题\n&gt; - 原样代码</pre>')
+    with pytest.raises(ValueError, match='作者文字'):
+        check_author_text(tmp_path, '<pre>&gt; 标题\n&gt; 原样代码</pre>')
 
 
 def prepared(tmp_path, monkeypatch):

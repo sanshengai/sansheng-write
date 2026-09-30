@@ -284,6 +284,31 @@ def repair_inline_font_family_quotes(html):
     )
 
 
+def repair_missing_nested_emphasis(html, markdown_text):
+    """Restore a demonstrated baoyu-md empty <em> only from a unique source paragraph.
+
+    Some converter versions drop the nested strong child of ***plain text***.
+    Leave complex Markdown and ambiguous contexts for explicit review.
+    """
+    empty = re.compile(r'(<em\b[^>]*>)\s*</em>', re.I)
+    for match in re.finditer(r'(?m)^([^*\n]*)\*\*\*([^*\n]+)\*\*\*([^*\n]*)$', markdown_text):
+        before, missing, after = match.groups()
+        if any(ch in before+missing+after for ch in '<>[]`'):
+            continue
+        normalize = lambda value: re.sub(r'\s+', '', value)
+        context = normalize(before+after)
+        if not context:
+            continue
+        candidates = [p for p in re.finditer(r'<p\b[^>]*>[\s\S]*?</p>', html, re.I)
+                      if normalize(_cell_text(p.group())) == context and len(empty.findall(p.group())) == 1]
+        if len(candidates) != 1:
+            continue
+        paragraph = candidates[0]
+        repaired = empty.sub(lambda m: m.group(1)+'<strong>'+html_mod.escape(missing)+'</strong></em>', paragraph.group(), count=1)
+        html = html[:paragraph.start()]+repaired+html[paragraph.end():]
+    return html
+
+
 def check_all(html, cwd, meta=None):
     """预发布自检，返回 (errors, warnings) 两个列表。
 
@@ -2518,6 +2543,9 @@ def run(args):
         # baoyu-md 的默认中文字体栈曾把未转义双引号写入 style="..."，浏览器容错能看，
         # 微信编辑器清洗后会丢组件。排版时先修，--check 再独立硬拦残留。
         html = repair_inline_font_family_quotes(html)
+        markdown_path = Path(cwd) / '定稿.md'
+        if markdown_path.is_file():
+            html = repair_missing_nested_emphasis(html, markdown_path.read_text(encoding='utf-8'))
         # 🔴 先修 baoyu 写 data-local-path 的反斜杠转义坑（\nuwa→换行、\table→\t 等）
         html = normalize_img_local_paths(html, cwd)
         if args.all or args.colors:

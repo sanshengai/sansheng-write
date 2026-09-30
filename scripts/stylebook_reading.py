@@ -60,6 +60,26 @@ def check_author_text(cwd: Path, html: str) -> str:
         raise ValueError('阅读文字核对需要 Python Markdown：python3 -m pip install Markdown') from exc
     original = (cwd / '定稿.md').read_text()
     source = re.sub(r'\A---\s*\n.*?\n---\s*\n', '', original, count=1, flags=re.S)
+    # baoyu-md recognizes a quoted list directly after its introductory line;
+    # Python Markdown needs a quoted blank line. Preserve every source character
+    # and only supply that parser separator outside fenced code.
+    lines, fence, previous = [], None, ''
+    for line in source.splitlines():
+        content = re.sub(r'^\s*(?:>\s*)+', '', line)
+        marker = re.match(r'^\s*(`{3,}|~{3,})', content)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+        quoted_list = re.match(r'^(\s*>\s*)[-+*]\s+', line)
+        if (fence is None and quoted_list and re.match(r'^\s*>\s*\S', previous)
+                and not re.match(r'^\s*>\s*[-+*]\s+', previous)):
+            lines.append('>')
+        lines.append(line)
+        previous = line
+    source = '\n'.join(lines)
     expected, actual = Text(), Text()
     expected.feed(markdown.markdown(source, extensions=['tables', 'fenced_code']))
     actual.feed(html)
