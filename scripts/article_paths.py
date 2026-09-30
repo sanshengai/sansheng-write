@@ -40,6 +40,7 @@ PROCESS_FILES = frozenset({
     "_audio-cover-blindmatch.json", "_audio-cover-review.md",
     "_finalize-state.json", "_website-sync-receipt.json", "_moments-copy.md",
     "_prep-context.md", "_layout-decision.md", "_physical-archive-receipt.json",
+    "_asset-plan.json", "_delivery-snapshot.json", "_ai-draft.md", "_ai-draft.json",
 })
 
 
