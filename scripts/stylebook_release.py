@@ -17,3 +17,15 @@ def stage_errors(cwd: Path) -> list[str]:
     if actual != expected:
         errors.append(f'正文图须恰好对应当前完整计划；缺少={sorted(expected-actual)}，额外={sorted(actual-expected)}')
     return errors
+
+
+def reading_errors(cwd: Path) -> list[str]:
+    try:
+        try:
+            from .stylebook_reading import verify_reading
+        except ImportError:
+            from stylebook_reading import verify_reading
+        verify_reading(cwd)
+        return []
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return [f'画风手册整篇阅读凭证缺失或失效：{exc}']

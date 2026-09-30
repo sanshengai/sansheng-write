@@ -2432,6 +2432,8 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     infos = list(mat.glob("infographic*.png")) if mat.exists() else []
     if _stylebook_selected(cwd):
         errors.extend(_stylebook_release_errors(cwd))
+        from stylebook_release import reading_errors
+        errors.extend(reading_errors(cwd))
     elif _infographic_mode(cwd) == "author-shots":
         errors.extend(_author_shots_errors(cwd))
     elif len(infos) < 4:
@@ -4563,6 +4565,17 @@ def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
     )
 
 
+def cmd_accept_stylebook_reading(cwd: Path, observation: str) -> None:
+    from stylebook_reading import accept_reading
+
+    receipt, errors = accept_reading(cwd, cwd / observation)
+    if errors:
+        for error in errors:
+            print(f"❌ {error}")
+        raise SystemExit(2)
+    print(f"✅ 已封存当前整篇浏览器及宿主阅读验收：{receipt['report_path']}；未新增独立模型复核或发布文章")
+
+
 def cmd_reuse_stylebook_raw(cwd: Path, raw_receipt: str, image_id: str) -> None:
     from stylebook_reuse import reuse_raw
 
@@ -5237,6 +5250,8 @@ def _main_impl():
     p_reuse_sb = sub.add_parser("reuse-stylebook-raw", help="完整调用和参考图未变化时复用实际底图；当前版本仍须制作与 QA")
     p_reuse_sb.add_argument("--raw-receipt", required=True, help="本篇历史宿主回收的不可变原始凭证 JSON")
     p_reuse_sb.add_argument("--id", required=True, help="当前计划中的图片 ID")
+    p_read_sb = sub.add_parser("accept-stylebook-reading", help="封存当前整篇浏览器及宿主实际阅读记录")
+    p_read_sb.add_argument("--observation", required=True, help="包含三个实际视口、图片字节、截图和宿主阅读结论的 JSON")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
     p_refit_sb = sub.add_parser("refit-stylebook-candidate", help="基于实际原始底图调整排字位置或字号，保留完整来源")
@@ -5481,6 +5496,8 @@ def _main_impl():
             getattr(args, "only", "") or "",
             getattr(args, "candidates", 1),
         )
+    elif args.cmd == "accept-stylebook-reading":
+        cmd_accept_stylebook_reading(cwd, args.observation)
     elif args.cmd == "reuse-stylebook-raw":
         cmd_reuse_stylebook_raw(cwd, args.raw_receipt, args.id)
     elif args.cmd == "collect-stylebook-result":

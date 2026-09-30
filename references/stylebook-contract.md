@@ -46,7 +46,11 @@ CLI 能核对请求、原文、方法、参考图与输出字节，但无法独�
 
 随后运行 `pipeline.py seal visual`，封存上述汇总及最终字节，保存不可变 `素材/stylebook-visual-seals/<摘要>.json` 和当前视觉凭证。`evidence.verify_visual_receipt` 在消费者入口重新验证整个来源链；修改正文、正式图片、验收报告、选图、装配或新增真实异议后，旧封存会失效。状态为 `visual_sealed_pending_reading_review`；仍须实际整篇阅读验收。旧预览、待生图请求与手工复制的历史样图不能进入正式 seal。
 
-正式发布检查与整篇阅读凭证仍在实施，默认路线尚未切换。现有 schema1 宝玉路径继续按原合同独立验收；不能因为新路径编译或单图通过就声称写作正式发布已经可用。
+整篇阅读通过后运行 `pipeline.py accept-stylebook-reading --observation <真实阅读记录.json>`。记录使用 `schema_version: 1`，绑定 `html_sha256`，来源为 `host_attested_browser_and_native_reading`，`additional_independent_review: false`；这不是一次新的独立模型复核。`native_checks` 必须逐项确认 `whole_article_read`、`required_text_readable`、`no_clipping`、`consistent_style`、`cover_crops_checked`。没有看过或仍有问题时不得填 true。
+
+`views` 保存 390、430、900 三个实际视口，分别记录 `width`、`viewport_height`、`document_width`、`document_height`；`images` 按 HTML 图片顺序保存实际本地绝对 `path`、`sha256`、`loaded`、`natural_width`、`display_width`；`screenshot` 为本篇目录内完整页面 PNG 的 `path` 和 `sha256`。程序检查加载、溢出、当前图像字节和截图尺寸；文字、裁切与风格结论仍由宿主实际阅读提供，不将截图存在误说成语义自动验收。
+
+阅读入口绑定当前视觉 seal、整篇 HTML、全部本地图片、实际截图及阅读方法。它用 Python Markdown（`python3 -m pip install Markdown`）解析定稿，检查作者文字在 HTML 中完整且顺序保留，并绑定解析器版本；缺依赖时明确失败。发布前会重新核验 `素材/stylebook-reading-review.json`；缺记录、坏图、横向溢出、必要文字不清或任一绑定输入改变都拒绝。默认路线尚未切换，现有 schema1 宝玉路径继续按原合同独立验收；单图通过仍不能代表正式文章发布可用。
 
 封面、正文图阶段及发布前视觉路由在显式 schema2 任务中调用当前完整计划的验收链，不再套用 schema1 的粘土风或至少四张图规则。正式目录中的 `infographic*.png` 必须恰好等于当前计划选中的正文图，零张正文图也必须有合格封面和全文复核；混入额外未验收图、缺图、旧报告或待生成请求均拒绝。导读小图、音频、HTML、上游审稿及归档等发布要求继续独立检查。
 
