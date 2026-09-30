@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -993,7 +994,8 @@ def cmd_confirm(article_dir: Path, channel: str, url: str = "") -> int:
 def resolve_post_script(channel: str, cfg: dict) -> Path | None:
     """解析该渠道的发布脚本路径。
 
-    profile 显式配置优先；微博没配时按 baoyu_locator 的优先级找 weibo-post.ts
+    profile 显式配置优先；微博没配时用内置 _vendor/weibo/weibo-post.ts（MIT，来源见 README），
+    SANSHENG_WRITE_WEIBO=baoyu 才回到宝玉插件，按 baoyu_locator 的优先级找 weibo-post.ts
     —— 插件缓存目录名是版本 hash，会同时留多份，不能写死也不能按名字排序
     （09-22 实证字典序选中了没打补丁的旧版）。
     """
@@ -1003,6 +1005,9 @@ def resolve_post_script(channel: str, cfg: dict) -> Path | None:
         return p if p.is_file() else None
 
     if channel == "weibo":
+        vendored = Path(__file__).resolve().parent / "_vendor" / "weibo" / "weibo-post.ts"
+        if vendored.is_file() and os.environ.get("SANSHENG_WRITE_WEIBO") != "baoyu":
+            return vendored
         return find_skill_script("baoyu-post-to-weibo", "scripts/weibo-post.ts")
     return None
 

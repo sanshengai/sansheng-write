@@ -96,7 +96,8 @@ def test_脚本缺失时跳到下一候选(fake_home):
     assert baoyu_locator.find_skill_script("baoyu-post-to-weibo", "scripts/不存在.ts") is None
 
 
-def test_distribute微博脚本走现役版本(fake_home):
+def test_distribute微博脚本走现役版本(fake_home, monkeypatch):
+    monkeypatch.setenv("SANSHENG_WRITE_WEIBO", "baoyu")  # 旧路径：显式回到宝玉插件
     got = distribute.resolve_post_script("weibo", {})
     assert got == (fake_home["active"] / "skills/baoyu-post-to-weibo/scripts/weibo-post.ts").resolve()
 
@@ -116,4 +117,7 @@ def test_release_to_draft公众号目录走现役版本(fake_home):
 def test_全部缺失返回None(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     assert baoyu_locator.find_skill_dir("baoyu-post-to-weibo") is None
+    monkeypatch.setenv("SANSHENG_WRITE_WEIBO", "baoyu")
     assert distribute.resolve_post_script("weibo", {}) is None
+    monkeypatch.delenv("SANSHENG_WRITE_WEIBO")
+    assert distribute.resolve_post_script("weibo", {}).name == "weibo-post.ts"  # 默认走内置
