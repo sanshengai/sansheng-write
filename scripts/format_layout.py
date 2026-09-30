@@ -306,6 +306,31 @@ def repair_missing_nested_emphasis(html, markdown_text):
         paragraph = candidates[0]
         repaired = empty.sub(lambda m: m.group(1)+'<strong>'+html_mod.escape(missing)+'</strong></em>', paragraph.group(), count=1)
         html = html[:paragraph.start()]+repaired+html[paragraph.end():]
+    # A whole quoted emphasis has no internal context. Bind its position to
+    # the complete preceding source paragraph and require one empty quote.
+    blocks = re.split(r'\n\s*\n', markdown_text)
+    for index, block in enumerate(blocks):
+        quote = re.fullmatch(r'\s*>\s*\*\*\*([^*\n]+)\*\*\*\s*', block)
+        if not quote or index == 0 or any(ch in quote.group(1) for ch in '<>[]`'):
+            continue
+        prior = blocks[index-1].strip()
+        if not prior or any(ch in prior for ch in '<>[]`') or prior.startswith(('>', '#', '-', '*')):
+            continue
+        # Only plain prose with ordinary bold spans is supported here.
+        if '*' in prior.replace('**', ''):
+            continue
+        prior = re.sub(r'\s+', '', prior.replace('**', ''))
+        candidates = []
+        for candidate in re.finditer(r'<blockquote\b[^>]*>[\s\S]*?</blockquote>', html, re.I):
+            if (_cell_text(candidate.group()).strip() == ''
+                    and len(empty.findall(candidate.group())) == 1
+                    and re.sub(r'\s+', '', _cell_text(html[:candidate.start()])).endswith(prior)):
+                candidates.append(candidate)
+        if len(candidates) != 1:
+            continue
+        candidate = candidates[0]
+        repaired = empty.sub(lambda m: m.group(1)+'<strong>'+html_mod.escape(quote.group(1))+'</strong></em>', candidate.group(), count=1)
+        html = html[:candidate.start()]+repaired+html[candidate.end():]
     return html
 
 

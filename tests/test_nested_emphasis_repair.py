@@ -22,3 +22,14 @@ def test_nonempty_emphasis_and_literal_html_are_preserved():
     assert repair_missing_nested_emphasis(html,'甲***不同文字***乙')==html
     empty='<p>甲<em></em>乙</p>'
     assert repair_missing_nested_emphasis(empty,'甲***<script>bad</script>***乙')==empty
+
+
+def test_empty_quote_requires_complete_preceding_source_paragraph():
+    source='这是**作者的判断**。\n\n> ***缺失的完整金句***\n\n下一段。'
+    damaged='<p>这是<strong>作者的判断</strong>。</p><blockquote><p><em></em></p></blockquote><p>下一段。</p>'
+    fixed=repair_missing_nested_emphasis(damaged,source)
+    assert '<em><strong>缺失的完整金句</strong></em>' in fixed
+    assert repair_missing_nested_emphasis(fixed,source)==fixed
+    assert repair_missing_nested_emphasis(damaged,source.replace('作者的判断','别人的判断'))==damaged
+    assert repair_missing_nested_emphasis(damaged,'> ***没有前文***')==damaged
+    assert repair_missing_nested_emphasis(damaged+damaged,source)==damaged+damaged
