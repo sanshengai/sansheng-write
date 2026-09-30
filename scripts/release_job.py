@@ -103,24 +103,49 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
     if not str(meta.get("digest") or "").strip():
         errors.append("article-meta.yaml 缺 digest")
 
-    # 全站统一粘土风，不再按 infographic_subject 做风格路由（见 visual_workflow.py 注释）
-    style = str(meta.get("infographic_style") or "")
-    if style != "claymation":
-        errors.append(
-            f"infographic_style 必须是 claymation（全站统一粘土风）；"
-            f"当前为 {style or '(空)'}"
-        )
-    if meta.get("visual_profile") != "warm-light-clay":
-        errors.append("必须显式 visual_profile: warm-light-clay")
-    cover_style = str(meta.get("cover_style") or "montage-evidence")
-    if cover_style != "montage-evidence":
-        errors.append("release-from-final 当前只接受 cover_style: montage-evidence")
-    try:
-        from .visual_contracts import cover_text_contract
-    except ImportError:  # pragma: no cover - direct script execution
-        from visual_contracts import cover_text_contract
-    _, cover_text_errors = cover_text_contract(meta)
-    errors.extend(f"cover_text: {error}" for error in cover_text_errors)
+    # 新路径由文章级视觉合同显式选择；旧路径仍保留原元数据闸门。
+    plan_path = final_path.parent / "visual-plan.json"
+    plan = None
+    if plan_path.exists():
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errors.append(f"visual-plan.json 读取失败：{exc}")
+        if not isinstance(plan, dict):
+            errors.append("visual-plan.json 顶层必须是对象")
+        elif type(plan.get("schema_version")) is not int or plan["schema_version"] not in (1, 2):
+            errors.append("visual-plan.json 不支持的 schema_version")
+    stylebook_route = isinstance(plan, dict) and (
+        plan.get("schema_version") == 2 or plan.get("workflow") == "stylebook-v1"
+    )
+    if stylebook_route:
+        try:
+            from .stylebook_workflow import validate
+        except ImportError:
+            from stylebook_workflow import validate
+        errors.extend(f"画风手册: {error}" for error in validate(plan))
+        source = plan.get("source")
+        if isinstance(source, dict) and source.get("author_content_sha256") != author_content_sha256(draft_text):
+            errors.append("画风手册原文作者正文摘要与当前定稿不一致")
+    else:
+        # 全站统一粘土风，不再按 infographic_subject 做风格路由（见 visual_workflow.py 注释）
+        style = str(meta.get("infographic_style") or "")
+        if style != "claymation":
+            errors.append(
+                f"infographic_style 必须是 claymation（全站统一粘土风）；"
+                f"当前为 {style or '(空)'}"
+            )
+        if meta.get("visual_profile") != "warm-light-clay":
+            errors.append("必须显式 visual_profile: warm-light-clay")
+        cover_style = str(meta.get("cover_style") or "montage-evidence")
+        if cover_style != "montage-evidence":
+            errors.append("release-from-final 当前只接受 cover_style: montage-evidence")
+        try:
+            from .visual_contracts import cover_text_contract
+        except ImportError:  # pragma: no cover - direct script execution
+            from visual_contracts import cover_text_contract
+        _, cover_text_errors = cover_text_contract(meta)
+        errors.extend(f"cover_text: {error}" for error in cover_text_errors)
     return meta, errors
 
 

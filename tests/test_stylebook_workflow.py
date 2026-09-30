@@ -313,3 +313,43 @@ def test_actual_overlay_tracks_font_bytes_and_rejects_font_change_during_export(
     monkeypatch.setattr(exporter, "export", changing_font)
     refused, errors = produce_candidate(tmp_path, Path(collected["receipt_path"]))
     assert refused is None and any("过程中" in value for value in errors)
+
+
+def test_adopt_final_metadata_uses_explicit_stylebook_contract(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    from scripts.release_job import _validate_final_and_meta
+    plan = setup_plan(tmp_path, monkeypatch)
+    draft = tmp_path / "定稿.md"
+    draft.write_text("工具先下载，然后验证来源。\n" * 150)
+    content_sha = hashlib.sha256(draft.read_bytes()).hexdigest()
+    plan["source"]["sha256"] = content_sha
+    plan["source"]["author_content_sha256"] = author_content_sha256(draft.read_text())
+    plan["article_plan"]["source"]["sha256"] = content_sha
+    plan["cover"]["source"]["sha256"] = content_sha
+    plan_path = tmp_path / "visual-plan.json"
+    plan_path.write_text(json.dumps(plan))
+    meta = tmp_path / "article-meta.yaml"
+    meta.write_text('title: "教程 | 下载与验证"\ncategory: TUT\noutward_category: tutorial\ntags: [AI工具]\ndigest: 下载后验证来源。\n')
+    assert not _validate_final_and_meta(draft, meta)[1]
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parents[1] / "scripts/pipeline.py"), "adopt-final"],
+        cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 2 and "不得替作者自签" in result.stdout
+    assert not (tmp_path / ".state.json").exists()
+    assert not list(tmp_path.rglob("_release-job.json"))
+
+    # 同一真实消费者路径：正文漂移和缺锁合同均不得借新路线绕过。
+    draft.write_text(draft.read_text() + "改变作者正文")
+    assert any("正文摘要" in x for x in _validate_final_and_meta(draft, meta)[1])
+    draft.write_text("工具先下载，然后验证来源。\n" * 150)
+    plan["group"]["style"] = "C31"
+    plan_path.write_text(json.dumps(plan))
+    assert any("锁定样式" in x for x in _validate_final_and_meta(draft, meta)[1])
+    plan["schema_version"] = 3
+    plan_path.write_text(json.dumps(plan))
+    assert any("schema_version" in x for x in _validate_final_and_meta(draft, meta)[1])
+
+    # 移除显式选择后，缺少旧粘土配置必须被拒绝。
+    plan_path.unlink()
+    assert any("claymation" in x for x in _validate_final_and_meta(draft, meta)[1])

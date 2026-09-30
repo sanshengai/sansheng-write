@@ -23,6 +23,8 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
+`adopt-final` 的视觉元数据检查按文章级合同分流：显式 `schema_version: 2` / `workflow: stylebook-v1` 须通过画风手册整组合同校验且绑定当前作者正文摘要；旧路线仍要求 `claymation`、`warm-light-clay` 和 `montage-evidence`。未知版本、损坏合同或原文漂移均拒绝，作者审批要求不变。
+
 作者拍板后先用 `approve draft --words` 把作者原话逐字落成 `_draft-approval.md`（北京时间、审批来源、`审批结论：通过`；不再手写，封存失败自动回滚），再 `adopt-final`。接管只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录；缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。🔴 **接管成功就先交付 `MiniMax-主题曲生成单.md`**（2026-09-23 审计 F3，见 §3 第 2 步），再开始配图：作者生成音乐和 Agent 配图并行，不串行等。
 
 ## 1. 生成受限视觉任务单
