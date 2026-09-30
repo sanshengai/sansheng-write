@@ -4599,6 +4599,35 @@ def cmd_review_stylebook_candidate(cwd: Path, production: str) -> None:
         raise SystemExit(1)
 
 
+def cmd_review_stylebook_plan(cwd: Path) -> None:
+    from stylebook_plan_review import review_article_plan
+
+    report, errors = review_article_plan(cwd)
+    if errors:
+        print("❌ 全文与封面复核失败：" + "；".join(errors))
+        raise SystemExit(2)
+    print(f"{'✅' if report['passed'] else '❌'} 全文与封面独立复核：{report['report_path']}")
+    if not report["passed"]:
+        raise SystemExit(1)
+
+
+def cmd_select_stylebook_group(cwd: Path, plan_review: str, specs: list[str]) -> None:
+    from stylebook_group import select_group
+
+    reports = {}
+    for spec in specs:
+        image_id, separator, path = spec.partition("=")
+        if not separator or not image_id.strip() or not path.strip() or image_id.strip() in reports:
+            print("❌ 每张图片须唯一指定 ID=验收报告路径")
+            raise SystemExit(2)
+        reports[image_id.strip()] = cwd / path.strip()
+    record, errors = select_group(cwd, cwd / plan_review, reports)
+    if errors:
+        print("❌ 整组选图失败：" + "；".join(errors))
+        raise SystemExit(2)
+    print(f"✅ 已选中 {len(record['assets'])} 张当前验收图：{record['selection_path']}；装配与发布验收尚未完成")
+
+
 def cmd_reject_stylebook_candidate(cwd: Path, production: str, reason: str) -> None:
     from stylebook_acceptance import reject_candidate
 
@@ -5160,6 +5189,10 @@ def _main_impl():
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
     p_review_sb = sub.add_parser("review-stylebook-candidate", help="独立看图并验收当前最终候选，保留失败报告")
     p_review_sb.add_argument("--production", required=True, help="最终制作 production.json")
+    sub.add_parser("review-stylebook-plan", help="独立完整阅读原文，复核正文配图计划和封面主题")
+    p_group_sb = sub.add_parser("select-stylebook-group", help="核对全文复核与每张当前图片验收，选中完整组")
+    p_group_sb.add_argument("--plan-review", required=True, help="当前全文与封面复核报告 JSON")
+    p_group_sb.add_argument("--report", action="append", required=True, help="ID=独立图片验收报告 JSON，可重复；须包含全组")
     p_reject_sb = sub.add_parser("reject-stylebook-candidate", help="记录实际候选问题，模型绿灯不能覆盖")
     p_reject_sb.add_argument("--production", required=True, help="最终制作 production.json")
     p_reject_sb.add_argument("--reason", required=True, help="实际观察到的问题")
@@ -5399,6 +5432,10 @@ def _main_impl():
         cmd_produce_stylebook_candidate(cwd, args.raw_receipt)
     elif args.cmd == "review-stylebook-candidate":
         cmd_review_stylebook_candidate(cwd, args.production)
+    elif args.cmd == "review-stylebook-plan":
+        cmd_review_stylebook_plan(cwd)
+    elif args.cmd == "select-stylebook-group":
+        cmd_select_stylebook_group(cwd, args.plan_review, args.report)
     elif args.cmd == "reject-stylebook-candidate":
         cmd_reject_stylebook_candidate(cwd, args.production, args.reason)
     elif args.cmd == "select-visuals":
