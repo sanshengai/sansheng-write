@@ -173,7 +173,11 @@ def build_visual_manifest(
     except ImportError:
         from stylebook_workflow import selected_at
     if selected_at(cwd):
-        return {}, ["画风手册正式成品凭证尚未完成；预览或待生图请求不能作为旧宝玉视觉凭证"]
+        try:
+            from .stylebook_evidence import build_manifest
+        except ImportError:
+            from stylebook_evidence import build_manifest
+        return build_manifest(cwd)
     errors: list[str] = []
     assets: list[dict] = []
     specs: list[tuple[str, str, set[str]]] = []
@@ -339,6 +343,14 @@ def build_visual_manifest(
 
 def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
+    try:
+        from .stylebook_workflow import selected_at
+        from .stylebook_evidence import seal
+    except ImportError:
+        from stylebook_workflow import selected_at
+        from stylebook_evidence import seal
+    if selected_at(cwd):
+        return seal(cwd)
     qa = process_file(cwd, "_visual-qa.json")
     if not qa.exists():
         return None, ["缺 _visual-qa.json，先运行独立结构化视觉 QA"]
@@ -380,6 +392,14 @@ def seal_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
 
 def verify_visual_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
+    try:
+        from .stylebook_workflow import selected_at
+        from .stylebook_evidence import verify_receipt
+    except ImportError:
+        from stylebook_workflow import selected_at
+        from stylebook_evidence import verify_receipt
+    if selected_at(cwd):
+        return verify_receipt(cwd)
     path = process_file(cwd, VISUAL_RECEIPT_FILE)
     if not path.exists():
         return None, [f"缺 {VISUAL_RECEIPT_FILE}：logo/压缩后必须执行 pipeline.py seal visual"]

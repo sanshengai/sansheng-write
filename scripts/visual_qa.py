@@ -437,7 +437,14 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
     except ImportError:
         from stylebook_workflow import selected_at
     if selected_at(cwd):
-        return None, ["画风手册正式成品与来源尚未接入；待生图请求不能使用旧宝玉 QA 合同"]
+        try:
+            from .stylebook_evidence import request
+        except ImportError:
+            from stylebook_evidence import request
+        try:
+            return request(cwd), []
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            return None, [f"画风手册当前独立验收/装配尚不满足汇总条件：{exc}"]
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
     )
@@ -565,6 +572,14 @@ def final_byte_errors(
     调用方不得把本函数或 validate_qa_result 的返回值降级成 advisory / findings。
     """
     cwd = Path(cwd).resolve()
+    try:
+        from .stylebook_workflow import selected_at
+        from .stylebook_evidence import qa_errors
+    except ImportError:
+        from stylebook_workflow import selected_at
+        from stylebook_evidence import qa_errors
+    if selected_at(cwd):
+        return qa_errors(cwd, qa)
     if request is None:
         try:
             request = json.loads(process_file(cwd, QA_REQUEST_FILE).read_text(encoding="utf-8"))
@@ -600,6 +615,14 @@ def validate_qa_result(
     request: dict[str, Any] | None = None,
 ) -> list[str]:
     cwd = cwd.resolve()
+    try:
+        from .stylebook_workflow import selected_at
+        from .stylebook_evidence import qa_errors
+    except ImportError:
+        from stylebook_workflow import selected_at
+        from stylebook_evidence import qa_errors
+    if selected_at(cwd):
+        return qa_errors(cwd, qa)
     errors: list[str] = []
     request_path = process_file(cwd, QA_REQUEST_FILE)
     if request is None:
@@ -806,6 +829,16 @@ def run_visual_qa(
     reviewer_command: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     cwd = cwd.resolve()
+    try:
+        from .stylebook_workflow import selected_at
+        from .stylebook_evidence import aggregate
+    except ImportError:
+        from stylebook_workflow import selected_at
+        from stylebook_evidence import aggregate
+    if selected_at(cwd):
+        if reviewer_command is not None:
+            return None, ["画风手册须先完成逐图及全文独立复核；visual-qa 只汇总当前报告，不接受旧宝玉复核命令"]
+        return aggregate(cwd)
     candidate_set = cwd / "素材" / "candidates" / "candidate-set.json"
     if candidate_set.is_file():
         try:

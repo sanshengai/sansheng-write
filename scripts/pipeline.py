@@ -4659,7 +4659,10 @@ def cmd_visual_qa(cwd: Path) -> None:
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
-    print(f"✅ 独立视觉 QA 通过：{len(qa['assets'])} 张最终图片")
+    if qa.get("workflow") == "stylebook-v1":
+        print(f"✅ 已复核并汇总全文计划及 {len(qa['assets'])} 张最终图片的独立验收；尚待整篇阅读验收")
+    else:
+        print(f"✅ 独立视觉 QA 通过：{len(qa['assets'])} 张最终图片")
 
 
 def summarize_render_attempts(rows: list) -> dict:
