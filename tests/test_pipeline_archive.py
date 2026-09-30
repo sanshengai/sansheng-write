@@ -613,11 +613,15 @@ def test_website_receipt_preserves_failed_and_successful_attempts(tmp_path, monk
     results = iter([Result(1), Result(0)])
     runner = lambda *a, **k: next(results)
     assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is False
-    assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner) is True
+    # 命令成功后还要核对正式站上确实已经有这篇（live_checker）；这里不连真实网站，注入“已上线”
+    assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=runner, live_checker=lambda cwd, code: True) is True
+    # 反例：命令成功但线上还没有这篇，不能记为 done
+    results2 = iter([Result(0)])
+    assert pipeline._run_website_sync(tmp_path, "https://mp.weixin.qq.com/s/x", runner=lambda *a, **k: next(results2), live_checker=lambda cwd, code: False) is False
 
     receipt = json.loads(process_file(tmp_path, "_website-sync-receipt.json").read_text(encoding="utf-8"))
     assert receipt["schema_version"] == 2
-    assert [attempt["status"] for attempt in receipt["attempts"]] == ["failed", "done"]
+    assert [attempt["status"] for attempt in receipt["attempts"]] == ["failed", "done", "pending"]
 
 
 def test_cmd_archive_rejects_missing_golden_marker_before_writing(tmp_path, monkeypatch):
