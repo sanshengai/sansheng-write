@@ -24,6 +24,8 @@ CLI 能核对请求、原文、方法、参考图与输出字节，但无法独�
 
 ## 最终候选与正式消费者
 
+改稿后先重新编译当前计划。仅当保存的完整调用及参考图字节均相同，才可用 `pipeline.py reuse-stylebook-raw --raw-receipt <历史宿主回收凭证.json> --id <当前图片ID>` 复用底图。入口保留原始宿主回执、历史编译请求和原文快照，明确记录 `source_strength: host_attested_reused` 与 `reuse.new_invocation: false`，不虚构新生图。复用只得到当前版本的待制作凭证；仍须全文计划复核、最终制作与新的独立看图验收。提示词或参考图变化时拒绝复用；历史来源变化会令后续验收失效。
+
 回收后运行 `pipeline.py produce-stylebook-candidate --raw-receipt <不可变回收凭证.json>`。它核对当前原文、计划、完整请求和原始图片，使用画风手册实际导出与排字器，输出版本化的最终候选及 `production.json`。凭证绑定实际字体文件、图层、制作代码和输出字节；输入在制作期间改变时拒绝交付。重复制作同一输入幂等；已保存候选被改坏时拒绝覆盖。此时状态仍是 `produced_pending_qa`，不会填充正式 `素材/cover.png` 或装配文章。
 
 接着运行 `pipeline.py review-stylebook-candidate --production <production.json>`。它独立调用画风手册当前配置的看图后端，核对画风、逐字文字、内容要点、最终方形裁切（适用时）及文字碰线、多余软件标记。返回码 0 为通过、1 为真实验收不通过且已保存报告、2 为无法完成验收。失败报告同样不可覆盖。验收前后绑定最终图片、全部制作依赖、实际合同、预览及验收代码；`stylebook_review.verify_candidate_review` 是后续消费者复核旧报告的入口，任何绑定输入变化都须重新验收。

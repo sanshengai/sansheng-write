@@ -35,6 +35,11 @@ def production_inputs(cwd: Path, production_path: Path) -> tuple[dict, dict, dic
     if sha(raw_receipt) != record["raw_receipt_sha256"]:
         raise ValueError("原始回收凭证已改变")
     raw = json.loads(raw_receipt.read_text())
+    try:
+        from .stylebook_reuse import validate_raw
+    except ImportError:
+        from stylebook_reuse import validate_raw
+    origin_files = validate_raw(cwd, raw_receipt)
     host_path = cwd / raw["host_request_path"]
     host = json.loads(host_path.read_text())
     pending, errors = generation_requests(cwd, only={item["id"] for item in host["requests"]})
@@ -78,6 +83,7 @@ def production_inputs(cwd: Path, production_path: Path) -> tuple[dict, dict, dic
     if any(sha(Path(path)) != value for path, value in dependencies.items()):
         raise ValueError("制作输入、字体或方法文件已改变")
     files = {"production": production_path, **{f"input:{path}": Path(path) for path in dependencies}}
+    files.update({f"origin:{path}": target for path, target in origin_files.items()})
     if set(record["files"]) != set(record["outputs"]) or "main" not in record["files"]:
         raise ValueError("最终候选输出清单缺项")
     for key, path in record["files"].items():

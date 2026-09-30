@@ -27,16 +27,18 @@ def manifest(cwd: Path) -> dict:
         raw = json.loads((cwd / production['raw_receipt']).read_text())
         review = json.loads((cwd / chosen['qa_report']).read_text())
         target = cwd / item['output']
+        generation = {'producer': PRODUCER, 'backend': raw['backend'],
+                      'model': raw.get('actual_model'), 'source_strength': raw['source_strength'],
+                      'independent_invocation_verified': raw['independent_invocation_verified']}
+        if 'reuse' in raw:
+            generation['reuse'] = raw['reuse']
         assets.append({'id': image_id, 'path': item['output'], 'sha256': sha(target),
                        'bytes': target.stat().st_size, 'style': chosen['style'],
                        'palette': chosen['palette'], 'production': chosen['production'],
                        'production_sha256': chosen['production_sha256'],
                        'qa_report': chosen['qa_report'], 'qa_sha256': chosen['qa_report_sha256'],
                        'actual_reviewer': review['actual_reviewer'],
-                       'generation': {'producer': PRODUCER, 'backend': raw['backend'],
-                                      'model': raw.get('actual_model'),
-                                      'source_strength': raw['source_strength'],
-                                      'independent_invocation_verified': raw['independent_invocation_verified']}})
+                       'generation': generation})
     result = {'schema_version': 2, 'workflow': WORKFLOW, 'producer': PRODUCER,
               'assembly_id': assembly['assembly_id'],
               'assembly_sha256': sha(cwd / '素材/stylebook-assembly.json'),

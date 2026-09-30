@@ -4563,6 +4563,17 @@ def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
     )
 
 
+def cmd_reuse_stylebook_raw(cwd: Path, raw_receipt: str, image_id: str) -> None:
+    from stylebook_reuse import reuse_raw
+
+    receipt, errors = reuse_raw(cwd, cwd / raw_receipt, image_id)
+    if errors:
+        for error in errors:
+            print(f"❌ {error}")
+        raise SystemExit(2)
+    print(f"✅ 已复用 {receipt['id']} 原始底图：{receipt['receipt_path']}；没有新生图调用，当前版本制作与 QA 尚未完成")
+
+
 def cmd_collect_stylebook_result(cwd: Path, result: str) -> None:
     from stylebook_workflow import collect_host_result
 
@@ -5223,6 +5234,9 @@ def _main_impl():
         help="回收与完整宿主请求一致的原始候选图；不替代最终制作与 QA",
     )
     p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
+    p_reuse_sb = sub.add_parser("reuse-stylebook-raw", help="完整调用和参考图未变化时复用实际底图；当前版本仍须制作与 QA")
+    p_reuse_sb.add_argument("--raw-receipt", required=True, help="本篇历史宿主回收的不可变原始凭证 JSON")
+    p_reuse_sb.add_argument("--id", required=True, help="当前计划中的图片 ID")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
     p_refit_sb = sub.add_parser("refit-stylebook-candidate", help="基于实际原始底图调整排字位置或字号，保留完整来源")
@@ -5467,6 +5481,8 @@ def _main_impl():
             getattr(args, "only", "") or "",
             getattr(args, "candidates", 1),
         )
+    elif args.cmd == "reuse-stylebook-raw":
+        cmd_reuse_stylebook_raw(cwd, args.raw_receipt, args.id)
     elif args.cmd == "collect-stylebook-result":
         cmd_collect_stylebook_result(cwd, args.result)
     elif args.cmd == "produce-stylebook-candidate":
