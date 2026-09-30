@@ -1222,7 +1222,37 @@ def _parse_json_stdout(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _builtin_publisher(cwd: Path) -> Publisher:
+    """内置官方 API 发草稿：token → 传正文图 → 传封面 → draft/add。任何一张图上传失败都是硬错误。"""
+    try:
+        from . import wechat_api
+    except ImportError:  # pragma: no cover - direct script execution
+        import wechat_api
+
+    app_id, secret = _wechat_credentials(cwd)
+
+    def publish(expected: dict[str, Any]) -> dict[str, Any]:
+        profile = brand()
+        html = (cwd / "定稿.html").read_text(encoding="utf-8")
+        cover = cwd / "素材/cover.png"
+        if not cover.is_file():
+            raise RuntimeError(f"缺封面：{cover}")
+        try:
+            return wechat_api.publish_draft(
+                html=html, base_dir=cwd, cover=cover, title=str(expected["title"]),
+                digest=_published_digest(str(expected.get("digest") or "")), app_id=app_id, secret=secret,
+                author=str(expected.get("author") or ""), source_url=str(expected.get("source_url") or ""),
+            )
+        except wechat_api.WechatError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    return publish
+
+
 def _default_publisher(cwd: Path) -> Publisher:
+    """默认用内置实现；只有显式设置 SANSHENG_WRITE_WECHAT_PUBLISHER=baoyu 才走旧的宝玉脚本（历史回退，不再推荐）。"""
+    if os.environ.get("SANSHENG_WRITE_WECHAT_PUBLISHER", "builtin").strip().lower() != "baoyu":
+        return _builtin_publisher(cwd)
     skill_dir = _find_skill_dir("baoyu-post-to-wechat", "BAOYU_POST_TO_WECHAT_DIR")
     if not skill_dir:
         raise RuntimeError(
