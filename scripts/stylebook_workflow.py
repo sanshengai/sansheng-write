@@ -221,8 +221,7 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
             raise ValueError("画风手册方法或合同已改变，编译请求失效")
         if batch["adapter_sha256"] != sha(Path(__file__)):
             raise ValueError("write 画风适配器已改变，须重新编译")
-        if plan["renderer"]["backend"] != "host-imagegen":
-            return None, ["stylebook-service 的正式生成适配尚未实现；不能自动换后端"]
+        backend = plan["renderer"]["backend"]
         ids = {item["id"] for item in batch["tasks"]}
         if only is not None and (not only or not only <= ids):
             raise ValueError("--only 必须选择本组实际图片 ID")
@@ -239,13 +238,17 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
             refs = [ref["path"] for ref in task["compiled"]["references"]]
             if refs:
                 call["referenced_image_paths"] = refs
-            requests.append({"id": task["id"], "call": call, "task_digest": digest(task),
-                             "raw_destination": f"素材/stylebook-raw/{batch['request_id']}/{task['id']}.png"})
+            request = {"id": task["id"], "call": call, "task_digest": digest(task),
+                       "raw_destination": f"素材/stylebook-raw/{batch['request_id']}/{task['id']}.png"}
+            if backend == "stylebook-service":  # 服务后端要按编译时的画幅出图；宿主后端的工具自己决定
+                request["generation"] = {"aspect": task["compiled"]["aspect"], "size": list(task["compiled"]["size"])}
+            requests.append(request)
         receipt = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
-                   "status": "pending_host", "request_id": batch["request_id"],
-                   "backend": "image_gen.imagegen", "actual_model": None, "actual_cost": None,
-                   "requests": requests}
-        dest = cwd / "素材/stylebook-requests" / f"host-{digest(receipt)}.json"
+                   "status": "pending_service" if backend == "stylebook-service" else "pending_host",
+                   "request_id": batch["request_id"],
+                   "backend": "stylebook-service" if backend == "stylebook-service" else "image_gen.imagegen",
+                   "actual_model": None, "actual_cost": None, "requests": requests}
+        dest = cwd / "素材/stylebook-requests" / f"{'service' if backend == 'stylebook-service' else 'host'}-{digest(receipt)}.json"
         _immutable(dest, receipt)
         return {**receipt, "path": str(dest)}, []
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -266,8 +269,8 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         submitted = json.loads(submitted_bytes)
         if not isinstance(submitted, dict) or type(submitted.get("schema_version")) is not int or submitted["schema_version"] != 1:
             raise ValueError("宿主结果须为 schema_version=1 对象")
-        if submitted.get("backend") != "image_gen.imagegen" or submitted.get("invocation_status") != "succeeded":
-            raise ValueError("缺实际宿主生图成功回执；pending/失败不能回收")
+        if submitted.get("backend") not in ("image_gen.imagegen", "stylebook-service") or submitted.get("invocation_status") != "succeeded":
+            raise ValueError("缺实际生图成功回执；pending/失败不能回收")
         if not isinstance(submitted.get("tool_output"), str) or not submitted["tool_output"].strip():
             raise ValueError("缺宿主工具实际返回的 output_hint/输出说明")
         host_path = (cwd / submitted["host_request_path"]).resolve()
@@ -281,6 +284,8 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         expected = {key: value for key, value in expected.items() if key != "path"}
         if host != expected or submitted.get("host_request_digest") != digest(expected):
             raise ValueError("宿主请求已改变或与当前编译输入不一致")
+        if submitted.get("backend") != expected["backend"]:
+            raise ValueError("回执的后端与请求的后端不一致")
         image_id = submitted["id"]
         task = next((item for item in expected["requests"] if item["id"] == image_id), None)
         if task is None or submitted.get("request_id") != expected["request_id"] or submitted.get("call") != task["call"]:
@@ -313,7 +318,8 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
                     "status": "raw_collected_pending_production", "request_id": expected["request_id"],
                     "id": image_id, "backend": expected["backend"], "actual_model": None, "actual_cost": None,
-                    "source_strength": "host_attested", "independent_invocation_verified": False,
+                    "source_strength": "pipeline_invoked" if expected["backend"] == "stylebook-service" else "host_attested",
+                    "independent_invocation_verified": expected["backend"] == "stylebook-service",
                     "host_request_path": str(host_path.relative_to(cwd)), "host_request_digest": digest(expected),
                     "task_digest": task["task_digest"], "actual_call_digest": digest(task["call"]),
                     "submitted_result": submitted, "submitted_result_sha256": hashlib.sha256(submitted_bytes).hexdigest(),
@@ -325,6 +331,69 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
                 "collected_at": datetime.now(timezone.utc).isoformat()}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         return None, [f"画风手册宿主结果回收失败：{exc}"]
+
+
+def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800, jobs: int = 4,
+                runner=None) -> tuple[dict | None, list[str]]:
+    """无人值守出图：对每份请求调用画风手册的 raw-generate（默认走 Codex 订阅额度），再按同一套回收规则收进来。
+
+    流水线自己发起调用，所以回执标 pipeline_invoked；它仍不是最终成品、QA 或 seal。
+    runner 仅供测试注入（签名同 subprocess.run 的最小子集）。
+    """
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    cwd = Path(cwd).resolve()
+    requests, errors = generation_requests(cwd, only)
+    if errors:
+        return None, errors
+    if requests["backend"] != "stylebook-service":
+        return None, ["renderer.backend 不是 stylebook-service；host-imagegen 须由宿主自己调用内置生图工具"]
+    try:
+        root, _ = _peer()
+    except (ValueError, OSError, ImportError) as exc:
+        return None, [f"找不到画风手册本体：{exc}"]
+    host_path = Path(requests["path"])
+    expected = {k: v for k, v in requests.items() if k != "path"}
+    out_dir = cwd / "素材/stylebook-service-results" / expected["request_id"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    run = runner or subprocess.run
+
+    def one(request: dict) -> tuple[dict | None, list[str]]:
+        image_id = request["id"]
+        prompt_file = out_dir / f"{image_id}-{stamp}.prompt.txt"
+        prompt_file.write_text(request["call"]["prompt"], encoding="utf-8")
+        raw = out_dir / f"{image_id}-{stamp}.png"
+        gen = request["generation"]
+        cmd = [sys.executable, str(root / "scripts/sb.py"), "raw-generate", "--prompt-file", str(prompt_file),
+               "--aspect", gen["aspect"], "--size", f"{gen['size'][0]}x{gen['size'][1]}", "-o", str(raw), "--tag", f"write:{image_id}"]
+        for ref in request["call"].get("referenced_image_paths", []):
+            cmd += ["--ref", ref]
+        try:
+            done = run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return None, [f"{image_id} 出图调用失败：{exc}"]
+        lines = [x for x in (done.stdout or "").splitlines() if x.strip().startswith("{")]
+        meta = json.loads(lines[-1]) if lines else {}
+        if done.returncode != 0 or not meta.get("ok") or not raw.is_file():
+            return None, [f"{image_id} 出图失败：{meta.get('kind', done.returncode)} {meta.get('error', (done.stderr or '')[-160:])}"]
+        submitted = {"schema_version": 1, "backend": "stylebook-service", "invocation_status": "succeeded",
+                     "host_request_path": str(host_path.relative_to(cwd)), "host_request_digest": digest(expected),
+                     "request_id": expected["request_id"], "id": image_id, "call": request["call"],
+                     "tool_output": json.dumps({k: meta.get(k) for k in ("provider", "model", "seconds", "attempts", "tokens")}, ensure_ascii=False),
+                     "output": {"path": raw.name, "sha256": hashlib.sha256(raw.read_bytes()).hexdigest()}}
+        result_json = out_dir / f"{image_id}-{stamp}.result.json"
+        result_json.write_text(json.dumps(submitted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return collect_host_result(cwd, result_json)
+
+    with ThreadPoolExecutor(max_workers=max(1, min(jobs, len(expected["requests"])))) as pool:
+        outcomes = list(pool.map(one, expected["requests"]))
+    problems = [e for _, errs in outcomes for e in errs]
+    collected = [r for r, _ in outcomes if r]
+    if problems:
+        return ({"status": "partial", "collected": collected} if collected else None), problems
+    return {"status": "raw_collected_pending_production", "request_id": expected["request_id"], "collected": collected}, []
 
 
 def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, list[str]]:

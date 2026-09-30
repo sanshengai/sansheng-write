@@ -681,7 +681,14 @@ def render_visuals(
     if selected_at(cwd):
         if candidate_count != 1:
             return None, ["画风手册正式路径暂不接受批量随机候选；按单图有原因返修"]
-        return generation_requests(cwd, only)
+        receipt, errors = generation_requests(cwd, only)
+        if receipt and receipt.get("status") == "pending_service":  # 服务后端：直接出图并回收，不等宿主
+            try:
+                from .stylebook_workflow import run_service
+            except ImportError:
+                from stylebook_workflow import run_service
+            return run_service(cwd, only)
+        return receipt, errors
     try:
         from .visual_retry import retry_errors
     except ImportError:

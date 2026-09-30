@@ -353,3 +353,72 @@ def test_adopt_final_metadata_uses_explicit_stylebook_contract(tmp_path, monkeyp
     # 移除显式选择后，缺少旧粘土配置必须被拒绝。
     plan_path.unlink()
     assert any("claymation" in x for x in _validate_final_and_meta(draft, meta)[1])
+
+
+# ---- stylebook-service：无人值守出图（Codex 经画风手册 raw-generate），回收规则与宿主路径相同 ----
+def _service_plan(tmp_path, monkeypatch, body=True):
+    plan = setup_plan(tmp_path, monkeypatch, body=body)
+    plan["renderer"]["backend"] = "stylebook-service"
+    (tmp_path / "visual-plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    return plan
+
+
+class FakeRun:
+    """代替 subprocess.run：像 sb.py raw-generate 那样写出一张 PNG 并回报 JSON。"""
+    def __init__(self, ok=True):
+        self.ok, self.calls = ok, []
+
+    def __call__(self, cmd, **kw):
+        from PIL import Image
+        self.calls.append(cmd)
+        out = Path(cmd[cmd.index("-o") + 1])
+        if self.ok:
+            Image.new("RGB", (64, 32), (10, 20, 30)).save(out)
+        body = {"ok": self.ok, "provider": "codex", "model": "codex-builtin", "seconds": 1.5, "attempts": 1, "tokens": 999} if self.ok \
+            else {"ok": False, "kind": "quota", "error": "Codex 额度用完了"}
+        return subprocess.CompletedProcess(cmd, 0 if self.ok else 2, stdout=json.dumps(body) + "\n", stderr="")
+
+
+def test_service_backend_collects_raw_without_a_host_and_marks_the_source(tmp_path, monkeypatch):
+    from scripts.stylebook_workflow import run_service
+    _service_plan(tmp_path, monkeypatch)
+    result, errors = compile_visual_plan(tmp_path)
+    assert not errors
+    fake = FakeRun()
+    out, errors = run_service(tmp_path, runner=fake)
+    assert not errors and out["status"] == "raw_collected_pending_production" and len(out["collected"]) == 2
+    assert all(c["source_strength"] == "pipeline_invoked" and c["independent_invocation_verified"] is True for c in out["collected"])
+    assert all(c["backend"] == "stylebook-service" for c in out["collected"])
+    call = fake.calls[0]
+    assert call[call.index("--aspect") + 1] and "raw-generate" in call and "--prompt-file" in call
+    assert not (tmp_path / "素材/cover.png").exists()  # 收回只到原始底图，不产成品
+
+
+def test_service_backend_failure_is_reported_and_nothing_is_marked_collected(tmp_path, monkeypatch):
+    from scripts.stylebook_workflow import run_service
+    _service_plan(tmp_path, monkeypatch)
+    compile_visual_plan(tmp_path)
+    out, errors = run_service(tmp_path, runner=FakeRun(ok=False))
+    assert out is None and any("quota" in e for e in errors)
+
+
+def test_host_receipt_cannot_be_replayed_against_a_service_request(tmp_path, monkeypatch):
+    """反例：宿主后端的请求回执，不能被改成服务后端回执塞进来（后端必须一致）。"""
+    from scripts.stylebook_workflow import run_service
+    _service_plan(tmp_path, monkeypatch)
+    compile_visual_plan(tmp_path)
+    run_service(tmp_path, runner=FakeRun())
+    result = next((tmp_path / "素材/stylebook-service-results").rglob("*.result.json"))
+    data = json.loads(result.read_text())
+    data["backend"] = "image_gen.imagegen"
+    forged = result.with_name("forged.result.json")
+    forged.write_text(json.dumps(data))
+    out, errors = collect_host_result(tmp_path, forged)
+    assert out is None and any("后端" in e for e in errors)
+
+
+def test_host_backend_still_asks_the_host(tmp_path, monkeypatch):
+    setup_plan(tmp_path, monkeypatch)  # 默认 host-imagegen
+    compile_visual_plan(tmp_path)
+    pending, errors = render_visuals(tmp_path)
+    assert not errors and pending["status"] == "pending_host"
