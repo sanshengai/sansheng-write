@@ -76,3 +76,9 @@ def baoyu_skill_fixture(tmp_path_factory, monkeypatch):
 
     monkeypatch.setenv(SKILL_ROOT_ENV, str(root))
     return root
+
+
+@pytest.fixture(autouse=True)
+def _no_real_wechat_tunnel(monkeypatch):
+    """测试默认不开真实 SSH 隧道（本机有旧的 EXTEND.md 配置，会真去连服务器）；隧道自己的测试单独设置。"""
+    monkeypatch.setenv("SANSHENG_WRITE_WECHAT_TUNNEL", "off")

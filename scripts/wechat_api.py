@@ -13,6 +13,7 @@ IP 白名单：所有接口都要求调用机器的公网 IP 在公众平台后�
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -73,10 +74,13 @@ def _check(result: dict[str, Any], step: str) -> dict[str, Any]:
     return result
 
 
+_OPENER: urllib.request.OpenerDirector | None = None  # 隧道开着时换成走 SOCKS5 的 opener
+
+
 def _request(req: urllib.request.Request, step: str, timeout: float = 60) -> dict[str, Any]:
     _bypass_proxy()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with (_OPENER.open(req, timeout=timeout) if _OPENER else urllib.request.urlopen(req, timeout=timeout)) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raise WechatError(f"微信接口 {step} HTTP {exc.code}", step=step) from exc
@@ -230,6 +234,29 @@ def add_draft(token: str, article: dict[str, Any]) -> str:
     return str(result["media_id"])
 
 
+@contextlib.contextmanager
+def _maybe_tunnel():
+    """配置了 SSH 隧道就让请求从白名单服务器出去；没配置直连。可用 SANSHENG_WRITE_WECHAT_TUNNEL=off 关掉。"""
+    global _OPENER
+    try:
+        from . import wechat_tunnel as T
+    except ImportError:  # pragma: no cover - direct script execution
+        import wechat_tunnel as T
+    cfg = None if os.environ.get("SANSHENG_WRITE_WECHAT_TUNNEL", "").strip().lower() == "off" else T.tunnel_config()
+    if not cfg or _OPENER is not None:
+        yield
+        return
+    try:
+        with T.ssh_tunnel(cfg) as port:
+            _OPENER = T.make_opener(port)
+            try:
+                yield
+            finally:
+                _OPENER = None
+    except RuntimeError as exc:
+        raise WechatError(f"SSH 隧道不可用：{exc}", step="tunnel") from exc
+
+
 def publish_draft(*, html: str, base_dir: Path, cover: Path, title: str, digest: str, app_id: str, secret: str,
                   author: str = "", source_url: str = "", open_comment: int = 1, fans_only_comment: int = 0) -> dict[str, Any]:
     """完整流程：token → 传正文图 → 传封面 → 建草稿。token 过期时自动换一次重试。"""
@@ -248,9 +275,10 @@ def publish_draft(*, html: str, base_dir: Path, cover: Path, title: str, digest:
         return {"media_id": media_id, "cover_media_id": cover_result["media_id"], "method": "api", "title": title,
                 "images": images, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()}
 
-    try:
-        return run(access_token(app_id, secret))
-    except WechatError as exc:
-        if exc.errcode in (40001, 42001):
-            return run(access_token(app_id, secret, force=True))
-        raise
+    with _maybe_tunnel():
+        try:
+            return run(access_token(app_id, secret))
+        except WechatError as exc:
+            if exc.errcode in (40001, 42001):
+                return run(access_token(app_id, secret, force=True))
+            raise
