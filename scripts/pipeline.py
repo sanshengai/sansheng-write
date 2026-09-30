@@ -493,6 +493,22 @@ def _author_shots_errors(cwd: Path) -> list:
     return errors
 
 
+def _stylebook_selected(cwd: Path) -> bool:
+    try:
+        from .stylebook_workflow import selected_at
+    except ImportError:
+        from stylebook_workflow import selected_at
+    return selected_at(cwd)
+
+
+def _stylebook_release_errors(cwd: Path) -> list:
+    try:
+        from .stylebook_release import stage_errors
+    except ImportError:
+        from stylebook_release import stage_errors
+    return stage_errors(cwd)
+
+
 def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
     """校验信息图视觉路由的整条证据链，而不只检查 style 是否在枚举里。
 
@@ -500,6 +516,8 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
     ai-product -> claymation；phenomenon -> morandi-journal。最终图片、final-set、
     最新精确 output 日志、日志引用的 prompt frontmatter 必须全部与 SSOT 一致。
     """
+    if _stylebook_selected(cwd):
+        return _stylebook_release_errors(cwd)
     errors = []
     meta_path = cwd / "article-meta.yaml"
     if not meta_path.exists():
@@ -713,6 +731,8 @@ def _visual_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> lis
 
 def _cover_route_errors(cwd: Path, *, allow_postprocessed: bool = False) -> list:
     """校验封面语义生产者、像素后端、canonical prompt 与字节证据链。"""
+    if _stylebook_selected(cwd):
+        return _stylebook_release_errors(cwd)
     rel = "素材/cover.png"
     output = cwd / Path(rel)
     if not output.exists():
@@ -1458,6 +1478,9 @@ def verify_stage(stage: str, cwd: Path, state: dict, legacy: bool = False) -> tu
                     pass
             except Exception as e:
                 errors.append(f"contracts 校验异常：{e}")
+
+    elif stage in {"cover", "infographic"} and _stylebook_selected(cwd):
+        errors.extend(_stylebook_release_errors(cwd))
 
     elif stage == "cover":
         mat = cwd / "素材"
@@ -2407,7 +2430,9 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     if not (mat / "hero.png").exists():
         errors.append("缺 素材/hero.png（导读栏小图）")
     infos = list(mat.glob("infographic*.png")) if mat.exists() else []
-    if _infographic_mode(cwd) == "author-shots":
+    if _stylebook_selected(cwd):
+        errors.extend(_stylebook_release_errors(cwd))
+    elif _infographic_mode(cwd) == "author-shots":
         errors.extend(_author_shots_errors(cwd))
     elif len(infos) < 4:
         errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
