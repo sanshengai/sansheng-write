@@ -3,7 +3,7 @@
 配置（任一来源，前者优先）：
 - 环境变量 ``SANSHENG_WRITE_WECHAT_TUNNEL=user@host[:port]``，可选 ``SANSHENG_WRITE_WECHAT_TUNNEL_KEY=<私钥路径>``；
 - 配置文件 ``~/.config/sansheng-write/wechat-tunnel.json``：``{"host": "...", "user": "root", "port": 22, "key": "~/.ssh/id_ed25519"}``。
-都没有配置时不走隧道，直连。``SANSHENG_WRITE_WECHAT_TUNNEL=off`` 强制直连。只用标准库：ssh 子进程 + 一个最小的 SOCKS5 客户端。
+用法：默认先从本机直连；只有微信回 40164 / 40165（出口不在白名单）才退到隧道。``SANSHENG_WRITE_WECHAT_TUNNEL=always`` 强制走隧道，``off`` 永不走隧道。只用标准库：ssh 子进程 + 一个最小的 SOCKS5 客户端。
 """
 from __future__ import annotations
 

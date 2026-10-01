@@ -235,17 +235,16 @@ def add_draft(token: str, article: dict[str, Any]) -> str:
 
 
 @contextlib.contextmanager
-def _maybe_tunnel():
-    """配置了 SSH 隧道就让请求从白名单服务器出去；没配置直连。可用 SANSHENG_WRITE_WECHAT_TUNNEL=off 关掉。"""
+def _tunnel():
+    """开一条 SSH 隧道，让请求从白名单里的服务器出去。没配置时抛 WechatError。"""
     global _OPENER
     try:
         from . import wechat_tunnel as T
     except ImportError:  # pragma: no cover - direct script execution
         import wechat_tunnel as T
-    cfg = None if os.environ.get("SANSHENG_WRITE_WECHAT_TUNNEL", "").strip().lower() == "off" else T.tunnel_config()
-    if not cfg or _OPENER is not None:
-        yield
-        return
+    cfg = T.tunnel_config()
+    if not cfg:
+        raise WechatError("本机出口不在公众号 IP 白名单，且没有配置 SSH 隧道（见 wechat_tunnel.py 顶部说明）", step="tunnel")
     try:
         with T.ssh_tunnel(cfg) as port:
             _OPENER = T.make_opener(port)
@@ -255,6 +254,9 @@ def _maybe_tunnel():
                 _OPENER = None
     except RuntimeError as exc:
         raise WechatError(f"SSH 隧道不可用：{exc}", step="tunnel") from exc
+
+
+WHITELIST_ERRCODES = (40164, 40165)
 
 
 def publish_draft(*, html: str, base_dir: Path, cover: Path, title: str, digest: str, app_id: str, secret: str,
@@ -275,10 +277,23 @@ def publish_draft(*, html: str, base_dir: Path, cover: Path, title: str, digest:
         return {"media_id": media_id, "cover_media_id": cover_result["media_id"], "method": "api", "title": title,
                 "images": images, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()}
 
-    with _maybe_tunnel():
+    def attempt() -> dict[str, Any]:
         try:
             return run(access_token(app_id, secret))
         except WechatError as exc:
             if exc.errcode in (40001, 42001):
                 return run(access_token(app_id, secret, force=True))
             raise
+
+    mode = os.environ.get("SANSHENG_WRITE_WECHAT_TUNNEL", "").strip().lower()
+    if mode == "always" and _OPENER is None:
+        with _tunnel():
+            return attempt()
+    try:
+        return attempt()  # 默认先从本机直连：本机出口在白名单里就不绕路
+    except WechatError as exc:
+        # 只有「出口不在白名单」才退到隧道（固定 IP 的服务器）；其他错误原样抛出，不掩盖。
+        if mode == "off" or _OPENER is not None or exc.errcode not in WHITELIST_ERRCODES:
+            raise
+        with _tunnel():
+            return attempt()
