@@ -28,9 +28,8 @@ topic triage → outline (with opening-strategy routing) → draft → revision 
 ```
 
 Quality is not left to good intentions. It is enforced by **contract gates**.
-The Skill's visual planner is the only producer; Baoyu article-illustration and
-infographic skills are verifiable method sources; final pixels must come through
-`baoyu-image-gen`. Every content glyph on a cover or illustration must be rendered
+The Skill's visual planner is the only producer; final pixels on the current
+release chain come through `baoyu-image-gen` (the stylebook chain is optional schema2). Every content glyph on a cover or illustration must be rendered
 natively with the scene in one image-model pass; SVG or local-font text overlays are
 forbidden. Cover text, palette, clay illustration method, exactly-once required text,
 and renderer provenance are machine-checked. There is no `force`, legacy,
@@ -118,7 +117,7 @@ python scripts/setup_check.py     # tells you which tier you can reach
 ### ② + WeChat HTML typesetting
 
 ```bash
-# also install: bun (runs the markdown→HTML converter) + Node 18+
+# markdown→HTML is built in; Node 18+ is only needed for the logo watermark
 cd scripts && npm install         # jimp: logo watermark on images
 ```
 
@@ -134,12 +133,11 @@ cp .env.example .env              # your own keys
 |---|---|---|---|
 | Python 3.10+ / PyYAML | ① | Nothing runs | `pip install pyyaml` |
 | Pillow | ③ | No image resize / compression | `pip install pillow` |
-| bun | ② | markdown→HTML conversion fails | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | No logo watermark | `cd scripts && npm install` |
-| **baoyu-skills plugin** | hard dep from ② | md→HTML, pixel rendering, and WeChat adapters are unavailable | install `JimLiu/baoyu-skills`; provider and WeChat credentials stay under its own `~/.baoyu-skills/` |
-| Configured image provider | ③ | `render-visuals` exits non-zero | configure provider/model through `baoyu-image-gen`; this Skill still owns the visual rules |
+| Baoyu `baoyu-image-gen` | ③ | The current release chain (schema1) cannot render covers or illustrations | install `JimLiu/baoyu-skills`, provider under `~/.baoyu-skills/`; used for pixels only, typesetting and drafts are built in |
+| Sansheng Stylebook `sansheng-stylebook` | ③ optional | The stylebook chain (schema2) cannot render | install next to this Skill, runs on the Codex subscription; see `references/stylebook-contract.md` |
 | gcloud ADC (Vertex OAuth) | ③ | The BGM release gate fails | `gcloud auth application-default login` + `gcloud config set project <P>`; BGM runs on Lyria 3, **no API key needed** |
-| WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | configure in baoyu's `~/.baoyu-skills/.env` (**not** this repo's .env); also whitelist your IP |
+| WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | put them in `~/.config/sansheng-write/wechat.env` (**not** this repo's .env, mode 600); also whitelist your IP |
 | playwright / matplotlib | ③ optional | No SVG→PNG for separate deterministic diagrams and no data charts; never used to add text to covers/Hero/infographics | `pip install playwright matplotlib` |
 
 ---

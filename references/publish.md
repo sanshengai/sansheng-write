@@ -155,7 +155,7 @@ python "$SKILL/scripts/pipeline.py" finalize \
 
 ## 配置
 
-- 微信密钥只从环境变量或 baoyu 标准 `.env` 位置读取，不写入文章目录或公开仓。
+- 微信密钥只从环境变量或 `~/.config/sansheng-write/wechat.env` 读取（旧安装的 `~/.baoyu-skills/.env` 仍兼容），不写入文章目录或公开仓。
 - `article-meta.yaml.source_url` 可填完整 URL、`default` 或 `treasure`。
 - 默认阅读原文地址来自 profile 的 `publish.source_url_default`。
 - 官网同步来自 profile 的 `publish.website_command`；相对路径命令应同时配置 `publish.website_cwd` 或 `SANSHENG_WRITE_WEBSITE_CWD`。

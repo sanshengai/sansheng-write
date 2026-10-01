@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/7b5d8a8c-7caf-41e3-957e-5c2428859c79
 | 表格品牌化 | 主题色表头、列宽自动计算、手机端横滑 |
 | 继续往下读 / 信息来源 / 关注卡 | 强相关旧文与自有阵地、可复核来源、文末转化 |
 
-质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；本 Skill 的 visual planner 是唯一真实生产者，宝玉文章配图 / 信息图作为可复验的方法来源，最终像素只允许 `baoyu-image-gen`；封面与插图的全部内容文字必须和画面一次性原生生成，禁止 SVG 或本地字体后期补字。最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
+质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；本 Skill 的 visual planner 是唯一真实生产者，现行发布链的最终像素经 `baoyu-image-gen`（画风手册链为可选的 schema2）；封面与插图的全部内容文字必须和画面一次性原生生成，禁止 SVG 或本地字体后期补字。最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
 
 ```console
 $ python scripts/format_layout.py 定稿.html --all --check
@@ -148,12 +148,11 @@ cp .env.example .env              # 填你自己的 key
 |---|---|---|---|
 | Python 3.10+ / PyYAML | ① | 全都跑不了 | `pip install pyyaml` |
 | Pillow | ③ | 生图缩放、配图压缩不可用 | `pip install pillow` |
-| bun | ② | markdown→HTML 转换跑不了 | [bun.sh](https://bun.sh) |
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
-| **baoyu-skills 插件** | ② 起硬依赖 | md→HTML、像素渲染与微信 API 适配不可用 | 安装 `JimLiu/baoyu-skills`；provider 与微信 key 配在它自己的 `~/.baoyu-skills/` |
-| 已配置的 image provider | ③ | `render-visuals` 非零退出 | 按 `baoyu-image-gen` 配置 provider/model；业务视觉规则仍由本 Skill 编译 |
+| 宝玉 `baoyu-image-gen` | ③ | 现行发布链（schema1）的封面、插图无法出图 | 安装 `JimLiu/baoyu-skills`，provider 配在 `~/.baoyu-skills/`；只用它出图，排版与发草稿已内置 |
+| 叁笙画风手册 `sansheng-stylebook` | ③ 可选 | 画风手册链（schema2）无法出图 | 与本 Skill 同级安装，走 Codex 订阅额度；见 `references/stylebook-contract.md` |
 | gcloud ADC（Vertex OAuth） | ③，且选择 Lyria 自动生成时 | Lyria 生成不可用；已用显式 manifest 绑定的网页生成或既有主题曲不受影响 | `gcloud auth application-default login` + `gcloud config set project <P>`；Lyria **不用 API Key** |
-| 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 配在 baoyu 侧 `~/.baoyu-skills/.env`（**非本仓 .env**）；后台还需加 IP 白名单 |
+| 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 写进 `~/.config/sansheng-write/wechat.env`（**非本仓 .env**，权限 600）；后台还需把本机出口 IP 加白名单 |
 | playwright / matplotlib | ③ 可选 | 独立精确图表的 SVG 转 PNG、数据图画不了；不用于封面/Hero/信息图补字 | `pip install playwright matplotlib` |
 
 低档能力可以独立使用；一旦进入“定稿→草稿箱”机械链，配图、BGM、视觉 QA、发布预检和官方读回都是硬门，任一失败都会非零退出。BGM 硬门校验的是 `_music-manifest.json` 绑定的真实文件与来源，不强迫使用特定厂商：自动生成、网页手工生成和复用既有成品都可走同一合同。封面文字、品牌色、粘土配图方法、必备文字恰好一次与 renderer 都有机器校验；错字只允许同 prompt 单张重渲，不提供 SVG/后期叠字、`force`、`legacy`、跳过预检、人工豁免或自定义生图命令。
@@ -234,10 +233,10 @@ export SANSHENG_WRITE_ARCHIVE_DIR=~/article-archive # 全部流程结束后的�
 $EDITOR ~/my-writing-profile/context.md             # 4. 告诉它你是谁（写给谁、怎么说话）
 $EDITOR ~/my-writing-profile/brand.yaml             # 5. 署名 + 主题 + 身份卡（发公众号才需要）
 
-# 要出微信 HTML（②档）再补：装 bun + Node 18 + baoyu-skills 插件，然后
+# 要出微信 HTML（②档）：已内置，无需额外安装；要给配图加 logo 水印再装 Node 18，然后
 cd scripts && npm install                           # jimp 水印
 # 要全自动配图/发布（③档）再补：
-cp .env.example .env                                # 填生图 key；微信凭证配在 baoyu 侧（见依赖矩阵）
+cp .env.example .env                                # 填可选 key；微信凭证见依赖矩阵
 ```
 
 然后在 Claude Code 里说一句「帮我写一篇关于 X 的文章」。

@@ -1335,9 +1335,15 @@ def _parse_dotenv(path: Path) -> dict[str, str]:
     return values
 
 
+WECHAT_ENV_DEFAULT = Path.home() / ".config/sansheng-write/wechat.env"
+
+
 def _wechat_credentials(cwd: Path) -> tuple[str, str]:
+    own = os.environ.get("SANSHENG_WRITE_WECHAT_ENV", "").strip()
     sources = [
         dict(os.environ),
+        _parse_dotenv(Path(own).expanduser() if own else WECHAT_ENV_DEFAULT),
+        # 旧安装的兼容回退：早期版本把凭证放在宝玉插件的 .env 里
         _parse_dotenv(cwd / ".baoyu-skills/.env"),
         _parse_dotenv(Path.home() / ".baoyu-skills/.env"),
     ]
@@ -1348,7 +1354,7 @@ def _wechat_credentials(cwd: Path) -> tuple[str, str]:
             return app_id, secret
     raise RuntimeError(
         "微信官方 API 缺 WECHAT_APP_ID / WECHAT_APP_SECRET；"
-        "请配置环境变量、文章目录 .baoyu-skills/.env 或 ~/.baoyu-skills/.env"
+        f"请配置环境变量或 {WECHAT_ENV_DEFAULT}（键名 WECHAT_APP_ID / WECHAT_APP_SECRET）"
     )
 
 
