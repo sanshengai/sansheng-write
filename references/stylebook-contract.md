@@ -11,6 +11,7 @@
 - `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 及封面一致。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风手册原有显式规则。
 - `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
   封面可选的风格：画风手册 v0.4.0 起新增封面向风格（C74 丝网印海报、C75 暖纸克制双色、C76 杂志编辑封面、C77 叁笙深空等），选择器里按「公众号封面」用途列出，样图是标题写在图上的真实封面；不改写作 Skill 的默认。
+  封面单独选画风：默认封面与正文同一画风。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照画风手册本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风手册 `references/recipes.md` 第 1 节。
 - `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风手册的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。
 
 在本篇目录运行 `pipeline.py compile-visuals`。新路径输出 `素材/render-batch.json`、`素材/visual-compile-receipt.json` 和 `素材/stylebook-requests/<摘要>.json`；历史请求不可覆盖。保存完整编译词、参考图职责与实际文件摘要、制作清单、画风方法文件和适配器摘要；原文字节另存于不可变 `素材/stylebook-sources/<原文摘要>.md`。编译方言的 model 不充当实际调用模型。

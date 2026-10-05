@@ -73,7 +73,13 @@ def validate(plan: dict) -> list[str]:
     if not isinstance(cover, dict) or cover.get("format") != "wechat-cover-head":
         errors.append("cover 必须是 wechat-cover-head 编译清单")
     elif isinstance(group, dict):
-        if cover.get("style") != group.get("style") or cover.get("palette") != group.get("palette"):
+        if cover.get("own_style") is True:
+            # 封面单独选画风（如 C90 深色系列封面）：只允许画风手册「封面」用途里的画风，编译时对照本体核实
+            if not re.fullmatch(r"[CS]\d{2}@r[1-9]\d*", str(cover.get("style", ""))):
+                errors.append("封面单独选画风时 cover.style 也必须锁定样式修订，例如 C90@r1")
+        elif "own_style" in cover:
+            errors.append("cover.own_style 只接受 true；不单独选画风时省略")
+        elif cover.get("style") != group.get("style") or cover.get("palette") != group.get("palette"):
             errors.append("封面样式/色调与整组锁不一致")
         if obj(cover.get("source")).get("sha256") != obj(source).get("sha256"):
             errors.append("封面原文摘要与文章不一致")
@@ -145,7 +151,15 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
         problems, warnings = modules["plan"].check(plan["article_plan"], base_path=cwd)
         if problems:
             return None, problems
-        manifests = [("cover", copy.deepcopy(plan["cover"]))]
+        cover = copy.deepcopy(plan["cover"])
+        if cover.pop("own_style", False):
+            data = importlib.import_module("stylebook.data")
+            if Path(data.__file__).resolve().parent != Path(modules["plan"].__file__).resolve().parent:
+                raise ValueError("画风手册已加载模块与选定本体不同")
+            code = cover["style"].split("@")[0]
+            if code not in data.styles_for_use("封面"):
+                return None, [f"封面单独选画风只允许画风手册「封面」用途里的画风，{code} 不在其中"]
+        manifests = [("cover", cover)]
         for manifest in modules["plan"].manifests(plan["article_plan"]):
             manifests.append((manifest.pop("_id"), manifest))
         tasks = []

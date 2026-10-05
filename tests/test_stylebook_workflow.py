@@ -112,6 +112,38 @@ def test_version_pairs_group_conflicts_and_empty_source_fail_closed(tmp_path, mo
     assert result is None and errors
 
 
+def _own_cover(plan, code):
+    root = Path(__file__).resolve().parents[2] / "sansheng-stylebook"
+    rev = json.loads((root / f"styles/{code}/contract.json").read_text())["revision"]
+    plan["cover"].update({"style": f"{code}@r{rev}", "own_style": True})
+    return plan
+
+
+def test_cover_may_use_its_own_cover_style_like_the_dark_series(tmp_path, monkeypatch):
+    """C90 深色系列封面只做封面：正文仍锁 C31，封面单独用 C90，编译后两张各按自己的画风。"""
+    plan = _own_cover(setup_plan(tmp_path, monkeypatch), "C90")
+    (tmp_path / "visual-plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    result, errors = compile_visual_plan(tmp_path)
+    assert not errors, errors
+    tasks = {t["id"]: t for t in json.loads(Path(result["request_path"]).read_text())["tasks"]}
+    assert tasks["cover"]["manifest"]["style"].startswith("C90@") and "own_style" not in tasks["cover"]["manifest"]
+    assert tasks["01"]["manifest"]["style"].startswith("C31@")
+
+
+def test_cover_own_style_rejects_styles_outside_cover_use_and_loose_flags(tmp_path, monkeypatch):
+    plan = _own_cover(setup_plan(tmp_path, monkeypatch), "C02")  # C02 没有「封面」用途
+    (tmp_path / "visual-plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    result, errors = compile_visual_plan(tmp_path)
+    assert result is None and any("封面」用途" in x for x in errors)
+    for bad in ("yes", 1, False):
+        changed = copy.deepcopy(plan)
+        changed["cover"]["own_style"] = bad
+        assert any("own_style" in x or "整组锁" in x for x in validate(changed))
+    changed = copy.deepcopy(plan)
+    changed["cover"]["style"] = "C90"  # 没锁修订号
+    assert any("锁定样式修订" in x for x in validate(changed))
+
+
 def test_actual_cli_cannot_claim_pending_requests_as_rendered(tmp_path, monkeypatch):
     setup_plan(tmp_path, monkeypatch)
     entry = Path(__file__).resolve().parents[1] / "scripts/pipeline.py"
