@@ -123,10 +123,10 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
             from .stylebook_workflow import validate
         except ImportError:
             from stylebook_workflow import validate
-        errors.extend(f"画风手册: {error}" for error in validate(plan))
+        errors.extend(f"画风库: {error}" for error in validate(plan))
         source = plan.get("source")
         if isinstance(source, dict) and source.get("author_content_sha256") != author_content_sha256(draft_text):
-            errors.append("画风手册原文作者正文摘要与当前定稿不一致")
+            errors.append("画风库原文作者正文摘要与当前定稿不一致")
     else:
         # 全站统一粘土风，不再按 infographic_subject 做风格路由（见 visual_workflow.py 注释）
         style = str(meta.get("infographic_style") or "")

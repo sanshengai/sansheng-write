@@ -135,7 +135,7 @@ cp .env.example .env              # your own keys
 | Pillow | ③ | No image resize / compression | `pip install pillow` |
 | Node 18+ / jimp | ② | No logo watermark | `cd scripts && npm install` |
 | Baoyu `baoyu-image-gen` | ③ | The current release chain (schema1) cannot render covers or illustrations | install `JimLiu/baoyu-skills`, provider under `~/.baoyu-skills/`; used for pixels only, typesetting and drafts are built in |
-| Sansheng Stylebook `sansheng-stylebook` | ③ optional | The stylebook chain (schema2) cannot render | install next to this Skill, runs on the Codex subscription; see `references/stylebook-contract.md` |
+| Sansheng Image `sansheng-image` | ③ optional | The stylebook chain (schema2) cannot render | install next to this Skill, runs on the Codex subscription; see `references/stylebook-contract.md` |
 | gcloud ADC (Vertex OAuth) | ③ | The BGM release gate fails | `gcloud auth application-default login` + `gcloud config set project <P>`; BGM runs on Lyria 3, **no API key needed** |
 | WeChat appid/secret | ③ | `release-to-draft` cannot create and read back the draft | put them in `~/.config/sansheng-write/wechat.env` (**not** this repo's .env, mode 600); also whitelist your IP |
 | playwright / matplotlib | ③ optional | No SVG→PNG for separate deterministic diagrams and no data charts; never used to add text to covers/Hero/infographics | `pip install playwright matplotlib` |

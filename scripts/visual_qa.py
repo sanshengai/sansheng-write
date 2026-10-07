@@ -447,7 +447,7 @@ def build_qa_request(cwd: Path) -> tuple[dict[str, Any] | None, list[str]]:
         try:
             return request(cwd), []
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            return None, [f"画风手册当前独立验收/装配尚不满足汇总条件：{exc}"]
+            return None, [f"画风库当前独立验收/装配尚不满足汇总条件：{exc}"]
     manifest, errors = build_visual_manifest(
         cwd, strict=True, allow_postprocessed=True
     )
@@ -866,7 +866,7 @@ def run_visual_qa(
         from stylebook_evidence import aggregate
     if selected_at(cwd):
         if reviewer_command is not None:
-            return None, ["画风手册须先完成逐图及全文独立复核；visual-qa 只汇总当前报告，不接受旧宝玉复核命令"]
+            return None, ["画风库须先完成逐图及全文独立复核；visual-qa 只汇总当前报告，不接受旧宝玉复核命令"]
         return aggregate(cwd)
     candidate_set = cwd / "素材" / "candidates" / "candidate-set.json"
     if candidate_set.is_file():

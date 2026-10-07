@@ -23,28 +23,28 @@ python "$SKILL/scripts/pipeline.py" adopt-final \
 python "$SKILL/scripts/pipeline.py" verify-release-job
 ```
 
-`adopt-final` 的视觉元数据检查按文章级合同分流：显式 `schema_version: 2` / `workflow: stylebook-v1` 须通过画风手册整组合同校验且绑定当前作者正文摘要；旧路线仍要求 `claymation`、`warm-light-clay` 和 `montage-evidence`。未知版本、损坏合同或原文漂移均拒绝，作者审批要求不变。
+`adopt-final` 的视觉元数据检查按文章级合同分流：显式 `schema_version: 2` / `workflow: stylebook-v1` 须通过画风库整组合同校验且绑定当前作者正文摘要；旧路线仍要求 `claymation`、`warm-light-clay` 和 `montage-evidence`。未知版本、损坏合同或原文漂移均拒绝，作者审批要求不变。
 
 作者拍板后先用 `approve draft --words` 把作者原话逐字落成 `_draft-approval.md`（北京时间、审批来源、`审批结论：通过`；不再手写，封存失败自动回滚），再 `adopt-final`。接管只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录；缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。🔴 **接管成功就先交付 `MiniMax-主题曲生成单.md`**（2026-09-23 审计 F3，见 §3 第 2 步），再开始配图：作者生成音乐和 Agent 配图并行，不串行等。
 
 ## 1. 生成受限视觉任务单
 
-### 画风手册显式路径（接入试用期）
+### 画风库显式路径（接入试用期）
 
 同一 `visual-plan.json` 的 schema2 已接入实际制作及视觉验收流程；完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 返回码 3 表示等待宿主实际生图；随后按合同回收输出、制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。CLI 不自行执行宿主生图，`stylebook-service` 适配尚未实现。当前仍为显式试用，隔离文章候选的视觉封存与阅读已有实跑证据，完整文章的上游定稿及发布验收仍待完成；不得据此宣布已能提交公众号。以下隔离预览入口继续保留。
 
-文章希望试用叁笙画风手册时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
+文章希望试用叁笙生图时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" compile-stylebook-preview \
-  --plan stylebook-plan.json --stylebook-root /已安装的/sansheng-stylebook
+  --plan stylebook-plan.json --image-skill-root /已安装的/sansheng-image
 ```
 
-该入口检查 `source.path` 必须指向本篇 `定稿.md`、原文字节 SHA-256、全文 `coverage` 和逐张编译合同，输出 `素材/stylebook-preview-<计划摘要>.json`：每张的完整编译词、清单、实际画风手册文件摘要及真实 `producer` 均在其中。0 张新增图也能得到明确预览证据。预览的 `renderer=null`、`plan_review=not_run` 是实际状态；须另按画风手册规则执行独立 `plan-review` 和实际图片核对。旧预览不会被不同本体静默覆盖。
+该入口检查 `source.path` 必须指向本篇 `定稿.md`、原文字节 SHA-256、全文 `coverage` 和逐张编译合同，输出 `素材/stylebook-preview-<计划摘要>.json`：每张的完整编译词、清单、实际画风库文件摘要及真实 `producer` 均在其中。0 张新增图也能得到明确预览证据。预览的 `renderer=null`、`plan_review=not_run` 是实际状态；须另按画风库规则执行独立 `plan-review` 和实际图片核对。旧预览不会被不同本体静默覆盖。
 
 这个预览入口只验证内容规划与画风编译的消费者输入，**不**生成图片，不写 `visual-plan.json`、`render-batch.json` 或发布封存回执；不能代替 schema2 的实际制作与验收，也不能凭预览回执进入微信草稿。schema2 允许正文图 0～多张，按自己的来源、文字、装配和封存合同验收，不能把新图记为宝玉出图。未显式试用时继续走下述 schema1 主链。
 
-默认 schema1 根据定稿写 `visual-plan.json`，只允许以下结构；显式 schema2 使用上面链接的画风手册合同：
+默认 schema1 根据定稿写 `visual-plan.json`，只允许以下结构；显式 schema2 使用上面链接的画风库合同：
 
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。

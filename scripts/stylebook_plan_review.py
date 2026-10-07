@@ -43,7 +43,7 @@ def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
         module = importlib.import_module(name)
         path = Path(module.__file__).resolve()
         if not path.is_relative_to(root):
-            raise ValueError("全文复核模块与选定画风手册不同")
+            raise ValueError("全文复核模块与选定画风库不同")
         files[name] = path
     for path in batch["method_source"]["files"]:
         files[f"method:{path}"] = (root / path).resolve()
@@ -66,7 +66,7 @@ def qualified(review: dict, plan: dict) -> bool:
 def review_article_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd).resolve()
     try:
-        backend = os.environ.get("STYLEBOOK_PLAN_REVIEW_BACKEND") or os.environ.get("STYLEBOOK_QA_BACKEND", "claude_cli")
+        backend = os.environ.get("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND") or os.environ.get("SANSHENG_IMAGE_QA_BACKEND", "claude_cli")
         plan, files, values = context(cwd, backend)
         peer = importlib.import_module("stylebook.qa.plan_review")
         binding = importlib.import_module("stylebook.qa.binding")
@@ -90,7 +90,7 @@ def review_article_plan(cwd: Path) -> tuple[dict | None, list[str]]:
         _immutable(destination, record)
         return {**record, "report_path": str(destination)}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError) as exc:
-        return None, [f"画风手册全文计划复核失败：{exc}"]
+        return None, [f"画风库全文计划复核失败：{exc}"]
 
 
 def verify_plan_review(cwd: Path, report_path: Path, *, require_passed: bool = True) -> dict:

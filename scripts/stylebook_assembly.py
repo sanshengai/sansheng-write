@@ -73,7 +73,7 @@ def assemble(cwd: Path) -> tuple[dict | None, list[str]]:
         return {**record, "changed": before != text.encode("utf-8"),
                 "image_count": len(identity["assets"]) - 1}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f"画风手册文章装配失败：{exc}"]
+        return None, [f"画风库文章装配失败：{exc}"]
 
 
 def verify_assembly(cwd: Path) -> dict:

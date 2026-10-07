@@ -143,7 +143,7 @@ def review_candidate(cwd: Path, production_path: Path) -> tuple[dict | None, lis
         for module in (qa, reviewer, binding, contracts, data, exporter):
             path = Path(module.__file__).resolve()
             if not path.is_relative_to(root):
-                raise ValueError("验收模块与选定画风手册本体不同")
+                raise ValueError("验收模块与选定叁笙生图本体不同")
             files[f"qa-code:{path}"] = path
         files["adapter"] = Path(__file__).resolve()
         backend = reviewer.source()
@@ -168,7 +168,7 @@ def review_candidate(cwd: Path, production_path: Path) -> tuple[dict | None, lis
         _immutable(destination, report)
         return {**report, "report_path": str(destination)}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration, RuntimeError) as exc:
-        return None, [f"画风手册独立验收失败：{exc}"]
+        return None, [f"画风库独立验收失败：{exc}"]
 
 
 def verify_candidate_review(cwd: Path, report_path: Path, *, require_passed: bool = True) -> dict:
@@ -177,7 +177,7 @@ def verify_candidate_review(cwd: Path, report_path: Path, *, require_passed: boo
     report_path = Path(report_path).resolve()
     report = json.loads(report_path.read_text())
     if not selected(report) or report.get("producer") != PRODUCER:
-        raise ValueError("不是画风手册正式候选验收报告")
+        raise ValueError("不是画风库正式候选验收报告")
     identity = {key: value for key, value in report.items() if key != "report_path"}
     record, task, expected_files = production_inputs(cwd, cwd / report["production_path"])
     expected_parent = (cwd / record["files"]["main"]).parent / "qa-reports"

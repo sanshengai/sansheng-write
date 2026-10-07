@@ -464,14 +464,14 @@ def _stylebook_root() -> Path | None:
     except ImportError:  # pragma: no cover - direct script execution
         from stylebook_preview import _skill_root
     try:
-        root = _skill_root(os.environ.get("SANSHENG_STYLEBOOK_ROOT"))
-    except Exception:  # noqa: BLE001 - 没装画风手册就退回旧路径
+        root = _skill_root(os.environ.get("SANSHENG_IMAGE_ROOT"))
+    except Exception:  # noqa: BLE001 - 没装画风库就退回旧路径
         return None
     return root if (root / "scripts/sb.py").is_file() else None
 
 
 def image_route() -> str:
-    """封面出图走哪条路：默认画风手册（Codex 订阅额度）；SANSHENG_WRITE_IMAGE_ROUTE=baoyu 才走旧的宝玉脚本。"""
+    """封面出图走哪条路：默认画风库（Codex 订阅额度）；SANSHENG_WRITE_IMAGE_ROUTE=baoyu 才走旧的宝玉脚本。"""
     want = os.environ.get("SANSHENG_WRITE_IMAGE_ROUTE", "").strip().lower()
     if want == "baoyu":
         return "baoyu"
@@ -481,7 +481,7 @@ def image_route() -> str:
 def _render_one_stylebook(article_dir: Path, *, stage: str, prompt_file: Path, output: Path, timeout: int = 1800) -> list[str]:
     root = _stylebook_root()
     if root is None:
-        return [f"{stage}：找不到画风手册本体（SANSHENG_STYLEBOOK_ROOT）"]
+        return [f"{stage}：找不到叁笙生图本体（SANSHENG_IMAGE_ROOT）"]
     cmd = [sys.executable, str(root / "scripts/sb.py"), "raw-generate", "--prompt-file", str(prompt_file), "--aspect", "1:1",
            "--size", "1024x1024", "-o", str(output), "--tag", f"audio-cover:{stage}"]
     try:

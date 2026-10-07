@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/7b5d8a8c-7caf-41e3-957e-5c2428859c79
 | 表格品牌化 | 主题色表头、列宽自动计算、手机端横滑 |
 | 继续往下读 / 信息来源 / 关注卡 | 强相关旧文与自有阵地、可复核来源、文末转化 |
 
-质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；本 Skill 的 visual planner 是唯一真实生产者，现行发布链的最终像素经 `baoyu-image-gen`（画风手册链为可选的 schema2）；封面与插图的全部内容文字必须和画面一次性原生生成，禁止 SVG 或本地字体后期补字。最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
+质量不靠自觉，靠**契约门**：作者审批绑定具体稿件摘要；本 Skill 的 visual planner 是唯一真实生产者，现行发布链的最终像素经 `baoyu-image-gen`（画风库链为可选的 schema2）；封面与插图的全部内容文字必须和画面一次性原生生成，禁止 SVG 或本地字体后期补字。最终视觉、HTML 与微信草稿 media_id 用 receipt 逐层绑定。产出被改过，已完成下游会自动变成 `dirty`，不能拿旧绿灯继续发。
 
 ```console
 $ python scripts/format_layout.py 定稿.html --all --check
@@ -150,7 +150,7 @@ cp .env.example .env              # 填你自己的 key
 | Pillow | ③ | 生图缩放、配图压缩不可用 | `pip install pillow` |
 | Node 18+ / jimp | ② | 配图加不了 logo 水印 | `cd scripts && npm install` |
 | 宝玉 `baoyu-image-gen` | ③ | 现行发布链（schema1）的封面、插图无法出图 | 安装 `JimLiu/baoyu-skills`，provider 配在 `~/.baoyu-skills/`；只用它出图，排版与发草稿已内置 |
-| 叁笙画风手册 `sansheng-stylebook` | ③ 可选 | 画风手册链（schema2）无法出图 | 与本 Skill 同级安装，走 Codex 订阅额度；见 `references/stylebook-contract.md` |
+| 叁笙生图 `sansheng-image` | ③ 可选 | 画风库链（schema2）无法出图 | 与本 Skill 同级安装，走 Codex 订阅额度；见 `references/stylebook-contract.md` |
 | gcloud ADC（Vertex OAuth） | ③，且选择 Lyria 自动生成时 | Lyria 生成不可用；已用显式 manifest 绑定的网页生成或既有主题曲不受影响 | `gcloud auth application-default login` + `gcloud config set project <P>`；Lyria **不用 API Key** |
 | 微信公众号 appid/secret | ③ | `release-to-draft` 无法创建并读回草稿 | 写进 `~/.config/sansheng-write/wechat.env`（**非本仓 .env**，权限 600）；后台还需把本机出口 IP 加白名单 |
 | playwright / matplotlib | ③ 可选 | 独立精确图表的 SVG 转 PNG、数据图画不了；不用于封面/Hero/信息图补字 | `pip install playwright matplotlib` |

@@ -4,9 +4,11 @@
 
 ## [未发布]
 
-- 修正 `adopt-final` 元数据验收遗漏：显式 schema 2 画风手册合同按整组锁与当前作者正文摘要验收；旧路线继续要求粘土风，未知/损坏合同仍拒绝。作者审批仍单独必需。
+- 叁笙生图整体更名联动：peer Skill 标识 `sansheng-stylebook` 改为 `sansheng-image`，产品名「叁笙画风手册／画风手册」改为「叁笙生图／画风库」；环境变量 `SANSHENG_STYLEBOOK_ROOT`、`STYLEBOOK_PLAN_REVIEW_BACKEND`、`STYLEBOOK_QA_BACKEND` 分别改为 `SANSHENG_IMAGE_ROOT`、`SANSHENG_IMAGE_PLAN_REVIEW_BACKEND`、`SANSHENG_IMAGE_QA_BACKEND`，预览入口参数 `--stylebook-root` 改为 `--image-skill-root`。内部 `stylebook_*` 模块名、业务字段、`compile-stylebook-preview` 子命令与出图合同／证据格式不变。
 
-- 修正画风手册入口、发布运行时与铁律索引的过时能力说明：路由到已实现的宿主生图回收、最终制作、QA、整组选图、装配、视觉封存和阅读流程；仍保留显式试用、上游定稿及完整发布验收未完成的边界。
+- 修正 `adopt-final` 元数据验收遗漏：显式 schema 2 画风库合同按整组锁与当前作者正文摘要验收；旧路线继续要求粘土风，未知/损坏合同仍拒绝。作者审批仍单独必需。
+
+- 修正叁笙生图入口、发布运行时与铁律索引的过时能力说明：路由到已实现的宿主生图回收、最终制作、QA、整组选图、装配、视觉封存和阅读流程；仍保留显式试用、上游定稿及完整发布验收未完成的边界。
 
 ## [2.4.0] -- 2026-09-22
 

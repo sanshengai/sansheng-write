@@ -28,4 +28,4 @@ def reading_errors(cwd: Path) -> list[str]:
         verify_reading(cwd)
         return []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return [f'画风手册整篇阅读凭证缺失或失效：{exc}']
+        return [f'画风库整篇阅读凭证缺失或失效：{exc}']

@@ -59,7 +59,7 @@ def build_manifest(cwd: Path) -> tuple[dict, list[str]]:
     try:
         return manifest(cwd), []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return {}, [f'画风手册最终视觉证据失败：{exc}']
+        return {}, [f'画风库最终视觉证据失败：{exc}']
 
 
 def request(cwd: Path) -> dict:
@@ -84,7 +84,7 @@ def aggregate(cwd: Path) -> tuple[dict | None, list[str]]:
         validate_qa(cwd, result)
         return result, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f'画风手册视觉验收汇总失败：{exc}']
+        return None, [f'画风库视觉验收汇总失败：{exc}']
 
 
 def validate_qa(cwd: Path, qa: dict) -> dict:
@@ -105,7 +105,7 @@ def qa_errors(cwd: Path, qa: dict) -> list[str]:
         validate_qa(cwd, qa)
         return []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return [f'画风手册视觉汇总失效：{exc}']
+        return [f'画风库视觉汇总失效：{exc}']
 
 
 def seal(cwd: Path) -> tuple[dict | None, list[str]]:
@@ -124,7 +124,7 @@ def seal(cwd: Path) -> tuple[dict | None, list[str]]:
         verify_seal(cwd)
         return record, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f'画风手册视觉封存失败：{exc}']
+        return None, [f'画风库视觉封存失败：{exc}']
 
 
 def verify_seal(cwd: Path) -> dict:
@@ -151,4 +151,4 @@ def verify_receipt(cwd: Path) -> tuple[dict | None, list[str]]:
     try:
         return verify_seal(cwd), []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f'画风手册视觉封存失效：{exc}']
+        return None, [f'画风库视觉封存失效：{exc}']

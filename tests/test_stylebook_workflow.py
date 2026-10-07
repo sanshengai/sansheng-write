@@ -16,10 +16,10 @@ from scripts.visual_workflow import compile_visual_plan, validate_visual_plan
 
 
 def setup_plan(tmp_path, monkeypatch, *, body=True):
-    root = Path(__file__).resolve().parents[2] / "sansheng-stylebook"
+    root = Path(__file__).resolve().parents[2] / "sansheng-image"
     if not (root / "scripts/stylebook/plan.py").is_file():
-        pytest.skip("需要相邻的可选画风手册本体")
-    monkeypatch.setenv("SANSHENG_STYLEBOOK_ROOT", str(root))
+        pytest.skip("需要相邻的可选叁笙生图本体")
+    monkeypatch.setenv("SANSHENG_IMAGE_ROOT", str(root))
     article = tmp_path / "定稿.md"
     article.write_text("工具先下载，然后验证来源。\n")
     code = "C31@r" + str(json.loads((root / "styles/C31/contract.json").read_text())["revision"])
@@ -113,7 +113,7 @@ def test_version_pairs_group_conflicts_and_empty_source_fail_closed(tmp_path, mo
 
 
 def _own_cover(plan, code):
-    root = Path(__file__).resolve().parents[2] / "sansheng-stylebook"
+    root = Path(__file__).resolve().parents[2] / "sansheng-image"
     rev = json.loads((root / f"styles/{code}/contract.json").read_text())["revision"]
     plan["cover"].update({"style": f"{code}@r{rev}", "own_style": True})
     return plan
@@ -387,7 +387,7 @@ def test_adopt_final_metadata_uses_explicit_stylebook_contract(tmp_path, monkeyp
     assert any("claymation" in x for x in _validate_final_and_meta(draft, meta)[1])
 
 
-# ---- stylebook-service：无人值守出图（Codex 经画风手册 raw-generate），回收规则与宿主路径相同 ----
+# ---- stylebook-service：无人值守出图（Codex 经画风库 raw-generate），回收规则与宿主路径相同 ----
 def _service_plan(tmp_path, monkeypatch, body=True):
     plan = setup_plan(tmp_path, monkeypatch, body=body)
     plan["renderer"]["backend"] = "stylebook-service"

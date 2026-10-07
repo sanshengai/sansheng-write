@@ -170,7 +170,7 @@ def main() -> int:
             + (
                 f"能力探测通过（{revision[:12]}）"
                 if renderer_ready
-                else f"未启用 -- 新流程默认走叁笙画风手册 + Codex，无需它（{renderer_probe.get('error')}）"
+                else f"未启用 -- 新流程默认走叁笙生图 + Codex，无需它（{renderer_probe.get('error')}）"
             )
         )
     except Exception as exc:

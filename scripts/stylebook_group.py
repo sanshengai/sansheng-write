@@ -58,7 +58,7 @@ def select_group(cwd: Path, plan_report: Path, reports: dict[str, Path]) -> tupl
         (cwd / "素材/stylebook-selection.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")
         return record, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f"画风手册整组选图失败：{exc}"]
+        return None, [f"画风库整组选图失败：{exc}"]
 
 
 def verify_group(cwd: Path) -> dict:

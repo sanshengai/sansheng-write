@@ -161,4 +161,4 @@ def reuse_raw(cwd: Path, origin_path: Path, image_id: str) -> tuple[dict | None,
         validate_raw(cwd, path)
         return {**record, "receipt_path": str(path)}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as exc:
-        return None, [f"画风手册底图复用失败：{exc}"]
+        return None, [f"画风库底图复用失败：{exc}"]

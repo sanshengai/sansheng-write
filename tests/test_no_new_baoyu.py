@@ -46,7 +46,7 @@ def test_no_new_baoyu_references():
         n = _count(p)
         if n > BASELINE.get(p.name, 0):
             over[p.name] = (n, BASELINE.get(p.name, 0))
-    assert not over, f"新增了宝玉引用（现有, 上限）：{over}；新代码走叁笙画风手册与内置模块"
+    assert not over, f"新增了宝玉引用（现有, 上限）：{over}；新代码走叁笙生图与内置模块"
 
 
 def test_guard_rejects_a_new_reference(tmp_path):

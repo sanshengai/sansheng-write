@@ -680,7 +680,7 @@ def render_visuals(
         from stylebook_workflow import selected_at, generation_requests
     if selected_at(cwd):
         if candidate_count != 1:
-            return None, ["画风手册正式路径暂不接受批量随机候选；按单图有原因返修"]
+            return None, ["画风库正式路径暂不接受批量随机候选；按单图有原因返修"]
         receipt, errors = generation_requests(cwd, only)
         if receipt and receipt.get("status") == "pending_service":  # 服务后端：直接出图并回收，不等宿主
             try:

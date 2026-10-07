@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 # 中文长文写作系统
 
-运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走叁笙画风手册（同级安装 `sansheng-stylebook`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
+运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走叁笙生图（同级安装 `sansheng-image`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
@@ -77,7 +77,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
 | 生成音乐 / BGM / 主题曲、改歌名歌词风格、主题曲或播客封面（封面画锚点不画论点：标题里的专名本身，单主体、深底调色板、最多一个短标号，46 px 盲配验收；歌曲 150–210 秒；MiniMax 手动生成，Lyria 暂停） | music.md |
-| 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链）；显式试用画风手册时，由这里进入 schema2 的实际制作、QA、装配、封存与阅读流程，详细边界见 stylebook-contract.md | release-runtime.md |
+| 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链）；显式试用画风库时，由这里进入 schema2 的实际制作、QA、装配、封存与阅读流程，详细边界见 stylebook-contract.md | release-runtime.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |

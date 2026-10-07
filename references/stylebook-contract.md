@@ -1,18 +1,18 @@
-# 画风手册文章合同（schema2，新文章推荐路线）
+# 画风库文章合同（schema2，新文章推荐路线）
 
-新文章的配图默认走这条路线：`visual-plan.json` 写成 schema2，`renderer.backend` 用 `stylebook-service`（无人值守，经画风手册调用 Codex 内置生图，走订阅额度）。旧 schema1 宝玉合同保留给历史文章和显式选择，原样运行。画风手册 peer Skill 必须已安装，环境变量 `SANSHENG_STYLEBOOK_ROOT` 可指定实际本体。
+新文章的配图默认走这条路线：`visual-plan.json` 写成 schema2，`renderer.backend` 用 `stylebook-service`（无人值守，经画风库调用 Codex 内置生图，走订阅额度）。旧 schema1 宝玉合同保留给历史文章和显式选择，原样运行。画风库 peer Skill 必须已安装，环境变量 `SANSHENG_IMAGE_ROOT` 可指定实际本体。
 
 ## 当前可执行的步骤
 
 同一任务单采用 `schema_version: 2`、`workflow: stylebook-v1`：
 
 - `source.sha256`：`定稿.md` 的确切字节摘要；`source.author_content_sha256`：只去注册机器装配块后的作者正文摘要，使用 `assemble_release.author_content_sha256` 计算。
-- `article_plan`：画风手册 v3/wxillus 的完整文章计划，`source.path` 指向当前 `定稿.md`。全文 coverage、原文引用和图意按画风手册验证，允许零张正文图。
-- `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 及封面一致。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风手册原有显式规则。
+- `article_plan`：画风库 v3/wxillus 的完整文章计划，`source.path` 指向当前 `定稿.md`。全文 coverage、原文引用和图意按画风库验证，允许零张正文图。
+- `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 及封面一致。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风库原有显式规则。
 - `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
-  封面可选的风格：画风手册 v0.4.0 起新增封面向风格（C74 丝网印海报、C75 暖纸克制双色、C76 杂志编辑封面、C77 叁笙深空等），选择器里按「公众号封面」用途列出，样图是标题写在图上的真实封面；不改写作 Skill 的默认。
-  封面单独选画风：默认封面与正文同一画风。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照画风手册本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风手册 `references/recipes.md` 第 1 节。
-- `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风手册的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。
+  封面可选的风格：画风库 v0.4.0 起新增封面向风格（C74 丝网印海报、C75 暖纸克制双色、C76 杂志编辑封面、C77 叁笙深空等），选择器里按「公众号封面」用途列出，样图是标题写在图上的真实封面；不改写作 Skill 的默认。
+  封面单独选画风：默认封面与正文同一画风。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照叁笙生图本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风库 `references/recipes.md` 第 1 节。
+- `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风库的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。
 
 在本篇目录运行 `pipeline.py compile-visuals`。新路径输出 `素材/render-batch.json`、`素材/visual-compile-receipt.json` 和 `素材/stylebook-requests/<摘要>.json`；历史请求不可覆盖。保存完整编译词、参考图职责与实际文件摘要、制作清单、画风方法文件和适配器摘要；原文字节另存于不可变 `素材/stylebook-sources/<原文摘要>.md`。编译方言的 model 不充当实际调用模型。
 
@@ -28,9 +28,9 @@ CLI 能核对请求、原文、方法、参考图与输出字节，但无法独�
 
 改稿后先重新编译当前计划。仅当保存的完整调用及参考图字节均相同，才可用 `pipeline.py reuse-stylebook-raw --raw-receipt <历史宿主回收凭证.json> --id <当前图片ID>` 复用底图。入口保留原始宿主回执、历史编译请求和原文快照，明确记录 `source_strength: host_attested_reused` 与 `reuse.new_invocation: false`，不虚构新生图。复用只得到当前版本的待制作凭证；仍须全文计划复核、最终制作与新的独立看图验收。提示词或参考图变化时拒绝复用；历史来源变化会令后续验收失效。
 
-回收后运行 `pipeline.py produce-stylebook-candidate --raw-receipt <不可变回收凭证.json>`。它核对当前原文、计划、完整请求和原始图片，使用画风手册实际导出与排字器，输出版本化的最终候选及 `production.json`。凭证绑定实际字体文件、图层、制作代码和输出字节；输入在制作期间改变时拒绝交付。重复制作同一输入幂等；已保存候选被改坏时拒绝覆盖。此时状态仍是 `produced_pending_qa`，不会填充正式 `素材/cover.png` 或装配文章。
+回收后运行 `pipeline.py produce-stylebook-candidate --raw-receipt <不可变回收凭证.json>`。它核对当前原文、计划、完整请求和原始图片，使用画风库实际导出与排字器，输出版本化的最终候选及 `production.json`。凭证绑定实际字体文件、图层、制作代码和输出字节；输入在制作期间改变时拒绝交付。重复制作同一输入幂等；已保存候选被改坏时拒绝覆盖。此时状态仍是 `produced_pending_qa`，不会填充正式 `素材/cover.png` 或装配文章。
 
-接着运行 `pipeline.py review-stylebook-candidate --production <production.json>`。它独立调用画风手册当前配置的看图后端，核对画风、逐字文字、内容要点、最终方形裁切（适用时）及文字碰线、多余软件标记。返回码 0 为通过、1 为真实验收不通过且已保存报告、2 为无法完成验收。失败报告同样不可覆盖。验收前后绑定最终图片、全部制作依赖、实际合同、预览及验收代码；`stylebook_review.verify_candidate_review` 是后续消费者复核旧报告的入口，任何绑定输入变化都须重新验收。
+接着运行 `pipeline.py review-stylebook-candidate --production <production.json>`。它独立调用画风库当前配置的看图后端，核对画风、逐字文字、内容要点、最终方形裁切（适用时）及文字碰线、多余软件标记。返回码 0 为通过、1 为真实验收不通过且已保存报告、2 为无法完成验收。失败报告同样不可覆盖。验收前后绑定最终图片、全部制作依赖、实际合同、预览及验收代码；`stylebook_review.verify_candidate_review` 是后续消费者复核旧报告的入口，任何绑定输入变化都须重新验收。
 
 实际底图留白与计划文字区不一致时，可运行 `pipeline.py refit-stylebook-candidate --raw-receipt <原始回收凭证.json> --layout <布局.json>`，调整现有排字。布局格式为 `{"version":1,"items":[{"box":[0.1,0.2,0.8,0.15]}]}`，items 与原文字项数量及顺序相同，每项仅允许 `box`、`font_px`、`min_px`、`align`；box 使用画布比例，字号使用像素。不得改变文案、画风、字体或降低原计划的最小字号。入口保留原始调用与底图，冻结布局及实际制作方法，生成新的制作 ID；旧失败记录不改写，新图须重新独立验收。原始底图无法容纳必要文字时仍会拒绝制作，不能以缩小到最低字号以下通过。
 

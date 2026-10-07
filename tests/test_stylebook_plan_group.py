@@ -20,7 +20,7 @@ def plan_report(tmp_path, monkeypatch, *, body=True, fail=None, change=None):
     setup_plan(tmp_path, monkeypatch, body=body)
     result, errors = compile_visual_plan(tmp_path)
     assert not errors
-    monkeypatch.setenv("STYLEBOOK_PLAN_REVIEW_BACKEND", "ark_agent_plan")
+    monkeypatch.setenv("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND", "ark_agent_plan")
     peer = importlib.import_module("stylebook.qa.plan_review")
 
     def review(plan, article):

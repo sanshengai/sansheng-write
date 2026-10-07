@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 WORKFLOW = "stylebook-v1"
-PRODUCER = "sansheng-stylebook"
+PRODUCER = "sansheng-image"
 
 
 def sha(path: Path) -> str:
@@ -44,7 +44,7 @@ def selected_at(cwd: Path) -> bool:
 def validate(plan: dict) -> list[str]:
     errors = []
     if not selected(plan):
-        return ["画风手册视觉合同必须为 schema_version=2, workflow=stylebook-v1"]
+        return ["画风库视觉合同必须为 schema_version=2, workflow=stylebook-v1"]
     article_plan = plan.get("article_plan")
     if not isinstance(article_plan, dict):
         return ["缺 article_plan 对象"]
@@ -74,7 +74,7 @@ def validate(plan: dict) -> list[str]:
         errors.append("cover 必须是 wechat-cover-head 编译清单")
     elif isinstance(group, dict):
         if cover.get("own_style") is True:
-            # 封面单独选画风（如 C90 深色系列封面）：只允许画风手册「封面」用途里的画风，编译时对照本体核实
+            # 封面单独选画风（如 C90 深色系列封面）：只允许画风库「封面」用途里的画风，编译时对照本体核实
             if not re.fullmatch(r"[CS]\d{2}@r[1-9]\d*", str(cover.get("style", ""))):
                 errors.append("封面单独选画风时 cover.style 也必须锁定样式修订，例如 C90@r1")
         elif "own_style" in cover:
@@ -101,13 +101,13 @@ def _peer():
         from .stylebook_preview import _skill_root
     except ImportError:
         from stylebook_preview import _skill_root
-    root = _skill_root(os.environ.get("SANSHENG_STYLEBOOK_ROOT"))
+    root = _skill_root(os.environ.get("SANSHENG_IMAGE_ROOT"))
     scripts = str(root / "scripts")
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     modules = {name: importlib.import_module(f"stylebook.{name}") for name in ("plan", "compile")}
     if any(not Path(module.__file__).resolve().is_relative_to(root) for module in modules.values()):
-        raise ValueError("画风手册已加载模块与选定本体不同")
+        raise ValueError("画风库已加载模块与选定本体不同")
     return root, modules
 
 
@@ -155,10 +155,10 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
         if cover.pop("own_style", False):
             data = importlib.import_module("stylebook.data")
             if Path(data.__file__).resolve().parent != Path(modules["plan"].__file__).resolve().parent:
-                raise ValueError("画风手册已加载模块与选定本体不同")
+                raise ValueError("画风库已加载模块与选定本体不同")
             code = cover["style"].split("@")[0]
             if code not in data.styles_for_use("封面"):
-                return None, [f"封面单独选画风只允许画风手册「封面」用途里的画风，{code} 不在其中"]
+                return None, [f"封面单独选画风只允许画风库「封面」用途里的画风，{code} 不在其中"]
         manifests = [("cover", cover)]
         for manifest in modules["plan"].manifests(plan["article_plan"]):
             manifests.append((manifest.pop("_id"), manifest))
@@ -207,7 +207,7 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
         return {"producer": PRODUCER, "prompt_count": len(tasks), "status": identity["status"],
                 "request_id": request_id, "request_path": str(dest)}, []
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        return None, [f"画风手册正式任务编译失败：{exc}"]
+        return None, [f"画风库正式任务编译失败：{exc}"]
 
 
 def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict | None, list[str]]:
@@ -223,7 +223,7 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         if digest(identity) != batch.get("request_id") or json.loads((cwd / batch["request_path"]).read_text()) != identity:
             raise ValueError("编译请求已改变，须重新 compile-visuals")
         if batch.get("producer") != PRODUCER or not selected(batch) or batch.get("plan_digest") != digest(plan):
-            raise ValueError("编译请求不属于当前画风手册计划")
+            raise ValueError("编译请求不属于当前画风库计划")
         try:
             from .stylebook_source import current_source
         except ImportError:
@@ -232,7 +232,7 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         anchor = batch["method_source"]
         root = Path(anchor["root"])
         if anchor["digest"] != digest(anchor["files"]) or any(sha(root / rel) != value for rel, value in anchor["files"].items()):
-            raise ValueError("画风手册方法或合同已改变，编译请求失效")
+            raise ValueError("画风库方法或合同已改变，编译请求失效")
         if batch["adapter_sha256"] != sha(Path(__file__)):
             raise ValueError("write 画风适配器已改变，须重新编译")
         backend = plan["renderer"]["backend"]
@@ -266,7 +266,7 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         _immutable(dest, receipt)
         return {**receipt, "path": str(dest)}, []
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        return None, [f"画风手册实际生成请求失败：{exc}"]
+        return None, [f"画风库实际生成请求失败：{exc}"]
 
 
 def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list[str]]:
@@ -344,12 +344,12 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         return {**identity, "receipt_path": str(receipt),
                 "collected_at": datetime.now(timezone.utc).isoformat()}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f"画风手册宿主结果回收失败：{exc}"]
+        return None, [f"画风库宿主结果回收失败：{exc}"]
 
 
 def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800, jobs: int = 4,
                 runner=None) -> tuple[dict | None, list[str]]:
-    """无人值守出图：对每份请求调用画风手册的 raw-generate（默认走 Codex 订阅额度），再按同一套回收规则收进来。
+    """无人值守出图：对每份请求调用画风库的 raw-generate（默认走 Codex 订阅额度），再按同一套回收规则收进来。
 
     流水线自己发起调用，所以回执标 pipeline_invoked；它仍不是最终成品、QA 或 seal。
     runner 仅供测试注入（签名同 subprocess.run 的最小子集）。
@@ -366,7 +366,7 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800,
     try:
         root, _ = _peer()
     except (ValueError, OSError, ImportError) as exc:
-        return None, [f"找不到画风手册本体：{exc}"]
+        return None, [f"找不到叁笙生图本体：{exc}"]
     host_path = Path(requests["path"])
     expected = {k: v for k, v in requests.items() if k != "path"}
     out_dir = cwd / "素材/stylebook-service-results" / expected["request_id"]
@@ -417,7 +417,7 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
         raw_receipt_path = Path(raw_receipt_path).resolve()
         receipt = json.loads(raw_receipt_path.read_text())
         if not selected(receipt) or receipt.get("producer") != PRODUCER or receipt.get("status") != "raw_collected_pending_production":
-            raise ValueError("须选择画风手册实际回收的原始候选凭证")
+            raise ValueError("须选择画风库实际回收的原始候选凭证")
         expected_parent = cwd / "素材/stylebook-results" / receipt["request_id"] / receipt["id"]
         if raw_receipt_path.parent != expected_parent or raw_receipt_path.stem != digest(receipt):
             raise ValueError("原始候选凭证已改变或不在本篇不可变结果目录")
@@ -474,7 +474,7 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
         for module in (export, overlay_module, textspec):
             path = Path(module.__file__).resolve()
             if not path.is_relative_to(root):
-                raise ValueError("实际制作模块与选定画风手册不同")
+                raise ValueError("实际制作模块与选定画风库不同")
             dependencies[str(path)] = sha(path)
         import PIL
         with tempfile.TemporaryDirectory(prefix="stylebook-production-", dir=cwd / "素材") as scratch:
@@ -510,4 +510,4 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
             _immutable(dest / "production.json", record)
         return {**record, "receipt_path": str(dest / "production.json")}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as exc:
-        return None, [f"画风手册最终候选制作失败：{exc}"]
+        return None, [f"画风库最终候选制作失败：{exc}"]

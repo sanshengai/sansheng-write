@@ -54,7 +54,7 @@ def refit_candidate(cwd: Path, raw_receipt_path: Path, layout_path: Path) -> tup
         raw_receipt_path = Path(raw_receipt_path).resolve()
         receipt = json.loads(raw_receipt_path.read_text())
         if not selected(receipt) or receipt.get("producer") != PRODUCER or receipt.get("status") != "raw_collected_pending_production":
-            raise ValueError("须选择画风手册实际回收的原始候选凭证")
+            raise ValueError("须选择画风库实际回收的原始候选凭证")
         expected_parent = cwd / "素材/stylebook-results" / receipt["request_id"] / receipt["id"]
         if raw_receipt_path.parent != expected_parent or raw_receipt_path.stem != digest(receipt):
             raise ValueError("原始候选凭证已改变或不在本篇不可变结果目录")
@@ -116,7 +116,7 @@ def refit_candidate(cwd: Path, raw_receipt_path: Path, layout_path: Path) -> tup
         for module in (export, overlay_module, textspec):
             path = Path(module.__file__).resolve()
             if not path.is_relative_to(root):
-                raise ValueError("实际制作模块与选定画风手册不同")
+                raise ValueError("实际制作模块与选定画风库不同")
             dependencies[str(path)] = sha(path)
         import PIL
         with tempfile.TemporaryDirectory(prefix="stylebook-production-", dir=cwd / "素材") as scratch:
@@ -154,4 +154,4 @@ def refit_candidate(cwd: Path, raw_receipt_path: Path, layout_path: Path) -> tup
             _immutable(dest / "production.json", record)
         return {**record, "receipt_path": str(dest / "production.json")}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as exc:
-        return None, [f"画风手册排字调整失败：{exc}"]
+        return None, [f"画风库排字调整失败：{exc}"]

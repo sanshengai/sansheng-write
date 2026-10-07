@@ -9,9 +9,9 @@ from scripts.stylebook_preview import compile_preview
 
 
 def _stylebook() -> Path:
-    candidate = Path(__file__).resolve().parents[2] / "sansheng-stylebook"
+    candidate = Path(__file__).resolve().parents[2] / "sansheng-image"
     if not (candidate / "scripts/stylebook/plan.py").is_file():
-        pytest.skip("画风手册是可选的独立 Skill，本测试需要相邻的本体")
+        pytest.skip("画风库是可选的独立 Skill，本测试需要相邻的本体")
     return candidate
 
 

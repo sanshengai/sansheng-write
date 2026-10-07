@@ -190,7 +190,7 @@ def accept_reading(cwd: Path, observation_path: Path) -> tuple[dict | None, list
         verify_reading(cwd)
         return {**record, 'report_path': str(path)}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f'画风手册整篇阅读验收失败：{exc}']
+        return None, [f'画风库整篇阅读验收失败：{exc}']
 
 
 def verify_reading(cwd: Path) -> dict:

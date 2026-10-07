@@ -22,13 +22,13 @@ def _skill_root(explicit: str | None) -> Path:
     if explicit:
         roots = [Path(explicit).expanduser()]
     else:
-        roots = [Path.home() / ".agents/skills/sansheng-stylebook",
-                 Path.home() / ".codex/skills/sansheng-stylebook"]
+        roots = [Path.home() / ".agents/skills/sansheng-image",
+                 Path.home() / ".codex/skills/sansheng-image"]
     for root in roots:
         root = root.resolve()
         if (root / "SKILL.md").is_file() and (root / "scripts/stylebook/plan.py").is_file():
             return root
-    raise ValueError("找不到画风手册本体；用 --stylebook-root 指定已安装的 sansheng-stylebook")
+    raise ValueError("找不到叁笙生图本体；用 --image-skill-root 指定")
 
 
 def _method_anchor(root: Path, styles: set[str]) -> dict:
@@ -38,7 +38,7 @@ def _method_anchor(root: Path, styles: set[str]) -> dict:
     paths.extend(f"styles/{code}/contract.json" for code in sorted(styles))
     hashes = {rel: _sha(root / rel) for rel in paths}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
-    return {"name": "sansheng-stylebook", "root": str(root), "files": hashes, "digest": digest}
+    return {"name": "sansheng-image", "root": str(root), "files": hashes, "digest": digest}
 
 
 def compile_preview(article_dir: Path, plan_path: Path, *, stylebook_root: str | None = None) -> tuple[dict | None, list[str]]:
@@ -46,25 +46,25 @@ def compile_preview(article_dir: Path, plan_path: Path, *, stylebook_root: str |
     plan_path = Path(plan_path).resolve()
     article = article_dir / "定稿.md"
     if not article.is_file() or not plan_path.is_file():
-        return None, ["需要文章目录中的 定稿.md 和显式指定的画风手册计划文件"]
+        return None, ["需要文章目录中的 定稿.md 和显式指定的画风库计划文件"]
     try:
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         root = _skill_root(stylebook_root)
         source = Path(plan["source"]["path"])
         source = (plan_path.parent / source).resolve() if not source.is_absolute() else source.resolve()
         if source != article:
-            return None, ["画风手册计划 source.path 必须指向当前文章的 定稿.md"]
+            return None, ["画风库计划 source.path 必须指向当前文章的 定稿.md"]
         if plan.get("version") != 3 or plan.get("scene") != "wxillus":
             return None, ["写作预览只接受 v3 公众号文章配图计划"]
         if plan["source"]["sha256"] != _sha(article):
-            return None, ["定稿.md 已变化，画风手册计划的原文 SHA-256 失效"]
+            return None, ["定稿.md 已变化，画风库计划的原文 SHA-256 失效"]
         scripts = str(root / "scripts")
         if scripts not in sys.path:
             sys.path.insert(0, scripts)
         module = importlib.import_module("stylebook.plan")
         compiler = importlib.import_module("stylebook.compile")
         if not Path(module.__file__).resolve().is_relative_to(root):
-            return None, ["加载到的画风手册模块与指定本体不一致"]
+            return None, ["加载到的画风库模块与指定本体不一致"]
         errors, warnings = module.check(plan, base_path=plan_path.parent)
         if errors:
             return None, errors
@@ -77,12 +77,12 @@ def compile_preview(article_dir: Path, plan_path: Path, *, stylebook_root: str |
         styles = {str(plan["style"]["code"]).split("@")[0]}
         styles.update(str(item["style"]).split("@")[0] for item in plan["items"] if item.get("style"))
         anchor = _method_anchor(root, styles)
-        receipt = {"schema_version": 1, "status": "preview_only", "producer": "sansheng-stylebook.plan",
+        receipt = {"schema_version": 1, "status": "preview_only", "producer": "sansheng-image.plan",
                    "renderer": None, "plan_review": "not_run", "article_sha256": _sha(article),
                    "plan_sha256": _sha(plan_path), "method_source": anchor,
                    "warnings": warnings, "new_image_count": len(compiled), "images": compiled}
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        return None, [f"画风手册预编译失败：{exc}"]
+        return None, [f"画风库预编译失败：{exc}"]
 
     out_dir = article_dir / "素材"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -369,7 +369,7 @@ def test_default_route_is_the_stylebook_and_baoyu_is_an_explicit_legacy_switch(m
     assert covers.image_route() == "baoyu"
     monkeypatch.delenv("SANSHENG_WRITE_IMAGE_ROUTE")
     monkeypatch.setattr(covers, "_stylebook_root", lambda: None)
-    assert covers.image_route() == "baoyu"  # 没装画风手册时不会静默失败，退回旧脚本并由旧路径自己报缺依赖
+    assert covers.image_route() == "baoyu"  # 没装画风库时不会静默失败，退回旧脚本并由旧路径自己报缺依赖
 
 
 def test_stylebook_route_generates_covers_through_raw_generate(tmp_path, monkeypatch):
