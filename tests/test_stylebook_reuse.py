@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.assemble_release import author_content_sha256
-from scripts.stylebook_workflow import collect_host_result, digest, sha, produce_candidate
+from scripts.stylebook_workflow import collect_host_result, digest, sha, produce_candidate, _collect_result
 from scripts.stylebook_workflow import generation_requests
 from scripts.visual_workflow import compile_visual_plan
 from scripts.stylebook_reuse import reuse_raw, validate_raw
@@ -128,10 +128,10 @@ def test_rehashed_reuse_cannot_hide_old_invocation_or_claim_new_invocation(tmp_p
         path.write_text(json.dumps(value))
         with pytest.raises(ValueError):
             validate_raw(tmp_path, path)
+        # 制作前就要核对来源：被改写的复用记录不能先被做成候选，等到 review 才被拦。
         made, errors = produce_candidate(tmp_path, path)
-        assert not errors
-        with pytest.raises(ValueError):
-            production_inputs(tmp_path, Path(made["receipt_path"]))
+        assert made is None and errors
+        assert not (tmp_path / "素材/stylebook-final").exists()
 
 
 def test_reuse_cli_reports_no_new_generation(tmp_path, monkeypatch):
@@ -166,7 +166,8 @@ def service_raw_fixture(tmp_path, monkeypatch):
                  "output": {"path": str(image), "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}}
     result = tmp_path / "service-result.json"
     result.write_text(json.dumps(submitted))
-    raw, errors = collect_host_result(tmp_path, result)
+    # 服务回执只有流水线自己调用服务之后才能内部回收；公开入口会拒绝（见 test_stylebook_workflow）。
+    raw, errors = _collect_result(tmp_path, result, invoked_by_pipeline=True)
     assert not errors and raw["source_strength"] == "pipeline_invoked"
     return Path(raw["receipt_path"])
 
@@ -202,3 +203,59 @@ def test_service_route_raw_can_be_reused_without_claiming_new_invocation(tmp_pat
     assert reused["independent_invocation_verified"] is False
     assert reused["reuse"]["new_invocation"] is False
     assert validate_raw(tmp_path, Path(reused["receipt_path"]))
+
+
+def _reuse_leftovers(tmp_path):
+    return sorted(str(p.relative_to(tmp_path)) for base in ("素材/stylebook-results", "素材/stylebook-raw")
+                  for p in (tmp_path / base).rglob("*") if p.is_file())
+
+
+def test_failed_reuse_validation_leaves_no_receipt_or_copied_raw(tmp_path, monkeypatch):
+    """先校验后落盘：新记录没通过整条来源核对，就不能在文章目录里留下回执或复制出来的底图。"""
+    import scripts.stylebook_reuse as reuse_module
+    old = changed_source(tmp_path, monkeypatch)
+    before = _reuse_leftovers(tmp_path)
+    real = reuse_module.validate_raw
+    calls = []
+
+    def second_call_fails(*args, **kwargs):
+        calls.append(1)
+        if len(calls) > 1:  # 第 1 次是复用前对原凭证的核对；第 2 次起是对新复用记录的核对
+            raise ValueError("injected: 新复用记录不合格")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(reuse_module, "validate_raw", second_call_fails)
+    reused, errors = reuse_raw(tmp_path, Path(old["receipt_path"]), "cover")
+    assert reused is None and any("injected" in e for e in errors)
+    assert _reuse_leftovers(tmp_path) == before  # 回执、复制的底图、临时文件都没有留下
+
+
+def test_produce_checks_provenance_before_making_anything(tmp_path, monkeypatch):
+    path, _, _ = host_result_fixture(tmp_path, monkeypatch)
+    raw, errors = collect_host_result(tmp_path, path)
+    assert not errors
+    value = json.loads(Path(raw["receipt_path"]).read_text())
+    value["source_strength"] = "pipeline_invoked"  # 宿主自报凭证冒充流水线已核实调用
+    value["independent_invocation_verified"] = True
+    forged = Path(raw["receipt_path"]).parent / f"{digest(value)}.json"
+    forged.write_text(json.dumps(value))
+    with pytest.raises(ValueError):
+        validate_raw(tmp_path, forged)
+    made, errors = produce_candidate(tmp_path, forged)
+    assert made is None and errors
+    assert not (tmp_path / "素材/stylebook-final").exists()
+
+
+def test_reuse_of_service_raw_records_origin_backend_and_rejects_a_wrong_one(tmp_path, monkeypatch):
+    origin = service_raw_fixture(tmp_path, monkeypatch)
+    recompile_source(tmp_path)
+    reused, errors = reuse_raw(tmp_path, origin, "cover")
+    assert not errors, errors
+    assert reused["reuse"]["origin_backend"] == "stylebook-service"
+    assert reused["source_strength"] == "host_attested_reused" and reused["independent_invocation_verified"] is False
+    value = json.loads(Path(reused["receipt_path"]).read_text())
+    value["reuse"]["origin_backend"] = "image_gen.imagegen"  # 谎报原始出图路线
+    forged = Path(reused["receipt_path"]).parent / f"{digest(value)}.json"
+    forged.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match="原始出图路线"):
+        validate_raw(tmp_path, forged)

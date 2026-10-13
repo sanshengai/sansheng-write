@@ -31,7 +31,10 @@ def manifest(cwd: Path) -> dict:
                       'model': raw.get('actual_model'), 'source_strength': raw['source_strength'],
                       'independent_invocation_verified': raw['independent_invocation_verified']}
         if 'reuse' in raw:
+            # 复用没有新调用：backend 沿用原回执只为请求核对；真实出图路线看 origin_backend，不能读成复用也走了该路线。
             generation['reuse'] = raw['reuse']
+            generation['new_invocation'] = False
+            generation['origin_backend'] = raw['reuse'].get('origin_backend', raw['backend'])
         assets.append({'id': image_id, 'path': item['output'], 'sha256': sha(target),
                        'bytes': target.stat().st_size, 'style': chosen['style'],
                        'palette': chosen['palette'], 'production': chosen['production'],

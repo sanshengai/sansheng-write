@@ -18,15 +18,17 @@
 
 接着运行 `pipeline.py render-visuals`：对当前原文、任务、方法、参考图和实际编译词重新核验。`stylebook-service` 后端会立刻出图并把原始底图收回（返回码 0，状态 `raw_collected_pending_production`，下一步 `produce-stylebook-candidate`）；`host-imagegen` 后端输出完整内置生图调用参数，`--only 01` 只准备指定图片，CLI 返回码 **3** 表示 `pending_host`，尚未生成成品，实际底层模型和费用保留 null，宿主不能把这一步当作生成成功或继续封存。
 
-## 回收宿主原始输出
+## 回收原始输出（宿主路线手工回收；服务路线自动回收）
 
 宿主按保存的 `call` 完整调用 `image_gen.imagegen` 后，将实际返回说明与输出文件保存为结果 JSON，再运行 `pipeline.py collect-stylebook-result --result <结果.json>`。结果字段为：`schema_version: 1`、`backend: image_gen.imagegen`、`invocation_status: succeeded`、`host_request_path`（本篇不可变请求路径）、`host_request_digest`（该 JSON 对象的 canonical SHA，调用 `stylebook_workflow.digest` 计算）、`request_id`、`id`、完整 `call`、非空 `tool_output`（实际返回说明）、`output: {path, sha256}`（PNG 原始输出；相对路径从结果 JSON 所在目录解析）。不能把旧样图或最终排字图填入原始输出。所有候选按字节摘要保存，重复回收同一结果幂等，不覆盖已有候选。
 
-CLI 能核对请求、原文、方法、参考图与输出字节，但无法独立证明宿主工具曾执行，因此记录 `source_strength: host_attested`、`independent_invocation_verified: false`。回收只达到 `raw_collected_pending_production`；不生成最终成品或通过 QA 的凭证。
+**服务路线（`stylebook-service`）由 `render-visuals` 在调用画风库服务后自动回收，不要手工提交服务回执**：`collect-stylebook-result` 只接受 `backend: image_gen.imagegen`，手写的 `backend: stylebook-service` 结果会被拒绝（否则任何人手写一份 JSON 就能冒充「流水线已核实调用」）。
+
+CLI 能核对请求、原文、方法、参考图与输出字节，但无法独立证明宿主工具曾执行，因此宿主路线记录 `source_strength: host_attested`、`independent_invocation_verified: false`；只有流水线自己调用服务的回执才记 `pipeline_invoked`。回收只达到 `raw_collected_pending_production`；不生成最终成品或通过 QA 的凭证。
 
 ## 最终候选与正式消费者
 
-改稿后先重新编译当前计划。仅当保存的完整调用及参考图字节均相同，才可用 `pipeline.py reuse-stylebook-raw --raw-receipt <历史宿主回收凭证.json> --id <当前图片ID>` 复用底图。入口保留原始宿主回执、历史编译请求和原文快照，明确记录 `source_strength: host_attested_reused` 与 `reuse.new_invocation: false`，不虚构新生图。复用只得到当前版本的待制作凭证；仍须全文计划复核、最终制作与新的独立看图验收。提示词或参考图变化时拒绝复用；历史来源变化会令后续验收失效。
+改稿后先重新编译当前计划。仅当保存的完整调用及参考图字节均相同，才可用 `pipeline.py reuse-stylebook-raw --raw-receipt <历史宿主回收凭证.json> --id <当前图片ID>` 复用底图。入口保留原始回执、历史编译请求和原文快照，明确记录 `source_strength: host_attested_reused` 与 `reuse.new_invocation: false`，不虚构新生图；原始出图路线单独写在 `reuse.origin_backend`（记录里的 `backend` 沿用原回执只为请求核对，不代表复用也调用了该路线）。复用记录先在临时文件里通过整条来源核对才落盘，失败不留任何文件。`produce-stylebook-candidate` 与 `refit-stylebook-candidate` 开头同样核对来源，不合格的回执不能被制作成候选。复用只得到当前版本的待制作凭证；仍须全文计划复核、最终制作与新的独立看图验收。提示词或参考图变化时拒绝复用；历史来源变化会令后续验收失效。
 
 回收后运行 `pipeline.py produce-stylebook-candidate --raw-receipt <不可变回收凭证.json>`。它核对当前原文、计划、完整请求和原始图片，使用画风库实际导出与排字器，输出版本化的最终候选及 `production.json`。凭证绑定实际字体文件、图层、制作代码和输出字节；输入在制作期间改变时拒绝交付。重复制作同一输入幂等；已保存候选被改坏时拒绝覆盖。此时状态仍是 `produced_pending_qa`，不会填充正式 `素材/cover.png` 或装配文章。
 

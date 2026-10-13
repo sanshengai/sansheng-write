@@ -80,3 +80,15 @@ def test_rehashed_production_cannot_claim_changed_text(tmp_path, monkeypatch):
     receipt.write_text(json.dumps(value))
     with pytest.raises(ValueError, match="不一致"):
         production_inputs(tmp_path, receipt)
+
+
+def test_refit_checks_provenance_before_making_anything(tmp_path, monkeypatch):
+    raw, layout = prepared(tmp_path, monkeypatch)
+    value = json.loads(Path(raw["receipt_path"]).read_text())
+    value["source_strength"] = "pipeline_invoked"  # 宿主自报凭证冒充流水线已核实调用
+    value["independent_invocation_verified"] = True
+    forged = Path(raw["receipt_path"]).parent / f"{digest(value)}.json"
+    forged.write_text(json.dumps(value))
+    result, errors = refit_candidate(tmp_path, forged, layout)
+    assert result is None and any("原始宿主回执与实际保存调用不一致" in e for e in errors)
+    assert not (tmp_path / "素材/stylebook-final").exists()

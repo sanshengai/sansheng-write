@@ -29,9 +29,9 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 
 ## 1. 生成受限视觉任务单
 
-### 画风库显式路径（接入试用期）
+### 画风库路径（schema2，新文章默认）
 
-同一 `visual-plan.json` 的 schema2 已接入实际制作及视觉验收流程；完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 返回码 3 表示等待宿主实际生图；随后按合同回收输出、制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。CLI 不自行执行宿主生图，`stylebook-service` 适配尚未实现。当前仍为显式试用，隔离文章候选的视觉封存与阅读已有实跑证据，完整文章的上游定稿及发布验收仍待完成；不得据此宣布已能提交公众号。以下隔离预览入口继续保留。
+新文章默认用 `visual-plan.json` 的 schema2（`renderer.backend: stylebook-service`）；schema1 宝玉合同保留给历史文章和显式选择。schema2 已接入实际制作及视觉验收流程，完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 按 `renderer.backend` 分流：`stylebook-service` 由 CLI 直接调用画风库出图并自动回收原始底图，返回 0（`--jobs N` 调同时出图张数，默认 4；逐张打印进度与耗时，单张超过 300 秒会提示）；`host-imagegen` 才返回码 3，表示等待宿主自己调内置生图工具。之后按合同制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。隔离文章候选的视觉封存与阅读已有实跑证据，完整文章的上游定稿及发布验收仍待完成；不得据此宣布已能提交公众号。以下隔离预览入口继续保留。
 
 文章希望试用叁笙生图时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
 
@@ -42,9 +42,9 @@ python "$SKILL/scripts/pipeline.py" compile-stylebook-preview \
 
 该入口检查 `source.path` 必须指向本篇 `定稿.md`、原文字节 SHA-256、全文 `coverage` 和逐张编译合同，输出 `素材/stylebook-preview-<计划摘要>.json`：每张的完整编译词、清单、实际画风库文件摘要及真实 `producer` 均在其中。0 张新增图也能得到明确预览证据。预览的 `renderer=null`、`plan_review=not_run` 是实际状态；须另按画风库规则执行独立 `plan-review` 和实际图片核对。旧预览不会被不同本体静默覆盖。
 
-这个预览入口只验证内容规划与画风编译的消费者输入，**不**生成图片，不写 `visual-plan.json`、`render-batch.json` 或发布封存回执；不能代替 schema2 的实际制作与验收，也不能凭预览回执进入微信草稿。schema2 允许正文图 0～多张，按自己的来源、文字、装配和封存合同验收，不能把新图记为宝玉出图。未显式试用时继续走下述 schema1 主链。
+这个预览入口只验证内容规划与画风编译的消费者输入，**不**生成图片，不写 `visual-plan.json`、`render-batch.json` 或发布封存回执；不能代替 schema2 的实际制作与验收，也不能凭预览回执进入微信草稿。schema2 允许正文图 0～多张，按自己的来源、文字、装配和封存合同验收，不能把新图记为宝玉出图。下述 schema1 主链保留给历史文章和显式选择。
 
-默认 schema1 根据定稿写 `visual-plan.json`，只允许以下结构；显式 schema2 使用上面链接的画风库合同：
+schema1（历史文章与显式选择）根据定稿写 `visual-plan.json`，只允许以下结构；schema2 使用上面链接的画风库合同：
 
 - 封面：`2.35:1`，`montage-evidence`。
 - Hero：`1:1`。
@@ -66,6 +66,8 @@ python "$SKILL/scripts/pipeline.py" compile-visuals
 
 ## 2. 调用外部像素渲染器
 
+> 本节「只可调用 `baoyu-image-gen`」等 renderer 规则适用于 **schema1**（历史文章与显式选择）。schema2 的出图路线见上文「画风库路径」与 [stylebook-contract.md](stylebook-contract.md)，不受本节 renderer 限制。
+
 ```bash
 python "$SKILL/scripts/pipeline.py" render-visuals
 ```
@@ -81,7 +83,7 @@ python "$SKILL/scripts/pipeline.py" select-visuals \
 候选只保存在 `素材/candidates/`；未执行 `select-visuals` 时视觉 QA 会硬拦。系统绝不把最后一张随机生成图冒充为“最佳图”。
 请求多候选但因 429 等原因只生成出一张时，选择命令必须失败，禁止把残留单图标成“已选择”。
 
-当前适配器只可调用 `baoyu-image-gen` CLI。
+schema1 的适配器只可调用 `baoyu-image-gen` CLI。
 外部渲染器只负责像素，不决定版式、风格、文字或比例。图中全部内容文字必须由生成模型与
 画面在同一次请求里原生生成，并共享对应的粘土材质、灯光与色板；不允许 SVG / HTML /
 Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后期叠字，也不允许
@@ -97,7 +99,7 @@ Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后�
 每张图必须记录：
 
 - `producer=sansheng-write.visual-planner`
-- 实际 renderer（必须为 `baoyu-image-gen`）
+- 实际 renderer（schema1 必须为 `baoyu-image-gen`；schema2 记录 `backend` 与来源强度，见 stylebook-contract.md）
 - 实际 provider、model、renderer revision、attempt
 - prompt/output SHA-256
 

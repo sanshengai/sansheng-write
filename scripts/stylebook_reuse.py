@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 from pathlib import Path
 
 try:
@@ -27,15 +29,19 @@ def _within(cwd: Path, relative: str, parent: Path) -> Path:
     return path
 
 
-def _snapshot(cwd: Path, path: Path) -> tuple[dict, dict, dict, dict]:
-    """Check saved historical bytes; old authoring methods need not be current."""
+def _snapshot(cwd: Path, path: Path, final: Path | None = None) -> tuple[dict, dict, dict, dict]:
+    """Check saved historical bytes; old authoring methods need not be current.
+
+    final：凭证尚在临时文件里、要落盘的目标路径；位置与摘要文件名按它核对（落盘前校验用）。
+    """
     path = path.resolve()
+    final = path if final is None else Path(final).resolve()
     raw = json.loads(path.read_text())
     if (raw.get("schema_version") != 2 or raw.get("workflow") != WORKFLOW
             or raw.get("producer") != PRODUCER or raw.get("status") != "raw_collected_pending_production"):
         raise ValueError("缺正式原始底图凭证")
     parent = cwd / "素材/stylebook-results" / raw["request_id"] / raw["id"]
-    if path.parent != parent or path.stem != digest(raw):
+    if final.parent != parent or final.stem != digest(raw):
         raise ValueError("原始底图凭证路径或摘要已改变")
     host_path = _within(cwd, raw["host_request_path"], cwd / "素材/stylebook-requests")
     host = json.loads(host_path.read_text())
@@ -77,10 +83,10 @@ def _snapshot(cwd: Path, path: Path) -> tuple[dict, dict, dict, dict]:
     return raw, task, host_task, files
 
 
-def validate_raw(cwd: Path, path: Path) -> dict[str, Path]:
+def validate_raw(cwd: Path, path: Path, final: Path | None = None) -> dict[str, Path]:
     """Actual final QA consumer checks invocation or explicit reuse provenance."""
     cwd = Path(cwd).resolve()
-    raw, task, host_task, files = _snapshot(cwd, Path(path))
+    raw, task, host_task, files = _snapshot(cwd, Path(path), final)
     files[str(Path(__file__).resolve())] = Path(__file__).resolve()
     reuse = raw.get("reuse")
     origin = raw
@@ -94,6 +100,8 @@ def validate_raw(cwd: Path, path: Path) -> dict[str, Path]:
         if sha(origin_path) != reuse["origin_receipt_sha256"]:
             raise ValueError("复用的原始来源凭证已改变")
         origin, old_task, old_host_task, old_files = _snapshot(cwd, origin_path)
+        if "origin_backend" in reuse and reuse["origin_backend"] != origin.get("backend"):
+            raise ValueError("复用记录写的原始出图路线与实际来源凭证不同")
         actual_task = old_host_task
         if "reuse" in origin:
             raise ValueError("复用必须直接指向实际宿主回收来源")
@@ -153,29 +161,54 @@ def reuse_raw(cwd: Path, origin_path: Path, image_id: str) -> tuple[dict | None,
         source = cwd / origin["raw_path"]
         destination = cwd / "素材/stylebook-raw" / host["request_id"] / f"{image_id}-{origin['raw_sha256']}.png"
         payload = source.read_bytes()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            if destination.read_bytes() != payload:
-                raise ValueError("复用目录已有底图损坏，拒绝覆盖")
-        else:
-            with destination.open("xb") as stream:
-                stream.write(payload)
         record = {**origin, "request_id": host["request_id"], "id": image_id,
                   "host_request_path": str(Path(pending["path"]).relative_to(cwd)), "host_request_digest": digest(host),
                   "task_digest": current["task_digest"], "actual_call_digest": digest(current["call"]),
                   "raw_path": str(destination.relative_to(cwd)), "source_strength": "host_attested_reused",
                   # 复用没有新调用：即使原始来源是服务路线（已核实调用），这条记录也不得继承该证明。
                   "independent_invocation_verified": False,
+                  # backend 沿用原回执（请求核对需要）；真正的出图路线单独写在 origin_backend，避免被误读成「复用也走了服务」。
                   "reuse": {"new_invocation": False, "origin_receipt": str(origin_path.relative_to(cwd)),
-                            "origin_receipt_sha256": sha(origin_path), "method_sha256": sha(Path(__file__))}}
-        if any(sha(Path(key)) != value for key, value in before.items()):
-            raise ValueError("复用期间历史来源已改变")
-        checked, errors = generation_requests(cwd, only={image_id})
-        if errors or checked != pending:
-            raise ValueError("复用期间当前请求已改变")
+                            "origin_receipt_sha256": sha(origin_path), "origin_backend": origin["backend"],
+                            "method_sha256": sha(Path(__file__))}}
         path = cwd / "素材/stylebook-results" / host["request_id"] / image_id / f"{digest(record)}.json"
-        _immutable(path, record)
-        validate_raw(cwd, path)
+        if destination.exists() and destination.read_bytes() != payload:
+            raise ValueError("复用目录已有底图损坏，拒绝覆盖")
+        # 先校验后落盘：底图和回执先放成临时文件/本次新建文件，整条来源核对通过才改名生效，失败全部撤回，
+        # 不在真实文章目录里留下不合格的回执。
+        created_raw = False
+        temp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+        try:
+            if not destination.exists():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with destination.open("xb") as stream:
+                        created_raw = True  # 只有真由本次创建的底图，失败时才由本次删除
+                        stream.write(payload)
+                except FileExistsError:  # 另一个进程刚写入同一张底图：内容一致就共用，绝不删它
+                    if destination.read_bytes() != payload:
+                        raise ValueError("复用目录已有底图损坏，拒绝覆盖")
+            if path.exists():
+                if json.loads(path.read_text()) != record:
+                    raise ValueError(f"历史复用凭证不一致，拒绝覆盖：{path}")
+                validate_raw(cwd, path)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                validate_raw(cwd, temp, final=path)
+                if any(sha(Path(key)) != value for key, value in before.items()):
+                    raise ValueError("复用期间历史来源已改变")
+                checked, errors = generation_requests(cwd, only={image_id})
+                if errors or checked != pending:
+                    raise ValueError("复用期间当前请求已改变")
+                os.replace(temp, path)
+        except BaseException:
+            if created_raw and destination.exists():
+                destination.unlink()
+            raise
+        finally:
+            if temp.exists():
+                temp.unlink()
         return {**record, "receipt_path": str(path)}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as exc:
         return None, [f"画风库底图复用失败：{exc}"]

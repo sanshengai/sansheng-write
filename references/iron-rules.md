@@ -18,9 +18,9 @@
 
 ## 视觉
 
-以下固定 producer、数量、材质与 renderer 规则适用于默认 schema1。显式 schema2 画风库合同见 `stylebook-contract.md`，已实现宿主输出回收、最终制作、独立 QA、整组选图、装配、视觉封存与阅读记录；预览或 pending 请求仍不能进入封存或发布。新路径仍为显式试用，完整文章发布验收未收口；旧规则不全局放宽。
+以下固定 producer、数量、材质与 renderer 规则适用于 schema1（历史文章与显式选择，宝玉路线）。新文章默认走 schema2 画风库合同（`stylebook-contract.md`，`renderer.backend: stylebook-service`），已实现原始输出回收、最终制作、独立 QA、整组选图、装配、视觉封存与阅读记录；预览或 pending 请求仍不能进入封存或发布。完整文章发布验收未收口；旧规则不全局放宽。
 
-1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 renderer。
+1. 语义 producer 固定为 `sansheng-write.visual-planner`；`baoyu-image-gen` 只是 schema1 的 renderer。
 2. 封面 `2.35:1`；Hero `1:1`；信息图首尾 `9:16`、中间至少两张 `16:9`。`infographic_mode: author-shots` 时信息图为 0 张，`visual-plan.json` 的 `infographics` 必须为空，封面与 Hero 合同不变。
 3. 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一粘土风，不按题材分流。
    该签名配方只由 `scripts/visual_contracts.py` 定义；Baoyu 负责内容分析和布局，无权覆盖
@@ -52,8 +52,8 @@
     accent 必须是 L2 结尾，胶囊 2--3 项且安静（quiet-pill），ghost 是 2--3 个大写英文词组、
     不得大于 L1、纯白 8%--14% 不透明。`lead.subtitle` 是文章导读，不得冒充封面标签。
 16. 人物、品牌或作品为主题时填写 `cover_identity`，并把它写入 L1/L2；小标签不算显著出现。
-16. renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
-17. `cover.png`、`hero.png`、`infographic-*.png` 必须是 `baoyu-image-gen` 直接返回的 PNG
+16. （schema1）renderer 必须经过 `baoyu-image-gen`；本仓原生 provider、任意命令覆盖与“写理由放行”均禁止。
+17. （schema1）`cover.png`、`hero.png`、`infographic-*.png` 必须是 `baoyu-image-gen` 直接返回的 PNG
     像素文件；SVG 转换器只服务独立精确图表，不得占用这些正式生成图槽位。
 
 ## 社媒分发

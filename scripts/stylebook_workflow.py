@@ -269,11 +269,23 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         return None, [f"画风库实际生成请求失败：{exc}"]
 
 
-def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list[str]]:
-    """Collect a host-attested raw result; this is neither final QA nor a seal.
+def collect_result(cwd: Path, result_path: Path) -> tuple[dict | None, list[str]]:
+    """公开回收入口（pipeline collect-stylebook-result）：只收宿主工具自报的结果，来源强度为 host_attested。
 
-    The tool runs in the calling agent, outside this CLI's process. A submitted
-    tool response is an attestation, not cryptographic proof of its invocation.
+    画风库服务回执（backend=stylebook-service）会记为「流水线已核实调用」，只能由 render-visuals
+    在本进程内调用服务后自动回收；手工提交的服务回执一律拒绝，否则任何人手写一份 JSON 就能冒充。
+    """
+    return _collect_result(cwd, result_path, invoked_by_pipeline=False)
+
+
+collect_host_result = collect_result  # 旧名兼容别名（原名只讲宿主，现在语义是公开入口）
+
+
+def _collect_result(cwd: Path, result_path: Path, *, invoked_by_pipeline: bool) -> tuple[dict | None, list[str]]:
+    """回收一份原始结果；这既不是最终 QA，也不是封存。
+
+    宿主路线：工具在调用方 Agent 里运行、不在本 CLI 进程内，提交的工具返回只是自报，不是调用的密码学证明。
+    服务路线（invoked_by_pipeline=True，仅 run_service 内部使用）：本进程刚刚亲自调用了出图服务。
     """
     cwd = Path(cwd).resolve()
     try:
@@ -282,8 +294,11 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         submitted_bytes = result_path.read_bytes()
         submitted = json.loads(submitted_bytes)
         if not isinstance(submitted, dict) or type(submitted.get("schema_version")) is not int or submitted["schema_version"] != 1:
-            raise ValueError("宿主结果须为 schema_version=1 对象")
-        if submitted.get("backend") not in ("image_gen.imagegen", "stylebook-service") or submitted.get("invocation_status") != "succeeded":
+            raise ValueError("生图结果须为 schema_version=1 对象")
+        if submitted.get("backend") == "stylebook-service" and not invoked_by_pipeline:
+            raise ValueError("画风库服务回执只能由 render-visuals 自动回收，不接受手工提交的服务回执")
+        allowed = "stylebook-service" if invoked_by_pipeline else "image_gen.imagegen"
+        if submitted.get("backend") != allowed or submitted.get("invocation_status") != "succeeded":
             raise ValueError("缺实际生图成功回执；pending/失败不能回收")
         if not isinstance(submitted.get("tool_output"), str) or not submitted["tool_output"].strip():
             raise ValueError("缺宿主工具实际返回的 output_hint/输出说明")
@@ -344,17 +359,35 @@ def collect_host_result(cwd: Path, result_path: Path) -> tuple[dict | None, list
         return {**identity, "receipt_path": str(receipt),
                 "collected_at": datetime.now(timezone.utc).isoformat()}, []
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        return None, [f"画风库宿主结果回收失败：{exc}"]
+        return None, [f"画风库生图结果回收失败：{exc}"]
 
 
-def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800, jobs: int = 4,
-                runner=None) -> tuple[dict | None, list[str]]:
+SERVICE_ATTEMPT_SECONDS = 900  # 叁笙生图 Codex 单次出图上限（SANSHENG_IMAGE_CODEX_TIMEOUT 默认值）
+SERVICE_SLOW_NOTICE_SECONDS = 300  # 单张图超过这么久还没回来，打印一次提示
+SERVICE_DEFAULT_JOBS = 4
+
+
+def service_timeout() -> int:
+    """单张图的总上限 = 两次单次上限。叁笙生图内部最多重试 4 次，但最坏要等一小时以上；
+    两次都撞满上限说明服务已经异常，早失败（可用 --only 单张重跑）比无输出地挂着更好。"""
+    try:
+        attempt = int(os.environ.get("SANSHENG_IMAGE_CODEX_TIMEOUT", SERVICE_ATTEMPT_SECONDS))
+    except ValueError:
+        attempt = SERVICE_ATTEMPT_SECONDS
+    return max(60, attempt) * 2
+
+
+def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int | None = None, jobs: int = SERVICE_DEFAULT_JOBS,
+                runner=None, log=None, slow_after: float = SERVICE_SLOW_NOTICE_SECONDS) -> tuple[dict | None, list[str]]:
     """无人值守出图：对每份请求调用画风库的 raw-generate（默认走 Codex 订阅额度），再按同一套回收规则收进来。
 
     流水线自己发起调用，所以回执标 pipeline_invoked；它仍不是最终成品、QA 或 seal。
+    每张图开始/结束都经 log 打印进度和耗时，超过 slow_after 秒还没回来会提示一次。
     runner 仅供测试注入（签名同 subprocess.run 的最小子集）。
     """
     import subprocess
+    import threading
+    import time
     from concurrent.futures import ThreadPoolExecutor
 
     cwd = Path(cwd).resolve()
@@ -373,6 +406,11 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800,
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     run = runner or subprocess.run
+    timeout = service_timeout() if timeout is None else timeout
+    total = len(expected["requests"])
+    workers = max(1, min(jobs, total))
+    say = log or (lambda message: print(message, flush=True))
+    say(f"画风库服务出图：{total} 张，并发 {workers}，单张上限 {timeout} 秒")
 
     def one(request: dict) -> tuple[dict | None, list[str]]:
         image_id = request["id"]
@@ -384,10 +422,20 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800,
                "--aspect", gen["aspect"], "--size", f"{gen['size'][0]}x{gen['size'][1]}", "-o", str(raw), "--tag", f"write:{image_id}"]
         for ref in request["call"].get("referenced_image_paths", []):
             cmd += ["--ref", ref]
+        started = time.monotonic()
+        say(f"  [{image_id}] 开始出图")
+        slow = threading.Timer(slow_after, lambda: say(
+            f"  [{image_id}] 已超过 {int(slow_after)} 秒仍在出图（叁笙生图单次上限 {SERVICE_ATTEMPT_SECONDS} 秒，可能在重试，请耐心等待）"))
+        slow.daemon = True
+        slow.start()
         try:
             done = run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         except (OSError, subprocess.TimeoutExpired) as exc:
+            say(f"  [{image_id}] 出图调用失败，耗时 {time.monotonic() - started:.0f} 秒")
             return None, [f"{image_id} 出图调用失败：{exc}"]
+        finally:
+            slow.cancel()
+        say(f"  [{image_id}] 出图结束，耗时 {time.monotonic() - started:.0f} 秒")
         lines = [x for x in (done.stdout or "").splitlines() if x.strip().startswith("{")]
         meta = json.loads(lines[-1]) if lines else {}
         if done.returncode != 0 or not meta.get("ok") or not raw.is_file():
@@ -399,9 +447,9 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int = 1800,
                      "output": {"path": raw.name, "sha256": hashlib.sha256(raw.read_bytes()).hexdigest()}}
         result_json = out_dir / f"{image_id}-{stamp}.result.json"
         result_json.write_text(json.dumps(submitted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return collect_host_result(cwd, result_json)
+        return _collect_result(cwd, result_json, invoked_by_pipeline=True)
 
-    with ThreadPoolExecutor(max_workers=max(1, min(jobs, len(expected["requests"])))) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         outcomes = list(pool.map(one, expected["requests"]))
     problems = [e for _, errs in outcomes for e in errs]
     collected = [r for r, _ in outcomes if r]
@@ -421,6 +469,12 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
         expected_parent = cwd / "素材/stylebook-results" / receipt["request_id"] / receipt["id"]
         if raw_receipt_path.parent != expected_parent or raw_receipt_path.stem != digest(receipt):
             raise ValueError("原始候选凭证已改变或不在本篇不可变结果目录")
+        # 与 review 同一套来源核对放在制作之前：不合格的回执（含伪造/改写的复用记录）不能先被做成候选。
+        try:
+            from .stylebook_reuse import validate_raw
+        except ImportError:
+            from stylebook_reuse import validate_raw
+        validate_raw(cwd, raw_receipt_path)
         host_path = cwd / receipt["host_request_path"]
         host = json.loads(host_path.read_text())
         pending, errors = generation_requests(cwd, only={item["id"] for item in host["requests"]})

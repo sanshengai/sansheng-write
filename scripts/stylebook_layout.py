@@ -58,6 +58,11 @@ def refit_candidate(cwd: Path, raw_receipt_path: Path, layout_path: Path) -> tup
         expected_parent = cwd / "素材/stylebook-results" / receipt["request_id"] / receipt["id"]
         if raw_receipt_path.parent != expected_parent or raw_receipt_path.stem != digest(receipt):
             raise ValueError("原始候选凭证已改变或不在本篇不可变结果目录")
+        try:  # 与 produce_candidate、review 同一套来源核对，制作前先拦下不合格回执
+            from .stylebook_reuse import validate_raw
+        except ImportError:
+            from stylebook_reuse import validate_raw
+        validate_raw(cwd, raw_receipt_path)
         host_path = cwd / receipt["host_request_path"]
         host = json.loads(host_path.read_text())
         pending, errors = generation_requests(cwd, only={item["id"] for item in host["requests"]})

@@ -13,13 +13,13 @@
 - 作者供图：保留原图，使用 `shot-` 前缀；默认不加 AI 图水印。
 - 概念、结构、流程、抽象关系：进入视觉规划器。
 
-## 三层合同
+## 三层合同（schema1）
 
 | 层 | 责任 | 唯一事实 |
 |---|---|---|
 | producer | 读定稿、选图位、定版式/风格/比例/文字、编译 prompt | `sansheng-write.visual-planner` |
 | method source | 提供内容分析、结构化与布局方法；以版本字节和枚举锚定 | Hero=`baoyu-article-illustrator`；信息图=`baoyu-infographic` |
-| renderer | 按 canonical prompt 生成像素 | 固定 `baoyu-image-gen`；只能在其内部选择 provider/model |
+| renderer | 按 canonical prompt 生成像素 | schema1 固定 `baoyu-image-gen`；只能在其内部选择 provider/model（schema2 见 stylebook-contract.md） |
 
 method source 与 renderer 都不得修改 `expected_text`、比例、style 或 visual profile，
 也不得在日志中冒充 producer。

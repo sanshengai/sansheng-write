@@ -16,14 +16,19 @@ BODY_CHECKS = ("reasonable", "position_ok", "shape_ok", "form_ok", "basis_ok",
                "no_literal_metaphor_or_real_face", "fidelity_ok", "reader_value_ok")
 
 
-def plan_report(tmp_path, monkeypatch, *, body=True, fail=None, change=None):
+def plan_report(tmp_path, monkeypatch, *, body=True, fail=None, change=None, backend="ark_agent_plan",
+                actual=None):
     setup_plan(tmp_path, monkeypatch, body=body)
     result, errors = compile_visual_plan(tmp_path)
     assert not errors
-    monkeypatch.setenv("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND", "ark_agent_plan")
+    monkeypatch.delenv("SANSHENG_IMAGE_QA_BACKEND", raising=False)
+    if backend:
+        monkeypatch.setenv("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND", backend)
+    else:
+        monkeypatch.delenv("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND", raising=False)
     peer = importlib.import_module("stylebook.qa.plan_review")
 
-    def review(plan, article):
+    def review(plan, article, backend=None, **kw):
         assert article.read_text() and "cover_brief" in plan
         value = {"items": [{"id": item["id"], **dict.fromkeys(BODY_CHECKS, True),
                             "why": "synthetic test answer"} for item in plan["items"]],
@@ -39,6 +44,8 @@ def plan_report(tmp_path, monkeypatch, *, body=True, fail=None, change=None):
             value.pop("_reviewer")
         if change:
             change(article)
+        if actual != "":
+            value["_backend"] = actual or backend
         return value
 
     monkeypatch.setattr(peer, "review", review)
@@ -130,3 +137,21 @@ def test_actual_cover_selection_rechecks_known_objection(tmp_path, monkeypatch):
     reject_candidate(tmp_path, Path(made["receipt_path"]), "Synthetic test observed collision")
     with pytest.raises(ValueError, match="模型绿灯不能覆盖"):
         verify_group(tmp_path)
+
+
+def test_recorded_backend_is_the_image_skill_resolution(tmp_path, monkeypatch):
+    peer = importlib.import_module("stylebook.qa.plan_review")
+    report, errors = plan_report(tmp_path, monkeypatch, backend=None)
+    assert not errors and report["backend"] == peer.resolve_backend() == "ark_coding_plan"
+    verify_plan_review(tmp_path, Path(report["report_path"]))
+
+
+def test_review_on_a_different_backend_cannot_save_report(tmp_path, monkeypatch):
+    report, errors = plan_report(tmp_path, monkeypatch, actual="claude_cli")
+    assert report is None and any("后端" in error for error in errors)
+    assert not list((tmp_path / "素材/stylebook-plan-reviews").glob("*.json"))
+
+
+def test_review_without_backend_field_cannot_save_report(tmp_path, monkeypatch):
+    report, errors = plan_report(tmp_path, monkeypatch, actual="")
+    assert report is None and any("后端" in error for error in errors)

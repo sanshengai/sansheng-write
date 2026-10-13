@@ -11,7 +11,7 @@ import pytest
 from scripts.assemble_release import author_content_sha256, assemble_release_markdown
 from scripts.evidence import build_visual_manifest
 from scripts.render_visuals import render_visuals
-from scripts.stylebook_workflow import validate, collect_host_result, digest, produce_candidate
+from scripts.stylebook_workflow import validate, collect_host_result, digest, produce_candidate, generation_requests
 from scripts.visual_workflow import compile_visual_plan, validate_visual_plan
 
 
@@ -454,3 +454,114 @@ def test_host_backend_still_asks_the_host(tmp_path, monkeypatch):
     compile_visual_plan(tmp_path)
     pending, errors = render_visuals(tmp_path)
     assert not errors and pending["status"] == "pending_host"
+
+
+# ---- 服务回执不可伪造：公开入口只收宿主自报；服务回执只能由 render-visuals 在本进程内回收 ----
+def _handwritten_service_result(tmp_path, monkeypatch):
+    """像攻击者那样手写一份 backend=stylebook-service 的结果 JSON（请求、哈希、图片字节全部真实一致）。"""
+    from PIL import Image
+    _service_plan(tmp_path, monkeypatch)
+    _, errors = compile_visual_plan(tmp_path)
+    assert not errors
+    pending, errors = generation_requests(tmp_path, only={"cover"})
+    assert not errors and pending["backend"] == "stylebook-service"
+    host = {k: v for k, v in pending.items() if k != "path"}
+    image = tmp_path / "handwritten.png"
+    Image.new("RGB", (128, 128), "ivory").save(image)
+    task = host["requests"][0]
+    submitted = {"schema_version": 1, "backend": "stylebook-service", "invocation_status": "succeeded",
+                 "host_request_path": str(Path(pending["path"]).relative_to(tmp_path)),
+                 "host_request_digest": digest(host), "request_id": host["request_id"], "id": task["id"],
+                 "call": task["call"], "tool_output": "手写的服务回执",
+                 "output": {"path": str(image), "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}}
+    path = tmp_path / "handwritten-service-result.json"
+    path.write_text(json.dumps(submitted))
+    return path
+
+
+def test_handwritten_service_receipt_is_rejected_by_public_collect(tmp_path, monkeypatch):
+    path = _handwritten_service_result(tmp_path, monkeypatch)
+    collected, errors = collect_host_result(tmp_path, path)
+    assert collected is None and any("手工提交的服务回执" in e for e in errors)
+    assert not (tmp_path / "素材/stylebook-results").exists()  # 没落任何凭证
+
+
+def test_handwritten_service_receipt_is_rejected_by_the_actual_cli(tmp_path, monkeypatch):
+    path = _handwritten_service_result(tmp_path, monkeypatch)
+    entry = Path(__file__).resolve().parents[1] / "scripts/pipeline.py"
+    run = subprocess.run([sys.executable, str(entry), "--dir", str(tmp_path), "collect-stylebook-result", "--result", str(path)],
+                         capture_output=True, text=True)
+    assert run.returncode == 2 and "手工提交的服务回执" in run.stdout
+    assert not (tmp_path / "素材/stylebook-results").exists()
+
+
+def test_service_receipt_collected_by_the_pipeline_is_still_accepted(tmp_path, monkeypatch):
+    """同一份回执内容，经流水线内部回收（run_service 真实路径）才会被记为 pipeline_invoked。"""
+    from scripts.stylebook_workflow import _collect_result
+    path = _handwritten_service_result(tmp_path, monkeypatch)
+    collected, errors = _collect_result(tmp_path, path, invoked_by_pipeline=True)
+    assert not errors and collected["source_strength"] == "pipeline_invoked"
+    # 反过来：内部服务回收不接受宿主回执，两条路线不互相借用。
+    data = json.loads(path.read_text())
+    data["backend"] = "image_gen.imagegen"
+    path.write_text(json.dumps(data))
+    refused, errors = _collect_result(tmp_path, path, invoked_by_pipeline=True)
+    assert refused is None and errors
+
+
+# ---- 服务路线的进度、并发与超时 ----
+def test_run_service_prints_progress_with_elapsed_and_slow_notice(tmp_path, monkeypatch):
+    import time
+    from scripts.stylebook_workflow import run_service
+    _service_plan(tmp_path, monkeypatch)
+    compile_visual_plan(tmp_path)
+    inner = FakeRun()
+
+    def slow(cmd, **kw):
+        time.sleep(0.4)
+        return inner(cmd, **kw)
+
+    lines = []
+    out, errors = run_service(tmp_path, runner=slow, jobs=1, log=lines.append, slow_after=0.1)
+    assert not errors and out["status"] == "raw_collected_pending_production"
+    text = "\n".join(lines)
+    assert "并发 1" in text and "[cover] 开始出图" in text and "[cover] 出图结束，耗时" in text
+    assert "仍在出图" in text  # 超过 slow_after 的提示
+
+
+def test_run_service_uses_given_jobs_and_timeout_aligned_with_single_attempt(tmp_path, monkeypatch):
+    from scripts.stylebook_workflow import run_service, service_timeout
+    monkeypatch.delenv("SANSHENG_IMAGE_CODEX_TIMEOUT", raising=False)
+    assert service_timeout() == 1800  # 两次叁笙生图单次上限（900 秒）
+    monkeypatch.setenv("SANSHENG_IMAGE_CODEX_TIMEOUT", "300")
+    assert service_timeout() == 600
+    _service_plan(tmp_path, monkeypatch)
+    compile_visual_plan(tmp_path)
+    seen = {}
+
+    def spy(cmd, **kw):
+        seen["timeout"] = kw["timeout"]
+        return FakeRun()(cmd, **kw)
+
+    lines = []
+    out, errors = run_service(tmp_path, runner=spy, jobs=2, log=lines.append)
+    assert not errors and seen["timeout"] == 600 and "并发 2" in lines[0]
+
+
+def test_render_visuals_passes_jobs_to_the_service_route(tmp_path, monkeypatch):
+    import scripts.stylebook_workflow as workflow
+    _service_plan(tmp_path, monkeypatch)
+    compile_visual_plan(tmp_path)
+    seen = {}
+    monkeypatch.setattr(workflow, "run_service", lambda cwd, only=None, **kw: seen.update(kw) or ({"status": "x"}, []))
+    render_visuals(tmp_path, jobs=3)
+    assert seen == {"jobs": 3}
+    seen.clear()
+    render_visuals(tmp_path)
+    assert seen == {}  # 不给 --jobs 就用 run_service 的默认值
+
+
+def test_render_visuals_cli_exposes_jobs():
+    entry = Path(__file__).resolve().parents[1] / "scripts/pipeline.py"
+    run = subprocess.run([sys.executable, str(entry), "render-visuals", "--help"], capture_output=True, text=True)
+    assert run.returncode == 0 and "--jobs" in run.stdout

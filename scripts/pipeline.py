@@ -4630,18 +4630,21 @@ def cmd_assemble_release(cwd: Path) -> None:
     print(f"✅ {action}定稿.md：嵌入 {result['image_count']} 张信息图")
 
 
-def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1) -> None:
+def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1, jobs: int | None = None) -> None:
     from render_visuals import render_visuals
 
     selected = {part.strip() for part in only.split(",") if part.strip()} or None
-    receipt, errors = render_visuals(cwd, only=selected, candidate_count=candidates)
+    receipt, errors = render_visuals(cwd, only=selected, candidate_count=candidates, jobs=jobs)
     if errors:
         print("❌ 图片渲染失败：")
         for error in errors:
             print(f"   • {error}")
+        if receipt and receipt.get("status") == "partial":
+            print(f"   已收回 {len(receipt['collected'])} 张，失败的图可用 --only 单独补跑")
         raise SystemExit(2)
     if receipt.get("status") == "pending_host":
-        print(f"⏳ 待宿主实际生图，{len(receipt['requests'])} 份完整请求：{receipt['path']}；尚未生成成品或凭证")
+        print(f"⏳ 待宿主实际生图（renderer.backend 为宿主路线），{len(receipt['requests'])} 份完整请求：{receipt['path']}；"
+              "尚未生成成品或凭证。画风库服务路线（stylebook-service）由 render-visuals 自己出图，不会停在这里")
         raise SystemExit(3)
     if receipt.get("status") == "raw_collected_pending_production":
         print(f"✅ 画风库服务已出图并收回 {len(receipt['collected'])} 张原始底图；下一步 produce-stylebook-candidate，仍须独立看图验收")
@@ -4684,11 +4687,11 @@ def cmd_collect_stylebook_result(cwd: Path, result: str) -> None:
 
     receipt, errors = collect_host_result(cwd, cwd / result)
     if errors:
-        print("❌ 宿主生图结果回收失败：")
+        print("❌ 生图结果回收失败：")
         for error in errors:
             print(f"   • {error}")
         raise SystemExit(2)
-    print(f"✅ 已回收 {receipt['id']} 原始候选图：{receipt['receipt_path']}；来源为宿主回执，最终制作与 QA 尚未完成")
+    print(f"✅ 已回收 {receipt['id']} 原始候选图：{receipt['receipt_path']}；来源为{'流水线直接调用服务' if receipt.get('backend') == 'stylebook-service' else '宿主自报回执'}，最终制作与 QA 尚未完成")
 
 
 def cmd_refit_stylebook_candidate(cwd: Path, raw_receipt: str, layout: str) -> None:
@@ -5377,9 +5380,9 @@ def _main_impl():
     )
     p_collect_sb = sub.add_parser(
         "collect-stylebook-result",
-        help="回收与完整宿主请求一致的原始候选图；不替代最终制作与 QA",
+        help="回收宿主工具（image_gen.imagegen）出的、与完整请求一致的原始候选图；服务路线由 render-visuals 自动回收，不接受手工回执；不替代最终制作与 QA",
     )
-    p_collect_sb.add_argument("--result", required=True, help="宿主实际调用结果 JSON")
+    p_collect_sb.add_argument("--result", required=True, help="宿主工具实际调用结果 JSON（backend 必须是 image_gen.imagegen）")
     p_reuse_sb = sub.add_parser("reuse-stylebook-raw", help="完整调用和参考图未变化时复用实际底图；当前版本仍须制作与 QA")
     p_reuse_sb.add_argument("--raw-receipt", required=True, help="本篇历史宿主回收的不可变原始凭证 JSON")
     p_reuse_sb.add_argument("--id", required=True, help="当前计划中的图片 ID")
@@ -5417,6 +5420,13 @@ def _main_impl():
         default=1,
         metavar="N",
         help="每张图生成 2-4 个候选；必须随后 select-visuals 显式选中，默认 1",
+    )
+    p_rv.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="画风库服务路线（stylebook-service）同时出几张图，默认 4；其他路线忽略。Codex 额度或限流吃紧时调小",
     )
     p_sv = sub.add_parser(
         "select-visuals",
@@ -5654,6 +5664,7 @@ def _main_impl():
             cwd,
             getattr(args, "only", "") or "",
             getattr(args, "candidates", 1),
+            getattr(args, "jobs", None),
         )
     elif args.cmd == "accept-stylebook-reading":
         cmd_accept_stylebook_reading(cwd, args.observation)

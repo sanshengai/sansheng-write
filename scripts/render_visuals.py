@@ -671,8 +671,12 @@ def render_visuals(
     *,
     only: set[str] | None = None,
     candidate_count: int = 1,
+    jobs: int | None = None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """Render all compiled tasks and record immutable, truthful provenance."""
+    """Render all compiled tasks and record immutable, truthful provenance.
+
+    jobs 只对画风库服务路线（stylebook-service）生效：同时出几张图，默认 4；其他路线忽略。
+    """
     cwd = cwd.resolve()
     try:
         from .stylebook_workflow import selected_at, generation_requests
@@ -687,7 +691,7 @@ def render_visuals(
                 from .stylebook_workflow import run_service
             except ImportError:
                 from stylebook_workflow import run_service
-            return run_service(cwd, only)
+            return run_service(cwd, only, **({"jobs": jobs} if jobs else {}))
         return receipt, errors
     try:
         from .visual_retry import retry_errors

@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import importlib
 import json
-import os
 from pathlib import Path
 
 try:
@@ -14,13 +13,13 @@ except ImportError:
 
 
 def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
-    if backend not in ("ark_agent_plan", "claude_cli"):
+    root, modules = _peer()
+    if backend not in importlib.import_module("stylebook.qa.plan_review").BACKENDS:
         raise ValueError("全文复核须使用独立调用后端")
     cwd = Path(cwd).resolve()
     pending, errors = generation_requests(cwd)
     if errors:
         raise ValueError("；".join(errors))
-    root, modules = _peer()
     plan = json.loads((cwd / "visual-plan.json").read_text())
     try:
         from . import stylebook_source
@@ -66,12 +65,16 @@ def qualified(review: dict, plan: dict) -> bool:
 def review_article_plan(cwd: Path) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd).resolve()
     try:
-        backend = os.environ.get("SANSHENG_IMAGE_PLAN_REVIEW_BACKEND") or os.environ.get("SANSHENG_IMAGE_QA_BACKEND", "claude_cli")
-        plan, files, values = context(cwd, backend)
+        _peer()
         peer = importlib.import_module("stylebook.qa.plan_review")
+        # The image skill owns backend resolution, so the record matches the call.
+        backend = peer.resolve_backend()
+        plan, files, values = context(cwd, backend)
         binding = importlib.import_module("stylebook.qa.binding")
         snapshot = binding.snapshot("article-plan", files=files, values=values)
-        review = peer.review(plan, files["article"])
+        review = peer.review(plan, files["article"], backend=backend)
+        if review.get("_backend") != backend:
+            raise ValueError("全文复核实际后端与记录不一致")
         if not str(review.get("_reviewer", "")).strip():
             raise ValueError("全文独立复核缺实际模型标识")
         passed = qualified(review, plan)
