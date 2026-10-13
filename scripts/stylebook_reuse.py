@@ -164,6 +164,8 @@ def reuse_raw(cwd: Path, origin_path: Path, image_id: str) -> tuple[dict | None,
                   "host_request_path": str(Path(pending["path"]).relative_to(cwd)), "host_request_digest": digest(host),
                   "task_digest": current["task_digest"], "actual_call_digest": digest(current["call"]),
                   "raw_path": str(destination.relative_to(cwd)), "source_strength": "host_attested_reused",
+                  # 复用没有新调用：即使原始来源是服务路线（已核实调用），这条记录也不得继承该证明。
+                  "independent_invocation_verified": False,
                   "reuse": {"new_invocation": False, "origin_receipt": str(origin_path.relative_to(cwd)),
                             "origin_receipt_sha256": sha(origin_path), "method_sha256": sha(Path(__file__))}}
         if any(sha(Path(key)) != value for key, value in before.items()):

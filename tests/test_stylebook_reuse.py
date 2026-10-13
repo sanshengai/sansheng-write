@@ -191,3 +191,14 @@ def test_service_route_raw_rejects_borrowed_host_fields(tmp_path, monkeypatch, c
     forged.write_text(json.dumps(value))
     with pytest.raises(ValueError):
         validate_raw(tmp_path, forged)
+
+
+def test_service_route_raw_can_be_reused_without_claiming_new_invocation(tmp_path, monkeypatch):
+    # 2026-10-13 实跑：服务路线底图复用报「不能提高复用来源的证明强度」，因记录继承了 verified=True。
+    origin = service_raw_fixture(tmp_path, monkeypatch)
+    recompile_source(tmp_path)
+    reused, errors = reuse_raw(tmp_path, origin, "cover")
+    assert not errors, errors
+    assert reused["independent_invocation_verified"] is False
+    assert reused["reuse"]["new_invocation"] is False
+    assert validate_raw(tmp_path, Path(reused["receipt_path"]))
