@@ -10,6 +10,16 @@ except ImportError:
     from stylebook_workflow import WORKFLOW, PRODUCER, digest, sha, _immutable, generation_requests
 
 
+# 两条出图路线各自的请求形态与证明强度：宿主自报（host）只能是 host_attested；
+# 画风库服务由本流水线直接调用（service），记为 pipeline_invoked。互不借用对方的字段。
+BACKENDS = {
+    "image_gen.imagegen": {"prefix": "host", "status": "pending_host",
+                           "strength": "host_attested", "verified": False},
+    "stylebook-service": {"prefix": "service", "status": "pending_service",
+                          "strength": "pipeline_invoked", "verified": True},
+}
+
+
 def _within(cwd: Path, relative: str, parent: Path) -> Path:
     path = (cwd / relative).resolve()
     if not path.is_relative_to(parent.resolve()):
@@ -29,9 +39,11 @@ def _snapshot(cwd: Path, path: Path) -> tuple[dict, dict, dict, dict]:
         raise ValueError("原始底图凭证路径或摘要已改变")
     host_path = _within(cwd, raw["host_request_path"], cwd / "素材/stylebook-requests")
     host = json.loads(host_path.read_text())
-    if (host_path.name != f"host-{digest(host)}.json" or raw["host_request_digest"] != digest(host)
-            or host.get("request_id") != raw["request_id"] or host.get("status") != "pending_host"
-            or host.get("backend") != "image_gen.imagegen" or raw.get("backend") != host.get("backend")):
+    route = BACKENDS.get(host.get("backend"))
+    if (route is None or host_path.name != f"{route['prefix']}-{digest(host)}.json"
+            or raw["host_request_digest"] != digest(host)
+            or host.get("request_id") != raw["request_id"] or host.get("status") != route["status"]
+            or raw.get("backend") != host.get("backend")):
         raise ValueError("保存的宿主请求已改变")
     compiled_path = cwd / "素材/stylebook-requests" / f"{raw['request_id']}.json"
     compiled = json.loads(compiled_path.read_text())
@@ -94,9 +106,11 @@ def validate_raw(cwd: Path, path: Path) -> dict[str, Path]:
         files.update(old_files)
         files[str(Path(__file__).resolve())] = Path(__file__).resolve()
     submitted = origin["submitted_result"]
-    if (origin.get("source_strength") != "host_attested" or origin.get("independent_invocation_verified") is not False
+    route = BACKENDS.get(origin.get("backend"))
+    if (route is None or origin.get("source_strength") != route["strength"]
+            or origin.get("independent_invocation_verified") is not route["verified"]
             or origin.get("actual_model") is not None or origin.get("actual_cost") is not None
-            or submitted.get("schema_version") != 1 or submitted.get("backend") != "image_gen.imagegen"
+            or submitted.get("schema_version") != 1 or submitted.get("backend") != origin.get("backend")
             or submitted.get("invocation_status") != "succeeded"
             or not isinstance(submitted.get("tool_output"), str) or not submitted["tool_output"].strip()
             or submitted.get("request_id") != origin["request_id"] or submitted.get("id") != origin["id"]
@@ -106,7 +120,8 @@ def validate_raw(cwd: Path, path: Path) -> dict[str, Path]:
             or submitted.get("call") != actual_task["call"]
             or submitted.get("output", {}).get("sha256") != origin["raw_sha256"]):
         raise ValueError("原始宿主回执与实际保存调用不一致")
-    if (raw.get("independent_invocation_verified") is not False
+    verified = False if reuse is not None else route["verified"]
+    if (raw.get("independent_invocation_verified") is not verified
             or raw.get("actual_model") is not None or raw.get("actual_cost") is not None):
         raise ValueError("不能提高复用来源的证明强度或虚构模型费用")
     for ref, expected in task["reference_sha256"].items():

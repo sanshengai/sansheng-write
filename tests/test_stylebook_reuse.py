@@ -141,3 +141,53 @@ def test_reuse_cli_reports_no_new_generation(tmp_path, monkeypatch):
                           "--raw-receipt", old["receipt_path"], "--id", "cover"], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert "没有新生图调用" in run.stdout and "QA 尚未完成" in run.stdout
+
+
+def service_raw_fixture(tmp_path, monkeypatch):
+    """画风库服务路线：请求叫 service-*.json，回收凭证记 pipeline_invoked。"""
+    import hashlib
+    from PIL import Image
+    from test_stylebook_workflow import setup_plan
+    plan = setup_plan(tmp_path, monkeypatch, body=False)
+    plan["renderer"] = {"backend": "stylebook-service"}
+    (tmp_path / "visual-plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    _, errors = compile_visual_plan(tmp_path)
+    assert not errors
+    pending, errors = generation_requests(tmp_path)
+    assert not errors and Path(pending["path"]).name.startswith("service-")
+    host = {key: value for key, value in pending.items() if key != "path"}
+    image = tmp_path / "service-output.png"
+    Image.new("RGB", (128, 128), "ivory").save(image)
+    task = host["requests"][0]
+    submitted = {"schema_version": 1, "backend": "stylebook-service", "invocation_status": "succeeded",
+                 "host_request_path": str(Path(pending["path"]).relative_to(tmp_path)),
+                 "host_request_digest": digest(host), "request_id": host["request_id"], "id": task["id"],
+                 "call": task["call"], "tool_output": "Synthetic service response for tests only",
+                 "output": {"path": str(image), "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}}
+    result = tmp_path / "service-result.json"
+    result.write_text(json.dumps(submitted))
+    raw, errors = collect_host_result(tmp_path, result)
+    assert not errors and raw["source_strength"] == "pipeline_invoked"
+    return Path(raw["receipt_path"])
+
+
+def test_service_route_raw_is_accepted_by_final_qa_consumer(tmp_path, monkeypatch):
+    # 2026-10-13 实跑：服务路线出图后 review 报「保存的宿主请求已改变」，因为核对只认 host-* 请求。
+    path = service_raw_fixture(tmp_path, monkeypatch)
+    assert validate_raw(tmp_path, path)
+
+
+@pytest.mark.parametrize("change", ["claim_host_backend", "drop_verified", "host_strength"])
+def test_service_route_raw_rejects_borrowed_host_fields(tmp_path, monkeypatch, change):
+    path = service_raw_fixture(tmp_path, monkeypatch)
+    value = json.loads(path.read_text())
+    if change == "claim_host_backend":
+        value["backend"] = "image_gen.imagegen"
+    elif change == "drop_verified":
+        value["independent_invocation_verified"] = False
+    else:
+        value["source_strength"] = "host_attested"
+    forged = path.parent / f"{digest(value)}.json"
+    forged.write_text(json.dumps(value))
+    with pytest.raises(ValueError):
+        validate_raw(tmp_path, forged)
