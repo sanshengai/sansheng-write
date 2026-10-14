@@ -31,6 +31,24 @@ def test_code_list_marker_is_author_text(tmp_path):
         check_author_text(tmp_path, '<pre>&gt; 标题\n&gt; 原样代码</pre>')
 
 
+def test_formatter_title_and_audio_card_placement_preserve_author_checks(tmp_path):
+    from scripts.audio_cards import render_card
+    card = render_card('podcast', 'AI 生成 · 双主持')
+    (tmp_path/'定稿.md').write_text('# 作者标题\n\n第一段。\n\n第二段。\n\n' + card)
+    html = '<html><head><title>作者标题</title></head><body>' + card + '<p>第一段。</p><p>第二段。</p></body></html>'
+    assert check_author_text(tmp_path, html)
+    for changed in [html.replace('<title>作者标题</title>', '<title>改写标题</title>'),
+                    html.replace('第一段。', ''), html.replace('<p>第一段。</p><p>第二段。</p>', '<p>第二段。</p><p>第一段。</p>')]:
+        with pytest.raises(ValueError, match='作者'):
+            check_author_text(tmp_path, changed)
+
+
+def test_unregistered_audio_like_prose_is_never_excluded(tmp_path):
+    (tmp_path/'定稿.md').write_text('作者正文。\n\n<section>阅读配乐也是作者在讨论的对象。</section>\n')
+    with pytest.raises(ValueError, match='作者文字'):
+        check_author_text(tmp_path, '<p>作者正文。</p>')
+
+
 def prepared(tmp_path, monkeypatch):
     completed(tmp_path, monkeypatch, body=True)
     html = tmp_path/'定稿.html'

@@ -4185,7 +4185,17 @@ def cmd_podcast_pregen(cwd: Path):
     # author-shots 模式信息图为 0 张，assemble-release 不写 VISUAL 机器块；
     # 该模式下改以 author_shots 契约（正文引用 ≥N 张作者供图且文件存在）作为
     # 视觉链已收口的判据，否则播客预生成会被一个永远不会出现的 marker 卡死。
-    if _infographic_mode(cwd) == "author-shots":
+    if _stylebook_selected(cwd):
+        from stylebook_assembly import verify_assembly
+        try:
+            verify_assembly(cwd)
+            if distribute.podcast_wechat_embed_enabled():
+                from audio_cards import extract_cards, render_card
+                if extract_cards(text).get("podcast") != render_card("podcast", "AI 生成 · 双主持"):
+                    gate_missing.append("编译前预置的标准 PODCAST-CARD（补齐后重新编译与验收）")
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            gate_missing.append("画风库装配契约：" + str(exc))
+    elif _infographic_mode(cwd) == "author-shots":
         shot_errors = _author_shots_errors(cwd)
         if shot_errors:
             gate_missing.append("author-shots 作者供图契约：" + "；".join(shot_errors))
@@ -4204,7 +4214,7 @@ def cmd_podcast_pregen(cwd: Path):
         raise SystemExit(2)
     # 先写卡再生成：这样排版可与耗时的 NotebookLM 任务并行；如果生成失败，
     # 发布素材门会因缺同源 audio.mp3/状态凭证而拒绝把空卡推入草稿箱。
-    if distribute.podcast_wechat_embed_enabled():
+    if distribute.podcast_wechat_embed_enabled() and not _stylebook_selected(cwd):
         from audio_cards import upsert_card
         changed = upsert_card(final_md, "podcast", "AI 生成 · 双主持")
         print("✓ 播客卡已写入定稿末尾" if changed else "✓ 播客卡无需更新")
@@ -4702,6 +4712,20 @@ def cmd_refit_stylebook_candidate(cwd: Path, raw_receipt: str, layout: str) -> N
         print("❌ 排字调整失败：" + "；".join(errors))
         raise SystemExit(2)
     print(f"✅ 已调整 {receipt['id']} 最终排字：{receipt['receipt_path']}；原始生图来源保留，须重新验收")
+
+
+def cmd_brand_stylebook_candidate(cwd: Path, production: str = "", install: bool = False, logo_text=None, width_fraction: float = 0.12) -> None:
+    from stylebook_branding import produce_branded, install_ledger
+    try:
+        if install:
+            install_ledger(cwd)
+            print("✅ 已登记当前完整验收图的真实品牌后处理台账")
+        else:
+            receipt = produce_branded(cwd, cwd / production, logo_text=logo_text, width_fraction=width_fraction)
+            print(f"✅ 已制作带品牌水印的新候选：{receipt['production_path']}；旧图未改，须重新独立 QA")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+        print(f"❌ 品牌后处理失败：{exc}")
+        raise SystemExit(2)
 
 
 def cmd_produce_stylebook_candidate(cwd: Path, raw_receipt: str) -> None:
@@ -5373,7 +5397,7 @@ def _main_impl():
         help="显式预编译画风库 v3 文章配图计划；不进入现有发布链",
     )
     p_sb.add_argument("--plan", required=True, help="画风库 v3 计划 JSON")
-    p_sb.add_argument("--image-skill-root", default="", help="叁笙生图已安装本体；默认找共享 Skill 入口")
+    p_sb.add_argument("--image-skill-root", default="", help="生图 Skill已安装本体；默认找共享 Skill 入口")
     sub.add_parser(
         "assemble-release",
         help="按 visual-plan 位置幂等装配信息图引用，不改变作者正文",
@@ -5390,6 +5414,12 @@ def _main_impl():
     p_read_sb.add_argument("--observation", required=True, help="包含三个实际视口、图片字节、截图和宿主阅读结论的 JSON")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
     p_produce_sb.add_argument("--raw-receipt", required=True, help="回收原始图时生成的不可变凭证 JSON")
+    p_brand_sb = sub.add_parser("brand-stylebook-candidate", help="保留基础制作，生成带真实品牌水印的新候选并重新 QA")
+    brand_args = p_brand_sb.add_mutually_exclusive_group(required=True)
+    brand_args.add_argument("--production", help="未加水印的不可变基础候选 production.json")
+    brand_args.add_argument("--install-ledger", action="store_true", help="整组选定并装配后登记真实水印台账")
+    p_brand_sb.add_argument("--logo-text", action="append", help="真实 Logo 可见文本，可重复；须在品牌白名单内")
+    p_brand_sb.add_argument("--width-fraction", type=float, default=0.12, help="水印占图片宽度，默认 0.12；可设 0.05–0.25")
     p_refit_sb = sub.add_parser("refit-stylebook-candidate", help="基于实际原始底图调整排字位置或字号，保留完整来源")
     p_refit_sb.add_argument("--raw-receipt", required=True, help="本篇当前实际回收的原始图片凭证 JSON")
     p_refit_sb.add_argument("--layout", required=True, help="只含文字区位置、字号与对齐的调整 JSON")
@@ -5674,6 +5704,8 @@ def _main_impl():
         cmd_collect_stylebook_result(cwd, args.result)
     elif args.cmd == "produce-stylebook-candidate":
         cmd_produce_stylebook_candidate(cwd, args.raw_receipt)
+    elif args.cmd == "brand-stylebook-candidate":
+        cmd_brand_stylebook_candidate(cwd, args.production, args.install_ledger, args.logo_text, args.width_fraction)
     elif args.cmd == "refit-stylebook-candidate":
         cmd_refit_stylebook_candidate(cwd, args.raw_receipt, args.layout)
     elif args.cmd == "review-stylebook-candidate":

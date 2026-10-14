@@ -135,7 +135,7 @@ const SKIP_FILES = ['hero.png', 'hero.jpg', 'bgm_cover.png', 'bgm_cover.jpg', 'm
 //    过去只在文档里写、代码没实现，用 "素材/*.png" 批量加水印时会连作者供图一起打上
 const SKIP_PREFIXES = ['news-', 'vendor-', 'shot-'];
 
-async function addLogo(imagePath, logoDir) {
+async function addLogo(imagePath, logoDir, widthFraction = 0.12) {
   const fname = path.basename(imagePath).toLowerCase();
   if (SKIP_FILES.includes(fname) || SKIP_PREFIXES.some(p => fname.startsWith(p))) {
     console.log(`  ⏭  跳过 ${path.basename(imagePath)}（组件小图 / 新闻照 / 厂商官方素材，不打水印）`);
@@ -184,7 +184,7 @@ async function addLogo(imagePath, logoDir) {
 
     // logo宽度 = 图片宽度的 12%，透明度 35%
     const logo = await Jimp.read(logoPath);
-    const logoW = Math.floor(imgW * 0.12);
+    const logoW = Math.floor(imgW * widthFraction);
     logo.resize({ w: logoW });
     logo.opacity(0.35);
 
@@ -213,10 +213,16 @@ async function addLogo(imagePath, logoDir) {
 function parseArgs(argv) {
   const positional = [];
   let logoDir = null;
+  let widthFraction = 0.12;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--logo' || a === '-l') {
+    if (a === '--width-fraction') {
+      widthFraction = Number(argv[++i]);
+      if (!Number.isFinite(widthFraction) || widthFraction < 0.05 || widthFraction > 0.25) {
+        throw new Error('--width-fraction 必须在 0.05 到 0.25 之间');
+      }
+    } else if (a === '--logo' || a === '-l') {
       logoDir = argv[++i];
     } else if (a.startsWith('--logo=')) {
       logoDir = a.slice('--logo='.length);
@@ -234,7 +240,7 @@ function parseArgs(argv) {
     }
   }
 
-  return { globs: positional, logoDir: logoDir || DEFAULT_LOGO_DIR, explicitLogo: Boolean(logoDir) };
+  return { widthFraction, globs: positional, logoDir: logoDir || DEFAULT_LOGO_DIR, explicitLogo: Boolean(logoDir) };
 }
 
 function expandGlob(pattern) {
@@ -251,7 +257,7 @@ function expandGlob(pattern) {
 }
 
 async function main() {
-  const { globs, logoDir, explicitLogo } = parseArgs(process.argv.slice(2));
+  const { globs, logoDir, explicitLogo, widthFraction } = parseArgs(process.argv.slice(2));
 
   if (!globs.length) {
     console.error('用法: node add_logo.js <image_glob> [<image_glob> ...] [--logo <logo_dir>]');
@@ -295,7 +301,7 @@ async function main() {
   console.log(`🎬 开始添加水印 (共 ${files.length} 张图片，Logo 目录: ${logoDir}):`);
   for (const f of files) {
     console.log(`处理: ${f}`);
-    await addLogo(path.resolve(f), logoDir);
+    await addLogo(path.resolve(f), logoDir, widthFraction);
   }
   console.log('✨ 完成！');
 }

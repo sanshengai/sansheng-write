@@ -68,6 +68,12 @@ def production_inputs(cwd: Path, production_path: Path) -> tuple[dict, dict, dic
                 or str(Path(stylebook_layout.__file__).resolve()) not in dependencies):
             raise ValueError("排字调整缺确切布局及实际制作方法绑定")
         manifest = stylebook_layout.apply_layout(manifest, layout)
+    if "branding" in record:
+        try:
+            from .stylebook_branding import verify_branding
+        except ImportError:
+            from stylebook_branding import verify_branding
+        manifest = verify_branding(cwd, record, task)
     if manifest != record["manifest"]:
         raise ValueError("最终候选文字或内容与当前任务及排字调整不一致")
     task = {**task, "manifest": manifest}
@@ -143,7 +149,7 @@ def review_candidate(cwd: Path, production_path: Path) -> tuple[dict | None, lis
         for module in (qa, reviewer, binding, contracts, data, exporter):
             path = Path(module.__file__).resolve()
             if not path.is_relative_to(root):
-                raise ValueError("验收模块与选定叁笙生图本体不同")
+                raise ValueError("验收模块与选定生图 Skill本体不同")
             files[f"qa-code:{path}"] = path
         files["adapter"] = Path(__file__).resolve()
         backend = reviewer.source()
@@ -151,7 +157,11 @@ def review_candidate(cwd: Path, production_path: Path) -> tuple[dict | None, lis
                   "expected_text": expected, "mode": mode, "format": fmt, "backend": backend,
                   "review_mode": "independent_call"}
         snapshot = binding.snapshot("image", files=files, values=values)
-        review = reviewer.review(image, contract, expected, mode)
+        try:
+            review = reviewer.review(image, contract, expected, mode)
+        except reviewer.ReviewerIncompleteResult as exc:
+            # Preserve a genuine incomplete answer as failed evidence, never retry it here.
+            review = exc.review
         if not str(review.get("_reviewer", "")).strip():
             raise ValueError("独立复核缺少实际模型标识")
         verdict = qa.judge(image, contract, review, expected, mode, fmt, manifest)

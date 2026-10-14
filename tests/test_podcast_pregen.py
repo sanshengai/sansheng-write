@@ -164,6 +164,62 @@ def test_pregen_noop_when_channel_disabled(tmp_path, monkeypatch):
     assert cmd_podcast_pregen(art) is None
 
 
+@pytest.mark.parametrize("assembly_error", [None, "选定图片字节已改变"])
+def test_stylebook_pregen_checks_assembly_before_generation(tmp_path, monkeypatch, assembly_error):
+    import pipeline
+    import stylebook_assembly
+
+    art = tmp_path / "article"
+    art.mkdir()
+    (art / "定稿.md").write_text(FINAL, encoding="utf-8")
+    (art / "article-meta.yaml").write_text('infographic_mode: "author-shots"\n', encoding="utf-8")
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: False)
+    monkeypatch.setattr(pipeline, "_stylebook_selected", lambda cwd: True)
+    checked, called = [], []
+
+    def verify(cwd):
+        checked.append(cwd)
+        if assembly_error:
+            raise ValueError(assembly_error)
+        return {}
+
+    monkeypatch.setattr(stylebook_assembly, "verify_assembly", verify)
+    monkeypatch.setattr(pe, "cmd_generate", lambda cwd: called.append(cwd) or 0)
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_podcast_pregen(art)
+    assert checked == [art]
+    assert exc.value.code == (2 if assembly_error else 0)
+    assert called == ([] if assembly_error else [art])
+
+
+
+@pytest.mark.parametrize("card", ["standard", "missing", "changed"])
+def test_stylebook_pregen_preserves_frozen_bytes_and_requires_standard_card(tmp_path, monkeypatch, card):
+    import pipeline
+    import stylebook_assembly
+    from audio_cards import render_card
+
+    art = tmp_path / "article"
+    art.mkdir()
+    original = FINAL + "\n\n\n正文中保留的空行。\n"
+    if card != "missing":
+        original += render_card("podcast", "AI 生成 · 双主持" if card == "standard" else "改过的卡") + "\n"
+    final = art / "定稿.md"
+    final.write_text(original)
+    monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
+    monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: True)
+    monkeypatch.setattr(pipeline, "_stylebook_selected", lambda cwd: True)
+    monkeypatch.setattr(stylebook_assembly, "verify_assembly", lambda cwd: {})
+    called = []
+    monkeypatch.setattr(pe, "cmd_generate", lambda cwd: called.append(cwd) or 0)
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_podcast_pregen(art)
+    assert exc.value.code == (0 if card == "standard" else 2)
+    assert called == ([art] if card == "standard" else [])
+    assert final.read_text() == original
+
+
 def test_machine_card_layout_change_does_not_expire_audio(tmp_path):
     art = _pregen_article(tmp_path)
     final = art / "定稿.md"

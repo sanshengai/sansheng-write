@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import html as html_module
 import math
 import re
 from html.parser import HTMLParser
@@ -60,6 +61,18 @@ def check_author_text(cwd: Path, html: str) -> str:
         raise ValueError('阅读文字核对需要 Python Markdown：python3 -m pip install Markdown') from exc
     original = (cwd / '定稿.md').read_text()
     source = re.sub(r'\A---\s*\n.*?\n---\s*\n', '', original, count=1, flags=re.S)
+    try:
+        from .audio_cards import strip_audio_cards
+    except ImportError:
+        from audio_cards import strip_audio_cards
+    source = strip_audio_cards(source)
+    heading = re.match(r'\A\s*# ([^\n]+)\n', source)
+    title = re.search(r'<title\b[^>]*>(.*?)</title>', html, re.S | re.I)
+    if heading and title:
+        if html_module.unescape(title.group(1)).strip() != heading.group(1).strip():
+            raise ValueError('整篇 HTML 改写作者标题')
+        # The formatter moves the title into document metadata and audio cards ahead of prose.
+        source = source[heading.end():]
     # baoyu-md recognizes a quoted list directly after its introductory line;
     # Python Markdown needs a quoted blank line. Preserve every source character
     # and only supply that parser separator outside fenced code.

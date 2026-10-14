@@ -131,3 +131,21 @@ def test_actual_objection_blocks_green_report_without_rewriting_it(tmp_path, mon
     Path(objection["path"]).write_text("{}")
     with pytest.raises(ValueError, match="损坏"):
         verify_acceptable_candidate(tmp_path, report_path)
+
+
+def test_incomplete_independent_answer_is_saved_as_failed_evidence(tmp_path, monkeypatch):
+    made = candidate(tmp_path, monkeypatch)
+    reviewer = importlib.import_module("stylebook.qa.reviewer")
+    monkeypatch.setattr(reviewer, "source", lambda: "ark_coding_plan")
+    calls = []
+    def incomplete(*args):
+        calls.append(args)
+        raise reviewer.ReviewerIncompleteResult(None, {"model": "test-model", "choices": []}, ["missing conclusion"])
+    monkeypatch.setattr(reviewer, "review", incomplete)
+    report, errors = review_candidate(tmp_path, Path(made["receipt_path"]))
+    assert not errors and report["passed"] is False
+    assert len(calls) == 1
+    assert report["verdict"]["review"]["_incomplete_review"] == ["missing conclusion"]
+    verify_candidate_review(tmp_path, Path(report["report_path"]), require_passed=False)
+    with pytest.raises(ValueError, match="未通过"):
+        verify_candidate_review(tmp_path, Path(report["report_path"]))
