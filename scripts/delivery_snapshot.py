@@ -68,8 +68,17 @@ def write_snapshot(cwd: Path) -> dict:
     lines = ['# 当前交付状态', '', '文件存在不等于已验收；以下状态来自当前文件和回执。', '']
     website = (snapshot['receipts'].get('_website-sync-receipt.json') or {}).get('value') or {}
     if website:
-        lines += [f"官网同步：{website.get('status', 'unknown')}；详情以官网回执为准。", '']
-    lines += ['人工项：按公众号 API 支持范围完成原创、赞赏及正式发布；尚未提供的音频/封面见下方缺项。', '']
+        latest = website.get('latest') or website
+        lines += [f"官网同步：{latest.get('status', 'unknown')}；部署状态：{latest.get('deployment_state') or latest.get('reason') or '见回执'}；详情以官网回执为准。", '']
+    try:
+        state = json.loads((cwd / '.state.json').read_text(encoding='utf-8'))
+        published_url = ((state.get('stages') or {}).get('publish') or {}).get('wechat_url') or ''
+    except (OSError, ValueError):
+        published_url = ''
+    if published_url:
+        lines += [f'公众号正式链接已登记：[查看文章]({published_url})；完整收尾以 closeout-check 为准。', '']
+    else:
+        lines += ['人工项：按公众号 API 支持范围完成原创、赞赏及正式发布；尚未提供的音频/封面见下方缺项。', '']
     for asset in snapshot['assets']:
         path = cwd / asset['file']
         lines.append(f"- {asset['role']}：{file_link(path) if asset['status'] != 'missing' else asset['file']}（{asset['status']}）")

@@ -323,3 +323,18 @@ def test_closeout_checks_receipts_not_just_stage_flags(tmp_path, monkeypatch, mu
     if mutation != "missing_receipt":
         pipeline.process_file(tmp_path, "_website-sync-receipt.json", for_write=True).write_text(json.dumps({"latest": receipt}))
     assert bool(pipeline._closeout_errors(tmp_path)) == (mutation != "none")
+
+
+@pytest.mark.parametrize('status,deployment', [('pending', 'queued'), ('done', 'succeeded')])
+def test_delivery_report_uses_latest_website_receipt(tmp_path, status, deployment):
+    from scripts.delivery_snapshot import write_snapshot
+    state = _state(status='done')
+    state['stages']['publish']['wechat_url'] = 'https://mp.weixin.qq.com/s/fixture'
+    pipeline.save_state(tmp_path, state)
+    pipeline.process_file(tmp_path, '_website-sync-receipt.json', for_write=True).write_text(
+        json.dumps({'latest': {'status': status, 'deployment_state': deployment}}))
+    write_snapshot(tmp_path)
+    text = (tmp_path / '交付状态.md').read_text()
+    assert f'官网同步：{status}；部署状态：{deployment}' in text
+    assert '公众号正式链接已登记' in text
+    assert '人工项：' not in text
