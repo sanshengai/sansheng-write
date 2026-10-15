@@ -55,7 +55,7 @@ CHROME_PROFILE_DEFAULT = Path.home() / "Library/Application Support/baoyu-skills
 CDP_DEFAULT = "http://127.0.0.1:9333"
 MAX_RUNTIME_SECONDS = 40 * 60
 CAPTION_WEIGHT_LIMIT = 256
-# 裸域名（sanshengai.top / example.com）X 也会自动转成 t.co 链接，和贴 URL 一样压流
+# 裸域名（example.com）X 也会自动转成 t.co 链接，和贴 URL 一样压流
 DOMAIN_TLDS = r"(?:com|net|org|top|cn|io|ai|me|app|dev|xyz|co|cc|info|site|online|tech|blog|fm|tv|so|link|run)"  # X 发布说明文字：中文/表情按 2 算
 IMG_MAX_EDGE = 2000
 IMG_JPEG_QUALITY = 85
@@ -476,6 +476,8 @@ def caption_weight(text: str) -> int:
 def check_caption(text: str) -> list[str]:
     """本地预检：超限、带 URL、hashtag ≥2、互动诱饵。返回问题列表（空 = 通过）。"""
     problems = []
+    if not text.strip():
+        problems.append("缺推荐说明文字：长文章发布须提供非空 --caption-file")
     w = caption_weight(text)
     if w > CAPTION_WEIGHT_LIMIT:
         problems.append(f"说明文字 {w} 权重字符，超过上限 {CAPTION_WEIGHT_LIMIT}（中文按 2 算，约 128 个汉字）")
@@ -994,7 +996,7 @@ def main() -> int:
         plan.append(("html", tail))
 
     caption = Path(args.caption_file).read_text(encoding="utf-8").strip() if args.caption_file else ""
-    caption_problems = check_caption(caption) if caption else []
+    caption_problems = check_caption(caption)
     if args.publish and caption_problems:
         for pr in caption_problems:
             print("❌", pr)

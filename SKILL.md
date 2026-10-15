@@ -8,7 +8,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 # 中文长文写作系统
 
-运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走叁笙生图（同级安装 `sansheng-image`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
+运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走生图 Skill（同级安装 `sansheng-image`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
 
 **主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
 
@@ -91,6 +91,14 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 复核 skill / skill 自省进化 | skill-review.md |
 
 **子命令快捷入口：** `写 选题`/`写 大纲`→outline ｜ `写 正文`/`写 展开`→writing ｜ `写 开头候选`/`盲选开头`/`挑开头`→writing §开头候选盲选 ｜ `写 标题`→title ｜ `写 音乐`/`写 BGM`→music ｜ `写 排版`→layout ｜ `写 发布`→publish ｜ `写 图文`/`转图文`→xhs-storyboard ｜ `写 分发`/`一稿多投`/`发微博`/`转播客`→distribute ｜ `发推特`/`转 X 文章`→x-article ｜ `写 状态`/`写 进度`→`pipeline.py status` ｜ `全流程`/`走一遍流程`→autopilot ｜ `复核 skill`/`skill 自省`/`skill 复盘`/`skill 进化`→skill-review
+
+### 社媒交接完成条件（脚本与手工浏览器共用）
+
+「发微博」默认交付平台专属方图＋文案；「发推特」默认交付 Articles 全文＋封面＋原位正文图＋推荐短说明。只有用户明确要求纯文字/普通短帖才可改变产物。小红书停用不取消微博图片；「我来点发送」只改变最后一步操作者，不减少内容。
+
+先读对应 reference，再执行。具备运行条件时复用既有自动化；工具限制迫使改走手工/CUA 时，仍须做同样的回读验收。禁止把渠道状态机之外的自制「文字已填」回执当成图文/长文完成。
+
+向作者交接前，将真实 UI 观察写入 `过程记录/_social-browser-handoff.json`，运行 `python3 scripts/social_handoff.py <文章目录> --only weibo,x`（只列本次请求渠道）；合同见 [social-handoff.md](references/social-handoff.md)。未通过就报告具体剩余项，不能说「都已准备好」。通过只表示预填就绪，不表示已发布；最终发送由本次授权决定。
 
 ## ✍️ 写作核心七条（语义层正向规则 — 七个章节指针的**目录**，唯一 single-source）
 
