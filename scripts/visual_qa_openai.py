@@ -4,13 +4,12 @@
 契约与 `visual_qa_codex.py` 完全一致（`--request` / `--output`、同一套提示词、
 同一套结构化裁决），只把「codex exec 看图」换成对任意 OpenAI 兼容
 `/chat/completions` 端点的视觉调用。用途：Codex 订阅额度被生图或别的任务打满时，
-复核这道闸不必跟着停 —— 2026-09-19 实跑：生图已切到中转，复核却仍卡在
-Codex 的 usage limit 上等两小时，就是本文件的由来。
+复核可独立使用已配置的兼容接口，不必等待同一工具恢复可用。
 
 配置（仓根 .env 或 shell env）：
   SANSHENG_WRITE_VISUAL_QA_COMMAND=["python3","-X","utf8","<绝对路径>/scripts/visual_qa_openai.py"]
   SANSHENG_WRITE_VISUAL_QA_MODEL     复核模型（默认 gpt-5.6-terra；必须 ≠ 生图模型）
-  SANSHENG_WRITE_VISUAL_QA_BASE_URL  默认取 OPENAI_BASE_URL（如 https://api.vectorengine.cn/v1）
+  SANSHENG_WRITE_VISUAL_QA_BASE_URL  默认取 OPENAI_BASE_URL（如 https://api.example.com/v1）
   SANSHENG_WRITE_VISUAL_QA_API_KEY   默认取 OPENAI_API_KEY
   SANSHENG_WRITE_VISUAL_QA_JOBS      并发数（默认 3）
 
