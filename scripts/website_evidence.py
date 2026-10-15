@@ -22,7 +22,7 @@ class EntryParser(HTMLParser):
         self.has_audio = False
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        hidden = (self.hidden[-1] if self.hidden else False) or 'hidden' in attrs or attrs.get('aria-hidden') == 'true' or tag == 'template' or bool(re.search(r'display\s*:\s*none|visibility\s*:\s*hidden', attrs.get('style',''), re.I))
+        hidden = (self.hidden[-1] if self.hidden else False) or 'hidden' in attrs or attrs.get('aria-hidden') == 'true' or tag == 'template' or bool(re.search(r'display\s*:\s*none|visibility\s*:\s*hidden', (attrs.get('style') or ''), re.I))
         if tag == 'article':
             self.has_article = True
         if hidden:
@@ -37,7 +37,7 @@ class EntryParser(HTMLParser):
             (self.video if owner == 'video' else self.audio).append(attrs['src'])
         if tag == 'audio':
             self.has_audio = True
-        if 'song-player' in attrs.get('class','').split() and attrs.get('data-src'):
+        if 'song-player' in (attrs.get('class') or '').split() and attrs.get('data-src'):
             self.dynamic_audio.append(attrs['data-src'])
         if tag not in {'img','source','br','hr','meta','link','input','area','base','embed','param','track','wbr'}:
             self.stack.append(tag)
@@ -64,6 +64,7 @@ def current_text_errors(cwd: Path, parsed: EntryParser) -> list[str]:
         return ['缺本篇定稿，无法证明正文已同步']
     source = path.read_text(encoding='utf-8')
     source = re.sub(r'\A---\s*\n.*?\n---\s*\n', '', source, flags=re.S)
+    source = re.sub(r'<!--\s*(AUDIO|PODCAST)-CARD-START\s*-->.*?<!--\s*\1-CARD-END\s*-->', '', source, flags=re.S | re.I)
     source = re.sub(r'<!--.*?-->', '', source, flags=re.S)
     source = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', source)
     source = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', source)
@@ -84,6 +85,8 @@ def media_errors(cwd: Path, code: str, site: str, body: str, fetch) -> list[str]
     parsed = EntryParser()
     parsed.feed(body)
     errors = current_text_errors(cwd, parsed)
+    if re.search(r'<!--\s*(?:AUDIO|PODCAST)-CARD-START\s*-->|删除本段文字[，,]并插入(?:主题曲|播客)音频', body):
+        errors.append('正式入口仍残留公众号音频卡编辑提示')
     def reachable(url, kind):
         response = fetch(url, 'HEAD')
         if response[0] != 200:
@@ -94,8 +97,12 @@ def media_errors(cwd: Path, code: str, site: str, body: str, fetch) -> list[str]
     for asset in snapshot['assets']:
         if asset['role'] != 'body_image':
             continue
-        name = Path(asset['file']).name
-        if asset['status'] == 'missing' or name not in names or not reachable(names.get(name, ''), 'image'):
+        path = Path(asset['file'])
+        candidates = [path.name]
+        if asset.get('sha256'):
+            candidates.append(f'{path.stem}.h{asset["sha256"][:8]}{path.suffix}')
+        url = next((names[name] for name in candidates if name in names), '')
+        if asset['status'] == 'missing' or not url or not reachable(url, 'image'):
             errors.append(f'正文图片未在正式入口完整呈现：{asset["file"]}')
     if snapshot['video_declaration_missing']:
         errors.append('正文视频缺 _website-media.json')
