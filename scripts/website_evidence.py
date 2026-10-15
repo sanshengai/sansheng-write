@@ -22,6 +22,9 @@ class EntryParser(HTMLParser):
         self.has_audio = False
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        # Shared native engines may start hidden; visible entry controls remain required.
+        if tag == 'audio' and not any(t in self.stack for t in {'template', 'script'}):
+            self.has_audio = True
         hidden = (self.hidden[-1] if self.hidden else False) or 'hidden' in attrs or attrs.get('aria-hidden') == 'true' or tag == 'template' or bool(re.search(r'display\s*:\s*none|visibility\s*:\s*hidden', (attrs.get('style') or ''), re.I))
         if tag == 'article':
             self.has_article = True

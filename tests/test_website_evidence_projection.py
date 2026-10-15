@@ -40,3 +40,15 @@ def test_only_current_content_hash_alias_is_accepted(tmp_path, variant, ok):
 
 def test_missing_source_remains_failure(tmp_path):
     assert media_errors(tmp_path, 'AIT-1', 'https://site.example', '<article/>', lambda *a: (200, ''))
+
+
+def test_visible_song_player_uses_initially_hidden_shared_native_engine(tmp_path):
+    from article_paths import process_file
+    (tmp_path / '定稿.md').write_text(PROSE)
+    process_file(tmp_path, '_music-manifest.json', for_write=True).write_text('{}')
+    player = '<div class="song-player" data-src="/song-assets/AIT-1/song.mp3"></div>'
+    engine = '<div id="mini-player" hidden><audio preload="none"></audio></div>'
+    fetch = lambda *args: (200, '', 'audio/mpeg')
+    assert media_errors(tmp_path, 'AIT-1', 'https://site.example', f'<article>{PROSE}{player}</article>{engine}', fetch) == []
+    assert media_errors(tmp_path, 'AIT-1', 'https://site.example', f'<article>{PROSE}{player}</article>', fetch)
+    assert media_errors(tmp_path, 'AIT-1', 'https://site.example', f'<article>{PROSE}</article><div hidden>{player}</div>{engine}', fetch)
