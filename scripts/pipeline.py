@@ -2392,8 +2392,7 @@ def cmd_status(cwd: Path):
     elif next_stage:
         print(f"\n▶ 下一步：{next_stage}\n  {STAGE_HINTS[next_stage]}\n")
     else:
-        print("\n🎉 微信公众号文章链已完成（正式链接 + 归档均已验证）。")
-        print("   网站部署与朋友圈发布属于可选外部收尾，不纳入本 state。\n")
+        _report_closeout(cwd)
 
 
 def cmd_next(cwd: Path):
@@ -2417,7 +2416,49 @@ def cmd_next(cwd: Path):
             print(f"\n▶ 下一阶段：{s} — {STAGE_LABELS[s]}\n")
             print(f"  {STAGE_HINTS[s]}\n")
             return
-    print("🎉 微信公众号文章链已完成；网站部署与朋友圈发布为可选外部收尾。")
+    _report_closeout(cwd)
+
+
+def _closeout_errors(cwd: Path) -> list[str]:
+    """Read existing authoritative receipts; archive alone is never close-out."""
+    def read(name):
+        try:
+            value = json.loads(process_file(cwd, name).read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    state = read(FINALIZE_STATE_FILE)
+    url = str((load_state(cwd).get("stages", {}).get("publish") or {}).get("wechat_url") or "")
+    errors = []
+    if not url or state.get("input_digest") != _finalize_input_digest(cwd, url):
+        errors.append("缺少与当前正文及正式链接绑定的 finalize 收尾记录")
+    for step, label in FINALIZE_STEPS:
+        if not _finalize_step_done(state, step):
+            errors.append(f"未完成：{label}")
+    if str((brand().get("publish") or {}).get("website_command") or "").strip():
+        try:
+            from .delivery_snapshot import website_input_digest
+        except ImportError:
+            from delivery_snapshot import website_input_digest
+        receipt = read("_website-sync-receipt.json").get("latest") or {}
+        if (receipt.get("status") != "done"
+                or receipt.get("deployment_state") in {"queued", "running", "failed"}
+                or receipt.get("media_input_digest") != website_input_digest(cwd)):
+            errors.append("官网尚未取得当前正文与媒体的上线验收（排队不算完成）")
+    return errors
+
+
+def _report_closeout(cwd: Path) -> list[str]:
+    errors = _closeout_errors(cwd)
+    if errors:
+        print("\n⏳ 已归档，发布后闭环尚未完成：")
+        for error in errors:
+            print(f"   • {error}")
+        print("   下一步：pipeline.py finalize <公众号永久链接>；已有部署任务先查询同一 job，不重复提交。\n")
+    else:
+        print("\n✅ 发布后闭环已验收（官网按 profile 配置执行；社媒另按本篇授权验收）。\n")
+    return errors
 
 
 def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
@@ -5351,6 +5392,7 @@ def _main_impl():
 
     p_f = sub.add_parser("finalize", help="正式发布收尾：登记永久链接 + 归档 + 验证")
     p_f.add_argument("wechat_url", help="微信永久链接，如 https://mp.weixin.qq.com/s/xxx")
+    sub.add_parser("closeout-check", help="只读验收发布后完整收尾；缺官网上线等证据时非零退出")
 
     p_pa = sub.add_parser(
         "physical-archive",
@@ -5655,6 +5697,9 @@ def _main_impl():
             sys.exit(2)
     elif args.cmd == "finalize":
         cmd_finalize(args.wechat_url, cwd)
+    elif args.cmd == "closeout-check":
+        if _report_closeout(cwd):
+            raise SystemExit(2)
     elif args.cmd == "moments-copy":
         cmd_moments_copy(cwd)
     elif args.cmd == "render-html":

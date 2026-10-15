@@ -280,3 +280,46 @@ def test_checkpoint_only_done_uses_same_waiting_state(tmp_path, monkeypatch):
 
     assert exc.value.code == 2
     assert pipeline.load_state(tmp_path)["stages"]["outline"]["status"] == "waiting_author"
+
+
+@pytest.mark.parametrize("command", ["status", "next", "closeout-check"])
+def test_archive_alone_does_not_claim_closeout(tmp_path, command):
+    state = _state(status="done")
+    state["stages"]["publish"]["wechat_url"] = "https://mp.weixin.qq.com/s/fixture"
+    pipeline.save_state(tmp_path, state)
+    result = _run(tmp_path, command)
+    assert "发布后闭环尚未完成" in result.stdout
+    assert "同步官网" in result.stdout
+    assert "可选外部收尾" not in result.stdout
+    assert result.returncode == (2 if command == "closeout-check" else 0)
+
+
+def test_closeout_check_rejects_empty_input(tmp_path):
+    result = _run(tmp_path, "closeout-check")
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize("mutation", ["none", "missing_step", "queued", "failed", "missing_receipt", "stale_media", "stale_input"])
+def test_closeout_checks_receipts_not_just_stage_flags(tmp_path, monkeypatch, mutation):
+    url = "https://mp.weixin.qq.com/s/fixture"
+    state = _state(status="done")
+    state["stages"]["publish"]["wechat_url"] = url
+    pipeline.save_state(tmp_path, state)
+    monkeypatch.setattr(pipeline, "brand", lambda: {"publish": {"website_command": "deploy"}})
+    from scripts import delivery_snapshot
+    monkeypatch.setattr(delivery_snapshot, "website_input_digest", lambda cwd: "current-media")
+    final = {"input_digest": pipeline._finalize_input_digest(tmp_path, url),
+             "steps": {step: {"status": "done"} for step, _ in pipeline.FINALIZE_STEPS}}
+    receipt = {"status": "done", "deployment_state": "succeeded", "media_input_digest": "current-media"}
+    if mutation == "missing_step":
+        final["steps"].pop("website_sync")
+    elif mutation in {"queued", "failed"}:
+        receipt["deployment_state"] = mutation
+    elif mutation == "stale_media":
+        receipt["media_input_digest"] = "previous-media"
+    elif mutation == "stale_input":
+        final["input_digest"] = "previous-input"
+    pipeline.process_file(tmp_path, pipeline.FINALIZE_STATE_FILE, for_write=True).write_text(json.dumps(final))
+    if mutation != "missing_receipt":
+        pipeline.process_file(tmp_path, "_website-sync-receipt.json", for_write=True).write_text(json.dumps({"latest": receipt}))
+    assert bool(pipeline._closeout_errors(tmp_path)) == (mutation != "none")
