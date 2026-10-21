@@ -163,10 +163,14 @@ def test_title_exempt_reaches_title_contract(tmp_path):
     meta = article / "article-meta.yaml"
     meta.write_text(meta.read_text(encoding="utf-8").replace(
         '"教程 | 一篇已经确认的文章"', '"教程 | 全网最好的学习网站"'), encoding="utf-8")
-    assert verify_title_contract(article)["verdict"] == "fail"
+    before = verify_title_contract(article)
+    assert before["violations"] == []  # 不再硬卡冒号结构，只提示
+    assert not any("已按审批记录豁免" in w for w in before["warnings"])
     result = _run(article, "approve", "blueprint", "--source-mode", "new-draft", "--words", "就用这个标题",
                   "--title", "教程 | 全网最好的学习网站", "--opening", "A", "--outline", "三段",
                   "--cover-style", "montage-evidence", "--title-exempt", "作者要求保留原名")
     assert result.returncode == 0, result.stdout + result.stderr
     assert process_file(article, "_blueprint-approval.md").parent.name == "过程记录"
-    assert verify_title_contract(article)["verdict"] != "fail"
+    after = verify_title_contract(article)
+    assert after["verdict"] != "fail"
+    assert any("已按审批记录豁免：作者要求保留原名" in w for w in after["warnings"])

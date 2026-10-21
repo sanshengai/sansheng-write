@@ -2723,33 +2723,36 @@ def audit_opening_anchors(md_text: str) -> dict:
     return result
 
 
-# ===== 【第 15b 节】标题公式门 =====
+# ===== 【第 15b 节】标题门 =====
 # ============================================================================
-# title.md 的唯一公式：`标签 | 可搜索关键词 + 一句把全文主旨浓缩到底的话`。
-# 本门只扫**能由正则判定的那一半**（前缀、内部编号、揭穿式反差、悬念词、长度）；
-# 「后半句有没有真的覆盖全文主旨」是语义判断，机器判不了，留给 title.md 的 7 步质检。
+# title.md 的核心写法：`标签 | 对象 + 可得物`（A 对象+可得物 / B 我做了什么 / C 选型 / D 事件）。
+# 本门只扫**能由正则判定的那一半**（前缀、内部编号、揭穿式反差、悬念词、噪头词）；
+# 「有没有可得物、是不是只有观点」是语义判断，机器判不了，留给 title.md 的 7 条自检。
 #
-# 为什么要有这道机器门：这条规则在 title.md 里写成散文写了很久，仍然连续两篇发出
-# 「「主角」16 章：你转发过的那些名言，多半不是他说的」这类标题 —— 内部编号 + 揭穿式
-# 反差同时命中。iron-rules 的第一原则是「能由代码判断的规则只在代码中执行」，
-# 于是把可判的那部分下沉成门。
+# 为什么要有这道机器门：揭穿式反差 + 内部编号的标题（「「主角」16 章：你转发过的那些名言，
+# 多半不是他说的」）在散文规则下连发两篇，故把可判的部分下沉成门。
+# 2026-10-21：取消 ≤30 字位硬上限和「锚点：一句话」冒号硬结构（二者把「对象 + 可得物」
+# 压成了抽象观点句，作者喜欢的「德鲁克 5 本书，整理成 3 条……」没有冒号也会被判不过）；
+# 噪头词、问句、感叹号 / 省略号、翻转句改为不阻断的提示，与 x_article.py 共用 title_noise_hints。
 # ============================================================================
 
 _TITLE_TAGS = ('教程', '精选', '分享', '行业', '资讯', '洞察', '随笔')
+
+# 公众号 draft/add 接口文档：title「总长度不超过 32 个字」。这是平台限制，不是写作规则，
+# 而且编辑器实测口径更宽（约 64 字），所以只提示、不阻断。
+WECHAT_TITLE_API_WIDTH = 32
 
 # (正则, 病灶, ✅ 改法)
 _TITLE_HARD = [
     (r'\d+\s*章|第\s*\d+\s*[章节期回]|(?<![A-Za-z])[vV]\d+(?:\.\d+)?(?![A-Za-z])',
      '内部结构编号进标题（N 章 / 第 N 期 / v 号）',
-     '换成读者一眼懂价值的规模量（4 本书 / 52 万字 / 785 封原文），或直接删'),
+     '换成读者一眼懂价值的规模量（5 本书 / 9 款 / 437 MB），或直接删'),
     (r'你(?:买过|转发过|用过|见过|读过|以为|一直以为|印象里)',
      '揭穿式反差（先假设读者错了再纠正他）',
-     '改回正面陈述，或改用原话型 / 具象型 / 处境型填法'),
+     '改回正面陈述：写对象 + 读者能拿走什么'),
     (r'(?:多半|其实|根本|压根|居然)(?:不是|没有|并不)',
      '揭穿式否定（多半不是 / 其实并不）',
-     '正面说结论，别用否定揭穿；反差要求读者先有那个错误认知，多数时候并不成立'),
-    # 揭穿式反差的句式家族（外部标题方法论已逐条枚举，直接采用）：
-    # 共同病灶都是「先给一个假设，再推翻它」，属纯揭底套路。
+     '正面说结论，别用否定揭穿'),
     (r'表面(?:上)?是[^，。]{1,12}[，,](?:背后|其实|实际|本质)',
      '揭穿式句式「表面是 X，背后是 Y」',
      '直接说那个 Y，别先立一个 X 再推翻'),
@@ -2773,23 +2776,53 @@ _TITLE_HARD = [
      '用克制陈述代替'),
 ]
 
-# 软提示档：命中只提示不阻断（title.md 里它们是「配额」或「有条件可用」，不是禁令）
-_TITLE_SOFT = [
-    (r'不是[^，。]{1,12}[，,]而是',
-     '「不是 A，而是 B」属揭穿式句式家族',
-     '除非 A 是本篇要正面澄清的核心且正文有专节，否则换正面陈述'),
-    (r'与其说[^，。]{1,12}[，,]不如说',
-     '「与其说 X，不如说 Y」属揭穿式句式家族',
-     '直接说 Y'),
+# 噪头提示档：命中只提示不阻断（title.md §禁用清单）。公众号标题门与 X 发前体检共用。
+_TITLE_NOISE = [
+    (r'^(?:别再|还在|千万(?:不要|别)|你一定要)|建议收藏|推荐收藏|赶紧',
+     '否定 / 催促开头（别再 / 还在 / 建议收藏）',
+     '删掉，直接写对象'),
+    (r'居然|我去|白嫖|保姆级|一文(?:讲透|看懂|读懂)|彻底讲透|天花板|最强|神器|魔法|终于|根本',
+     '营销夸张词',
+     '换成具体结果或数字'),
+    (r'^(?:深度|重磅|硬核|干货)',
+     '空修饰前缀（深度 / 重磅 / 硬核 / 干货）',
+     '删'),
+    (r'其实是|才是关键|才是真正|真正决定|才发现',
+     '揭穿式说法（其实是 / 才是关键 / 真正决定）',
+     '直接写结论和可得物'),
+    (r'不是[^，。；;]{1,14}[，,；;]\s*(?:而)?是|与其说[^，。]{1,12}[，,]不如说',
+     '翻转句（不是 A，而是 B / 与其说 X 不如说 Y）',
+     '只写 B，并补上读者能拿走什么'),
+    (r'[？?]|吗$',
+     '问句当标题',
+     '改成陈述句；选型写「怎么选：依据」'),
+    (r'[!！]|…|\.\.\.',
+     '感叹号 / 省略号',
+     '删'),
+    (r'——',
+     '全角破折号',
+     '用两个英文连字符 --'),
     (r'全网最|最全|最好|第一|唯一|史上最',
-     '定位型自夸（配额制，不是禁令）',
-     '按 title.md §自夸词是配额：这篇值不值得花一次信用额度 / 正文有自证段 / 同栏目上一篇没用过 -- '
-     '三条不全过就换原话型、具象型或处境型'),
+     '定位型自夸（默认不用，按次数配额）',
+     '按 title.md：只在关键推广篇花一次，正文要有自证段，同栏目不连用'),
 ]
 
 
+def title_noise_hints(text: str) -> list[str]:
+    """标题噪头提示（不阻断）。纯函数；公众号标题门和 x_article.py 发前体检共用。"""
+    import re
+
+    text = (text or '').strip()
+    hints = []
+    for pattern, diagnosis, fix in _TITLE_NOISE:
+        hit = re.search(pattern, text)
+        if hit:
+            hints.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
+    return hints
+
+
 def _title_width(text: str) -> float:
-    """汉字位宽：中文/全角计 1，英数/半角计 0.5，空格不计（与 title.md 长度口径同源）。"""
+    """汉字位宽：中文/全角计 1，英数/半角计 0.5，空格不计（公众号编辑器口径）。"""
     width = 0.0
     for ch in text:
         if ch.isspace():
@@ -2799,10 +2832,11 @@ def _title_width(text: str) -> float:
 
 
 def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> dict:
-    """扫单个标题，返回 {'verdict', 'violations', 'notes'}。纯函数，便于测试。
+    """扫单个公众号外标题，返回 {'verdict', 'violations', 'warnings', 'notes'}。纯函数。
 
+    不查字数上限（title.md：长度是习惯不是上限）；超过公众号接口的 32 字位只提示。
     structure_exempt_reason：作者指定标题且在审批记录里写明「标题公式豁免：原因」时传入，
-    「锚点：一句话」结构问题降为 warning（审计 G5）。
+    「看不出对象 + 可得物」的结构提示改为已豁免说明。
     """
     import re
 
@@ -2815,7 +2849,7 @@ def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> di
     head, sep, body = title.partition(' | ')
     if not sep or head not in _TITLE_TAGS:
         violations.append(
-            f'缺 2 字分类标签前缀（应为 `标签 | 正文标题`，标签 7 选 1：{"/".join(_TITLE_TAGS)}）'
+            f'缺 2 字分类标签前缀（应为 `标签 | 标题主体`，标签 7 选 1：{"/".join(_TITLE_TAGS)}）'
             ' → 见 title.md 第一步'
         )
         body = title
@@ -2825,27 +2859,19 @@ def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> di
         if hit:
             violations.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
 
-    warnings: list[str] = []
-    # 唯一公式的结构：竖杠后是「关键词锚点：一句话」。2026-09-23 审计 G5：曾有标题
-    # 「全网最好的某某学习网站（限时免费）」无冒号、无专名锚点，只得到自夸词软提示。
-    anchor, colon, sentence = body.partition('：')
-    if not colon:
-        anchor, colon, sentence = body.partition(':')
-    if not colon or not anchor.strip() or not sentence.strip():
-        issue = ('缺「关键词锚点：一句话」结构（竖杠后应是专名锚点 + 全角冒号 + 一句由正文兑现的话）'
-                 ' → 见 title.md §唯一公式')
-        if structure_exempt_reason:
-            warnings.append(f'{issue}；已按审批记录豁免：{structure_exempt_reason}')
-        else:
-            violations.append(issue)
-    for pattern, diagnosis, fix in _TITLE_SOFT:
-        hit = re.search(pattern, body)
-        if hit:
-            warnings.append(f'{diagnosis}：命中「{hit.group(0)}」 → {fix}')
+    warnings: list[str] = title_noise_hints(body)
+    # 对象 + 可得物通常分两段（冒号 / 逗号 / 加号连接）。整句一段时多半只有对象或只有判断，
+    # 只提示：「这个skill，可以复刻任意写作风格」式的短句也合格，判不了就交给人。
+    if not re.search(r'[：:，,、+＋]', body):
+        issue = '看不出「对象 + 可得物」两部分 → 见 title.md §核心写法，补上读者能拿走什么'
+        warnings.append(f'{issue}；已按审批记录豁免：{structure_exempt_reason}'
+                        if structure_exempt_reason else issue)
 
     width = _title_width(title)
-    if width > 30:
-        violations.append(f'长度 {width:g} 字位 > 30 上限 → 砍竖杠后的正文标题，不砍标签')
+    if width > WECHAT_TITLE_API_WIDTH:
+        warnings.append(
+            f'{width:g} 字位，超过公众号 draft/add 接口文档的 {WECHAT_TITLE_API_WIDTH} 字限制'
+            ' → 不是写作规则，不必为此改短；上传草稿前确认接口不报 45883')
 
     if violations:
         return {
@@ -2865,7 +2891,7 @@ def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> di
         'verdict': 'ok',
         'violations': [],
         'warnings': [],
-        'notes': f'标题过门（{width:g} 字位）；「兑现在正文哪一节」仍需人判，见 title.md 8 步质检',
+        'notes': f'标题过门（{width:g} 字位）；有没有可得物、兑现在正文哪一节仍需人判，见 title.md 7 条自检',
     }
 
 
@@ -2888,8 +2914,8 @@ def _longest_common_cjk_run(a: str, b: str) -> str:
 def audit_cover_title_pair(title: str, line1: str, line2: str) -> dict:
     """封面 L1/L2 与外标题的分工检查（title.md §封面与外标题怎么分工）。
 
-    关键词锚点**有意重复**（L1 就写它），不许重复的是「那一句」-- L2 与外标题
-    冒号后那句必须换填法、不共用主要实词。
+    对象（关键词锚点）**有意重复**（L1 就写它），不许重复的是可得物 -- L2 与外标题
+    对象后面那部分必须换角度、不共用主要实词。
     """
     title = (title or '').strip()
     line1 = (line1 or '').strip()
@@ -2909,7 +2935,7 @@ def audit_cover_title_pair(title: str, line1: str, line2: str) -> dict:
     if line2 and line2 in title:
         violations.append(
             f'封面 L2「{line2}」整段出现在外标题里 → 这是把同一句砍短放上去；'
-            'L2 换一种填法（外标题给原话，L2 就给数字 / 物件）'
+            'L2 换一个角度（另一个正文数字 / 物件 / 结果）'
         )
     else:
         run = _longest_common_cjk_run(line2, tail)

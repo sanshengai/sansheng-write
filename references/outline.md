@@ -419,11 +419,11 @@
 
 #### 标题建议（3-5个；blueprint 闸启用时必出 5 套「标题+封面文案」配套方案）
 
-从以下角度各出至少一个：底层逻辑型、信息差型、微观痛点+大趋势型、具体数字/场景型。（不出反差/颠覆认知型：title.md 唯一公式禁止反差句式，出了也用不上）
+按 [title.md](title.md) §出候选：先列对象和正文里的可得物，再用 A 对象 + 可得物（默认）/ B 我做了什么 / C 选型对比 / D 事件 + 解读成句。不出观点句、问句、反差 / 颠覆认知型和噪头标题。
 
 所有标题真实、诚恳、不夸大、不标题党。
 
-🔴 **每个标题候选带 2 字分类标签前缀**（`标签 | 正文标题`，如「精选 | …」）：出候选前先按裁决链 6 选 1 定 `outward_category` 并回填 `article-meta.yaml`，5 个候选统一带同一前缀盲选 -- 完整方法见 [title.md 第一步：定分类标签前缀](title.md)。
+🔴 **每个标题候选带 2 字分类标签前缀**（`标签 | 正文标题`，如「精选 | …」）：出候选前先按裁决链 7 选 1 定 `outward_category` 并回填 `article-meta.yaml`，5 个候选统一带同一前缀盲选 -- 完整方法见 [title.md 第一步：定分类标签前缀](title.md)。
 
 > 🔴 **blueprint 蓝图闸启用时**（`profile/brand.yaml` 的 `workflow.checkpoints` 含 `blueprint`）：本步按 [title.md](title.md) 完整锻造 **5 个候选 + 排序 + 推荐**，每个候选配 L1/L2 与 2--4 个可视化事实，组成 5 套配套方案；作者已明确指定标题时可标“作者指定标题”免候选。大纲、标题封面方案、开头候选一包交付：明写 `封面风格`（信息图风格不必写，全站固定 `claymation`）。作者确认后运行 `pipeline.py approve blueprint --words "<作者原话>" --title … --opening … --outline … --cover-style …`，由命令生成 `_blueprint-approval.md`（不手写）。细则见 [autopilot.md](autopilot.md) 第 1 步。
 

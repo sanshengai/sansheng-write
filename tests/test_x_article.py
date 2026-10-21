@@ -132,7 +132,7 @@ def test_caption_rejects_over_limit_url_hashtags_bait():
     too_long = "字" * 129  # 258 权重
     assert any("超过上限" in p for p in xa.check_caption(too_long))
     assert any("URL" in p for p in xa.check_caption("看这里 https://x.com/a"))
-    assert any("裸域名" in p for p in xa.check_caption("去 sanshengai.top 看看"))  # X 会把裸域名自动转成 t.co 链接
+    assert any("裸域名" in p for p in xa.check_caption("去 example.com 看看"))  # X 会把裸域名自动转成 t.co 链接
     assert xa.check_caption("更新到 V1.77 了，共 3.5 万字") == []  # 小数点不是域名
     assert any("hashtag" in p for p in xa.check_caption("#AI 与 #Mac 的事"))
     assert any("诱饵" in p for p in xa.check_caption("觉得有用请点赞转发"))
@@ -200,7 +200,7 @@ def test_sources_without_closing_marker_stop_at_next_comment(tmp_path: Path):
     src = lambda name, url: (f'<section style="padding:14px 16px 16px;"><section style="font-size:15px;">{name}</section>'
                              f'<section style="font-size:13px;">{url}</section></section>')
     md = ("---\ntitle: t\n---\n\n正文\n\n<!-- SANSHENG-SOURCES -->\n<section>" + src("来源甲", "https://a.example/1") +
-          "</section>\n<!-- 推荐阅读 -->\n<section>" + src("推荐乙", "https://sanshengai.top/x") +
+          "</section>\n<!-- 推荐阅读 -->\n<section>" + src("推荐乙", "https://example.com/x") +
           "</section>\n<!-- AUDIO-CARD-START -->\n<section>音频</section>\n<!-- AUDIO-CARD-END -->\n")
     parsed = xa.parse_markdown(md, tmp_path)
     assert parsed["sources"] == ["来源甲 https://a.example/1"]  # 推荐阅读那条不能混进信息来源
@@ -229,3 +229,62 @@ def test_code_block_blank_lines_dropped(tmp_path: Path):
     html = "".join(v for k, v in xa.parse_markdown(md, tmp_path)["blocks"] if k == "html")
     assert "<blockquote></blockquote>" not in html and "<blockquote> </blockquote>" not in html
     assert html.count("<blockquote>") == 4  # [bash] + 3 行非空
+
+
+# ---------------------------------------------------------------- X 版内容体检
+def test_lint_blocks_declaration_first_line():
+    md = "---\ntitle: t\n---\n\n# 标题\n\n本文 2026 年 4 月首发；9 月核过命令。\n\n正文。\n"
+    errors, _ = xa.lint_x_source(md)
+    assert any("首屏是声明" in e for e in errors)
+    md2 = "# 标题\n\n> 截至 2026-09，以下价格已更新。\n\n正文。\n"
+    assert any("首屏是声明" in e for e in xa.lint_x_source(md2)[0])
+
+
+def test_lint_passes_conclusion_first_and_tail_provenance():
+    md = ("# 标题\n\n先说结论：开机广告没了，空闲内存从 551 MB 涨到 988 MB。\n\n"
+          "## 第一步：连上 ADB\n\n命令很短。\n\n---\n\n版本说明：本文 2026 年 4 月首发。\n")
+    errors, warnings = xa.lint_x_source(md)
+    assert errors == [] and warnings == []
+
+
+def test_lint_blocks_placeholder_residue():
+    md = "# 标题\n\n结论在前。\n\nXIMGPH_3\n\n正文。\n"
+    assert any("占位符" in e for e in xa.lint_x_source(md)[0])
+
+
+def test_lint_warns_wechat_tone_tables_and_daodu():
+    md = ("# 标题\n\n> **导读：** 这是导读。\n\n你猜是谁？真的吗？为什么？\n\n"
+          "不是因为视频短，是因为外包了。不是多一把刀，是多一个员工。\n\n**划重点**\n\n"
+          "| 场景 | A | B |\n|---|---|---|\n| 长视频 | 慢 | 快 |\n")
+    errors, warnings = xa.lint_x_source(md)
+    assert errors == []
+    joined = "\n".join(warnings)
+    for key in ("导读", "问句", "不是…是…", "划重点", "表格"):
+        assert key in joined, key
+
+
+def test_lint_ignores_code_blocks_and_machine_tail():
+    md = ("# 标题\n\n结论：能用。\n\n```text\n是不是？不是 a，是 b？\n```\n\n"
+          "<!-- SANSHENG-SOURCES -->\n本文首发于？？？\n")
+    assert xa.lint_x_source(md) == ([], [])
+
+
+# ---------------------------------------------------------------- X 标题提示（title.md §禁用清单）
+def test_lint_x_title_warns_prefix_and_noise_only():
+    md = "---\ntitle: x\n---\n\n# 洞察 | Claude Code 和 Codex 怎么选？\n\n结论：按本地和云端分。\n"
+    errors, warnings = xa.lint_x_source(md)
+    assert errors == []
+    joined = "\n".join(warnings)
+    assert "分类前缀" in joined and "问句" in joined
+
+
+def test_lint_x_title_reads_frontmatter_when_no_h1():
+    md = "---\ntitle: 别再只会问 AI 了！\n---\n\n结论：能用。\n"
+    joined = "\n".join(xa.lint_x_source(md)[1])
+    assert "催促" in joined and "感叹号" in joined
+
+
+def test_lint_x_title_passes_liked_titles():
+    for t in ("德鲁克 5 本书，整理成 3 条今天能用的管理规则",
+              "Claude 被封后，我的替补方案：Claude Code + Kimi Code + Antigravity"):
+        assert xa.lint_x_title(t) == [], t

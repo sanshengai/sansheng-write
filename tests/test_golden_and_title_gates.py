@@ -38,17 +38,19 @@ def test_missing_marker_is_rejected(tmp_path):
     assert errors and "缺本篇来源标记" in errors[0]
 
 
-def test_title_without_anchor_colon_is_a_violation():
+def test_title_without_two_parts_only_warns():
+    # 2026-10-21 起「锚点：一句话」不再是硬结构；整句一段只提示补可得物
     result = contracts.audit_title_contract("分享 | 全网最好的初中英语学习网站（限时免费）")
-    assert any("锚点：一句话" in v for v in result["violations"])
+    assert result["violations"] == []
+    assert any("可得物" in w for w in result["warnings"])
 
 
-def test_title_with_anchor_colon_passes_structure():
-    result = contracts.audit_title_contract("资讯 | Opus 5.5 与 GPT-6 Sol 同夜发布：一个追 Fable，一个砍半价")
-    assert not any("锚点：一句话" in v for v in result["violations"])
+def test_title_without_colon_but_with_takeaway_passes():
+    result = contracts.audit_title_contract("分享 | 德鲁克 5 本书，整理成 3 条今天能用的管理规则")
+    assert result["verdict"] == "ok", result["notes"]
 
 
-def test_author_exemption_downgrades_structure_issue(tmp_path):
+def test_author_exemption_is_recorded_on_structure_hint(tmp_path):
     art = tmp_path / "103-推广"
     art.mkdir()
     (art / "article-meta.yaml").write_text('title: "分享 | 全网最好的初中英语学习网站（限时免费）"\n', encoding="utf-8")
@@ -56,7 +58,7 @@ def test_author_exemption_downgrades_structure_issue(tmp_path):
         "作者指定标题：分享 | 全网最好的初中英语学习网站（限时免费）\n标题公式豁免：推广篇沿用网站口号\n审批结论：通过\n",
         encoding="utf-8")
     result = contracts.verify_title_contract(str(art))
-    assert not any("锚点：一句话" in v for v in result["violations"])
+    assert result["violations"] == []
     assert any("已按审批记录豁免" in w for w in result["warnings"])
 
 

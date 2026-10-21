@@ -490,6 +490,97 @@ def check_caption(text: str) -> list[str]:
     return problems
 
 
+# ---------------------------------------------------------------- X 版内容体检（2026-10 对标复盘）
+# 依据 references/x-article.md §X 版写法：首屏声明、占位符残留是硬错误（阻断 --publish）；
+# 公众号腔密度、表格只提示；不限篇幅（插图与附文本会让字数统计失真）。阈值按「每千字」算，不足千字按 1 千字。
+LINT_DECL_RE = re.compile(r"^(?:本文|此文|这篇(?:文章)?|原文)?[^。！？\n]{0,16}?(?:首发|首载|原载|发布于|更新于|截至)")
+LINT_PH_RE = re.compile(r"X(?:IMG|DIV)PH_\d+")
+LINT_REVERSAL_RE = re.compile(r"不是[^。！？\n]{1,30}?[，,；;]\s*(?:而)?是")
+LINT_MAX_PER_K = 1
+
+
+def _lint_body(md: str) -> str:
+    if md.startswith("---"):
+        md = md.split("---", 2)[2]
+    md = re.split(r"<!-- SANSHENG-DEEP-READ -->|<!-- SANSHENG-SOURCES -->", md)[0]
+    md = re.sub(r"<!--.*?-->", "", md, flags=re.S)
+    return re.sub(r"```.*?```", "", md, flags=re.S)
+
+
+def _first_lines(body: str, n: int = 2) -> list[str]:
+    out = []
+    for ln in body.splitlines():
+        st = ln.strip()
+        if not st or st.startswith(("#", "![", "<", "---", "|")):
+            continue
+        st = re.sub(r"^>\s*", "", st).replace("**", "").strip()
+        if st:
+            out.append(st)
+        if len(out) >= n:
+            break
+    return out
+
+
+def _x_title(md: str) -> str:
+    """与 parse_markdown 同口径：正文 H1 优先，其次 frontmatter title。"""
+    fm = ""
+    if md.startswith("---"):
+        for line in md.split("---", 2)[1].splitlines():
+            if line.strip().startswith("title:"):
+                fm = line.split(":", 1)[1].strip().strip('"').strip("'")
+    h1 = re.search(r"^# (.+)$", _lint_body(md), re.M)
+    return (h1.group(1).strip() if h1 else fm).strip()
+
+
+def lint_x_title(title: str) -> list[str]:
+    """X 标题提示（只提示不阻断）：残留分类前缀 + title.md §禁用清单里能正则判定的噪头。"""
+    if not title:
+        return []
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from contracts import title_noise_hints
+
+    hints = []
+    if re.match(r"^\S+ \| ", title):
+        hints.append("X 标题带分类前缀（如「洞察 |」）：X 不带前缀，发布时会自动剥掉，源稿也删掉")
+    body = re.sub(r"^\S+ \| ", "", title)
+    hints += [f"X 标题：{h}" for h in title_noise_hints(body)]
+    return hints
+
+
+def lint_x_source(md: str) -> tuple[list[str], list[str]]:
+    """X 稿发前体检，返回 (errors, warnings)。errors 非空时 --publish 拒绝。"""
+    errors: list[str] = []
+    warnings: list[str] = lint_x_title(_x_title(md))
+    body = _lint_body(md)
+    first = _first_lines(body)
+    if first and LINT_DECL_RE.search(first[0]):
+        errors.append(f"首屏是声明（{first[0][:30]}…）：第一行给结论/结果，首发/截至/核对说明挪到文末")
+    elif first and re.match(r"^导读[：:]", first[0]):
+        warnings.append("首行是公众号导读：X 卡片摘要会显示它，改成结论句")
+    if LINT_PH_RE.search(md):
+        errors.append("源稿里有 XIMGPH_/XDIVPH_ 占位符字样，会和媒体占位冲突或原样漏到线上")
+    if "导读图" in body:
+        warnings.append("出现「导读图」字样：公众号专属图注，X 版删掉")
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)|<[^>]+>|[#>*`|\-]", "", body)
+    chars = len(re.sub(r"\s", "", text))
+    k = max(1, -(-chars // 1000))
+    cap = LINT_MAX_PER_K * k
+    q = len(re.findall(r"[？?]", text))
+    rev = len(LINT_REVERSAL_RE.findall(text))
+    hl = body.count("划重点")
+    if q > cap:
+        warnings.append(f"问句 {q} 个（{chars} 字，上限约 {cap}）：修辞问句改成陈述")
+    if rev > cap:
+        warnings.append(f"「不是…是…」{rev} 处（上限约 {cap}）：判断句写成「X 是 Y，因为 Z」")
+    if hl:
+        warnings.append(f"「划重点」{hl} 处：X 版删掉，必要时只在开头放一次 TL;DR")
+    if re.search(r"^\s*\|.*\|\s*$", body, re.M):
+        warnings.append("有 Markdown 表格：X 不渲染表格，脚本会压成列表；对比表改写成标签行或换成一张图")
+    return errors, warnings
+
+
 def expected_blocks(media_plan: list) -> tuple[list[str], dict]:
     """把计划展开成期望的块文本序列和块类型计数。媒体/分割线统一记 [MEDIA]。"""
     exp, want = [], {"h1": 0, "h2": 0, "blockquote": 0, "li": 0}
@@ -994,6 +1085,16 @@ def main() -> int:
         tail += f"<p>{H.escape(cfg['tail_line'], quote=False)}</p>"
     if tail:
         plan.append(("html", tail))
+
+    src_md = article_source(article_dir)
+    lint_errors, lint_warnings = lint_x_source(src_md.read_text(encoding="utf-8")) if src_md.is_file() else ([], [])
+    for w in lint_warnings:
+        print("⚠️ ", w)
+    for e in lint_errors:
+        print("❌", e)
+    if args.publish and lint_errors:
+        print("X 版体检未过：改 定稿.x.md 后重跑（规则见 references/x-article.md §X 版写法）")
+        return 2
 
     caption = Path(args.caption_file).read_text(encoding="utf-8").strip() if args.caption_file else ""
     caption_problems = check_caption(caption)

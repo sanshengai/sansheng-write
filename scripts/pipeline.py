@@ -4320,15 +4320,15 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
             add("ok" if exists else "fail", fname,
                 "存在" if exists else f"缺失 —— {why}")
 
-    # --- 1b. 标题公式门（可正则判定的那一半，覆盖性仍靠 title.md 7 步质检）---
+    # --- 1b. 标题门（可正则判定的那一半；有没有可得物仍靠 title.md 7 条自检）---
     try:
         from contracts import verify_title_contract
         tc = verify_title_contract(str(cwd))
         verdict = tc.get("verdict")
         add({"fail": "fail", "warn": "warn"}.get(verdict, "ok"),
-            "标题公式（title.md）", tc.get("notes", ""))
+            "标题（title.md）", tc.get("notes", ""))
     except Exception as exc:
-        add("warn", "标题公式（title.md）", f"检查异常：{exc}")
+        add("warn", "标题（title.md）", f"检查异常：{exc}")
 
     # --- 1b2. cover_portrait 声明（声明了就得可追溯：文件在、来源与许可齐）---
     try:
