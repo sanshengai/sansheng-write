@@ -51,6 +51,8 @@ def server(monkeypatch, tmp_path):
                 return self._send({"url": f"http://media.example.test/x/{len(st.calls)}"})
             if step == "add_material":
                 return self._send({"media_id": "COVER1", "url": "http://x"})
+            if step == "get":
+                return self._send({"news_item": [{"title": "已有草稿", "content": "原正文"}]})
             if step == "add":
                 st.last_article = json.loads(body)["articles"][0]
                 return self._send({"media_id": "DRAFT1"})
@@ -174,3 +176,19 @@ def test_large_or_webp_body_images_are_compressed_under_one_megabyte(server, tmp
     Image.new("RGB", (50, 40), (1, 2, 3)).save(d / "素材/a.webp", "WEBP")
     out = publish(d, html + '<img src="素材/big.png"><img src="素材/a.webp">')
     assert len(out["images"]) == 2 and any("压缩" in i["note"] for i in out["images"])
+
+
+def test_get_draft_is_read_only_and_refreshes_expired_token(server):
+    server.fail["get"] = [42001, None]
+    out = W.get_draft(media_id="OLD", app_id="wx1", secret="s")
+    assert out["news_item"][0]["content"] == "原正文"
+    posts = [p for p in server.posts]
+    assert len(posts) == 2
+    assert all("/draft/get?" in p["path"] and json.loads(p["body"]) == {"media_id": "OLD"} for p in posts)
+    assert server.token_no == 2
+
+
+def test_empty_draft_id_never_calls_api(server):
+    with pytest.raises(W.WechatError, match="media_id"):
+        W.get_draft(media_id="", app_id="wx1", secret="s")
+    assert server.calls == []

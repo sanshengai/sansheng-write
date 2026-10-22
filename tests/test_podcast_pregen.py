@@ -164,9 +164,10 @@ def test_pregen_noop_when_channel_disabled(tmp_path, monkeypatch):
     assert cmd_podcast_pregen(art) is None
 
 
-@pytest.mark.parametrize("assembly_error", [None, "选定图片字节已改变"])
-def test_stylebook_pregen_checks_assembly_before_generation(tmp_path, monkeypatch, assembly_error):
+@pytest.mark.parametrize("source_error", [None, "定稿作者正文已变化", "缺 release job"])
+def test_stylebook_pregen_checks_approved_source_without_waiting_for_images(tmp_path, monkeypatch, source_error):
     import pipeline
+    import release_job
     import stylebook_assembly
 
     art = tmp_path / "article"
@@ -180,24 +181,23 @@ def test_stylebook_pregen_checks_assembly_before_generation(tmp_path, monkeypatc
 
     def verify(cwd):
         checked.append(cwd)
-        if assembly_error:
-            raise ValueError(assembly_error)
-        return {}
+        return ({"scope": "wechat-draft"}, [source_error] if source_error else [])
 
-    monkeypatch.setattr(stylebook_assembly, "verify_assembly", verify)
+    monkeypatch.setattr(release_job, "validate_release_job", verify)
+    monkeypatch.setattr(stylebook_assembly, "verify_assembly", lambda cwd: pytest.fail("播客不能等待视觉装配"))
     monkeypatch.setattr(pe, "cmd_generate", lambda cwd: called.append(cwd) or 0)
     with pytest.raises(SystemExit) as exc:
         pipeline.cmd_podcast_pregen(art)
     assert checked == [art]
-    assert exc.value.code == (2 if assembly_error else 0)
-    assert called == ([] if assembly_error else [art])
+    assert exc.value.code == (2 if source_error else 0)
+    assert called == ([] if source_error else [art])
 
 
 
 @pytest.mark.parametrize("card", ["standard", "missing", "changed"])
 def test_stylebook_pregen_preserves_frozen_bytes_and_requires_standard_card(tmp_path, monkeypatch, card):
     import pipeline
-    import stylebook_assembly
+    import release_job
     from audio_cards import render_card
 
     art = tmp_path / "article"
@@ -210,7 +210,7 @@ def test_stylebook_pregen_preserves_frozen_bytes_and_requires_standard_card(tmp_
     monkeypatch.setattr(distribute, "enabled_channels", lambda: ["podcast"])
     monkeypatch.setattr(distribute, "podcast_wechat_embed_enabled", lambda: True)
     monkeypatch.setattr(pipeline, "_stylebook_selected", lambda cwd: True)
-    monkeypatch.setattr(stylebook_assembly, "verify_assembly", lambda cwd: {})
+    monkeypatch.setattr(release_job, "validate_release_job", lambda cwd: ({"scope": "wechat-draft"}, []))
     called = []
     monkeypatch.setattr(pe, "cmd_generate", lambda cwd: called.append(cwd) or 0)
     with pytest.raises(SystemExit) as exc:
@@ -328,3 +328,25 @@ def test_pregen_author_shots_mode_still_rejects_short_contract(tmp_path, monkeyp
         with pytest.raises(SystemExit) as exc:
             pipeline.cmd_podcast_pregen(art)
         assert exc.value.code == 2
+
+
+def test_pregen_actual_approval_then_prose_mutation_is_rejected(tmp_path, monkeypatch):
+    import pipeline
+    from test_release_job import _article, _run
+    art = _article(tmp_path)
+    final = art / '定稿.md'
+    final.write_text(final.read_text() + '\n<!-- AUDIO-CARD-START -->音乐卡<!-- AUDIO-CARD-END -->\n')
+    result = _run(art, 'adopt-final')
+    assert result.returncode == 0, result.stdout + result.stderr
+    monkeypatch.setattr(distribute, 'enabled_channels', lambda: ['podcast'])
+    monkeypatch.setattr(distribute, 'podcast_wechat_embed_enabled', lambda: False)
+    monkeypatch.setattr(pipeline, '_stylebook_selected', lambda cwd: True)
+    calls = []
+    monkeypatch.setattr(pe, 'cmd_generate', lambda cwd: calls.append(cwd) or 0)
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_podcast_pregen(art)
+    assert exc.value.code == 0 and calls == [art]
+    final.write_text(final.read_text() + '\n未经确认的新结论。\n')
+    with pytest.raises(SystemExit) as exc:
+        pipeline.cmd_podcast_pregen(art)
+    assert exc.value.code == 2 and calls == [art]

@@ -387,6 +387,20 @@ def publish_draft(*, html: str, base_dir: Path, cover: Path, title: str, digest:
         return {"media_id": media_id, "cover_media_id": cover_result["media_id"], "method": "api", "title": title,
                 "images": images, "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest()}
 
+    return _authorized_call(app_id, secret, run)
+
+
+def get_draft(*, media_id: str, app_id: str, secret: str) -> dict[str, Any]:
+    """只读指定草稿；与写入使用相同 token 刷新及白名单出口。"""
+    if not media_id.strip():
+        raise WechatError("draft/get 缺 media_id", step="draft/get")
+    def run(token: str) -> dict[str, Any]:
+        url = f"{API_BASE}/cgi-bin/draft/get?access_token={urllib.parse.quote(token)}"
+        return post_json(url, {"media_id": media_id}, "draft/get")
+    return _authorized_call(app_id, secret, run)
+
+
+def _authorized_call(app_id: str, secret: str, run: Callable[[str], dict[str, Any]]) -> dict[str, Any]:
     def attempt() -> dict[str, Any]:
         try:
             return run(access_token(app_id, secret))

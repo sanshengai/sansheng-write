@@ -8,179 +8,64 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 # 中文长文写作系统
 
-运行要求：Python 3.10+。Markdown 排版（`md_render.py`）和微信发草稿（`wechat_api.py`）已内置，不再需要 Node.js / bun / baoyu-skills；出图默认走生图 Skill（同级安装 `sansheng-image`，用 Codex 订阅额度，见 `image-routing.md`），宝玉脚本只作显式旧路径的可选依赖。主题曲默认由作者在 MiniMax 网页手动生成，Agent 先交付 Markdown 生成单，详见 `music.md`；Lyria 自动通道暂停，作者明确要求恢复前不调用、不引导配置 Google Cloud。
+给中文长文与公众号文章使用的写作、改稿和交付流程。运行要求 Python 3.10+；Markdown 排版、微信 API 已内置；生图默认调用同级 `sansheng-image`，保持作者配置的封面和正文风格。下文链接均指 `references/`。
 
-**主入口**：只承载「路由 + 触发边界 + 全局元指令 + 高频铁律」，各阶段细则一律 lazy-load 对应 reference。**下文裸写的 `*.md` 文件名，除非已标全路径，一律指 `references/` 目录下的同名文件**（`profile/corpus/authors/` 与 `profile/` 下的文件已标全路径）。
+## 先选本轮路径
 
-> 🧭 **默认路径**：前半程（选题 → 大纲 → 正文 → 磨稿 → 双复核）在对话里按各 reference 推进，不启用大纲 / 正文状态机；作者每次拍板用 `pipeline.py approve blueprint|draft --words "<作者原话>"` 逐字落盘（不手写审批文件），定稿拍板后 `adopt-final` 接管、先交付主题曲生成单，再走 release-runtime.md 机械链。给前半程也记状态的完整模式是 autopilot.md 附录里的可选项。
-
-> **先确定本轮终点**：完整新文章任务按 autopilot.md 的自动主链推进；用户只要正文、大纲、局部改稿或排版时，完成指定产物即止，不进入后续生图、音频、归档或草稿箱事务。作者给确认定稿且要求制作发布材料/提交草稿箱时，才按 release-runtime.md。失败只在当前命令修复，不 skip、不伪造状态。显式配置 `podcast.wechat_embed: true` 时，公众号固定为「导读 → 主题曲卡 → 播客卡 → 正文」，两卡同级、同宽、上下排列；音频必须在草稿前生成。自动链止于微信草稿箱；原创、赞赏与正式发布由作者人工完成。 **公众号默认只走 API：除非作者单独明确要求浏览器操作，否则不得考虑或尝试浏览器发布、草稿编辑、音视频接入或读回验证。API 暂不支持的人工操作交付文件与插入说明，不自动转浏览器。**
-
-> ⚡ **朋友圈文案极速例外**：用户只要一条已有文章的朋友圈推文/文案时，不进入文章流水线，不跑 `status` / `finalize` / 归档 / 官网 / 搜索 / 生图，也不等待其他长任务。优先用当前对话已有标题与主旨，信息不足时最多读取该文 `article-meta.yaml` 与开头/结尾，直接返回可复制的三段文案。只有用户明确要保存文件时才运行 `python scripts/pipeline.py --dir <文章目录> moments-copy`；目标耗时是秒级。
-
-> 🗃️ **过程目录与永久归档是两个根**：`SANSHENG_WRITE_DATA_DIR=@workspace/...` 只决定当前工作树里的写作过程目录；`pipeline.py archive` 只登记作品库，不搬文件。全部写作、发布、社媒分发写者退出后，才运行 `pipeline.py --dir <文章目录> physical-archive --delete-source`，把整篇目录交付到绝对路径 `SANSHENG_WRITE_ARCHIVE_DIR`。命令先复制到同盘临时目录、逐文件核对大小与 SHA-256；目标同路径内容不同即中止，复验通过后才删除源目录。`handoff-assets` 默认把上传用的主题曲、播客和封面放在文章文件夹第一层；不另建“手工上传”目录，不等同于永久归档。 若在 Git worktree 中制作，最终交付前须按项目规则同步到主仓成品目录并复验，再给主仓可点击路径；不能只交付 worktree 中的过程副本。
-
-## 🟢 按任务读取共享上下文
-
-创作或调整品牌表达时，读取相关共享上下文；同会话已加载且未变化时复用。局部校字、标题微调或机械排版不重读创作背景。风格、受众沿用已知选择；只问影响结果且无法推断的缺项，不把字数、风格、受众当固定问卷：
-
-1. **品牌上下文** `profile/context.md`（品牌身份/人设/风格路由/对话约定）；未配置 profile 时回退仓内 `profile.example/context.md`（中性默认，正常路径不是错误）；皆无则兜底本文件「品牌身份 fallback」节。
-2. **品牌织网（可选）** `profile/brand-net.md`（阵地地图/伏笔池/承诺台账）。存在时大纲阶段**步骤 7.5 织网三问必答**（联动已发文/推自有阵地/埋伏笔），答案落 `article-meta.yaml` 的 `weave:`（细则进 outline.md 步骤 7.5）；归档把本篇许的愿登进 brand-net.md §四。**文件不存在则跳过织网环节，不报错**（织网是可选玩法）。
-
-> profile 目录由环境变量 `SANSHENG_WRITE_PROFILE_DIR` 指定（未配置则回退仓内 `profile.example/`），解析入口 `scripts/profile_config.py`。多 worktree 可在 `.env` 写 `@workspace/...`；pipeline 必须在文章目录确定后先 `bind_workspace(article_dir)`，禁止把数据与 profile 静默解析到 main。多阶段任务：完成一阶段再读下一个，勿一次性全读。
-
-## 🔁 恢复协议（元指令）
-
-接管、执行或恢复文章流水线时，先跑 `python "$SKILL/scripts/pipeline.py" status`；只读查看或独立的局部文案修改不因进入文章目录就启动流水线。局部改稿完成后不自行重跑下游，下一次恢复时由摘要检测变化并重验。state v2 保留 `first_completed_at`、更新 `last_verified_at/attempt_count/artifact_digest`；已完成上游产物发生变化时，当前与已完成下游自动标成 `dirty`，必须从最早 dirty 阶段重验。内容配置唯一真源是 `article-meta.yaml`，`.state.json` 只记流程状态。
-
-**正式发表后的完成边界：** 在完整文章发布任务中收到永久链接，必须续跑 `finalize <永久链接>`，不得用分别登记链接、归档或补跑一个失败步骤代替整条收尾。已有 profile 官网同步配置属于此流程；拿到链接并不自动授权新的社媒分发。结束前运行 `pipeline.py closeout-check`（缺记录、排队、失败或正文/媒体已变均拒绝），再验本篇已授权社媒的 `social_handoff.py <文章目录> --only weibo,x`（只列本篇获授权的渠道）。`archive` 完成只表示入库；官网 job 成功并通过当前文章及媒体验收才可报告网站已更新。用户明确只做局部记录或不部署时遵从边界，并说明完整闭环尚未完成。
-
-**制作前素材计划与返工诊断：** 新闻正文、主封面、Hero、音乐/播客封面和视频逐项决策，已明确的作者选择不重复问。相同输入连续两次被同项打回，先按 visual-qa.md 诊断，再修输入或有理由返修；禁止机械循环生图。官网排队不算完成，正式入口须覆盖声明媒体；当前交付快照与可点击链接见 release-runtime.md。
-
-**长任务心跳：**预计超过 60 秒的渲染、视觉 QA、BGM 或草稿事务，启动时先说明当前阶段与预计耗时；命令是阻塞式调用，返回前无法插播——命令返回后（或分批调用间隙）报告进度，进行中状态可查 `素材/.render-attempt-*.json` 与 `.gen-log.jsonl` 增量。同一文章目录只允许一个发布机械链写者，心跳不是重开同一命令的理由。
-
-## 🔎 静态预检（写完正文就跑，别等被打回）
-
-```bash
-python "$SKILL/scripts/pipeline.py" preflight
-```
-
-一次跑完**所有不依赖生图/排版/网络的静态检查**：闸门锚点文件、**标题门**、外审产物、
-H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP READ / SOURCES、
-金句库来源标记、`visual-plan.json` 合法性。
-
-🔴 **为什么单列一条元指令**：一次实跑账本 —— `verify_publish` 反复 8 轮、
-`verify_layout` 6 轮、`format_layout` 4 轮。逐条复盘，卡住的**全是纯静态检查**，
-却散落在链条各处：开篇标识要等排版才报（迟 3 个阶段）、金句库来源标记要等
-`finalize` 才报（迟 5 个阶段）。每迟报一个阶段 = 一次「回头改 → 重跑中间所有步骤」。
-这条命令不花任何配额，**写完正文跑一次，能省掉后面大半的返工**。
-
-**视觉迁移不得改作者默认：**换到 `sansheng-image` 只替换出图执行者；封面、正文各自沿用 write 的既定视觉合同。规划前核对 `article-meta.yaml` 与 profile 的 `visual.stylebook`，不能擅自把正文风格套给封面，或把旧默认说成“只适用于宝玉”。
-
-## 快速路由（🔴 = 进该阶段前必读）
-
-| 意图（含该行必要约束） | 读 |
+| 用户本轮要什么 | 读取与终点 |
 |---|---|
-| 🔴 写资讯快讯 / 教程（先读执行卡；其余大文档只在拿不准时按卡上出处查） | 执行卡-资讯快讯.md / 执行卡-教程.md（`scripts/exec_cards.py check` 守着与源章节同步） |
-| 新选题 / 写篇文章 / 聊方向 | outline.md |
-| 展开正文 / 继续写 / 改稿（写前先跑 `prep_writing.py` 聚合 `_prep-context.md` 再走 7 步准备） | writing.md + style-routes.md 对应章 + profile/corpus/authors/{X}.compact.md |
-| 给几版开头盲选 / 挑开头 / 换开头（2-3 版钩子 A/B/C 盲选不给理由，**创作阶段的盲选停顿点；主题曲另有手动交接等待，见 music.md**） | writing.md §开头候选盲选 |
-| 内容增强 / 素材不够尖（4 套策略，**大纲后写作前**） | content-enhance.md |
-| 材料够不够 / 来源边界 / 现实写作能写到哪一步 | material-integrity.md |
-| 丢录音 / 口述想法转文字 / 音频转写（转写 → **口述梳理** → 梳理稿当大纲主输入） | transcribe.md |
-| 想标题（公众号 / X，内联出 5 候选 + 7 条自检 + 推荐） | title.md |
-| 写作技法 / 开篇结尾 / 金句 | craft-techniques.md |
-| 文体专属（教程/方法论清单/技术解读，仅这三类加载；文体三选一的**选定**在 outline Step 3） | writing-genres.md |
-| 去 AI 味 / 磨稿 | polish-whitelist.md + anti-ai-filter.md |
-| 冷读外审（磨稿后排版前派**不同模型族** subagent，产 `_stutter-list.md`，与事实复核同窗口并行） | semantic-review.md |
-| 事实复核 / 数据版本价格核验（磨稿后排版前派**无上下文** subagent，产 `_fact-check.md`，preflight 硬断言 exit 2） | fact-check.md |
-| 排版 / 转HTML / 导读栏 / 文末继续阅读与信息来源卡 | layout.md |
-| 排版兼容 / 表格 / 卡片 / 平台过滤 | wechat-compat.md |
-| 排版踩坑 / 样式异常（**按需，日常 SOP 不读**） | layout-reference.md |
-| 🔴 改任何颜色/圆角前必读（视觉 SSOT，改一处全局生效） | design-tokens.md |
-| 🔴 任何生图前必读；真人真事主动搜真实新闻照按 16:9 截取、**禁 AI 生成人物肖像**（新闻人物/重大事件同此） | image-routing.md |
-| 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
-| 生成音乐 / BGM / 主题曲、改歌名歌词风格、主题曲或播客封面（封面画锚点不画论点：标题里的专名本身，单主体、深底调色板、最多一个短标号，46 px 盲配验收；歌曲 150–210 秒；MiniMax 手动生成，Lyria 暂停） | music.md |
-| 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链）；新文章默认走画风库 schema2（stylebook-service），由这里进入实际制作、QA、装配、封存与阅读流程，详细边界见 stylebook-contract.md；schema1 宝玉路线保留给历史文章与显式选择 | release-runtime.md |
-| 作者明确要公众号动态插图：选上下文解释任务，调用 image 动态入口；接收、明确采用后进入现有装配与整篇阅读，默认仍为静态 | article-motion.md |
-| 发布状态、凭证与人工边界说明 | publish.md |
-| 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |
-| 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |
-| 转图文 / 拆图文（**低频能力**；仅按篇显式要求时用；图片也是文章，先定唯一传播命题） | xhs-storyboard.md |
-| 一稿多投 / 转小红书发微博 / 转播客 / 多渠道分发（**可选模块，默认关闭且不随正式链接自动触发**；小红书 3:4、微博 1:1 分别生图） | distribute.md |
-| 转 X（Twitter）文章 / 发推特长文（**可选，按篇显式触发**；走登录态浏览器，`x_article.py` 建草稿→校验→预览→发布→回读；主帖说明文字写法见 x-caption.md；改 `定稿.x.md` 前先读 §X 版写法：首行给结论、声明挪文末、问句与「不是…是…」每千字 ≤1，脚本体检不过拒发） | x-article.md |
-| 全流程自动驾驶（并行只用于独立工作单元；定稿后的机械链串行） | autopilot.md（需要并行任务合同细节时再按需读 orchestration.md；派 fan-out/双复核时再按需读 agent-contracts.md 对应节，42KB 契约集不无条件加载） |
-| 🔴 查铁律 / 确认约束（**进入发布/排版/生图前必读**） | iron-rules.md |
-| 学某文排版（Agent 抓 URL 分析→排版参考库） | — |
-| 我改了 / 学习我的修改（draft vs final diff 提 pattern 写 playbook.md） | learn-edits.md |
-| 复核 skill / skill 自省进化 | skill-review.md |
+| 新文章、选题、大纲、正文 | [autopilot.md](references/autopilot.md)，按当前阶段读取写作资料；作者确认定稿后再进入制作 |
+| 局部改文字、换图、调排版 | 只读取对应阶段；已有“交到草稿箱”授权时继续交付，否则止于指定修改 |
+| 已有定稿，继续制作或交草稿 | [release-runtime.md](references/release-runtime.md)；先 `pipeline.py --dir <文章目录> status`，核对当前产物后从未完成处继续 |
+| 已正式发表，提供永久链接 | `finalize <链接>`，依 [publish.md](references/publish.md) 完成已授权收尾；不自动触发新的社媒分发 |
 
-**子命令快捷入口：** `写 选题`/`写 大纲`→outline ｜ `写 正文`/`写 展开`→writing ｜ `写 开头候选`/`盲选开头`/`挑开头`→writing §开头候选盲选 ｜ `写 标题`→title ｜ `写 音乐`/`写 BGM`→music ｜ `写 排版`→layout ｜ `写 发布`→publish ｜ `写 图文`/`转图文`→xhs-storyboard ｜ `写 分发`/`一稿多投`/`发微博`/`转播客`→distribute ｜ `发推特`/`转 X 文章`→x-article ｜ `写 状态`/`写 进度`→`pipeline.py status` ｜ `全流程`/`走一遍流程`→autopilot ｜ `复核 skill`/`skill 自省`/`skill 复盘`/`skill 进化`→skill-review
+“完整流程”指本篇已启用、已授权的内容全部完成，不等于把全部可选模块各跑一次。恢复时区分作者正文、图片、版式、音频和发布信息的变化；未改变的有效产物复用。`status` 的旧阶段标签不是当前文件已通过的证据，消费者验收才是准据。
 
-### 社媒交接完成条件（脚本与手工浏览器共用）
+## 必须保持的边界
 
-「发微博」默认交付平台专属方图＋文案；「发推特」默认交付 Articles 全文＋封面＋原位正文图＋推荐短说明。只有用户明确要求纯文字/普通短帖才可改变产物。小红书停用不取消微博图片；「我来点发送」只改变最后一步操作者，不减少内容。
+- 作者拍板用 `approve blueprint|draft --words "<实际原话>"` 记录；`adopt-final` 接管定稿，不创造审批。已有授权持续有效，不重复询问；委托 Agent 完成交付不写成“作者已经看过当前新片”。
+- 内容、来源、作者授权、最终文件和官方草稿读回必须真实。禁止手改状态或伪造通过记录。失败先修根因；相同输入、相同失败连续出现时先诊断，不机械重渲。
+- 默认自动终点为微信草稿箱，唯一写入口 `release-to-draft`。公众号只走 API；浏览器操作需作者单独要求。API 不支持的原生组件交付文件和插入说明。正式发布、原创与赞赏由作者操作。
+- 生图、排版或发布前读 [iron-rules.md](references/iron-rules.md)；实际制作路线从 [image-routing.md](references/image-routing.md) 进入。旧 schema1 仅用于历史文章或显式选择。
+- 新文章主题曲按 [music.md](references/music.md) 交付 MiniMax 生成单，作者已给的音乐按真实来源复用。Lyria 自动通道暂停。启用公众号播客时，保持“导读 → 主题曲卡 → 播客卡 → 正文”，音频在交草稿前齐备。
+- schema2 的已确认正文可先运行 `podcast-pregen`，与图片制作并行；按正文、标题、提示词及生成参数核对音频来源，图片装配变化不要求重新生成播客。同一篇的正文、选图、排版与发布写操作由一个控制者负责。
+- 长任务报告实际阶段与剩余问题；工具返回“等待”不是失败，也不是完成。不要为了检查状态重复启动生成或发布。
 
-先读对应 reference，再执行。具备运行条件时复用既有自动化；工具限制迫使改走手工/CUA 时，仍须做同样的回读验收。禁止把渠道状态机之外的自制「文字已填」回执当成图文/长文完成。
+## 按阶段读取
 
-向作者交接前，将真实 UI 观察写入 `过程记录/_social-browser-handoff.json`，运行 `python3 scripts/social_handoff.py <文章目录> --only weibo,x`（只列本次请求渠道）；合同见 [social-handoff.md](references/social-handoff.md)。未通过就报告具体剩余项，不能说「都已准备好」。通过只表示预填就绪，不表示已发布；最终发送由本次授权决定。
+| 当前工作 | 参考 |
+|---|---|
+| 选题、大纲、文体选择 | [outline.md](references/outline.md) |
+| 正文、开头候选、展开 | [writing.md](references/writing.md)；需要时再读 craft-techniques.md、writing-genres.md |
+| 标题 | [title.md](references/title.md) |
+| 口述、录音转文字 | [transcribe.md](references/transcribe.md)，先转写与口述梳理 |
+| 磨稿、去 AI 味 | [polish-whitelist.md](references/polish-whitelist.md)、[anti-ai-filter.md](references/anti-ai-filter.md) |
+| 事实复核、冷读 | [fact-check.md](references/fact-check.md)、[semantic-review.md](references/semantic-review.md)；独立上下文，实际执行方式如实记录 |
+| 封面与静态配图 | [image-routing.md](references/image-routing.md)、[cover-styles.md](references/cover-styles.md)；schema2 的具体合同见 stylebook-contract.md |
+| 明确要求动态插图 | [article-motion.md](references/article-motion.md)，先确定动作的解释价值与小样，再做正式交接 |
+| 音乐、音频封面 | [music.md](references/music.md) |
+| 排版、导读、文末卡片 | [layout.md](references/layout.md)；改颜色或圆角前读 design-tokens.md；平台问题读 wechat-compat.md |
+| 制作、恢复、微信草稿 | [release-runtime.md](references/release-runtime.md)、[publish.md](references/publish.md) |
+| 已发表文章搬进永久目录 | [physical-archive.md](references/physical-archive.md)，所有写者退出后执行 |
+| 小红书、微博图文 | [xhs-storyboard.md](references/xhs-storyboard.md)、[distribute.md](references/distribute.md)，按篇显式触发 |
+| X 文章、推特长文 | [x-article.md](references/x-article.md)，说明文字见 x-caption.md |
+| 学习作者改稿 | [learn-edits.md](references/learn-edits.md) |
+| 完整复核本 Skill | [skill-review.md](references/skill-review.md)，按真实记录区分执行问题与规则问题 |
 
-## ✍️ 写作核心七条（语义层正向规则 — 七个章节指针的**目录**，唯一 single-source）
+## 共享上下文与预检
 
-> 🔴 本节只是指针目录、**非可单独执行的「够用版」**--摘要在场模型会跳过正文（已知失败模式）。写作期真正内化 `_prep-context.md`（`prep_writing.py` 渲染，§〇 四原则置顶），磨稿期按每条指针**进对应章节逐条打卡**，别只看目录。
-> 🟡 诚实边界：七条主要靠「写前喂料 + 写后语义审查」；`exit 2` 硬门只拦正则/计数抓得到的表层指纹。`audit_quant_signals` 对部分句式风险只发软提示，不能证明材料真实或因果成立；语义层靠异模型评审 + 事实复核，别当已机器全自动落地。
+创作或改变品牌表达时，读取配置 profile 的 `context.md`；有 `brand-net.md` 时按 outline 的织网三问执行。局部校字、换单图或机械排版不重读整套创作资料。profile 由 `profile_config.py` 解析；未配置时使用 `profile.example/`，不复制个人资料。模板默认身份、色板和风格按 profile 与 style-routes.md，不从旧会话猜。
 
-> 🔴 **三条直球守则先于本节七条**：① 简洁（每个字都得挣到位置）② 结论先行（资讯/成果：第一句下判；深度随笔：手册可 opt-out 第一句，核心判断须在第一个 H2 之前）③ 不用小说技法（不设悬念、不埋倒钩、不延迟揭示到文末）。①③ 任何风格路由不豁免；② 按开篇策略 + compact opt-out。正文细则 → writing.md §三条直球守则 / §规则冲突优先级；磨稿减法 → polish-whitelist.md；**标题另有专门写法**（`分类标签 | 对象 + 可得物`，默认 A 对象 + 可得物，其次 B 我做了什么 / C 选型对比 / D 事件 + 解读；不设字数上限）→ title.md §核心写法。
+新文章用 `prep_writing.py` 聚合品牌与语料；创作或新配图方案只读近三篇相关摘要去重。金句库、作品库位置从 profile 解析，不能硬编码第二份。子任务需要并行合同才读 orchestration.md / agent-contracts.md；排障才读 visual-qa.md / layout-reference.md。
 
-1. **材料先承重**（每个核心 H2 映射真实材料，材料不足就补/缩/停）→ material-integrity.md
-2. **来源不过界**（事实、自述、转述、推断、未知分开；顺序≠因果≠动机）→ material-integrity.md + fact-check.md
-3. **逐段有新增**（事实/动作/例子/区分/后果至少推进一项）→ material-integrity.md + anti-ai-filter.md §3.1
-4. **So What 按需兑现**（后果没显现才追问，已经成立就停）→ anti-ai-filter.md §8.1
-5. **作者声来自知识路径**（为什么知道、什么改变判断、哪里不确定，不强塞「我」）→ outline.md §1.5
-6. **可信细节会停笔**（有来源的动作/物件/原话胜过精确幻觉，情绪成立就删解释尾巴）→ anti-ai-filter.md §2.3.5
-7. **句间引力**（上句尾留钩子、下句头接住；顶真 + 旧信息在前新信息在后）→ **单一来源** writing.md §句间引力
+正文完成先运行 `pipeline.py preflight`，一次发现纯静态问题。不要等生图、音频都完成后才检查标题、章节、加粗、来源块和计划合法性。检查实现是唯一判据，入口不再复制完整检查清单。
 
-## 特殊约定（每轮解析对话都用）
+## 交付与收尾
 
-- **「」批注：** 「」内是批注非正文--指令类直接执行，参考类作上下文。**「素材」标记：** 归入素材分拣表。**「入囊」标记：** 自动沉淀 profile 的选题储备文件对应分类作选题储备。
-- **素材按需读取：** 只读取本轮指定或与当前内容相关的素材；本轮需要把**音频文件**（mp3/m4a/wav 等）作为写作输入时，才跑 `scripts/transcribe_audio.py` 转写，再按 transcribe.md 做**口述梳理**（产 `<同名>.梳理.md`） -- 大纲吃梳理稿，不直接拿转写稿写文章。**事实验证：** 需核实的事实/数据直接搜，不问创作者。
-- **🔴 破折号统一 `--`：** 给读者的文字里所有破折号用两个英文连字符 `--`，禁全角。
-- **🔴 铁律总纲 iron-rules.md：** 硬约束一页索引，按 发布主链/视觉/排版/内容与归档/失败语义 五节组织（**不可 skip 的 stage**/生图后端与 QA 硬门/**金句卡禁装饰引号**/音乐卡位置/数据图防幻觉/文末 SOURCES 固定顺序/敏感议题用词防下架 等）。**进入发布/排版/生图前必读。**
+- 产物保存在当前文章目录，机器过程件放 `过程记录/`；`handoff-assets` 把需要手动上传的音频、封面放在文章第一层。
+- 草稿交付必须有当前版本的官方读回凭证；同一候选创建成功、读回失败时重试读回，不重复建草稿。
+- 报告草稿交付时附可复制朋友圈文案，按 publish.md 改写自动基线。用户只要朋友圈文案时直接写，不启动整篇流程。
+- `archive` 只是作品库登记；实体搬运用 `physical-archive`，不手动改 articles.md、作品看板等派生视图。
+- 正式发表后的完整任务以 `finalize` 和 `closeout-check` 为准；仅交草稿不冒称正式发表或官网已更新。
 
-## 🔄 skill 自省机制
-
-`contracts.py`/`format_layout.py`/`pipeline.py` 把 v2 观察记录追加到 `scripts/profile_config.py::observations_file()` 解析出的 `<profile>/flywheel/_skill-observations.jsonl`（未配 profile 才回退仓根）。复核时同时统计原始尝试与每篇最新结果，避免重跑放大失败率；旁观者只诊断，改动由用户拍板。
-
-## 排版模板 / 配置 / 发布脚本
-
-- **HTML 组件模板**（导读栏/H2-PART/H3 时间线/Case/要点/金句卡/链接卡/深读/推荐/关注卡）在 `templates/`；**排版进 layout.md** 看工作流与组件清单、从 `templates/` 读代码。🔴 金句卡禁用 `&ldquo;`（部分平台渲乱码），出处行=发丝线 + 淡化右对齐。
-- **`article-meta.yaml`：** 每篇目录持久化参数（导读文案/H2 风格/封面关键词/`weave`/`modifier_style`，模板 `templates/article-meta.template.yaml`），`format_layout.py` 自动读、CLI 参数优先。
-- **定稿后运行时**统一见 release-runtime.md（关键入口：`approve draft --words` → `adopt-final` → 交付 MiniMax 主题曲生成单 → `compile-visuals` → `render-visuals` → `visual-qa` → `seal visual` → BGM → `podcast-pregen`（显式嵌入时）→ 排版 → `release-to-draft` → `handoff-assets` 将上传文件放在文章目录第一层 → 人工插入双音频后正式发布（不要求确认试听） → `finalize <永久链接>`）。`finalize` 先用永久链接自动做正式文章双音频补验（官方已发表内容 API；返回 `48001` 时严格降级为官方公开页 + 原草稿回执证据链），发布前草稿读回 `wechat-audio-check` 只是可选自检；草稿被回收返回 `40007` 不得伪造任何凭证，细则见 release-runtime.md §6。视觉与发布的全部硬约束以 iron-rules.md §视觉/§发布主链（及各脚本非零退出）为准，本行不再抄写第三份；🔴 **禁手改 `articles.md` / `works-dashboard.html`**。
-
-## 运行时数据文件（语料池，勿整段复制进上下文）
-
-- **统一作品库 SSOT：** 实际路径只认 `scripts/profile_config.py::works_file()`（默认 `{数据目录}/works.yaml`，可由 `SANSHENG_WRITE_WORKS_FILE` 重命名）；文章+视频每篇一条。新文章构思或新配图方案前读取近 3 篇的相关摘要做维度/收尾/风格去重；局部校字、既定图片替换不重跑创作去重；发布后 `archive` 写入。`articles.md` 与 `works-dashboard.html` 是自动渲染视图（🔴 禁手改）；命令输出必须打印解析后的真实绝对路径，旧 `history.yaml` 已冻结。
-- **`prep_writing.py` 写作前自动聚合进 `_prep-context.md`（不必手翻）：** profile 语料池的 风格示例库 / 金句库（按主题）/ 反例对照库 / voice 语料（gate：>200 字≈2-3 段即注入）+ `profile/corpus/authors/{X}.compact.md`（用户自备的作者风格手册；无自备手册时注入仓内原创的 `profile/corpus/voice-samples.md` 做基础人味兜底）。金句库路径只认 `profile_config.py::golden_lines_file()`；已有库在别处时用 `SANSHENG_WRITE_GOLDEN_LINES_FILE` 直指，禁止复制第二份。
-- **按主题人工挑读（非自动）：** 若 profile 自带精选样本库 `profile/corpus/samples/{作者}/`，写作前可按当前风格路由抽读 2-3 篇（无对应作者回退 `profile/corpus/voice-samples.md`）。按需查 profile 里的品牌规范 / 选题储备文件。
-
-## 过程输出与永久归档目录
-
-```
-{数据目录}/{N}-{选题名}/
-  ├── 大纲.md  定稿.md  定稿.html  cover.png  {歌名}.mp3
-  ├── 音乐封面.png  播客 | {文章标题}.mp3  播客封面.png
-  ├── 素材/ ← 只放正文插图；音频封面不放这里
-  └── 过程记录/ ← 机器回执与过程文件（任务单、草稿/音频凭证、主题曲清单、朋友圈文案、审批等）；
-                 旧文章第一层已有的沿用第一层，`定稿.html.bak-*` 排版验收后自动清理
-
-{SANSHENG_WRITE_ARCHIVE_DIR}/{N}-{选题名}/
-  └── 全部流程完成后的永久成品；含 过程记录/_physical-archive-receipt.json
-```
-新篇用 `pipeline.py new "<选题名>" --genre <文体>` 建目录（编号取数据目录、归档目录与作品库的最大序号加一；不复制上一篇）。第一处是工作区过程目录，第二处才是长期存档；实体归档后默认不在两处保留重复副本。
-
-## 品牌身份（fallback 兜底 — 正常优先读 `profile/context.md`）
-
-> ⚠️ 仅当 `profile/context.md` 与回退 `profile.example/context.md` 均不存在时以本节为准。
-
-- **品牌名 / 账号名：** 由 profile 提供（示例见 `profile.example/context.md`）｜ **主题色（primary）：** `#2F6F8F`（中性 slate，改样式见 design-tokens.md；六套预置主题 slate/ink/sage/jade/amber/plum 见 `profile/brand.yaml`）
-- **风格路由：** 主路由为 profile 自备的作者风格手册（`profile/corpus/authors/*.compact.md`）**单选其一**；可叠加 modifier 手册 0-1 个组合（**不当主路由用**）；文体三选一（深度文/教程文/方法论清单文，细则 outline Step 3）。**完整清单与叠加机制见 style-routes.md**（modifier 由 `prep_writing.py` 自动叠进 _prep-context）。无自备手册时回退 `profile/corpus/voice-samples.md`。
-- **品牌规范 / 创作者人设：** `profile/context.md`（中性示例见 `profile.example/`）。
-
-## When NOT to Use（反向路由：交别的工具 / 不触发）
-
-| 用户意图 | 应该用 | 不要用本 skill |
-|---|---|---|
-| 先把话题/背景查清、看各方怎么说（再决定写不写） | **你惯用的调研工具**（多源+交叉验证+归纳）| 调研交调研工具；"值不值得写"由本 skill「写 选题」阶段做 |
-| 单独打磨/锻造一个标题（无正文） | 本 skill「写 标题」（title.md） | 纯标题打磨归本 skill 内联锻造 |
-| 已发布文章 数据复盘/涨粉/阅读量诊断 | **你的数据分析工具** | 本 skill 不处理已发布数据 |
-| 已写好文章 转短视频口播/分镜 | **你的视频 skill** | 本 skill 出文章不出视频脚本；定稿后转视频交视频工具，不越界写口播 |
-| 通用中文写作（不需要品牌约束）| 原生写作即可 | 品牌约束会污染通用写作 |
-| 英文内容 / 纯代码 / Git 同步 / 环境配置 | 默认流程 | 本 skill 专为中文长文设计 |
-
-**衔接规则 · 选题/找素材调研分流：** **轻素材**（核一事实/补一数字/查一名词/确认时间价格）→ 按宿主共享搜索路由做定向查询；**深素材**（有争议、多来源核验或成体系背景研究）→ 按任务需要组织研究，独立复核有明确收益且宿主允许时才委派，写时手动引其事实底座与信源--**不自动注入**素材、不预填 meta。拿不准默认轻素材自己搜。
-
-## references 三级分层（按加载时机分层）
-
-- **L1 · 启动必读：** 新文章读 autopilot；作者定稿后的机械工作只读 release-runtime；进入排版/生图/发布前读一页 iron-rules。`profile/context.md` 按创作/品牌任务读取，`profile/brand-net.md` 仅用于启用织网的大纲或归档阶段；已加载且未变化的内容不重复读取。
-- **L2 · 阶段按需（路由触发时加载）：** 主流程各 reference（即上「快速路由」表所列，含实体归档 `physical-archive.md`）+ `profile/corpus/authors/*.compact.md`（用户自备，数量不定，prep_writing.py 自动聚合）。
-- **L3 · 排障备查（低频/进阶/历史，日常不读）：** layout-reference / visual-qa（接复核器 + 视觉闸三种静默失效）/ orchestration / agent-contracts / learn-edits / skill-review。
+中文正文使用 `--` 代替全角破折号；`「」` 中的作者批注按上下文执行，不能直接混入正文。「入囊」仅沉淀选题。普通短回复、代码文档、晨报、视频制作不启动本流程。

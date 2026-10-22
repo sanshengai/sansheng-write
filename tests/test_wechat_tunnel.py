@@ -129,3 +129,28 @@ def test_falls_back_to_tunnel_only_on_whitelist_error(monkeypatch):
     with pytest.raises(W.WechatError) as e:
         _pub()
     assert e.value.errcode == 40164
+
+
+def test_get_draft_uses_same_whitelist_fallback_without_creating(monkeypatch):
+    monkeypatch.delenv("SANSHENG_WRITE_WECHAT_TUNNEL", raising=False)
+    _fake_world(monkeypatch, direct_ok=False)
+    seen = []
+    def post(url, payload, step):
+        seen.append((url, payload, step, W._OPENER is not None))
+        return {"news_item": [{"title": "old"}]}
+    monkeypatch.setattr(W, "post_json", post)
+    assert W.get_draft(media_id="OLD", app_id="a", secret="s")["news_item"][0]["title"] == "old"
+    assert len(seen) == 1 and seen[0][1:] == ({"media_id": "OLD"}, "draft/get", True)
+    assert W._OPENER is None
+
+
+def test_get_non_whitelist_error_is_not_retried_in_tunnel(monkeypatch):
+    monkeypatch.delenv("SANSHENG_WRITE_WECHAT_TUNNEL", raising=False)
+    _fake_world(monkeypatch, direct_ok=True)
+    before = _FakeTunnel.opened
+    def fail(*args):
+        raise W.WechatError("invalid media", errcode=40007, step="draft/get")
+    monkeypatch.setattr(W, "post_json", fail)
+    with pytest.raises(W.WechatError) as err:
+        W.get_draft(media_id="bad", app_id="a", secret="s")
+    assert err.value.errcode == 40007 and _FakeTunnel.opened == before

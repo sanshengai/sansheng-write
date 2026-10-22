@@ -149,3 +149,53 @@ def test_incomplete_independent_answer_is_saved_as_failed_evidence(tmp_path, mon
     verify_candidate_review(tmp_path, Path(report["report_path"]), require_passed=False)
     with pytest.raises(ValueError, match="未通过"):
         verify_candidate_review(tmp_path, Path(report["report_path"]))
+
+
+def test_unchanged_pass_reuses_evidence_without_model_call(tmp_path, monkeypatch):
+    made = candidate(tmp_path, monkeypatch)
+    mocked_reviewer(monkeypatch)
+    path = Path(made['receipt_path'])
+    first, errors = review_candidate(tmp_path, path)
+    assert not errors
+    reviewer = importlib.import_module('stylebook.qa.reviewer')
+    monkeypatch.setattr(reviewer, 'review', lambda *a, **k: pytest.fail('unchanged input must not call a model'))
+    second, errors = review_candidate(tmp_path, path)
+    assert not errors and second['reused'] is True
+    assert second['report_path'] == first['report_path']
+    # Mutating the actual final pixels cannot preserve that cached green result.
+    (tmp_path / made['files']['main']).write_bytes(b'changed')
+    third, errors = review_candidate(tmp_path, path)
+    assert third is None and errors
+
+
+def test_known_objection_cannot_be_overridden_by_cached_pass(tmp_path, monkeypatch):
+    from scripts.stylebook_acceptance import reject_candidate
+    made = candidate(tmp_path, monkeypatch)
+    mocked_reviewer(monkeypatch)
+    path = Path(made['receipt_path'])
+    first, errors = review_candidate(tmp_path, path)
+    assert not errors
+    reject_candidate(tmp_path, path, '实际发现标题遮挡')
+    second, errors = review_candidate(tmp_path, path)
+    assert second is None and '异议' in errors[0]
+
+
+def test_qa_change_expires_review_but_keeps_generation_and_pixels(tmp_path, monkeypatch):
+    from scripts.stylebook_workflow import generation_requests
+    from scripts.stylebook_review import production_inputs
+    made = candidate(tmp_path, monkeypatch)
+    mocked_reviewer(monkeypatch)
+    report, errors = review_candidate(tmp_path, Path(made["receipt_path"]))
+    assert not errors
+    qa_path = Path(importlib.import_module("stylebook.qa").__file__).resolve()
+    read_bytes = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda p: read_bytes(p) + b"\n# revised examiner" if p.resolve() == qa_path else read_bytes(p))
+    requests, errors = generation_requests(tmp_path)
+    assert requests and not errors
+    assert production_inputs(tmp_path, Path(made["receipt_path"]))[0]["production_id"] == made["production_id"]
+    with pytest.raises(ValueError, match="输入已改变"):
+        verify_candidate_review(tmp_path, Path(report["report_path"]))
+    compiler_path = Path(importlib.import_module("stylebook.compile").__file__).resolve()
+    monkeypatch.setattr(Path, "read_bytes", lambda p: read_bytes(p) + b"\n# changed compiler" if p.resolve() == compiler_path else read_bytes(p))
+    requests, errors = generation_requests(tmp_path)
+    assert requests is None and errors

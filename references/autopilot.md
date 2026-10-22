@@ -68,9 +68,9 @@ python "$SKILL/scripts/pipeline.py" status
    绝不改写审批文件。接管成功就交付主题曲生成单（见下一步）。
 6. **定稿后的机械链**
    - 只读 [release-runtime.md](release-runtime.md) 并按命令顺序执行。
-   - 视觉业务规划在本 Skill 内完成；外部 `baoyu-image-gen` 只渲染像素。
+   - 视觉业务规划在本 Skill 内完成；新文章走 sansheng-image 的 schema2 路线，schema1 宝玉路线只用于历史文章或显式选择。
    - BGM 是发布硬门。默认按 `music.md` 交付 `MiniMax-主题曲生成单.md`（歌名、主题、风格提示词、完整歌词、导出要求），**定稿接管成功就交付，不等配图做完**，作者生成音乐和配图并行；收到 MP3 后接入。Lyria 暂停，不自动调用或要求配置 Google Cloud。
-   - ⏱ **BGM 注入 AUDIO-CARD 后，启用了 `podcast.wechat_embed: true` 就立刻跑 `pipeline.py podcast-pregen`**。它先写入同级 PODCAST-CARD，再生成音频；随后才允许排版与草稿。未显式开启嵌入时，仍可预生成 RSS，但公众号保持单卡。
+   - ⏱ **BGM 注入 AUDIO-CARD 后，启用了 `podcast.wechat_embed: true` 就立刻跑 `pipeline.py podcast-pregen`**。schema2 在编译前预置标准音频卡、确认正文后即可生成，不等待图片制作；旧路线先写入同级 PODCAST-CARD。音频可与排版并行，草稿提交前必须齐备。未显式开启嵌入时，仍可预生成 RSS，但公众号保持单卡。
    - 固定首屏顺序是「导读 → 主题曲卡 → 播客卡 → 正文」；两卡同宽上下排列。
    - 草稿创建只运行 `release-to-draft`；作者人工插入两份微信原生音频后可直接正式发布，`finalize <永久链接>` 会先自动做正式文章双音频补验（发布前自检 `wechat-audio-check` 可选）。
 

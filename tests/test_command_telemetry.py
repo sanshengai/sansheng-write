@@ -52,11 +52,27 @@ def test_exception_is_recorded_and_reraised(captured):
     assert "exception:RuntimeError" in captured[0][0][3]
 
 
-def test_success_writes_nothing(captured):
+def test_success_records_completion_and_elapsed_time(captured):
     assert ct.run_observed("format_layout", lambda: 0) == 0
     with pytest.raises(SystemExit):
         ct.run_observed("format_layout", lambda: (_ for _ in ()).throw(SystemExit(0)))
-    assert captured == []
+    assert len(captured) == 2
+    assert all(row[0][2] == "ok" for row in captured)
+    assert all(row[1]["elapsed_ms"] >= 0 for row in captured)
+
+
+def test_host_wait_is_not_a_failure_but_other_exit3_is(captured):
+    assert ct.run_observed("pipeline.render-visuals", lambda: 3) == 3
+    assert captured[-1][0][2] == "waiting_tool"
+    assert captured[-1][1]["issue_codes"] == ["pending_host"]
+    assert ct.run_observed("pipeline.release-check", lambda: 3) == 3
+    assert captured[-1][0][2] == "fail"
+
+
+def test_failed_then_successful_retry_has_an_actual_latest_result(captured):
+    ct.run_observed("pipeline.review-stylebook-candidate", lambda: 1)
+    ct.run_observed("pipeline.review-stylebook-candidate", lambda: 0)
+    assert [row[0][2] for row in captured] == ["fail", "ok"]
 
 
 def test_lazy_stage_and_article_are_resolved_at_failure_time(captured):

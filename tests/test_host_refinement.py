@@ -51,3 +51,24 @@ def test_actual_collector_rejects_invalid_edit_chain(tmp_path, monkeypatch, muta
     record.write_text(json.dumps(submitted))
     result, errors = collect_host_result(tmp_path, record)
     assert result is None and errors
+
+
+def test_three_real_edits_keep_full_chain_and_reject_broken_middle(tmp_path, monkeypatch):
+    record, submitted, original = fixture(tmp_path, monkeypatch)
+    for i in (2, 3):
+        previous = submitted['output']['path']
+        edited = tmp_path / f'edit-{i}.png'
+        Image.new('RGB', (128, 128), (20 * i, 140, 100)).save(edited)
+        output = {'path': str(edited), 'sha256': sha(edited)}
+        submitted['refinements'].append({'backend': 'image_gen.imagegen', 'invocation_status': 'succeeded',
+            'tool_output': 'Synthetic test edit', 'call': {'prompt': f'Fix separate issue {i}',
+            'referenced_image_paths': [previous]}, 'output': output})
+        submitted['output'] = output
+    record.write_text(json.dumps(submitted))
+    raw, errors = collect_host_result(tmp_path, record)
+    assert raw and not errors
+    assert len(raw['submitted_result']['refinements']) == 3
+    submitted['refinements'][1]['call']['referenced_image_paths'] = [str(original)]
+    record.write_text(json.dumps(submitted))
+    raw, errors = collect_host_result(tmp_path, record)
+    assert raw is None and errors

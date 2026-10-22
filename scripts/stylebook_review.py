@@ -105,6 +105,18 @@ def review_candidate(cwd: Path, production_path: Path) -> tuple[dict | None, lis
     cwd = Path(cwd).resolve()
     try:
         record, task, files = production_inputs(cwd, production_path)
+        # Reuse only evidence that the same consumer would accept now. This
+        # still verifies source, pixels, methods, previews and known objections.
+        from importlib import import_module
+        acceptance = import_module((__package__ + "." if __package__ else "") + "stylebook_acceptance")
+        if any((cwd / "素材/stylebook-objections" / record["production_id"]).glob("*.json")):
+            raise ValueError("本候选已有实际异议；先修正图片，不能用重复模型复核覆盖异议")
+        for saved in sorted((Path(production_path).parent / "qa-reports").glob("*.json")):
+            try:
+                previous = acceptance.verify_acceptable_candidate(cwd, saved)
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+                continue
+            return {**previous, "report_path": str(saved), "reused": True}, []
         root, _ = _peer()
         contracts = importlib.import_module("stylebook.contract")
         qa = importlib.import_module("stylebook.qa")

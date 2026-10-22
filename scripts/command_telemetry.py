@@ -1,17 +1,15 @@
-"""命令级失败留痕：任何入口非零退出都写一条运行观察。
+"""命令执行观察：记录成功、失败、明确的等待状态与本次耗时。
 
-2026-09-23 审计 G6：观察日志（profile/flywheel/_skill-observations.jsonl）只记录跑完的
-闸门——预检失败、发布前硬门失败、排版前置门失败、播客上传失败、官网同步失败都在
-写日志之前就退出了，曾经一天 8 类失败一条都没留下，「skill 自省」看到的只是
-成功路径。这里在入口处统一兜底：命令执行期间旁听标准输出里带 ❌ / 🔴 / ✗ 的行，
-非零退出或未捕获异常时连同退出码写一条 ``command_exit`` 观察，然后照常退出。
-
-记日志出任何错都不影响主流程（与 contracts.log_observation 同一原则）。
+只按各命令的退出码合同解释等待；失败后的成功也必须留痕，不能用旧的
+单向失败记录推断最终失败率。execution_kind 区分生产、测试与未知运行。
+记录失败不影响业务执行、标准输出或原退出码。
 """
 from __future__ import annotations
 
 import collections
+import os
 import sys
+import time
 from typing import Any, Callable
 
 FAIL_MARKERS = ("❌", "🔴", "✗")
@@ -58,15 +56,23 @@ def _resolve(value: str | Callable[[], str]) -> str:
         return ""
 
 
-def _record(stage: str, code: object, article: str, extra: str = "") -> None:
+def _record(stage: str, code: object, article: str, extra: str = "", *, elapsed_ms: float = 0) -> None:
     try:
         from contracts import log_observation
 
         tail = " | ".join(list(_RECENT)[-3:])
         detail = f"exit={code}" + (f"; {tail}" if tail else "") + (f" | {extra[:120]}" if extra else "")
+        # Exit codes are command contracts: 3 is not globally a waiting state.
+        waiting = stage == "pipeline.render-visuals" and code == 3
+        verdict = "waiting_tool" if waiting else "ok" if code in (0, None) else "fail"
+        kind = os.environ.get("SANSHENG_WRITE_EXECUTION_KIND", "unknown")
+        if kind not in {"production", "test", "unknown"}:
+            kind = "unknown"
         log_observation(
-            stage, "command_exit", "fail", detail[:200], article=article,
-            issue_codes=[f"exit_{code}"], metrics={"exit": str(code)},
+            stage, "command_exit", verdict, detail[:200], article=article,
+            issue_codes=(["pending_host"] if waiting else [] if verdict == "ok" else [f"exit_{code}"]),
+            metrics={"exit": str(code), "outcome": verdict, "execution_kind": kind},
+            elapsed_ms=elapsed_ms,
         )
     except Exception:  # noqa: BLE001 - 自省是附加价值，不是关键路径
         pass
@@ -80,21 +86,25 @@ def run_observed(stage: str | Callable[[], str], func: Callable[..., Any], *args
     子命令名与文章目录时用）。
     """
     _RECENT.clear()
+    started = time.monotonic()
+
+    def record(code: object, extra: str = "") -> None:
+        _record(_resolve(stage), code, _resolve(article), extra,
+                elapsed_ms=round((time.monotonic() - started) * 1000, 3))
+
     original = sys.stdout
     sys.stdout = _Tee(original)
     try:
         result = func(*args, **kwargs)
     except SystemExit as exc:
-        if exc.code not in (0, None):
-            _record(_resolve(stage), exc.code, _resolve(article))
+        record(0 if exc.code is None else exc.code)
         raise
     except KeyboardInterrupt:
         raise
     except Exception as exc:  # noqa: BLE001
-        _record(_resolve(stage), f"exception:{type(exc).__name__}", _resolve(article), str(exc))
+        record(f"exception:{type(exc).__name__}", str(exc))
         raise
     finally:
         sys.stdout = original
-    if isinstance(result, int) and not isinstance(result, bool) and result != 0:
-        _record(_resolve(stage), result, _resolve(article))
+    record(result if isinstance(result, int) and not isinstance(result, bool) else 0)
     return result

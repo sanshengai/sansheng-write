@@ -504,6 +504,21 @@ def _stylebook_selected(cwd: Path) -> bool:
     return selected_at(cwd)
 
 
+def _stage_description(cwd: Path, stage: str, *, hint: bool = False) -> str:
+    """Guide the actual visual route without sending schema2 into legacy producers."""
+    if _stylebook_selected(cwd):
+        labels = {"cover": "画风库封面（沿用作者封面风格）", "infographic": "正文配图（按本篇计划逐图验收）", "logo": "品牌与最终视觉封存"}
+        hints = {
+            "cover": "依 references/stylebook-contract.md 编译本篇 schema2 计划；复用未改变且验收有效的图，只修受影响候选。",
+            "infographic": "按当前 visual-plan.json 制作所需正文图；动态仅在明确要求时经 article-motion 交接，不套用旧路线的固定张数。",
+            "logo": "使用 brand-stylebook-candidate 制作新候选并验收；选组装配后 --install-ledger，再 visual-qa / seal visual。不得对已验收图批量覆盖水印或压缩。",
+        }
+        override = (hints if hint else labels).get(stage)
+        if override:
+            return override
+    return (STAGE_HINTS if hint else STAGE_LABELS)[stage]
+
+
 def _stylebook_release_errors(cwd: Path) -> list:
     try:
         from .stylebook_release import stage_errors
@@ -2370,7 +2385,7 @@ def cmd_status(cwd: Path):
             extra += f"  ⚠️失败 {fc} 次"
         elif fc >= 1:
             extra += f"  失败 {fc} 次"
-        print(f"  {icon} {s:<13} {STAGE_LABELS[s]}{extra}")
+        print(f"  {icon} {s:<13} {_stage_description(cwd, s)}{extra}")
         if status in ("pending", "failed", "dirty", "waiting_author") and next_stage is None:
             next_stage = s
     print("─" * 55)
@@ -2396,12 +2411,12 @@ def cmd_status(cwd: Path):
         print("\n⏸ 下一步等待作者在微信后台正式发布并补 wechat_url；当前不可 archive。\n")
     elif next_stage and state["stages"].get(next_stage, {}).get("status") == "waiting_author":
         waiting = state["stages"].get(next_stage, {})
-        print(f"\n⏸ 下一步：等待作者拍板（{STAGE_LABELS[next_stage]}）")
+        print(f"\n⏸ 下一步：等待作者拍板（{_stage_description(cwd, next_stage)}）")
         print(f"   {waiting.get('required_author_action', '请作者完成检查点拍板后再继续。')}")
         if waiting.get("waiting_reason"):
             print(f"   当前卡点：{waiting['waiting_reason']}\n")
     elif next_stage:
-        print(f"\n▶ 下一步：{next_stage}\n  {STAGE_HINTS[next_stage]}\n")
+        print(f"\n▶ 下一步：{next_stage}\n  {_stage_description(cwd, next_stage, hint=True)}\n")
     else:
         _report_closeout(cwd)
 
@@ -2418,14 +2433,14 @@ def cmd_next(cwd: Path):
                 return
             if status == "waiting_author":
                 info = state["stages"].get(s, {})
-                print(f"\n⏸ 下一阶段等待作者拍板：{s} — {STAGE_LABELS[s]}")
+                print(f"\n⏸ 下一阶段等待作者拍板：{s} — {_stage_description(cwd, s)}")
                 print(f"  {info.get('required_author_action', '请作者完成检查点拍板后再继续。')}")
                 if info.get("waiting_reason"):
                     print(f"  当前卡点：{info['waiting_reason']}")
                 print()
                 return
-            print(f"\n▶ 下一阶段：{s} — {STAGE_LABELS[s]}\n")
-            print(f"  {STAGE_HINTS[s]}\n")
+            print(f"\n▶ 下一阶段：{s} — {_stage_description(cwd, s)}\n")
+            print(f"  {_stage_description(cwd, s, hint=True)}\n")
             return
     _report_closeout(cwd)
 
@@ -4210,17 +4225,12 @@ def _handoff_to_distribute(cwd: Path) -> bool:
 
 
 def cmd_podcast_pregen(cwd: Path):
-    """定稿冻结点预生成播客音频（2026-08-16 审计 P4）。
+    """已确认正文后预生成播客；schema2 与图片制作并行。
 
-    NotebookLM 生成实测 ~18 分钟，原本卡在 finalize 串行链中段、堵住后面的
-    官网同步（曾因它一失败，官网晚了 5 小时）。本命令允许在**最后一个会改写
-    `定稿.md` 的机械步骤之后**（assemble-release 的信息图机器块 + BGM 的
-    AUDIO-CARD 都已注入）生成同级 PODCAST-CARD 与音频；finalize 的 distribution 步靠
-    `podcast_episode.cmd_generate` 的预生成短路直接取件。
-
-    为什么闸在两个 marker 上：播客语义摘要会剥离全部机器装配块，但仍必须等
-    作者正文冻结；公众号嵌入开启时，PODCAST-CARD 还必须在 Markdown→HTML 前写入。
-    标题、正文、提示词或生成参数变化都会让预生成凭证失效。
+    播客输入沿用 distribute.source_text_for_channel，只消费作者正文。
+    release job 证明当前正文仍是获授权的定稿；视觉装配与正文音频同源检查
+    留在各自消费者和最终发布入口，不用图片完成状态阻塞音频生成。
+    旧路线继续保留原 marker 合同。
     """
     sys.path.insert(0, str(Path(__file__).parent))
     import distribute
@@ -4238,15 +4248,17 @@ def cmd_podcast_pregen(cwd: Path):
     # 该模式下改以 author_shots 契约（正文引用 ≥N 张作者供图且文件存在）作为
     # 视觉链已收口的判据，否则播客预生成会被一个永远不会出现的 marker 卡死。
     if _stylebook_selected(cwd):
-        from stylebook_assembly import verify_assembly
+        from release_job import validate_release_job
         try:
-            verify_assembly(cwd)
+            job, errors = validate_release_job(cwd)
+            if errors or not job:
+                gate_missing.append("当前已确认定稿：" + "；".join(errors or ["缺 release job"]))
             if distribute.podcast_wechat_embed_enabled():
                 from audio_cards import extract_cards, render_card
                 if extract_cards(text).get("podcast") != render_card("podcast", "AI 生成 · 双主持"):
                     gate_missing.append("编译前预置的标准 PODCAST-CARD（补齐后重新编译与验收）")
         except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
-            gate_missing.append("画风库装配契约：" + str(exc))
+            gate_missing.append("定稿来源契约：" + str(exc))
     elif _infographic_mode(cwd) == "author-shots":
         shot_errors = _author_shots_errors(cwd)
         if shot_errors:
@@ -4260,9 +4272,8 @@ def cmd_podcast_pregen(cwd: Path):
             cwd, "podcast_pregen", "fail",
             f"missing_gates={len(gate_missing)}", error_count=len(gate_missing),
         )
-        print(f"❌ 定稿尚缺：{'、'.join(gate_missing)}——预生成必须晚于全部")
-        print("   会改写 定稿.md 的机械步骤，否则音频与最终定稿哈希不一致，")
-        print("   finalize 取件短路失效、还得重生成一遍。先走完视觉链与 BGM。")
+        print(f"❌ 播客预生成条件未满足：{'、'.join(gate_missing)}")
+        print("   schema2 需要当前已确认正文与预置音频卡；无需等待图片制作。")
         raise SystemExit(2)
     # 先写卡再生成：这样排版可与耗时的 NotebookLM 任务并行；如果生成失败，
     # 发布素材门会因缺同源 audio.mp3/状态凭证而拒绝把空卡推入草稿箱。
@@ -4731,7 +4742,7 @@ def cmd_article_motion(cwd: Path, args) -> None:
         elif args.cmd == 'prepare-article-motion':
             result = article_motion.prepare(cwd, args.id, cwd / args.handoff)
         else:
-            result = article_motion.adopt(cwd, cwd / args.candidate, args.words, args.by)
+            result = article_motion.adopt_many(cwd, [cwd / item for item in args.candidate], args.words, args.by)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         print(f'❌ 文章动态插图交接失败：{exc}')
         raise SystemExit(2)
@@ -5486,7 +5497,7 @@ def _main_impl():
     p_motion.add_argument('--id', required=True, help='本篇已选定的正文插图 ID')
     p_motion.add_argument('--handoff', required=True, help='生图 Skill 导出的 article-media.json')
     p_motion_adopt = sub.add_parser('adopt-article-motion', help='按作者明确采用的原话选择动态候选；随后仍须装配与整篇阅读')
-    p_motion_adopt.add_argument('--candidate', required=True, help='本篇 prepared.json 路径')
+    p_motion_adopt.add_argument('--candidate', required=True, action='append', help='本篇 prepared.json 路径；可重复，一次替换整组失效旧片')
     p_motion_adopt.add_argument('--words', required=True, help='作者明确采用这支动图的实际原话')
     p_motion_adopt.add_argument('--by', required=True, help='作出采用决定的作者')
     p_read_sb = sub.add_parser("accept-stylebook-reading", help="封存当前整篇浏览器及宿主实际阅读记录")

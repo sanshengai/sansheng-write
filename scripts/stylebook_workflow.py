@@ -220,9 +220,9 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
             else:
                 key = str(contract_path)
             anchor["files"][key] = sha(contract_path)
-        # Bind actual production code used in generation/export/QA as well as the editorial method.
-        for rel in ["scripts/stylebook/cover_flow.py", "scripts/stylebook/overlay.py", "scripts/stylebook/export.py", "scripts/stylebook/qa/__init__.py",
-                    "scripts/stylebook/qa/binding.py", "scripts/stylebook/qa/reviewer.py"]:
+        # Pixel production owns these dependencies. QA code is bound by the actual
+        # review consumer, so changing an examiner does not invalidate generation.
+        for rel in ["scripts/stylebook/cover_flow.py", "scripts/stylebook/overlay.py", "scripts/stylebook/export.py"]:
             anchor["files"][rel] = sha(root / rel)
         anchor["digest"] = digest(anchor["files"])
         identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,

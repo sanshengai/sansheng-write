@@ -216,7 +216,7 @@ def prepared(cwd: Path, path: Path, batch: dict, plan: dict) -> dict:
     return value
 
 
-def resolve(cwd: Path, batch: dict, plan: dict) -> dict:
+def resolve(cwd: Path, batch: dict, plan: dict, *, replacing: frozenset[str] = frozenset()) -> dict:
     cwd = Path(cwd).resolve()
     active = cwd / SELECTION
     if not active.exists():
@@ -235,6 +235,10 @@ def resolve(cwd: Path, batch: dict, plan: dict) -> dict:
         path = local(cwd, item['candidate'])
         if sha(path) != item['candidate_sha256']:
             raise ValueError('作者采用之后动态候选改变')
+        if image_id in replacing:
+            # The immutable old adoption remains authenticated; only its obsolete
+            # production binding is superseded by an explicitly validated new candidate.
+            continue
         value = prepared(cwd, path, batch, plan)
         if value['id'] != image_id:
             raise ValueError('动态采用的插图 ID 不符')
@@ -246,16 +250,25 @@ def resolve(cwd: Path, batch: dict, plan: dict) -> dict:
 
 
 def adopt(cwd: Path, candidate: Path, words: str, by: str) -> dict:
+    return adopt_many(cwd, [candidate], words, by)
+
+
+def adopt_many(cwd: Path, candidates: list[Path], words: str, by: str) -> dict:
     cwd = Path(cwd).resolve()
-    if not words.strip() or not by.strip():
-        raise ValueError('必须按作者明确采用的原话记录；Agent 审片不代表采用')
+    if not words.strip() or not by.strip() or not candidates:
+        raise ValueError('必须提供候选与明确采用的实际授权；Agent 审片不代表采用')
     batch, plan = context(cwd)
-    value = prepared(cwd, candidate, batch, plan)
-    existing = resolve(cwd, batch, plan)
+    validated = [(path, prepared(cwd, path, batch, plan)) for path in candidates]
+    replacing = frozenset(value['id'] for _, value in validated)
+    if len(replacing) != len(validated):
+        raise ValueError('同一插图 ID 不能重复采用')
+    # Validate the old immutable selection and every unaffected item before writing.
+    resolve(cwd, batch, plan, replacing=replacing)
     active = cwd / SELECTION
-    items = json.loads(active.read_text())['items'] if existing else {}
-    items[value['id']] = {'candidate': str(candidate.resolve().relative_to(cwd)), 'candidate_sha256': sha(candidate),
-                          'user_adoption': {'state': 'adopted', 'by': by, 'words': words}}
+    items = json.loads(active.read_text())['items'] if active.exists() else {}
+    for candidate, value in validated:
+        items[value['id']] = {'candidate': str(candidate.resolve().relative_to(cwd)), 'candidate_sha256': sha(candidate),
+                              'user_adoption': {'state': 'adopted', 'by': by, 'words': words}}
     identity = {'schema_version': 1, 'contract': CONTRACT, 'items': items}
     selection_id = digest(identity)
     _immutable(cwd / '素材/motion-selections' / f'{selection_id}.json', identity)

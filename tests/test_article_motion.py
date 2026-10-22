@@ -257,3 +257,37 @@ def test_prepare_rejects_a_mutated_upload_path_that_flattens_animation(tmp_path,
                         lambda path: ('flattened.jpg', 'image/jpeg', b'flattened frame', 'mutant'))
     with pytest.raises(ValueError, match='变成了静态图'):
         M.prepare(tmp_path, '01', path)
+
+
+def test_replace_stale_motion_preserves_history_and_validates_new(tmp_path, monkeypatch):
+    candidate = prepared(tmp_path, monkeypatch)
+    old = M.adopt(tmp_path, candidate, 'old delegated adoption', 'Test agent')
+    # Make a second valid candidate with a distinct preparation identity.
+    source = candidate.parent / 'source/article-media.json'
+    base_sha = M.sha
+    monkeypatch.setattr(M, 'sha', lambda p: 'new-method' if Path(p) == Path(M.__file__) else base_sha(p))
+    replacement = Path(M.prepare(tmp_path, '01', source)['candidate'])
+    assert replacement != candidate
+    with pytest.raises(ValueError):
+        M.resolve(tmp_path, *M.context(tmp_path))
+    before = (tmp_path / M.SELECTION).read_bytes()
+    with pytest.raises(ValueError):
+        M.adopt_many(tmp_path, [replacement, candidate], 'replace', 'Test agent')
+    assert (tmp_path / M.SELECTION).read_bytes() == before
+    new = M.adopt_many(tmp_path, [replacement], 'replace under delegation', 'Test agent')
+    assert new['items']['01']['candidate'] != old['items']['01']['candidate']
+    assert (tmp_path / '素材/motion-selections' / (old['selection_id'] + '.json')).is_file()
+    assert M.resolve(tmp_path, *M.context(tmp_path))['01']['candidate'] == new['items']['01']['candidate']
+
+
+def test_replacement_cannot_hide_corrupt_selection_or_empty_input(tmp_path, monkeypatch):
+    candidate = prepared(tmp_path, monkeypatch)
+    M.adopt(tmp_path, candidate, 'adopt', 'Test agent')
+    before = (tmp_path / M.SELECTION).read_bytes()
+    with pytest.raises(ValueError):
+        M.adopt_many(tmp_path, [], 'replace', 'Test agent')
+    assert (tmp_path / M.SELECTION).read_bytes() == before
+    record = json.loads(before);record['items']['01']['user_adoption']['words'] = 'tampered'
+    (tmp_path / M.SELECTION).write_text(json.dumps(record))
+    with pytest.raises(ValueError, match='不可变'):
+        M.adopt(tmp_path, candidate, 'replace', 'Test agent')

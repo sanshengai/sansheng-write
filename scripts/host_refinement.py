@@ -11,8 +11,8 @@ def verify(submitted: dict, base_dir: Path) -> dict[str, Path]:
         if "base_output" in submitted:
             raise ValueError("宿主返修缺实际编辑链")
         return {}
-    if not isinstance(steps, list) or not 1 <= len(steps) <= 2:
-        raise ValueError("宿主返修须为一至两次实际编辑")
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("宿主返修须为非空的实际编辑链")
     if not submitted.get("base_tool_output"):
         raise ValueError("宿主返修缺原始生成的工具输出")
     files = {str(Path(__file__).resolve()): Path(__file__).resolve()}

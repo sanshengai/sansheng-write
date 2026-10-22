@@ -1440,12 +1440,12 @@ def _default_reader(cwd: Path) -> Reader:
         return read_external
 
     def read_official(media_id: str, expected: dict[str, Any]) -> dict[str, Any]:
-        token = _wechat_access_token(cwd)
-        response = _http_json(
-            "https://api.weixin.qq.com/cgi-bin/draft/get?"
-            + urllib.parse.urlencode({"access_token": token}),
-            payload={"media_id": media_id},
-        )
+        try:
+            from . import wechat_api
+        except ImportError:
+            import wechat_api
+        app_id, secret = _wechat_credentials(cwd)
+        response = wechat_api.get_draft(media_id=media_id, app_id=app_id, secret=secret)
         articles = response.get("news_item")
         if not isinstance(articles, list) or len(articles) != 1:
             raise RuntimeError(

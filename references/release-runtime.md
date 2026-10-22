@@ -27,13 +27,17 @@ python "$SKILL/scripts/pipeline.py" verify-release-job
 
 作者拍板后先用 `approve draft --words` 把作者原话逐字落成 `_draft-approval.md`（北京时间、审批来源、`审批结论：通过`；不再手写，封存失败自动回滚），再 `adopt-final`。接管只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录；缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。🔴 **接管成功就先交付 `MiniMax-主题曲生成单.md`**（2026-09-23 审计 F3，见 §3 第 2 步），再开始配图：作者生成音乐和 Agent 配图并行，不串行等。
 
+## 可以并行的工作
+
+schema2 在编译前预置标准音频卡，`adopt-final` 确认正文后即可启动 `podcast-pregen`。播客只消费去掉机器装配块的作者正文；图片制作、动图与音频可并行。正文、标题、提示词或音频参数改变时按现有同源摘要重新生成；只改图片和卡片样式不重做播客。最终发布仍核对完整视觉链及音频来源。
+
 ## 1. 生成受限视觉任务单
 
 ### 画风库路径（schema2，新文章默认）
 
-新文章默认用 `visual-plan.json` 的 schema2（`renderer.backend: stylebook-service`）；schema1 宝玉合同保留给历史文章和显式选择。schema2 已接入实际制作及视觉验收流程，完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 按 `renderer.backend` 分流：`stylebook-service` 由 CLI 直接调用画风库出图并自动回收原始底图，返回 0（`--jobs N` 调同时出图张数，默认 4；逐张打印进度与耗时，单张超过 300 秒会提示）；`host-imagegen` 才返回码 3，表示等待宿主自己调内置生图工具。之后按合同制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。隔离文章候选的视觉封存与阅读已有实跑证据，完整文章的上游定稿及发布验收仍待完成；不得据此宣布已能提交公众号。以下隔离预览入口继续保留。
+新文章默认用 `visual-plan.json` 的 schema2（`renderer.backend: stylebook-service`）；schema1 宝玉合同保留给历史文章和显式选择。schema2 已接入实际制作及视觉验收流程，完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 按 `renderer.backend` 分流：`stylebook-service` 由 CLI 直接调用画风库出图并自动回收原始底图，返回 0（`--jobs N` 调同时出图张数，默认 4；逐张打印进度与耗时，单张超过 300 秒会提示）；`host-imagegen` 才返回码 3，表示等待宿主自己调内置生图工具。之后按合同制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。视觉封存不等于草稿已交付，仍须本篇整篇阅读、发布预检及官方草稿读回。下列隔离预览入口仅用于规划试验，已有正式 schema2 任务不必再跑一遍。
 
-文章希望试用叁笙生图时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
+文章希望试用 `sansheng-image` 时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
 
 ```bash
 python "$SKILL/scripts/pipeline.py" compile-stylebook-preview \
@@ -113,16 +117,14 @@ python "$SKILL/scripts/pipeline.py" assemble-release
 ```
 2. 按 `music.md` 与 `templates/minimax-music-brief.template.md` 交付文章目录内的 `MiniMax-主题曲生成单.md`，给作者可点击路径——**这一步在 §0 接管成功时就做**，到这里只收 MP3。默认由作者在 MiniMax 网页手动生成；Lyria 暂停，不调用 `generate_article_bgm.py` 或要求 Google Cloud 登录。收到 MP3 后核实来源、创建并验证 `_music-manifest.json`，再用 `audio_cards.py` 插入 AUDIO-CARD。等待 MP3 时继续图片等独立工作，不伪造完成状态。
 3. 若 profile 显式配置 `podcast.wechat_embed: true`，立即运行 `pipeline.py podcast-pregen`：先插入同级 PODCAST-CARD，再生成 `dist/podcast/audio.mp3`。这是草稿前硬门，不得留到 `finalize`；未显式配置时保持历史主题曲单卡。
-4. 用外部 Markdown→WeChat HTML 转换器生成原始 HTML。
-5. 运行：
+4. 使用内置 `md_render.py` 生成微信 HTML，再运行 `format_layout.py 定稿.html --all --check`。schema2 的水印在逐图验收前制作，装配后只执行 `brand-stylebook-candidate --install-ledger`；不得再就地压缩或改写已验收图片。
+5. 只有 schema1 历史路线按其生成与水印合同执行下面的后处理，不能套到 schema2：
 ```bash
 python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
 node "$SKILL/scripts/add_logo.js" "素材/*.png"
 python "$SKILL/scripts/compress_images.py" 素材
 ```
-🔴 **微信只收 jpg / png**，webp/avif/heic/bmp/tiff 一律 `40005`，且上传器会**吞掉**
-这个失败、把本地 `src` 原样留在正文里（草稿一片坏图，而 `image_count` 数量对得上、
-校验全绿——2026-07-28 连推三版才发现）。三道防线已内建，不必手动记：
+静态正文图片使用 JPG/PNG；本篇采用的 GIF 通过永久素材接口上传，具体见 [article-motion.md](article-motion.md)。WebP/AVIF/HEIC/BMP/TIFF 不能原样传入静态正文图片接口。旧上传器曾吞掉 `40005` 并留下本地路径；现内置上传器遇错即停。三道防线已内建：
 `compress_images.py` 收图前自动转 PNG 并改写引用；`build_expected_draft` 推送前硬拦；
 `_compare_readback` 回读后兜底。
 
