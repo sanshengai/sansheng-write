@@ -1567,9 +1567,22 @@ def verify_publish_assets(article_dir: str) -> dict:
     }
     src_dir = base / '素材'
     if src_dir.exists():
+        motion_posters = set()
+        if (src_dir / 'article-motion-selection.json').exists():
+            try:
+                try:
+                    from .stylebook_assembly import verify_assembly
+                except ImportError:
+                    from stylebook_assembly import verify_assembly
+                assembled = verify_assembly(base)
+                motion_posters = {a['poster']['output'] for a in assembled['assets'].values()
+                                  if 'motion' in a}
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                errors.append(f'动态备用图来源无效：{exc}')
         png_files = sorted(
             p for p in src_dir.glob('*.png')
             if not p.name.startswith('_') and p.name not in SKIP_PNG
+            and p.relative_to(base).as_posix() not in motion_posters
         )
         missing = []
         for png in png_files:

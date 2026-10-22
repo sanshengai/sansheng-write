@@ -128,8 +128,14 @@ def context(cwd: Path) -> dict:
     body = {str((cwd / a['path']).resolve()) for a in sealed['manifest']['assets'] if a['id'] != 'cover'}
     if not body <= {item['path'] for item in images}:
         raise ValueError('整篇 HTML 缺当前计划的正文图')
-    return {'visual_seal_id': sealed['seal_id'], 'html_sha256': sha(html), 'images': images,
-            'method_sha256': sha(Path(__file__)), 'markdown_parser_version': markdown_version}
+    result = {'visual_seal_id': sealed['seal_id'], 'html_sha256': sha(html), 'images': images,
+              'method_sha256': sha(Path(__file__)), 'markdown_parser_version': markdown_version}
+    motions = [{'path': str((cwd / a['path']).resolve()), 'sha256': a['sha256'],
+                'duration_ms': sum(a['motion']['animation']['durations_ms'])}
+               for a in sealed['manifest']['assets'] if 'motion' in a]
+    if motions:
+        result['motions'] = motions
+    return result
 
 
 def validate_observation(cwd: Path, observation: dict, current: dict) -> dict:
@@ -178,6 +184,38 @@ def validate_observation(cwd: Path, observation: dict, current: dict) -> dict:
                 raise ValueError('实际视口截图格式或尺寸不同')
             picture.verify()
         bound[str(path)] = sha(path)
+    if current.get('motions'):
+        playbacks = observation.get('motion_playback')
+        if not isinstance(playbacks, list) or len(playbacks) != len(current['motions']):
+            raise ValueError('缺正文动图逐支实际连续播放记录')
+        for playback, expected in zip(playbacks, current['motions']):
+            if (not isinstance(playback, dict) or playback.get('path') != expected['path']
+                    or playback.get('sha256') != expected['sha256']
+                    or type(playback.get('cycles')) is not int or playback['cycles'] < 2
+                    or playback.get('width') not in {390, 430}
+                    or not isinstance(playback.get('method'), str) or not playback['method'].strip()
+                    or playback.get('checks') != {'all_states_readable': True,
+                                                   'meaning_matches_context': True, 'loop_continuous': True}):
+                raise ValueError('正文动图未完成手机宽度下两轮播放、全状态阅读与含义核对')
+            evidence = playback.get('evidence')
+            if not isinstance(evidence, list) or len(evidence) < 2:
+                raise ValueError('正文动图须保留两个实际不同状态的手机截图')
+            hashes = set()
+            for state in evidence:
+                screen = (cwd / state['path']).resolve()
+                at = state.get('at_ms')
+                if (not screen.is_relative_to(cwd) or sha(screen) != state['sha256']
+                        or type(at) not in (int, float) or not math.isfinite(at)
+                        or not 0 <= at < expected['duration_ms']):
+                    raise ValueError('正文动图状态截图或时点改变')
+                with Image.open(screen) as picture:
+                    if picture.format != 'PNG' or picture.width != playback['width']:
+                        raise ValueError('正文动图截图须来自对应手机视口')
+                    picture.verify()
+                bound[str(screen)] = sha(screen)
+                hashes.add(sha(screen))
+            if len(hashes) < 2:
+                raise ValueError('重复静止截图不能证明正文动图的不同状态')
     return bound
 
 

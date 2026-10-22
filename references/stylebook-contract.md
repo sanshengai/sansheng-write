@@ -4,14 +4,16 @@
 
 ## 当前可执行的步骤
 
+使用 S02 深炭品牌封面时，先通过 image 的 `cover-flow` 编译方形母版请求，按完整编译词实际生成并查看；必要时返修母版，保留生成链。母版须通过 S02 方形边距预检，再将 `cover.square_master` 写为 `{ "path": "本篇相对路径.png", "receipt": "本篇相对路径.json" }`。来源 JSON 的 `steps` 顺序保存原始生成及至多两次返修，每步保留实际 `backend`、`invocation_status`、`tool_output`、完整 `call`、输出绝对 `path` 与 `sha256`；返修须引用上一张实际输出。write 核对原始编译词、链路和字节后才使用 image 的标准扩图词生成横版，并仍需检查最终横版与微信方形裁切。不能在横版生成失败后，把裁切成方形的结果冒充方形母版。
+
 同一任务单采用 `schema_version: 2`、`workflow: stylebook-v1`：
 
 - `source.sha256`：`定稿.md` 的确切字节摘要；`source.author_content_sha256`：只去注册机器装配块后的作者正文摘要，使用 `assemble_release.author_content_sha256` 计算。
 - `article_plan`：画风库 v3/wxillus 的完整文章计划，`source.path` 指向当前 `定稿.md`。全文 coverage、原文引用和图意按画风库验证，允许零张正文图。
-- `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 及封面一致。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风库原有显式规则。
+- `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 一致；封面沿用自己独立的作者默认。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风库原有显式规则。
 - `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
   封面可选的风格：画风库 v0.4.0 起新增封面向风格（C74 丝网印海报、C75 暖纸克制双色、C76 杂志编辑封面、C77 深空等），选择器里按「公众号封面」用途列出，样图是标题写在图上的真实封面；不改写作 Skill 的默认。
-  封面单独选画风：默认封面与正文同一画风。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照生图 Skill本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风库 `references/recipes.md` 第 1 节。
+  封面单独选画风：默认分别继承 write 作者配置；两者不同则显式标记独立封面。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照生图 Skill本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风库 `references/recipes.md` 第 1 节。
 - `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风库的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。
 
 启用主题曲或嵌入播客时，先用 `audio_cards.upsert_card` 的标准模板把对应机器卡放进 `定稿.md`，再计算上述原文摘要并编译。播客卡只表示预留位置，不能证明音频已生成。主题曲使用 `upsert_card(final_md, "theme", "MiniMax 生成 · 中文人声")`；配置 `podcast.wechat_embed: true` 时使用 `upsert_card(final_md, "podcast", "AI 生成 · 双主持")`。从 `$SKILL/scripts` 导入该模块，`final_md` 是本篇 `定稿.md` 的 Path。不得手写卡片或改变已审批作者正文。
@@ -58,9 +60,11 @@ CLI 能核对请求、原文、方法、参考图与输出字节，但无法独�
 
 `views` 保存 390、430、900 三个实际视口，分别记录 `width`、`viewport_height`、`document_width`、`document_height`；`images` 按 HTML 图片顺序保存实际本地绝对 `path`、`sha256`、`loaded`、`natural_width`、`display_width`；`screenshot` 为本篇目录内完整页面 PNG 的 `path` 和 `sha256`。程序检查加载、溢出、当前图像字节和截图尺寸；文字、裁切与风格结论仍由宿主实际阅读提供，不将截图存在误说成语义自动验收。
 
-阅读入口绑定当前视觉 seal、整篇 HTML、全部本地图片、实际截图及阅读方法。它用 Python Markdown（`python3 -m pip install Markdown`）解析定稿，检查作者文字在 HTML 中完整且顺序保留，并绑定解析器版本；缺依赖时明确失败。发布前会重新核验 `素材/stylebook-reading-review.json`；缺记录、坏图、横向溢出、必要文字不清或任一绑定输入改变都拒绝。默认路线尚未切换，现有 schema1 宝玉路径继续按原合同独立验收；单图通过仍不能代表正式文章发布可用。
+阅读入口绑定当前视觉 seal、整篇 HTML、全部本地图片、实际截图及阅读方法。它用 Python Markdown（`python3 -m pip install Markdown`）解析定稿，检查作者文字在 HTML 中完整且顺序保留，并绑定解析器版本；缺依赖时明确失败。发布前会重新核验 `素材/stylebook-reading-review.json`；缺记录、坏图、横向溢出、必要文字不清或任一绑定输入改变都拒绝。现有 schema1 宝玉路径继续按原合同独立验收；单图通过仍不能代表正式文章发布可用。
 
-封面、正文图阶段及发布前视觉路由在显式 schema2 任务中调用当前完整计划的验收链，不再套用 schema1 的粘土风或至少四张图规则。正式目录中的 `infographic*.png` 必须恰好等于当前计划选中的正文图，零张正文图也必须有合格封面和全文复核；混入额外未验收图、缺图、旧报告或待生成请求均拒绝。导读小图、音频、HTML、上游审稿及归档等发布要求继续独立检查。
+封面、正文图阶段及发布前视觉路由在显式 schema2 任务中调用当前完整计划的验收链，不再套用 schema1 至少四张图规则；已声明的正文黏土风和封面风格仍须继承。正式目录中的 `infographic*.png` / `infographic*.gif` 必须恰好对应当前计划选中的正文媒体及已登记的静态备用图，零张正文图也必须有合格封面和全文复核；混入额外未验收图、缺图、旧报告或待生成请求均拒绝。导读小图、音频、HTML、上游审稿及归档等发布要求继续独立检查。
+
+作者明确要求文章动态插图时，按 [可选动态媒体交接](article-motion.md) 使用已审片、明确采用并绑定当前来源的 GIF；默认配图流程仍为静态。
 
 真实文章验收须继续完成：全文计划独立复核 → 实际生图及来源 → 最终排字/结构制作 → 绑定最终字节的 QA → 作者正文不变的装配 → seal → 整篇阅读候选。公众号提交只在另有对应授权及发布合同满足时执行。
 
@@ -73,3 +77,11 @@ python "$SKILL/scripts/pipeline.py" brand-stylebook-candidate --production <基�
 ```
 
 `--width-fraction` 默认 0.12，范围 0.05–0.25；小号品牌文字不清时可显式放大并重新验收。`--logo-text` 可重复，也可由 profile 的 `identity.logo_text_exact` 声明；每项须在 `identity.logo_text_allowlist` 内。此命令用真实明暗版 Logo 制作新候选，保留基础图片，绑定实际方法、品牌文件和最终输出。水印引入的透明区域按实际基础图合成，不猜背景颜色。新候选必须重新独立验收、选组与装配。装配后执行 `brand-stylebook-candidate --install-ledger`，只登记与当前图片字节一致的真实台账。不要用旧路线的就地水印或压缩脚本改写已验收的图片。独立看图漏答保存失败记录，不自动重试或补写模型结论。
+
+## 保留调用方视觉默认
+
+`profile/brand.yaml` 可用 `visual.stylebook.cover`、`visual.stylebook.body` 分别锁定作者的封面和正文画风修订。编译与实际渲染入口都会核验，不允许空值或偷偷改用 image 的全局默认。文章仍声明 `cover_style: montage-evidence` 或 `visual_profile: warm-light-clay` 时，所选画风必须确实来自对应签名合同；仅让新计划内部一致不能放行。真实截图保持原貌，不套生成图画风。改风格须先有作者明确选择，再更新相应默认与文章声明；不能为了过验收删除原声明。
+
+### 宿主像素返修来源
+
+`collect-stylebook-result` 仍要求第一轮完整调用等于当前编译请求。宿主实际编辑像素后，可在结果中追加一至两步 `refinements`，不能把编辑图冒充第一次生成的输出。`base_output` 保存原始 PNG 的绝对路径及 SHA，`base_tool_output` 保存原始工具输出；每步记录 `backend`、`invocation_status`、实际 `tool_output`、完整 `call` 及 `output`，引用必须是上一张实际 PNG。顶层 `output` 为最后编辑图。所有原图、返修图和方法字节进入制作依赖；坏链、空链、缺图或摘要变化会拒绝，宿主自报不升级为独立调用证明。最终候选仍须独立看图验收。

@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 API_BASE = os.environ.get("SANSHENG_WRITE_WECHAT_API_BASE", "https://api.weixin.qq.com").rstrip("/")
-BODY_IMAGE_MAX_BYTES = 1024 * 1024  # 正文图接口上限 1MB
+BODY_IMAGE_MAX_BYTES = 1024 * 1024  # 本地交付预算；平台限制另以实际接口结果为准
+BODY_GIF_MAX_BYTES = 10 * 1024 * 1024  # GIF 走明确支持此格式的永久图片素材接口
 BODY_EXTS = {".jpg", ".jpeg", ".png", ".gif"}
 TOKEN_SAFETY_SECONDS = 300
 
@@ -138,16 +139,27 @@ def access_token(app_id: str, secret: str, *, force: bool = False) -> str:
 
 # ---------------- 图片 ----------------
 def _prepare_body_image(path: Path) -> tuple[str, str, bytes, str]:
-    """返回（文件名, 类型, 字节, 处理说明）。超过 1MB 或格式不收的图，缩到 1MB 以内。"""
+    """返回（文件名, 类型, 字节, 处理说明），动画不能走静态压缩路径。"""
     data = path.read_bytes()
     ext = path.suffix.lower()
-    if ext in BODY_EXTS and len(data) <= BODY_IMAGE_MAX_BYTES:
-        return path.name, mimetypes.guess_type(path.name)[0] or "image/png", data, ""
+    if len(data) <= BODY_IMAGE_MAX_BYTES:
+        if ext in {'.jpg', '.jpeg'} and data.startswith(b'\xff\xd8'):
+            return path.name, 'image/jpeg', data, ''
+        if ext == '.png' and data.startswith(b'\x89PNG\r\n\x1a\n') and b'acTL' not in data:
+            return path.name, 'image/png', data, ''
     try:
         from PIL import Image
     except ImportError as exc:
-        raise WechatError(f"{path.name} 需要压缩或转格式，但没有安装 Pillow（python3 -m pip install Pillow）", step="uploadimg") from exc
+        raise WechatError(f"{path.name} 需要检查动画格式、压缩或转格式，请安装 Pillow（python3 -m pip install Pillow）", step="uploadimg") from exc
     with Image.open(io.BytesIO(data)) as img:
+        if getattr(img, "is_animated", False):
+            if img.format != "GIF":
+                raise WechatError(f"{path.name} 是 {img.format} 动画，请先导出 GIF；不能只上传首帧", step="uploadimg")
+            if len(data) <= BODY_GIF_MAX_BYTES:
+                return path.stem + ".gif", "image/gif", data, ""
+            return _compress_body_gif(path, data, img)
+        if ext in BODY_EXTS and len(data) <= BODY_IMAGE_MAX_BYTES:
+            return path.name, mimetypes.guess_type(path.name)[0] or "image/png", data, ""
         img.load()
         has_alpha = img.mode in ("RGBA", "LA") or "transparency" in img.info
         base = img.convert("RGBA" if has_alpha else "RGB")
@@ -169,6 +181,89 @@ def _prepare_body_image(path: Path) -> tuple[str, str, bytes, str]:
     raise WechatError(f"{path.name} 无法压缩到 1MB 以内", step="uploadimg")
 
 
+def _compress_body_gif(path: Path, data: bytes, source) -> tuple[str, str, bytes, str]:
+    """保留画面状态、停留时间和循环；仅允许合并像素相同的相邻帧。"""
+    from PIL import Image
+
+    count = source.n_frames
+    loop = source.info.get("loop")
+    durations = []
+    for i in range(count):
+        source.seek(i)
+        durations.append(source.info.get("duration", 0))
+    attempts = ((1280, 128), (960, 96), (800, 80), (640, 64), (480, 48), (320, 32))
+    tried = set()
+    for max_width, colors in attempts:
+        width = min(source.width, max_width)
+        if (width, colors) in tried:
+            continue
+        tried.add((width, colors))
+        size = (width, max(1, round(source.height * width / source.width)))
+        frames = []
+        # 共用色板允许 GIF 保存局部变化，避免每一帧重写整个背景。
+        samples = sorted({round(i * (count - 1) / min(7, count - 1)) for i in range(min(8, count))})
+        swatches = Image.new("RGB", (160 * len(samples), 90), "white")
+        with Image.open(io.BytesIO(data)) as animation:
+            for column, index in enumerate(samples):
+                animation.seek(index)
+                swatches.paste(animation.convert("RGB").resize((160, 90)), (column * 160, 0))
+        palette = swatches.quantize(colors=colors, method=Image.Quantize.MEDIANCUT)
+        transparent = False
+        # 每次重新解码，让 Pillow 合成原始 GIF 的局部帧及 disposal，而非裁出残帧。
+        with Image.open(io.BytesIO(data)) as animation:
+            for i in range(count):
+                animation.seek(i)
+                frame = animation.convert("RGBA")
+                if frame.size != size:
+                    frame = frame.resize(size, Image.Resampling.LANCZOS)
+                quantized = frame.convert("RGB").quantize(palette=palette, dither=Image.Dither.NONE)
+                if frame.getchannel("A").getextrema()[0] < 128:
+                    transparent = True
+                    quantized.paste(255, mask=frame.getchannel("A").point(lambda a: 255 if a < 128 else 0))
+                    quantized.info["transparency"] = 255
+                frames.append(quantized)
+        buf = io.BytesIO()
+        options = {"save_all": True, "append_images": frames[1:], "duration": durations,
+                   "disposal": 2 if transparent else 1, "optimize": False}
+        if loop is not None:
+            options["loop"] = loop
+        frames[0].save(buf, "GIF", **options)
+        result = buf.getvalue()
+        if len(result) > BODY_GIF_MAX_BYTES:
+            continue
+        with Image.open(io.BytesIO(result)) as check:
+            actual = []
+            for i in range(check.n_frames):
+                check.seek(i)
+                actual.append((check.convert("RGBA"), check.info.get("duration", 0)))
+            expected = [(frame.convert("RGBA"), duration) for frame, duration in zip(frames, durations)]
+            if (check.n_frames < 2 or _gif_states(actual) != _gif_states(expected)
+                    or check.info.get("loop") != loop):
+                continue
+            final_count = check.n_frames
+        note = f"压缩 GIF {width}px，保留 {count} 帧的画面时序和循环"
+        if final_count != count:
+            note += f"；相同相邻画面合并为 {final_count} 帧"
+        return path.stem + ".gif", "image/gif", result, note
+    raise WechatError(f"{path.name} 无法在保留动画帧、时长和循环的前提下压到本地图片预算 "
+                      f"{BODY_GIF_MAX_BYTES} 字节以内；请重新导出更小的 GIF，不能转为静态首帧", step="uploadimg")
+
+
+def _gif_states(frames):
+    """规范化可见画面时间线；不同状态或不同停留时间都不相等。"""
+    states = []
+    for image, duration in frames:
+        if image.getchannel("A").getextrema()[0] == 0:
+            image = image.copy()
+            image.paste((0, 0, 0, 0), mask=image.getchannel("A").point(lambda a: 255 if a == 0 else 0))
+        identity = hashlib.sha256(image.tobytes()).hexdigest()
+        if states and states[-1][0] == identity:
+            states[-1] = (identity, states[-1][1] + duration)
+        else:
+            states.append((identity, duration))
+    return states
+
+
 def _flatten(image):
     from PIL import Image
     bg = Image.new("RGB", image.size, (255, 255, 255))
@@ -178,11 +273,23 @@ def _flatten(image):
 
 def upload_body_image(path: Path, token: str) -> dict[str, Any]:
     name, ctype, data, note = _prepare_body_image(path)
-    url = f"{API_BASE}/cgi-bin/media/uploadimg?access_token={urllib.parse.quote(token)}"
-    result = post_file(url, "media", name, ctype, data, "uploadimg")
+    # uploadimg 文档只支持 jpg/png；GIF 使用有明确格式支持的永久图片素材接口。
+    is_gif = ctype == "image/gif"
+    step = "add_material" if is_gif else "uploadimg"
+    endpoint = "material/add_material" if is_gif else "media/uploadimg"
+    url = f"{API_BASE}/cgi-bin/{endpoint}?access_token={urllib.parse.quote(token)}" + ("&type=image" if is_gif else "")
+    result = post_file(url, "media", name, ctype, data, step)
     if not result.get("url"):
         raise WechatError(f"{path.name} 上传后没有返回图片地址", step="uploadimg")
-    return {"path": str(path), "url": re.sub(r"^http://", "https://", str(result["url"])), "note": note}
+    output = {"path": str(path), "url": re.sub(r"^http://", "https://", str(result["url"])), "note": note,
+              "mime": ctype, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+              "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "upload_endpoint": endpoint}
+    if is_gif:
+        if not result.get("media_id"):
+            raise WechatError(f"{path.name} 永久素材上传缺少 media_id", step=step)
+        output["media_id"] = str(result["media_id"])
+        output["platform_playback"] = "unverified"
+    return output
 
 
 def upload_cover(path: Path, token: str) -> dict[str, Any]:
@@ -195,6 +302,9 @@ def upload_cover(path: Path, token: str) -> dict[str, Any]:
     return {"path": str(path), "media_id": str(result["media_id"])}
 
 
+# Match the official host exactly; a prefix would also trust an attacker subdomain.
+WECHAT_IMAGE_HOST = ".".join(("mmbiz", "qpic", "cn"))
+
 _IMG = re.compile(r"<img\b[^>]*?\bsrc=([\"'])(.*?)\1[^>]*>", re.I | re.S)
 _LOCAL = re.compile(r"\sdata-local-path=([\"'])(.*?)\1", re.I)
 
@@ -206,7 +316,7 @@ def upload_html_images(html: str, base_dir: Path, token: str) -> tuple[str, list
 
     def replace(match: re.Match[str]) -> str:
         tag, src = match.group(0), match.group(2).strip()
-        if src.startswith("https://mmbiz.qpic.cn") or src.startswith("data:"):
+        if (urllib.parse.urlparse(src).scheme == "https" and urllib.parse.urlparse(src).hostname == WECHAT_IMAGE_HOST) or src.startswith("data:"):
             return tag
         local = _LOCAL.search(tag)
         ref = local.group(2) if local else src

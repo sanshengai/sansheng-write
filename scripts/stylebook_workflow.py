@@ -148,10 +148,19 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
             import stylebook_source
         frozen = stylebook_source.freeze_source(cwd, plan["source"])
         root, modules = _peer()
+        try:
+            from . import stylebook_policy
+        except ImportError:
+            import stylebook_policy
+        contracts = importlib.import_module("stylebook.contract")
+        publication_policy = stylebook_policy.check(cwd, plan, contracts.load)
         problems, warnings = modules["plan"].check(plan["article_plan"], base_path=cwd)
         if problems:
             return None, problems
         cover = copy.deepcopy(plan["cover"])
+        square_master = cover.pop("square_master", None)
+        if re.fullmatch(r"S02@r[1-9]\d*", cover.get("style", "")) and square_master is None:
+            raise ValueError("S02 封面须先由 image cover-flow 生成并预检方形母版，再填 cover.square_master 的 path/receipt；不能跳过方形预览直接生成横图")
         if cover.pop("own_style", False):
             data = importlib.import_module("stylebook.data")
             if Path(data.__file__).resolve().parent != Path(modules["plan"].__file__).resolve().parent:
@@ -167,7 +176,30 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
             for ref in manifest.get("references", []):
                 ref["path"] = str((cwd / ref["path"]).resolve())
             result = modules["compile"].compile_manifest(manifest).to_dict()
+            if image_id == "cover" and square_master is not None:
+                if not isinstance(square_master, dict) or not square_master.get("path") or not square_master.get("receipt"):
+                    raise ValueError("封面方形母版须有非空 path 和真实生成 receipt")
+                master = (cwd / square_master["path"]).resolve()
+                receipt_path = (cwd / square_master["receipt"]).resolve()
+                flow_module = importlib.import_module("stylebook.cover_flow")
+                flow = flow_module.compile_flow(manifest)
+                check = flow_module.check_square_master(master, style=manifest["style"])
+                if not check["passed"]:
+                    raise ValueError("封面方形母版未过原有边距预检：" + str(check["problems"]))
+                stylebook_policy.verify_square_source(receipt_path, master, flow["square_master"]["prompt"])
+                result["prompt"] = flow["outpaint"]["prompt"]
+                result["references"] = [{"path": str(master), "role": "content"}]
+                manifest["references"] = result["references"]
+                result["cover_flow"] = {"flow": flow, "square_check": check,
+                                        "receipt": str(receipt_path), "receipt_sha256": sha(receipt_path)}
             references = {}
+            cover_sources = {}
+            if result.get("cover_flow"):
+                receipt_path = Path(result["cover_flow"]["receipt"])
+                cover_sources[str(receipt_path)] = sha(receipt_path)
+                for step in json.loads(receipt_path.read_text())["steps"]:
+                    path = Path(step["output"]["path"])
+                    cover_sources[str(path)] = sha(path)
             for ref in result["references"]:
                 path = Path(ref["path"])
                 if not path.is_file() or not path.read_bytes():
@@ -176,6 +208,7 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
             tasks.append({"id": image_id, "manifest": manifest, "compiled": result,
                           "actual_prompt_sha256": hashlib.sha256(result["prompt"].encode()).hexdigest(),
                           "reference_sha256": references,
+                          **({"cover_source_sha256": cover_sources} if cover_sources else {}),
                           "output": "素材/cover.png" if image_id == "cover" else f"素材/infographic-{image_id}.png"})
         styles = {manifest["style"].split("@")[0] for _, manifest in manifests}
         anchor = _method_anchor(root, set())
@@ -188,7 +221,7 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
                 key = str(contract_path)
             anchor["files"][key] = sha(contract_path)
         # Bind actual production code used in generation/export/QA as well as the editorial method.
-        for rel in ["scripts/stylebook/overlay.py", "scripts/stylebook/export.py", "scripts/stylebook/qa/__init__.py",
+        for rel in ["scripts/stylebook/cover_flow.py", "scripts/stylebook/overlay.py", "scripts/stylebook/export.py", "scripts/stylebook/qa/__init__.py",
                     "scripts/stylebook/qa/binding.py", "scripts/stylebook/qa/reviewer.py"]:
             anchor["files"][rel] = sha(root / rel)
         anchor["digest"] = digest(anchor["files"])
@@ -197,6 +230,7 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
                     "source": plan["source"], "source_snapshot": str(frozen.relative_to(cwd)),
                     "source_methods": stylebook_source.methods(),
                     "plan_digest": digest(plan), "method_source": anchor,
+                    "publication_policy": publication_policy,
                     "adapter_sha256": sha(Path(__file__)), "warnings": warnings, "tasks": tasks}
         request_id = digest(identity)
         dest = cwd / "素材" / "stylebook-requests" / f"{request_id}.json"
@@ -231,6 +265,14 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
         current_source(cwd, batch, plan)
         anchor = batch["method_source"]
         root = Path(anchor["root"])
+        _peer()  # A fresh CLI process has not imported the peer package yet.
+        try:
+            from . import stylebook_policy
+        except ImportError:
+            import stylebook_policy
+        contracts = importlib.import_module("stylebook.contract")
+        if batch.get("publication_policy") != stylebook_policy.check(cwd, plan, contracts.load):
+            raise ValueError("write 作者视觉默认或文章视觉声明已变，须重新编译")
         if anchor["digest"] != digest(anchor["files"]) or any(sha(root / rel) != value for rel, value in anchor["files"].items()):
             raise ValueError("画风库方法或合同已改变，编译请求失效")
         if batch["adapter_sha256"] != sha(Path(__file__)):
@@ -248,6 +290,8 @@ def generation_requests(cwd: Path, only: set[str] | None = None) -> tuple[dict |
                 raise ValueError(f"{task['id']} 提示词已改变")
             if any(sha(Path(ref)) != value for ref, value in task["reference_sha256"].items()):
                 raise ValueError(f"{task['id']} 参考图已改变")
+            if any(sha(Path(ref)) != value for ref, value in task.get("cover_source_sha256", {}).items()):
+                raise ValueError(f"{task['id']} 方形母版来源已改变")
             call = {"prompt": prompt, "transparent_background": False}
             refs = [ref["path"] for ref in task["compiled"]["references"]]
             if refs:
@@ -293,6 +337,11 @@ def _collect_result(cwd: Path, result_path: Path, *, invoked_by_pipeline: bool) 
         result_path = Path(result_path).resolve()
         submitted_bytes = result_path.read_bytes()
         submitted = json.loads(submitted_bytes)
+        try:
+            from .host_refinement import verify as verify_refinements
+        except ImportError:
+            from host_refinement import verify as verify_refinements
+        verify_refinements(submitted, result_path.parent)
         if not isinstance(submitted, dict) or type(submitted.get("schema_version")) is not int or submitted["schema_version"] != 1:
             raise ValueError("生图结果须为 schema_version=1 对象")
         if submitted.get("backend") == "stylebook-service" and not invoked_by_pipeline:
@@ -362,13 +411,13 @@ def _collect_result(cwd: Path, result_path: Path, *, invoked_by_pipeline: bool) 
         return None, [f"画风库生图结果回收失败：{exc}"]
 
 
-SERVICE_ATTEMPT_SECONDS = 900  # 叁笙生图 Codex 单次出图上限（SANSHENG_IMAGE_CODEX_TIMEOUT 默认值）
+SERVICE_ATTEMPT_SECONDS = 900  # 生图 Skill Codex 单次出图上限（SANSHENG_IMAGE_CODEX_TIMEOUT 默认值）
 SERVICE_SLOW_NOTICE_SECONDS = 300  # 单张图超过这么久还没回来，打印一次提示
 SERVICE_DEFAULT_JOBS = 4
 
 
 def service_timeout() -> int:
-    """单张图的总上限 = 两次单次上限。叁笙生图内部最多重试 4 次，但最坏要等一小时以上；
+    """单张图的总上限 = 两次单次上限。生图 Skill内部最多重试 4 次，但最坏要等一小时以上；
     两次都撞满上限说明服务已经异常，早失败（可用 --only 单张重跑）比无输出地挂着更好。"""
     try:
         attempt = int(os.environ.get("SANSHENG_IMAGE_CODEX_TIMEOUT", SERVICE_ATTEMPT_SECONDS))
@@ -399,7 +448,7 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int | None 
     try:
         root, _ = _peer()
     except (ValueError, OSError, ImportError) as exc:
-        return None, [f"找不到叁笙生图本体：{exc}"]
+        return None, [f"找不到生图 Skill本体：{exc}"]
     host_path = Path(requests["path"])
     expected = {k: v for k, v in requests.items() if k != "path"}
     out_dir = cwd / "素材/stylebook-service-results" / expected["request_id"]
@@ -425,7 +474,7 @@ def run_service(cwd: Path, only: set[str] | None = None, *, timeout: int | None 
         started = time.monotonic()
         say(f"  [{image_id}] 开始出图")
         slow = threading.Timer(slow_after, lambda: say(
-            f"  [{image_id}] 已超过 {int(slow_after)} 秒仍在出图（叁笙生图单次上限 {SERVICE_ATTEMPT_SECONDS} 秒，可能在重试，请耐心等待）"))
+            f"  [{image_id}] 已超过 {int(slow_after)} 秒仍在出图（生图 Skill单次上限 {SERVICE_ATTEMPT_SECONDS} 秒，可能在重试，请耐心等待）"))
         slow.daemon = True
         slow.start()
         try:
@@ -474,7 +523,7 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
             from .stylebook_reuse import validate_raw
         except ImportError:
             from stylebook_reuse import validate_raw
-        validate_raw(cwd, raw_receipt_path)
+        raw_dependencies = validate_raw(cwd, raw_receipt_path)
         host_path = cwd / receipt["host_request_path"]
         host = json.loads(host_path.read_text())
         pending, errors = generation_requests(cwd, only={item["id"] for item in host["requests"]})
@@ -502,6 +551,7 @@ def produce_candidate(cwd: Path, raw_receipt_path: Path) -> tuple[dict | None, l
         overlay = spec if mode in ("overlay", "hybrid") else None
         dependencies = {str(raw): sha(raw), str(raw_receipt_path): sha(raw_receipt_path),
                         str(host_path): sha(host_path), str(Path(__file__).resolve()): sha(Path(__file__))}
+        dependencies.update({str(path): sha(path) for path in raw_dependencies.values()})
         try:
             from . import stylebook_source
         except ImportError:

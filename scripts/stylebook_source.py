@@ -27,7 +27,7 @@ def freeze_source(cwd: Path, source: dict) -> Path:
     return target
 
 
-def assembled_text(original: str, plan: dict) -> str:
+def assembled_text(original: str, plan: dict, media_paths: dict | None = None) -> str:
     """Insert only registered blocks; preserve every original character in order."""
     try:
         from .assemble_release import safe_anchor_insertion_index, author_content_sha256
@@ -56,8 +56,9 @@ def assembled_text(original: str, plan: dict) -> str:
                 raise ValueError(f"图片 {item['id']} 的之前位置须落在段首")
             index = start
         image_id = item["id"]
+        media = (media_paths or {}).get(image_id, f"素材/infographic-{image_id}.png")
         block = (f"<!-- SANSHENG-VISUAL-START:{image_id} -->\n"
-                 f"![](素材/infographic-{image_id}.png)\n"
+                 f"![]({media})\n"
                  f"<!-- SANSHENG-VISUAL-END:{image_id} -->")
         insertions.setdefault(index, []).append(block)
     output = original
@@ -71,7 +72,8 @@ def assembled_text(original: str, plan: dict) -> str:
 
 def methods() -> dict:
     return {"source": file_sha(Path(__file__).resolve()),
-            "assembly_helpers": file_sha(Path(__file__).resolve().with_name("assemble_release.py"))}
+            "assembly_helpers": file_sha(Path(__file__).resolve().with_name("assemble_release.py")),
+            "article_motion": file_sha(Path(__file__).resolve().with_name("article_motion.py"))}
 
 
 def current_source(cwd: Path, batch: dict, plan: dict) -> Path:
@@ -89,7 +91,16 @@ def current_source(cwd: Path, batch: dict, plan: dict) -> Path:
     if file_sha(draft) != batch["source"]["sha256"]:
         # Exact bytes matter: a matching author hash alone cannot authenticate inserted blocks.
         try:
-            expected_bytes = assembled_text(expected.read_bytes().decode("utf-8"), plan).encode("utf-8")
+            original = expected.read_bytes().decode("utf-8")
+            expected_bytes = assembled_text(original, plan).encode("utf-8")
+            if draft.read_bytes() != expected_bytes:
+                try:
+                    from .article_motion import resolve
+                except ImportError:
+                    from article_motion import resolve
+                selected = resolve(cwd, batch, plan)
+                paths = {key: f"素材/infographic-{key}.gif" for key in selected}
+                expected_bytes = assembled_text(original, plan, paths).encode("utf-8")
         except ValueError as exc:
             raise ValueError(f"原文与装配内容无法核对：{exc}") from exc
         if draft.read_bytes() != expected_bytes:

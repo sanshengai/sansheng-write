@@ -55,6 +55,8 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 `finalize` 才报（迟 5 个阶段）。每迟报一个阶段 = 一次「回头改 → 重跑中间所有步骤」。
 这条命令不花任何配额，**写完正文跑一次，能省掉后面大半的返工**。
 
+**视觉迁移不得改作者默认：**换到 `sansheng-image` 只替换出图执行者；封面、正文各自沿用 write 的既定视觉合同。规划前核对 `article-meta.yaml` 与 profile 的 `visual.stylebook`，不能擅自把正文风格套给封面，或把旧默认说成“只适用于宝玉”。
+
 ## 快速路由（🔴 = 进该阶段前必读）
 
 | 意图（含该行必要约束） | 读 |
@@ -80,6 +82,7 @@ H2 与 `part_subtitles` 对齐、加粗密度、开篇重点标识、文末 DEEP
 | 🔴 生成封面 / 选风格（锁定 `montage-evidence`，自动选择/近3篇回避已失效；余 4 种仅 meta 显式 `cover_style` 激活） | cover-styles.md |
 | 生成音乐 / BGM / 主题曲、改歌名歌词风格、主题曲或播客封面（封面画锚点不画论点：标题里的专名本身，单主体、深底调色板、最多一个短标号，46 px 盲配验收；歌曲 150–210 秒；MiniMax 手动生成，Lyria 暂停） | music.md |
 | 🔴 已有定稿 / 配图排版 / 发草稿 / 发布后收尾（唯一机械链）；新文章默认走画风库 schema2（stylebook-service），由这里进入实际制作、QA、装配、封存与阅读流程，详细边界见 stylebook-contract.md；schema1 宝玉路线保留给历史文章与显式选择 | release-runtime.md |
+| 作者明确要公众号动态插图：选上下文解释任务，调用 image 动态入口；接收、明确采用后进入现有装配与整篇阅读，默认仍为静态 | article-motion.md |
 | 发布状态、凭证与人工边界说明 | publish.md |
 | 永久归档文章目录 / 从当前工作树移出成品（所有写者退出后） | physical-archive.md |
 | 只写已有文章的朋友圈推文/朋友圈文案（走上方极速例外） | publish.md §朋友圈极速路径 |

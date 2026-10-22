@@ -10,10 +10,12 @@ try:
     from .stylebook_workflow import WORKFLOW, PRODUCER, digest, sha, _immutable
     from .stylebook_group import verify_group
     from .stylebook_source import current_source, assembled_text
+    from .article_motion import resolve, palette_identity
 except ImportError:
     from stylebook_workflow import WORKFLOW, PRODUCER, digest, sha, _immutable
     from stylebook_group import verify_group
     from stylebook_source import current_source, assembled_text
+    from article_motion import resolve, palette_identity
 
 
 def inputs(cwd: Path) -> tuple[dict, str, dict]:
@@ -22,10 +24,27 @@ def inputs(cwd: Path) -> tuple[dict, str, dict]:
     plan = json.loads((cwd / "visual-plan.json").read_text())
     batch = json.loads((cwd / "素材/render-batch.json").read_text())
     source = current_source(cwd, batch, plan)
-    text = assembled_text(source.read_bytes().decode("utf-8"), plan)
+    motions = resolve(cwd, batch, plan)
+    text = assembled_text(source.read_bytes().decode("utf-8"), plan,
+                          {key: f"素材/infographic-{key}.gif" for key in motions})
     assets = {image_id: {"source": item["image"], "sha256": item["image_sha256"],
                         "output": "素材/cover.png" if image_id == "cover" else f"素材/infographic-{image_id}.png"}
               for image_id, item in group["assets"].items()}
+    for image_id, motion in motions.items():
+        chosen = group['assets'].get(image_id)
+        if (not chosen or motion['source']['static_sha256'] != chosen['image_sha256']
+                or motion['source']['style'] != chosen['style']
+                or palette_identity(motion['source']['palette']) != palette_identity(chosen['palette'])):
+            raise ValueError('已采用动图与当前静态选图、画风或色板不一致')
+        assets[image_id] = {'source': motion['gif_source'], 'sha256': motion['files']['gif']['sha256'],
+                            'output': f'素材/infographic-{image_id}.gif',
+                            'poster': {'source': motion['poster_source'],
+                                       'sha256': motion['files']['poster']['sha256'],
+                                       'output': f'素材/infographic-{image_id}.png'},
+                            'motion': {'contract': motion['contract'], 'candidate': motion['candidate'],
+                                       'candidate_sha256': motion['candidate_sha256'],
+                                       'animation': motion['animation'], 'user_adoption': motion['user_adoption'],
+                                       'platform_playback': 'unverified'}}
     identity = {"schema_version": 2, "workflow": WORKFLOW, "producer": PRODUCER,
                 "status": "assembled_pending_release_review", "selection_id": group["selection_id"],
                 "selection_sha256": sha(cwd / "素材/stylebook-selection.json"),
@@ -33,6 +52,8 @@ def inputs(cwd: Path) -> tuple[dict, str, dict]:
                 "author_content_sha256": batch["source"]["author_content_sha256"],
                 "assembled_sha256": digest_bytes(text.encode("utf-8")), "assets": assets,
                 "assembly_adapter_sha256": sha(Path(__file__).resolve())}
+    if motions:
+        identity['motion_selection_sha256'] = sha(cwd / '素材/article-motion-selection.json')
     return identity, text, group
 
 
@@ -50,12 +71,13 @@ def assemble(cwd: Path) -> tuple[dict | None, list[str]]:
             scratch = Path(scratch)
             staged = []
             for image_id, asset in identity["assets"].items():
-                data = (cwd / asset["source"]).read_bytes()
-                if digest_bytes(data) != asset["sha256"]:
-                    raise ValueError("装配期间最终图片已改变")
-                stage = scratch / f"{image_id}.png"
-                stage.write_bytes(data)
-                staged.append((stage, cwd / asset["output"]))
+                for role, item in [('media', asset)] + ([('poster', asset['poster'])] if 'poster' in asset else []):
+                    data = (cwd / item['source']).read_bytes()
+                    if digest_bytes(data) != item['sha256']:
+                        raise ValueError('装配期间最终媒体已改变')
+                    stage = scratch / f'{image_id}-{role}{Path(item["output"]).suffix}'
+                    stage.write_bytes(data)
+                    staged.append((stage, cwd / item['output']))
             draft = scratch / "article.md"
             draft.write_bytes(text.encode("utf-8"))
             current, _, _ = inputs(cwd)
@@ -94,4 +116,6 @@ def verify_assembly(cwd: Path) -> dict:
     for item in identity["assets"].values():
         if sha(cwd / item["output"]) != item["sha256"]:
             raise ValueError("正文或封面正式图片已改变，装配凭证失效")
+        if 'poster' in item and sha(cwd / item['poster']['output']) != item['poster']['sha256']:
+            raise ValueError('动态插图的静态备用图改变，装配凭证失效')
     return record

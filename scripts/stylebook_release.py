@@ -13,7 +13,9 @@ def stage_errors(cwd: Path) -> list[str]:
     if errors:
         return errors
     expected = {asset['path'] for asset in manifest['assets'] if asset['id'] != 'cover'}
-    actual = {str(path.relative_to(cwd)) for path in (cwd / '素材').glob('infographic*.png')}
+    expected.update(asset['poster']['path'] for asset in manifest['assets'] if 'poster' in asset)
+    actual = {str(path.relative_to(cwd)) for path in (cwd / '素材').glob('infographic*')
+              if path.is_file() and path.suffix.lower() in {'.png', '.gif'}}
     if actual != expected:
         errors.append(f'正文图须恰好对应当前完整计划；缺少={sorted(expected-actual)}，额外={sorted(actual-expected)}')
     return errors

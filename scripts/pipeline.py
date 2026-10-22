@@ -1359,7 +1359,18 @@ def _watermark_ledger_errors(mat: Path) -> list[str]:
         ledger = {}
     targets = [mat / "cover.png"] + sorted(mat.glob("infographic*.png"))
     errors = []
+    motion_posters = set()
+    if (mat / 'article-motion-selection.json').exists():
+        try:
+            from stylebook_assembly import verify_assembly
+            assembly = verify_assembly(mat.parent)
+            motion_posters = {mat.parent / a['poster']['output'] for a in assembly['assets'].values()
+                              if 'motion' in a}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append(f'动态备用图来源无效：{exc}')
     for path in targets:
+        if path in motion_posters:
+            continue
         if not path.is_file():
             continue
         rec = ledger.get(path.name) if isinstance(ledger, dict) else None
@@ -4711,6 +4722,22 @@ def cmd_render_visuals(cwd: Path, only: str = "", candidates: int = 1, jobs: int
     )
 
 
+def cmd_article_motion(cwd: Path, args) -> None:
+    import article_motion
+
+    try:
+        if args.cmd == 'request-article-motion':
+            result = article_motion.request(cwd, args.id, args.purpose)
+        elif args.cmd == 'prepare-article-motion':
+            result = article_motion.prepare(cwd, args.id, cwd / args.handoff)
+        else:
+            result = article_motion.adopt(cwd, cwd / args.candidate, args.words, args.by)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(f'❌ 文章动态插图交接失败：{exc}')
+        raise SystemExit(2)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_accept_stylebook_reading(cwd: Path, observation: str) -> None:
     from stylebook_reading import accept_reading
 
@@ -5452,6 +5479,16 @@ def _main_impl():
     p_reuse_sb = sub.add_parser("reuse-stylebook-raw", help="完整调用和参考图未变化时复用实际底图；当前版本仍须制作与 QA")
     p_reuse_sb.add_argument("--raw-receipt", required=True, help="本篇历史宿主回收的不可变原始凭证 JSON")
     p_reuse_sb.add_argument("--id", required=True, help="当前计划中的图片 ID")
+    p_motion_request = sub.add_parser('request-article-motion', help='将当前原文、已选插图与画风色板交给生图 Skill，生成动态需求')
+    p_motion_request.add_argument('--id', required=True, help='本篇已选定的正文插图 ID')
+    p_motion_request.add_argument('--purpose', required=True, help='动作的解释价值与读者看完应理解的内容')
+    p_motion = sub.add_parser('prepare-article-motion', help='接收已审片动态候选，核对本篇原文与选图；不代表作者采用')
+    p_motion.add_argument('--id', required=True, help='本篇已选定的正文插图 ID')
+    p_motion.add_argument('--handoff', required=True, help='生图 Skill 导出的 article-media.json')
+    p_motion_adopt = sub.add_parser('adopt-article-motion', help='按作者明确采用的原话选择动态候选；随后仍须装配与整篇阅读')
+    p_motion_adopt.add_argument('--candidate', required=True, help='本篇 prepared.json 路径')
+    p_motion_adopt.add_argument('--words', required=True, help='作者明确采用这支动图的实际原话')
+    p_motion_adopt.add_argument('--by', required=True, help='作出采用决定的作者')
     p_read_sb = sub.add_parser("accept-stylebook-reading", help="封存当前整篇浏览器及宿主实际阅读记录")
     p_read_sb.add_argument("--observation", required=True, help="包含三个实际视口、图片字节、截图和宿主阅读结论的 JSON")
     p_produce_sb = sub.add_parser("produce-stylebook-candidate", help="从当前原始候选制作最终图，仍须独立 QA")
@@ -5741,6 +5778,8 @@ def _main_impl():
             getattr(args, "candidates", 1),
             getattr(args, "jobs", None),
         )
+    elif args.cmd in {'request-article-motion', 'prepare-article-motion', 'adopt-article-motion'}:
+        cmd_article_motion(cwd, args)
     elif args.cmd == "accept-stylebook-reading":
         cmd_accept_stylebook_reading(cwd, args.observation)
     elif args.cmd == "reuse-stylebook-raw":

@@ -129,12 +129,21 @@ def validate_raw(cwd: Path, path: Path, final: Path | None = None) -> dict[str, 
             or submitted.get("output", {}).get("sha256") != origin["raw_sha256"]):
         raise ValueError("原始宿主回执与实际保存调用不一致")
     verified = False if reuse is not None else route["verified"]
+    try:
+        from .host_refinement import verify as verify_refinements
+    except ImportError:
+        from host_refinement import verify as verify_refinements
+    files.update(verify_refinements(submitted, cwd))
     if (raw.get("independent_invocation_verified") is not verified
             or raw.get("actual_model") is not None or raw.get("actual_cost") is not None):
         raise ValueError("不能提高复用来源的证明强度或虚构模型费用")
     for ref, expected in task["reference_sha256"].items():
         if sha(Path(ref)) != expected:
             raise ValueError("原始调用的参考图字节已改变")
+        files[ref] = Path(ref)
+    for ref, expected in task.get("cover_source_sha256", {}).items():
+        if sha(Path(ref)) != expected:
+            raise ValueError("原始方形母版来源已改变")
         files[ref] = Path(ref)
     return files
 

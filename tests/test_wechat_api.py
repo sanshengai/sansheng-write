@@ -17,7 +17,7 @@ import wechat_api as W  # noqa: E402
 
 class State:
     def __init__(self):
-        self.calls, self.fail, self.token_no = [], {}, 0
+        self.calls, self.fail, self.token_no, self.posts = [], {}, 0, []
 
 
 @pytest.fixture
@@ -38,6 +38,7 @@ def server(monkeypatch, tmp_path):
 
         def do_POST(self):
             n = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(n)
+            st.posts.append({'path': self.path, 'content_type': self.headers.get('Content-Type'), 'body': body})
             st.calls.append(("POST", self.path, len(body)))
             step = self.path.split("?")[0].rsplit("/", 1)[-1]
             if step in st.fail:
@@ -47,7 +48,7 @@ def server(monkeypatch, tmp_path):
                 if code:
                     return self._send({"errcode": code, "errmsg": "boom"})
             if step == "uploadimg":
-                return self._send({"url": f"http://mmbiz.qpic.cn/x/{len(st.calls)}"})
+                return self._send({"url": f"http://media.example.test/x/{len(st.calls)}"})
             if step == "add_material":
                 return self._send({"media_id": "COVER1", "url": "http://x"})
             if step == "add":
@@ -57,6 +58,7 @@ def server(monkeypatch, tmp_path):
 
     srv = HTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    monkeypatch.setattr(W, "WECHAT_IMAGE_HOST", "media.example.test")
     monkeypatch.setattr(W, "API_BASE", f"http://127.0.0.1:{srv.server_port}")
     monkeypatch.setenv("SANSHENG_WRITE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
@@ -76,7 +78,7 @@ def make_article(tmp_path, n=2):
     for i in range(n):
         png(d / f"素材/i{i}.png")
         imgs += f'<p><img src="素材/i{i}.png" data-local-path="素材/i{i}.png" style="width:100%"></p>'
-    return d, f"<section><p>正文</p>{imgs}<img src=\"https://mmbiz.qpic.cn/keep.png\"></section>"
+    return d, f"<section><p>正文</p>{imgs}<img src=\"https://media.example.test/keep.png\"></section>"
 
 
 def publish(d, html, **kw):
@@ -85,12 +87,12 @@ def publish(d, html, **kw):
 
 def test_full_flow_replaces_every_local_image_and_returns_structured_ids(server, tmp_path):
     d, html = make_article(tmp_path)
-    out = publish(d, html, author="叁笙", source_url="https://example.com")
+    out = publish(d, html, author="示例作者", source_url="https://example.com")
     assert out["media_id"] == "DRAFT1" and out["cover_media_id"] == "COVER1" and len(out["images"]) == 2
     content = server.last_article["content"]
-    assert "素材/i0.png" not in content and "data-local-path" not in content and "mmbiz.qpic.cn/keep.png" in content
-    assert content.count("https://mmbiz.qpic.cn") == 3
-    assert server.last_article["author"] == "叁笙" and server.last_article["content_source_url"] == "https://example.com"
+    assert "素材/i0.png" not in content and "data-local-path" not in content and "media.example.test/keep.png" in content
+    assert content.count("https://media.example.test") == 3
+    assert server.last_article["author"] == "示例作者" and server.last_article["content_source_url"] == "https://example.com"
     assert server.last_article["thumb_media_id"] == "COVER1"
 
 
@@ -112,6 +114,14 @@ def test_missing_local_image_and_external_image_are_rejected(server, tmp_path):
         publish(d, html + '<img src="https://example.com/a.png">')
 
 
+@pytest.mark.parametrize("src", ["https://media.example.test.evil.test/a.png", "http://media.example.test/a.png"])
+def test_trusted_image_host_prefix_and_insecure_scheme_are_not_bypasses(server, tmp_path, src):
+    d, html = make_article(tmp_path, 1)
+    with pytest.raises(W.WechatError, match="外链"):
+        publish(d, html + f'<img src="{src}">')
+    assert not hasattr(server, "last_article")
+
+
 def test_ip_whitelist_error_has_a_useful_hint(server, tmp_path):
     d, html = make_article(tmp_path)
     server.fail["draft/add"] = 40164
@@ -131,6 +141,27 @@ def test_token_is_cached_between_calls(server, tmp_path):
     d, html = make_article(tmp_path, 1)
     publish(d, html); publish(d, html)
     assert server.token_no == 1
+
+
+def test_gif_reaches_real_multipart_and_draft_html_without_losing_frames(server, tmp_path):
+    from email.parser import BytesParser
+    from email.policy import default
+    d, html = make_article(tmp_path, 0)
+    gif = d / '素材/motion.gif'
+    frames = [Image.new('RGB', (64, 36), color) for color in ['red', 'blue', 'green']]
+    frames[0].save(gif, save_all=True, append_images=frames[1:], duration=[120, 240, 360], loop=0)
+    out = publish(d, html + '<img src="素材/motion.gif">')
+    media = [post for post in server.posts if b'filename="motion.gif"' in post['body']]
+    assert len(media) == 1 and '/material/add_material?' in media[0]['path']
+    request = BytesParser(policy=default).parsebytes(
+        ('Content-Type: ' + media[0]['content_type'] + '\r\n\r\n').encode() + media[0]['body'])
+    part = next(request.iter_parts())
+    assert part.get_content_type() == 'image/gif'
+    assert part.get_payload(decode=True) == gif.read_bytes()
+    with Image.open(io.BytesIO(part.get_payload(decode=True))) as decoded:
+        assert decoded.n_frames == 3 and decoded.info['loop'] == 0
+    assert '素材/motion.gif' not in server.last_article['content']
+    assert out['images'][0]['platform_playback'] == 'unverified'
 
 
 def test_large_or_webp_body_images_are_compressed_under_one_megabyte(server, tmp_path):

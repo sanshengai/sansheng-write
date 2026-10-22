@@ -42,6 +42,9 @@ def manifest(cwd: Path) -> dict:
                        'qa_report': chosen['qa_report'], 'qa_sha256': chosen['qa_report_sha256'],
                        'actual_reviewer': review['actual_reviewer'],
                        'generation': generation})
+        if 'motion' in item:
+            assets[-1]['motion'] = item['motion']
+            assets[-1]['poster'] = {'path': item['poster']['output'], 'sha256': item['poster']['sha256']}
     result = {'schema_version': 2, 'workflow': WORKFLOW, 'producer': PRODUCER,
               'assembly_id': assembly['assembly_id'],
               'assembly_sha256': sha(cwd / '素材/stylebook-assembly.json'),

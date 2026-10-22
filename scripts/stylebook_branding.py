@@ -147,11 +147,15 @@ def install_ledger(cwd: Path) -> None:
         from stylebook_group import verify_group
         from stylebook_assembly import verify_assembly
     cwd = Path(cwd).resolve()
-    verify_assembly(cwd)
+    assembly = verify_assembly(cwd)
     group = verify_group(cwd)
     path = cwd / '素材/.postprocess-ledger.json'
     ledger = json.loads(path.read_text()) if path.exists() else {}
     for image_id, selected in group['assets'].items():
+        if 'motion' in assembly['assets'][image_id]:
+            # Reviewed GIFs and their first-frame fallbacks have their own provenance;
+            # never relabel a generated poster as the original branded static image.
+            continue
         record = json.loads((cwd / selected['production']).read_text())
         row = record.get('branding', {}).get('ledger', {}).get('main')
         target = cwd / ('素材/cover.png' if image_id == 'cover' else f'素材/infographic-{image_id}.png')

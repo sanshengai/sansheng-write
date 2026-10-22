@@ -2,7 +2,7 @@
 
 本文件只定义业务视觉规则。像素厂商与模型属于 renderer 配置，不属于文章规则。
 
-下述固定黏土、数量与原生文字规则属于旧的 schema1（宝玉）合同，保留给历史文章和显式选择。**新文章默认走 [stylebook-contract.md](stylebook-contract.md) 的 schema2**（`renderer.backend: stylebook-service`，经画风库调用 Codex 内置生图，订阅额度）；音乐 / 播客封面同样默认走画风库（`SANSHENG_WRITE_IMAGE_ROUTE=baoyu` 才走旧脚本）。
+切换出图工具不等于切换文章视觉。封面与正文风格仍由 write 的作者规范和文章声明决定；schema2 也必须核对这些声明，不能自行另选一套风格。只有下述固定数量和旧执行链专属凭证属于 schema1。**新文章默认走 [stylebook-contract.md](stylebook-contract.md) 的 schema2**（`renderer.backend: stylebook-service`，经画风库调用 Codex 内置生图，订阅额度）；音乐 / 播客封面同样默认走画风库（`SANSHENG_WRITE_IMAGE_ROUTE=baoyu` 才走旧脚本）。
 
 ## 先判断是否应当生图
 
