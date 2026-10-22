@@ -25,7 +25,7 @@ python3 "$SKILL/scripts/pipeline.py" adopt-final --final 定稿.md --meta articl
 
 接管后立即交付 [music.md](music.md) 的 MiniMax 主题曲生成单，作者生成音乐时继续配图。已有 MP3 先核来源并复用，不让作者重做。新文章 BGM 是硬门；Lyria 自动通道暂停。
 
-schema2 已确认正文、且 profile 启用 `podcast.wechat_embed` 时，尽早启动 `podcast-pregen`，与图片制作并行。图片装配不重做播客；正文、标题或生成参数变化按同源合同判断。播客必须在草稿前齐备，不能留到 finalize。正文、选图、排版和发布由一个控制者写入；独立模型负责规定的审核，不控制发布命令。
+schema2 接管后由主控按 `stylebook-contract.md` 预置标准音频卡；启用播客且参数齐备时，立即用宿主后台任务启动 `podcast-pregen`，保存任务 ID/日志，继续图片制作，不等待音乐 MP3。调度与写入边界见 [orchestration.md](orchestration.md)。图片装配不重做播客；正文、标题或生成参数变化按同源合同判断。播客必须在草稿前齐备，不能留到 finalize。正文、选图、排版和发布由一个控制者写入；独立模型负责规定的审核，不控制发布命令。
 
 ## 2. 只读取实际视觉路线
 
@@ -38,7 +38,7 @@ schema2 已确认正文、且 profile 启用 `podcast.wechat_embed` 时，尽早
 
 ## 3. 音频、排版与阅读
 
-1. 收到主题曲后创建并验证真实 `_music-manifest.json`，用 `audio_cards.py` 放主题曲卡；启用播客时保持“导读 → 主题曲卡 → 播客卡 → 正文”。两卡同级同宽，上下排列。
+1. 收到主题曲后创建并验证真实 `_music-manifest.json`，schema2 核对已预置的标准主题曲卡，历史 schema1 用 `audio_cards.py::upsert_card` 补入卡片；启用播客时保持“导读 → 主题曲卡 → 播客卡 → 正文”。两卡同级同宽，上下排列。
 2. 用内置 `md_render.py` 生成微信 HTML，执行 `format_layout.py 定稿.html --all --check`。只读 [layout.md](layout.md) 当前所需步骤。
 3. schema2 的品牌处理在候选验收前完成；装配后只安装品牌账本，不再覆盖、压缩已验收图片。静态正文使用 PNG/JPG，GIF 按动态合同上传。
 4. 实际阅读完整文章及合同规定视口，确认字清楚、图意正确、无裁切。schema2 用 `accept-stylebook-reading` 保存真实观察，不用模型勾选替代看图。
@@ -69,4 +69,4 @@ python3 "$SKILL/scripts/pipeline.py" release-to-draft
 
 ## 排障按耗时定位
 
-优先看本篇 observations 的 `pipeline.* / command_exit`，再看 `publish_preflight` 与 `draft_transaction` 的子步骤。父阶段包含子步骤，不能相加冒充总时间；人工等音乐、模型生成、本地检查、上传读回、网站排队分别统计。详细审计才读 [skill-review.md](skill-review.md)，不把复盘资料全部加载进日常发布。
+优先看本篇 observations 的 `pipeline.* / command_exit`，再看 `publish_preflight`、`draft_transaction` 与 `podcast_generation` 的子步骤（外部命令、轮询等待、下载重试等待）。父阶段包含子步骤，不能相加冒充总时间；人工等音乐、模型生成、本地检查、上传读回、网站排队分别统计。详细审计才读 [skill-review.md](skill-review.md)，不把复盘资料全部加载进日常发布。

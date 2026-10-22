@@ -199,9 +199,9 @@ python "$SKILL/scripts/music_manifest.py" verify "<文章目录>" --probe-durati
 
 ## 接入微信文章
 
-音频文件与 manifest 验证通过后，用 `audio_cards.py::upsert_card` 的共享模板写入主题曲卡片。必须在 MD→HTML 排版之前完成；schema2 画风库路线还须在计算原文摘要与 `compile-visuals` 之前预置两张标准卡（播客卡按配置启用），避免冻结后改稿令装配凭证失效；AUDIO-CARD 与可选 PODCAST-CARD 机器块先收口到 `定稿.md` 最末尾，再由 `format_layout.py --all` 按「导读 → 主题曲 → 播客 → 正文」前置。不得改动已审批的作者正文。主题曲封面按既有视觉流程处理；封面不能证明音频已经生成。
+schema2 在接管定稿后、计算原文摘要与 `compile-visuals` 之前，用 `audio_cards.py::upsert_card` 的共享模板预置标准卡（播客卡按配置启用），不等待 MP3。预置仅确定布局，不标记音乐完成；音频与 manifest 在最终排版和发布前另验。历史路线在音频验证后写卡。避免冻结后改稿令装配凭证失效；AUDIO-CARD 与可选 PODCAST-CARD 机器块先收口到 `定稿.md` 最末尾，再由 `format_layout.py --all` 按「导读 → 主题曲 → 播客 → 正文」前置。不得改动已审批的作者正文。主题曲封面按既有视觉流程处理；封面不能证明音频已经生成。
 
-若 `podcast.wechat_embed: true`，`podcast-pregen` 会用同一模板再写「🎧 音频版本｜本期播客」卡片。发布时在微信编辑器分别插入两份原生音频；保存后直接跑 `pipeline.py wechat-audio-check`。
+若 `podcast.wechat_embed: true`，schema2 的 `podcast-pregen` 只验证预置卡，不改定稿；历史路线仍使用同一模板写入播客卡。发布时在微信编辑器分别插入两份原生音频；保存后直接跑 `pipeline.py wechat-audio-check`。
 
 ### 上传文件统一放在文章文件夹
 

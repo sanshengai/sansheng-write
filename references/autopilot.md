@@ -34,12 +34,12 @@ python "$SKILL/scripts/pipeline.py" status
      命令按作者原话生成 `_blueprint-approval.md` 并封存；缺标题 / 开头 / 大纲 / 封面风格任一项直接拒绝。
      作者明说免检时改用 `--source-mode checkpoint-waived`。
 2. **内容增强**
-   - 按 `content-enhance.md` 补充案例、反例、类比和可验证事实。
+   - 发现内容缺口时按 `content-enhance.md` 选相应策略，融入大纲/正文；素材已充分则直接写作，不另做四策略齐备的过程件。
 3. **正文**
    - 资讯快讯、教程先读对应执行卡（`执行卡-资讯快讯.md` / `执行卡-教程.md`，每张 ≤10 KB、每条注明出处），
      大文档只在拿不准时按出处查；其他文体照常读 `writing.md`。
    - 运行 `prep_writing.py`，按执行卡或 `writing.md` 与选定风格手册写 `定稿.md`。
-   - 生成标题候选并确定最终标题。
+   - 核对已选标题是否仍兑现正文；只有正文改变承诺或作者要求重选时才重开标题候选，不重复做已拍板的选择。
    - 🔎 **写完立刻跑 `pipeline.py preflight`**，把静态问题一次清完再往下走。
      它不花配额、几秒返回，覆盖：闸门锚点文件、H2/`part_subtitles` 对齐、
      加粗密度、开篇重点标识、文末 DEEP READ / SOURCES、金句库来源标记、
@@ -70,7 +70,8 @@ python "$SKILL/scripts/pipeline.py" status
    - 只读 [release-runtime.md](release-runtime.md) 并按命令顺序执行。
    - 视觉业务规划在本 Skill 内完成；新文章走 sansheng-image 的 schema2 路线，schema1 宝玉路线只用于历史文章或显式选择。
    - BGM 是发布硬门。默认按 `music.md` 交付 `MiniMax-主题曲生成单.md`（歌名、主题、风格提示词、完整歌词、导出要求），**定稿接管成功就交付，不等配图做完**，作者生成音乐和配图并行；收到 MP3 后接入。Lyria 暂停，不自动调用或要求配置 Google Cloud。
-   - ⏱ **BGM 注入 AUDIO-CARD 后，启用了 `podcast.wechat_embed: true` 就立刻跑 `pipeline.py podcast-pregen`**。schema2 在编译前预置标准音频卡、确认正文后即可生成，不等待图片制作；旧路线先写入同级 PODCAST-CARD。音频可与排版并行，草稿提交前必须齐备。未显式开启嵌入时，仍可预生成 RSS，但公众号保持单卡。
+   - schema2 接管后，主控按 `stylebook-contract.md` 预置标准音频卡并核对正文审批；启用播客时立即用宿主后台任务运行 `podcast-pregen`，保留任务 ID 与日志，再继续图片制作，不等待作者交音乐。卡片只是布局位置，实际音频仍须在交草稿前验证。
+   - 并行按 `orchestration.md` 的文件所有权执行：播客进程写播客产物，主控写正文与装配；收齐素材后才做最终排版与阅读。
    - 固定首屏顺序是「导读 → 主题曲卡 → 播客卡 → 正文」；两卡同宽上下排列。
    - 草稿创建只运行 `release-to-draft`；作者人工插入两份微信原生音频后可直接正式发布，`finalize <永久链接>` 会先自动做正式文章双音频补验（发布前自检 `wechat-audio-check` 可选）。
 
@@ -91,13 +92,13 @@ python "$SKILL/scripts/pipeline.py" status
 - 等作者拍板大纲 / 定稿（blueprint / draft 检查点）。
 - 已交付完整 MiniMax 主题曲生成单，等待作者提供 MP3；这是人工素材交接，不是定稿重审或生成失败，不能把生成单算成已完成 BGM。
 - 缺凭证、权限、输入文件或外部服务不可用。
-- 非零合同门经同因重试三次仍失败。
+- 确定性合同错误立即诊断并修输入；只有瞬态外部错误允许有限退避重试。同因且输入未变不机械重跑三次。
 
 除此之外不因“下一步可能费时”停顿，也不把失败 stage 标成 done。
 
 ## 并行
 
-默认可并行独立调研、事实复核和语义冷读；具体合同见 `orchestration.md`。对同一文章目录有写入的发布机械链必须串行。
+按 `orchestration.md` 分配独立输入与输出。播客用后台脚本，独立审核用子 Agent；不要让主控阻塞等待长任务，也不要让多个执行者同时修改同一文件。最终装配与发布由主控串行完成。
 
 ## 恢复
 

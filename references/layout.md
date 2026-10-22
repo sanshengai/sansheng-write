@@ -8,11 +8,11 @@
 - `article-meta.yaml`
 - `素材/cover.png`
 - `素材/hero.png`
-- 至少 4 张 `素材/infographic-*.png`（`infographic_mode: author-shots` 时改为正文引用的 ≥4 张作者供图，信息图 0 张）
+- schema2：按已验收视觉清单和装配结果使用实际图片，不设正文图固定下限。仅历史 schema1 要求至少 4 张 `素材/infographic-*.png`；历史 `author-shots` 模式按其作者供图合同。
 - BGM MP3 与定稿中的 AUDIO-CARD
 - 显式启用 `podcast.wechat_embed` 时：`dist/podcast/audio.mp3` 与 PODCAST-CARD
 
-缺任一发布硬门产物就停，不用占位符先过排版。
+以上是最终排版验收的输入。音频等待期间可以准备版式和检查已就绪图片，但不因此标记 layout done，也不为等待音频反复渲染整篇。收齐后统一排版、阅读一次；后续只在受影响输入变化时重验。
 
 ## 1. Markdown 装配
 

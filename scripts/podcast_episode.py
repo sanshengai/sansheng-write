@@ -32,6 +32,8 @@ import subprocess
 import sys
 import time
 import tempfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
@@ -49,6 +51,7 @@ MIN_AUDIO_BYTES = 100_000
 PODCAST_GENERATOR_SCHEMA = 2
 AUDIO_MANIFEST_SCHEMA = 1
 AUDIO_MANIFEST_FILE = "audio.manifest.json"
+_ACTIVE_ARTICLE = ContextVar("podcast_article", default=None)
 
 
 def log(msg: str) -> None:
@@ -68,7 +71,7 @@ def cfg() -> dict:
     return distribute_channel("podcast")
 
 
-def generation_digest(article_dir: Path, c: dict | None = None, *, source_override: str | None = None, title_override: str | None = None) -> str:
+def generation_digest(article_dir: Path, c: dict | None = None, *, source_override: str | None = None, title_override: str | None = None, focus_sha_override: str | None = None) -> str:
     """绑定真正影响节目内容的输入；缺任何一项都不得复用旧音频。"""
     c = c or cfg()
     prompt = Path(str(c.get("focus_prompt") or "")).expanduser()
@@ -79,7 +82,7 @@ def generation_digest(article_dir: Path, c: dict | None = None, *, source_overri
         "schema": PODCAST_GENERATOR_SCHEMA,
         "source_digest": source_override if source_override is not None else distribute.source_digest(article_dir, "podcast"),
         "title": title_override if title_override is not None else distribute.read_final_title(article_dir),
-        "focus_prompt_sha256": prompt_sha,
+        "focus_prompt_sha256": prompt_sha if focus_sha_override is None else focus_sha_override,
         "language": str(c.get("language") or "zh"),
         "length": str(c.get("length") or "default"),
         "format": "deep_dive",
@@ -88,7 +91,7 @@ def generation_digest(article_dir: Path, c: dict | None = None, *, source_overri
 
 
 def _audio_manifest_path(mp3: Path) -> Path:
-    return mp3.parent / AUDIO_MANIFEST_FILE
+    return mp3.parent / AUDIO_MANIFEST_FILE if mp3.name == "audio.mp3" else mp3.with_suffix(".manifest.json")
 
 
 def _read_audio_manifest(mp3: Path) -> dict:
@@ -107,13 +110,14 @@ def _write_audio_manifest(
     mp3: Path,
     c: dict,
     probe: dict,
+    *, source_digest: str | None = None, generation_input_digest: str | None = None,
 ) -> Path:
     """Atomic generation receipt binding the reusable MP3 to its true inputs."""
     payload = {
         "schema_version": AUDIO_MANIFEST_SCHEMA,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "source_digest": distribute.source_digest(article_dir, "podcast"),
-        "generation_digest": generation_digest(article_dir, c),
+        "source_digest": source_digest if source_digest is not None else distribute.source_digest(article_dir, "podcast"),
+        "generation_digest": generation_input_digest if generation_input_digest is not None else generation_digest(article_dir, c),
         "audio_sha256": hashlib.sha256(mp3.read_bytes()).hexdigest(),
         "bytes": mp3.stat().st_size,
         "codec_name": str(probe.get("codec_name") or ""),
@@ -218,7 +222,39 @@ def _try_auto_login() -> bool:
         return False
 
 
+def _record_phase(event: str, started: float, outcome: str) -> None:
+    article = _ACTIVE_ARTICLE.get()
+    if article is None:
+        return
+    try:
+        from contracts import log_observation
+        log_observation("podcast_generation", event, outcome, article=article.name,
+                        elapsed_ms=(time.perf_counter() - started) * 1000)
+    except Exception:
+        pass
+
+
+def _wait(seconds: float, event: str) -> None:
+    started = time.perf_counter()
+    try:
+        time.sleep(seconds)
+    finally:
+        _record_phase(event, started, "wait")
+
+
 def run_nlm(*args: str, timeout: float = 600, want_json: bool = False):
+    started = time.perf_counter()
+    outcome = "fail"
+    try:
+        result = _run_nlm(*args, timeout=timeout, want_json=want_json)
+        outcome = "ok"
+        return result
+    finally:
+        # Command names only: never put notebook IDs, source text or prompts in metrics.
+        _record_phase("nlm." + ".".join(args[:2]), started, outcome)
+
+
+def _run_nlm(*args: str, timeout: float = 600, want_json: bool = False):
     """跑 nlm。0.9.x 起各子命令都支持 --json，不必再从纯文本里 regex 抠 ID。"""
     cmd = [_nlm_bin(), *args]
     log(f"$ nlm {' '.join(args[:3])}{'…' if len(args) > 3 else ''}")
@@ -313,8 +349,55 @@ def scp_remote(host: str, remote_dir: str, filename: str) -> str:
 
 # ===== generate =====
 
+@contextmanager
+def _generation_lock(article_dir: Path):
+    """One producer per article; the OS releases the lock if the worker exits."""
+    out = distribute.channel_dir(article_dir, "podcast")
+    out.mkdir(parents=True, exist_ok=True)
+    with (out / ".generation.lock").open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                yield False
+                return
+        else:
+            import fcntl
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                yield False
+                return
+        try:
+            yield True
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
-    c = cfg()
+    with _generation_lock(article_dir) as acquired:
+        if not acquired:
+            log("播客已有生成任务运行；继续查看原任务，不重复创建。")
+            return 4
+        token = _ACTIVE_ARTICLE.set(article_dir)
+        try:
+            return _generate_locked(article_dir, keep_notebook)
+        finally:
+            _ACTIVE_ARTICLE.reset(token)
+
+
+def _generate_locked(article_dir: Path, keep_notebook: bool = False) -> int:
+    c = dict(cfg())
     if not c.get("enabled"):
         log("✗ profile 里 podcast 未启用")
         return 2
@@ -352,7 +435,8 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         log("✗ profile 的 podcast.focus_prompt 未配置或文件不存在")
         log("  主持风格提示词决定节目调性，不能缺——照搬晨报的播报体会很怪")
         return 2
-    focus = prompt_path.read_text(encoding="utf-8").strip()
+    focus_bytes = prompt_path.read_bytes()
+    focus = focus_bytes.decode("utf-8").strip()
 
     title = distribute.read_final_title(article_dir)
     if not title:
@@ -363,6 +447,17 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     m4a = out_dir / "_raw.m4a"
     mp3 = out_dir / "audio.mp3"
+
+    # Freeze the exact semantic input before any external wait. Machine cards and
+    # image assembly may change concurrently; author prose must not be rebound.
+    source_text = distribute.source_text_for_channel(article_dir, "podcast")
+    if not source_text.strip():
+        log("✗ 播客正文为空")
+        return 2
+    frozen_source = distribute._digest(source_text)
+    frozen_generation = generation_digest(
+        article_dir, c, source_override=frozen_source, title_override=title,
+        focus_sha_override=hashlib.sha256(focus_bytes).hexdigest())
 
     log(f"文章：{title}")
     log(f"提示词：{prompt_path.name}（{len(focus)} 字）")
@@ -405,7 +500,6 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         # 2. 喂裸 markdown。**不做二次提炼**——晨报验证过，提炼一遍反而丢细节。
         # 只喂作者正文。微信信息图与双音频卡属于机器装配；把它们送入模型会
         # 让占位提示进入节目素材，并导致纯样式改动误触发整集重生成。
-        source_text = distribute.source_text_for_channel(article_dir, "podcast")
         with tempfile.TemporaryDirectory(prefix="sansheng-podcast-") as tmp:
             source_md = Path(tmp) / "article.md"
             source_md.write_text(source_text, encoding="utf-8")
@@ -433,7 +527,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
         deadline = time.time() + POLL_TIMEOUT
         status = "unknown"
         while time.time() < deadline:
-            time.sleep(POLL_INTERVAL)
+            _wait(POLL_INTERVAL, "provider_poll_wait")
             try:
                 out = run_nlm("studio", "status", nb, "--json", want_json=True, timeout=90)
                 items = out if isinstance(out, list) else (out.get("artifacts") or [])
@@ -472,7 +566,7 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
                 log(f"  下载失败 {i}/{DOWNLOAD_RETRIES}: {str(e)[:150]}")
             if i < DOWNLOAD_RETRIES:
                 log(f"  等 {DOWNLOAD_INTERVAL}s…")
-                time.sleep(DOWNLOAD_INTERVAL)
+                _wait(DOWNLOAD_INTERVAL, "download_retry_wait")
         else:
             log("✗ 下载持续失败")
             return 1
@@ -497,19 +591,28 @@ def cmd_generate(article_dir: Path, keep_notebook: bool = False) -> int:
             candidate.unlink(missing_ok=True)
             log(f"✗ 候选音频验证失败，已保留原 audio.mp3：{reason}")
             return 1
+        if generation_digest(article_dir, cfg()) != frozen_generation:
+            stale = out_dir / f"audio.input-drift-{time.time_ns()}.mp3"
+            candidate.replace(stale)
+            _write_audio_manifest(article_dir, stale, c, audio_probe,
+                                  source_digest=frozen_source,
+                                  generation_input_digest=frozen_generation)
+            log("✗ 生成期间正文、标题或播客参数已变；保留候选，未覆盖原音频。")
+            return 2
         candidate.replace(mp3)
         m4a.unlink(missing_ok=True)
         log(f"✓ {mp3}  ({mp3.stat().st_size // 1024} KB)")
 
         # 7. manifest + sidecar。manifest 与 MP3 同目录原子替换；若在两步之间
         #    崩溃，state 仍是旧 generation_digest，后续 freshness 会拒绝误复用。
-        manifest = _write_audio_manifest(article_dir, mp3, c, audio_probe)
+        manifest = _write_audio_manifest(article_dir, mp3, c, audio_probe,
+                                         source_digest=frozen_source,
+                                         generation_input_digest=frozen_generation)
         log(f"✓ generation manifest: {manifest.name}")
         write_sidecar(article_dir, mp3, title, c)
         distribute.set_status(article_dir, "podcast", "drafted",
-                              source_digest=distribute.source_digest(
-                                  article_dir, "podcast"),
-                              generation_digest=generation_digest(article_dir, c),
+                              source_digest=frozen_source,
+                              generation_digest=frozen_generation,
                               audio_sha256=hashlib.sha256(mp3.read_bytes()).hexdigest())
         return 0
     finally:

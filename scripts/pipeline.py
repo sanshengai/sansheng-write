@@ -5285,7 +5285,7 @@ def cmd_orchestrator(mode: str, cwd: Path):
     print(f"🎛  orchestrator 已设为 {mode}")
     if mode == "on":
         print("🛠 当前宿主控制器可按 orchestration.md 并行独立工作单元；")
-        print("   定稿后的发布机械链仍必须单写者串行执行")
+        print("   按文件所有权并行；正文、最终装配和发布保持主控单写者")
 
 
 # ── 入口 ──────────────────────────────────────────────────────

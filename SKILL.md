@@ -1,6 +1,6 @@
 ---
 name: sansheng-write
-description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文、转成 X（Twitter）文章/发推特长文；触发对象为中文长文或公众号文章的创作、改稿、排版及按篇社媒分发（含 X 文章）；普通短回复、代码/规则文档修改不触发。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sandy-video。
+description: Use when 用户要写、改、润色或排版中文长文和公众号文章，或明确要求把已发布文章转成小红书/微博图文、转成 X（Twitter）文章/发推特长文；触发对象为中文长文或公众号文章的创作、改稿、排版及按篇社媒分发（含 X 文章）；普通短回复、代码/规则文档修改不触发。社媒分发按篇显式触发，不因拿到正式链接自动执行。AI 课程使用 sandy-class，晨报使用 sandy-morning-cards，视频使用 sansheng-video。
 metadata:
   version: "3.0.0"          # 与 GitHub Release 共用同一 SemVer；由 release.py 自动同步
 allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp__doubao_search__web_search, mcp__tavily__tavily_search, mcp__datapro_search__dataPro_search, WebSearch, WebFetch, Agent, TodoWrite]
@@ -56,7 +56,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 创作或改变品牌表达时，读取配置 profile 的 `context.md`；有 `brand-net.md` 时按 outline 的织网三问执行。局部校字、换单图或机械排版不重读整套创作资料。profile 由 `profile_config.py` 解析；未配置时使用 `profile.example/`，不复制个人资料。模板默认身份、色板和风格按 profile 与 style-routes.md，不从旧会话猜。
 
-新文章用 `prep_writing.py` 聚合品牌与语料；创作或新配图方案只读近三篇相关摘要去重。金句库、作品库位置从 profile 解析，不能硬编码第二份。子任务需要并行合同才读 orchestration.md / agent-contracts.md；排障才读 visual-qa.md / layout-reference.md。
+新文章用 `prep_writing.py` 聚合品牌与语料；创作或新配图方案只读近三篇相关摘要去重。金句库、作品库位置从 profile 解析，不能硬编码第二份。需要并行时读 orchestration.md；只有具体任务需要结构化输出合同才从 agent-contracts.md 索引读取对应一节；排障才读 visual-qa.md / layout-reference.md。
 
 正文完成先运行 `pipeline.py preflight`，一次发现纯静态问题。不要等生图、音频都完成后才检查标题、章节、加粗、来源块和计划合法性。检查实现是唯一判据，入口不再复制完整检查清单。
 
