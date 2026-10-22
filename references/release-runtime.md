@@ -1,194 +1,72 @@
-# 定稿后的唯一发布运行时
+# 定稿后的制作与草稿交付
 
-适用场景：作者已经确认 `定稿.md`，后续只做配图、BGM、排版、微信草稿和发布后收尾。此阶段不重写正文，不重跑写作前半程。
+作者已确认正文后进入本页。先运行 `pipeline.py --dir <文章目录> status`，结合当前文件和消费者校验确定从哪里续跑；不重写正文、不重新创作已确认的方案。下文命令在文章目录执行，`$SKILL` 指本 Skill 根。机器过程件由 `article_paths.process_file` 解析，新文章放 `过程记录/`，不手写完成状态。
 
-## 不可变边界
+## 本轮只走受影响的路径
 
-- 自动化终点是微信草稿箱：`scope=wechat-draft`、`formal_publish=false`。
-- 正式发布、原创声明、赞赏设置由作者在微信后台完成。
-- 模型只产出 `visual-plan.json` 候选与独立视觉 QA；控制器单写者串行执行 pipeline、renderer、BGM、排版和微信事务。模型不得拥有长命令或发布命令。
-- 微信草稿只允许通过 `pipeline.py release-to-draft` 创建。不得拆开预检、推送、登记 ID。
-- 默认只用 API 完成公众号提交与读回；除非作者另行明确要求浏览器操作，不得考虑或尝试浏览器发布、编辑草稿、插入音视频或浏览器读回。API 不支持的原生组件操作交付媒体文件及人工插入说明，不能擅自转浏览器；作者对浏览器的单独要求也不自动豁免 `release-to-draft` 的草稿事务合同。
-- 任一命令非零退出就停在当前步骤修复；禁止手工补状态、伪造凭证或调用低层发布脚本绕过。
-- BGM 是发布硬门；新文章不可 `skip bgm`。硬门认 `_music-manifest.json` 绑定的文件与真实来源，不要求特定厂商；网页手工生成或复用既有主题曲同样可用，但不得按文件名猜来源或把旧歌改写成新引擎出身。
+| 本轮变化 | 执行范围 |
+|---|---|
+| 首次接管定稿 | 保存实际审批、`adopt-final`；确定视觉路线，主题曲交接与播客尽早启动 |
+| 正文/配图含义变化 | 更新受影响计划、图片和阅读验收；音频按正文来源摘要判断是否失效 |
+| 只换一张图或修字体 | 只制作和验收该候选；复用其他仍有效候选，重新选组装配与整篇阅读 |
+| 只改外标题 | 走标题及来源核对；满足真实原正文与原参数复用条件才复用音频，不假称新生成 |
+| 只调排版 | 重排与整篇阅读；源图不变不重新生图，已封存图片不就地后处理 |
+| 同一候选已建草稿、读回失败 | 重跑 `release-to-draft`，凭有效 attempt 仅读回原 ID |
+| 拿到正式链接 | 按 [publish.md](publish.md) 执行 `finalize`；不重新制作或自动分发社媒 |
 
-下文命令均在文章目录执行，`$SKILL` 指本 Skill 根目录。下文的 `_xxx.json` 等机器回执（及 `_moments-copy.md`、`_prep-context.md`、审批文件）新文章都在文章目录的 `过程记录/` 里，旧文章第一层已有的沿用第一层（`article_paths.process_file` 统一解析）；Agent 手写的 `_fact-check.md`、`_stutter-list.md` 等复核记录仍在第一层。
-
-## 0. 接管作者定稿
-
-```bash
-python "$SKILL/scripts/pipeline.py" approve draft --source-mode author-provided-final --words "<作者原话>"
-python "$SKILL/scripts/pipeline.py" adopt-final \
-  --final 定稿.md --meta article-meta.yaml
-python "$SKILL/scripts/pipeline.py" verify-release-job
-```
-
-`adopt-final` 的视觉元数据检查按文章级合同分流：显式 `schema_version: 2` / `workflow: stylebook-v1` 须通过画风库整组合同校验且绑定当前作者正文摘要；旧路线仍要求 `claymation`、`warm-light-clay` 和 `montage-evidence`。未知版本、损坏合同或原文漂移均拒绝，作者审批要求不变。
-
-作者拍板后先用 `approve draft --words` 把作者原话逐字落成 `_draft-approval.md`（北京时间、审批来源、`审批结论：通过`；不再手写，封存失败自动回滚），再 `adopt-final`。接管只读并绑定审批文件 SHA、审批 subject、原始定稿字节与作者正文摘要，不代签、不改写审批证据，也不伪造事实复核或审稿记录；缺审批、拒绝、待确认都不会写 state、release job 或 checkpoint receipt。之后只允许 `assemble-release` 和 BGM 脚本写入有明确 marker 的机器装配块；审批证据、作者正文、meta 或 state 漂移都会令 `_release-job.json` 失效。🔴 **接管成功就先交付 `MiniMax-主题曲生成单.md`**（2026-09-23 审计 F3，见 §3 第 2 步），再开始配图：作者生成音乐和 Agent 配图并行，不串行等。
-
-## 可以并行的工作
-
-schema2 在编译前预置标准音频卡，`adopt-final` 确认正文后即可启动 `podcast-pregen`。播客只消费去掉机器装配块的作者正文；图片制作、动图与音频可并行。正文、标题、提示词或音频参数改变时按现有同源摘要重新生成；只改图片和卡片样式不重做播客。最终发布仍核对完整视觉链及音频来源。
-
-## 1. 生成受限视觉任务单
-
-### 画风库路径（schema2，新文章默认）
-
-新文章默认用 `visual-plan.json` 的 schema2（`renderer.backend: stylebook-service`）；schema1 宝玉合同保留给历史文章和显式选择。schema2 已接入实际制作及视觉验收流程，完整字段、命令和来源边界见 [stylebook-contract.md](stylebook-contract.md)。`compile-visuals` 后，`render-visuals` 按 `renderer.backend` 分流：`stylebook-service` 由 CLI 直接调用画风库出图并自动回收原始底图，返回 0（`--jobs N` 调同时出图张数，默认 4；逐张打印进度与耗时，单张超过 300 秒会提示）；`host-imagegen` 才返回码 3，表示等待宿主自己调内置生图工具。之后按合同制作最终图、独立复核全文与逐图、选定整组，再运行 `assemble-release`、`visual-qa`、`seal visual` 和 `accept-stylebook-reading`。视觉封存不等于草稿已交付，仍须本篇整篇阅读、发布预检及官方草稿读回。下列隔离预览入口仅用于规划试验，已有正式 schema2 任务不必再跑一遍。
-
-文章希望试用 `sansheng-image` 时，可先按该 Skill 的 v3 规则独立规划正文配图，保存计划，然后在**当前文章目录**运行：
+## 1. 接管与并行
 
 ```bash
-python "$SKILL/scripts/pipeline.py" compile-stylebook-preview \
-  --plan stylebook-plan.json --image-skill-root /已安装的/sansheng-image
+python3 "$SKILL/scripts/pipeline.py" approve draft --source-mode author-provided-final --words "<作者实际原话>"
+python3 "$SKILL/scripts/pipeline.py" adopt-final --final 定稿.md --meta article-meta.yaml
 ```
 
-该入口检查 `source.path` 必须指向本篇 `定稿.md`、原文字节 SHA-256、全文 `coverage` 和逐张编译合同，输出 `素材/stylebook-preview-<计划摘要>.json`：每张的完整编译词、清单、实际画风库文件摘要及真实 `producer` 均在其中。0 张新增图也能得到明确预览证据。预览的 `renderer=null`、`plan_review=not_run` 是实际状态；须另按画风库规则执行独立 `plan-review` 和实际图片核对。旧预览不会被不同本体静默覆盖。
+只在首次接管或实际批准新正文时执行；已有有效审批持续有效。作者正文、审批 subject 与原话必须真实，不用“授权我交付”冒充作者看过最终成片。只有装配器和音频卡工具可写受控机器块。
 
-这个预览入口只验证内容规划与画风编译的消费者输入，**不**生成图片，不写 `visual-plan.json`、`render-batch.json` 或发布封存回执；不能代替 schema2 的实际制作与验收，也不能凭预览回执进入微信草稿。schema2 允许正文图 0～多张，按自己的来源、文字、装配和封存合同验收，不能把新图记为宝玉出图。下述 schema1 主链保留给历史文章和显式选择。
+接管后立即交付 [music.md](music.md) 的 MiniMax 主题曲生成单，作者生成音乐时继续配图。已有 MP3 先核来源并复用，不让作者重做。新文章 BGM 是硬门；Lyria 自动通道暂停。
 
-schema1（历史文章与显式选择）根据定稿写 `visual-plan.json`，只允许以下结构；schema2 使用上面链接的画风库合同：
+schema2 已确认正文、且 profile 启用 `podcast.wechat_embed` 时，尽早启动 `podcast-pregen`，与图片制作并行。图片装配不重做播客；正文、标题或生成参数变化按同源合同判断。播客必须在草稿前齐备，不能留到 finalize。正文、选图、排版和发布由一个控制者写入；独立模型负责规定的审核，不控制发布命令。
 
-- 封面：`2.35:1`，`montage-evidence`。
-- Hero：`1:1`。
-- 信息图至少 4 张：首张 `9:16`、末张 `9:16`、中间全部 `16:9`。例外：`article-meta.yaml` 声明 `infographic_mode: author-shots`（作者截图模式）时 `infographics` 必须为 `[]`，视觉切分由正文引用的 ≥4 张作者供图兑现（`素材/作者素材/` 或 `shot-` 前缀，文件必须存在）；`verify infographic` / `release-check` 改验这一条，`assemble-release` 不插图。
-- 每张信息图必须含 `id`、`position`、`aspect_ratio`、`title`、`layout_type`、`layout`、`anchor`、`expected_text`、`facts`。`layout_type` 必须是已登记的 Baoyu 布局类型。
-- `anchor` 是定稿作者正文中唯一命中的原文片段；装配器把该图插在锚句之后，找不到或命中多次即失败，禁止再按 H2 数量猜图位。
-- 编译器会拦截明显的相邻双重复字；文字 QA 的“逐字一致”只证明渲染忠实，
-  不等于任务单文案本身正确。
-- 信息图与 Hero 一律 `claymation + warm-light-clay`，全站统一，不按题材分流。
+## 2. 只读取实际视觉路线
+
+- **新文章 schema2**：按 [image-routing.md](image-routing.md) 选作者风格，再读 [stylebook-contract.md](stylebook-contract.md) 完成编译、出图、最终候选、独立审核、选组、装配、视觉封存与整篇阅读。正文图按内容规划为 0～多张；封面、正文、音乐和播客封面分别继承对应配置，不因换生图后端重选风格。`stylebook-service` CLI 直接生成并回收；只有 `host-imagegen` 返回 3 等宿主实际调用工具。
+- **历史 schema1 或显式选择**：才读 [release-legacy.md](release-legacy.md)。其固定画风、张数、水印与后处理规则不能套到 schema2。
+- **仅试验规划**：才读 [stylebook-preview.md](stylebook-preview.md)。已有正式 schema2 任务不再额外跑预览。
+- **明确要求动态插图**：加读 [article-motion.md](article-motion.md)。先看动作能否解释内容及实际小样，再做交接；不能以移动选框冒充内容演绎。
+
+独立审核绑定实际模型、文字、像素、来源和方法；失败先修实际问题，不修改凭证绕过。只读旧 done 标签不等于当前通过。数据图与精确拓扑用已核实内容的确定性路径，不让模型编造数值。
+
+## 3. 音频、排版与阅读
+
+1. 收到主题曲后创建并验证真实 `_music-manifest.json`，用 `audio_cards.py` 放主题曲卡；启用播客时保持“导读 → 主题曲卡 → 播客卡 → 正文”。两卡同级同宽，上下排列。
+2. 用内置 `md_render.py` 生成微信 HTML，执行 `format_layout.py 定稿.html --all --check`。只读 [layout.md](layout.md) 当前所需步骤。
+3. schema2 的品牌处理在候选验收前完成；装配后只安装品牌账本，不再覆盖、压缩已验收图片。静态正文使用 PNG/JPG，GIF 按动态合同上传。
+4. 实际阅读完整文章及合同规定视口，确认字清楚、图意正确、无裁切。schema2 用 `accept-stylebook-reading` 保存真实观察，不用模型勾选替代看图。
+
+封面或动图不满意属于候选问题，先修候选；不要一边更新制作方法一边验收同一个候选，避免方法摘要在长审核过程中改变。准备交草稿后冻结本次输入，发现变化先结束当前检查再重做受影响部分。
+
+## 4. 一次命令交草稿
 
 ```bash
-python "$SKILL/scripts/pipeline.py" compile-visuals
+python3 "$SKILL/scripts/pipeline.py" release-to-draft
 ```
 
-编译器生成 canonical prompts 和 `素材/render-batch.json`。业务生产者固定为
-`sansheng-write.visual-planner`，`producer_chain` 只允许这个真实执行者。Hero / 信息图必须
-分别记录 `baoyu-article-illustrator` / `baoyu-infographic` 的 `method_sources` 与 SKILL 字节锚点；
-封面只走本仓 `montage-evidence`。缺方法锚点、伪造 producer chain 或视觉合同不完整都不得发布。
+正常路径**不先跑 `release-check`、`verify publish --pre` 再跑上面命令**。它们保留为只诊断、不提交时的入口；`release-to-draft` 自己重绑定允许的机器装配、校验接管和全部发布前合同、封存发布包、创建草稿并官方读回。
 
-## 2. 调用外部像素渲染器
+- 只能 `scope=wechat-draft`、`formal_publish=false`；正式发布、原创与赞赏由作者操作。
+- 默认只走公众号 API，浏览器操作须作者单独要求；API 不支持的原生组件交付文件和插入说明。
+- 拿到 media_id 立即持久化。读回比对标题、摘要、作者、阅读原文、正文、图片、推广链接、封面和评论设置；全部一致才报草稿交付。
+- 同一候选读回失败保留 attempt，重试不重建草稿；候选变了才开启新 attempt。官方读回不得缓存掉。
+- 非零退出先修明确错误；禁止直调底层接口、手补状态或伪造通过。
+- 运行 `handoff-assets` 补齐作者上传文件。已有音频封面复用，只生成缺失或明确要求修改的一张。交付路径用主仓镜像路径。
+- 同一条交付消息附 [publish.md](publish.md) 规定的朋友圈文案；自动基线须改写，保留合适 emoji，不等正式链接再交。
 
-> 本节「只可调用 `baoyu-image-gen`」等 renderer 规则适用于 **schema1**（历史文章与显式选择）。schema2 的出图路线见上文「画风库路径」与 [stylebook-contract.md](stylebook-contract.md)，不受本节 renderer 限制。
+## 5. 正式发表后的收尾
 
-```bash
-python "$SKILL/scripts/pipeline.py" render-visuals
-```
+`finalize <永久链接>` 按 [publish.md](publish.md) 与 [release-runtime-appendix.md](release-runtime-appendix.md) 完成已授权收尾。正式文章双音频通过官方发布 API 验证；仅账号返回 48001 时按合同降级同一永久页，不声称验证了 API 看不到的音频字节。草稿已回收不是伪造凭证的理由。
 
-需要比较同一张图的多种生成结果时，用候选闭环，而不是反复覆盖最终文件：
+把“微信已交草稿”“正式文章已发表”“官网正在排队”“官网已上线”分别报告。网站排队不影响已完成草稿的事实，也不重复制作文章；持久化 job ID 后按状态续查，退出码 0 或 queued 不等于上线。
 
-```bash
-python "$SKILL/scripts/pipeline.py" render-visuals --candidates 3
-python "$SKILL/scripts/pipeline.py" select-visuals \
-  cover=2 hero=1 infographic-01=3 infographic-02=1 infographic-03=2 infographic-04=1
-```
+## 排障按耗时定位
 
-候选只保存在 `素材/candidates/`；未执行 `select-visuals` 时视觉 QA 会硬拦。系统绝不把最后一张随机生成图冒充为“最佳图”。
-请求多候选但因 429 等原因只生成出一张时，选择命令必须失败，禁止把残留单图标成“已选择”。
-
-schema1 的适配器只可调用 `baoyu-image-gen` CLI。
-外部渲染器只负责像素，不决定版式、风格、文字或比例。图中全部内容文字必须由生成模型与
-画面在同一次请求里原生生成，并共享对应的粘土材质、灯光与色板；不允许 SVG / HTML /
-Canvas / CSS / 本地模板 / Pillow / Jimp / Sharp / ImageMagick 绘制或后期叠字，也不允许
-模型另写 SVG 再转 PNG。错字只走同一 canonical prompt 的单张重渲，不拆分文字层。运行前会探测 batch
-能力；仅在 `baoyu-image-gen` 内按 `renderer-policy.json` 的顺序降级，并保持同一 prompt、
-比例和输出目标。未配置 policy 时直接使用 `baoyu-image-gen` 默认 provider。`sansheng-google`
-等本仓原生 provider 会绕开 Baoyu，现已无条件拒绝；不存在“写理由放行”。
-
-🔴 **模型 ID 不要带 `-preview`。** 模型转正后 preview ID 可能下线返回 404；
-429 则通常是速率配额，应该退避重试并降低并发，不要混入另一条绕过 Baoyu 的原生链。
-`sansheng-template-safe`、`sansheng-google-text-safe`、`sansheng-google` 均被运行时拒绝。
-
-每张图必须记录：
-
-- `producer=sansheng-write.visual-planner`
-- 实际 renderer（schema1 必须为 `baoyu-image-gen`；schema2 记录 `backend` 与来源强度，见 stylebook-contract.md）
-- 实际 provider、model、renderer revision、attempt
-- prompt/output SHA-256
-
-全部已配置 renderer 都失败时非零退出，不调用宿主内置生图工具绕过。
-
-## 3. 后处理、BGM 与排版
-
-1. 由确定性装配器按任务单位置嵌入信息图：
-```bash
-python "$SKILL/scripts/pipeline.py" assemble-release
-```
-2. 按 `music.md` 与 `templates/minimax-music-brief.template.md` 交付文章目录内的 `MiniMax-主题曲生成单.md`，给作者可点击路径——**这一步在 §0 接管成功时就做**，到这里只收 MP3。默认由作者在 MiniMax 网页手动生成；Lyria 暂停，不调用 `generate_article_bgm.py` 或要求 Google Cloud 登录。收到 MP3 后核实来源、创建并验证 `_music-manifest.json`，再用 `audio_cards.py` 插入 AUDIO-CARD。等待 MP3 时继续图片等独立工作，不伪造完成状态。
-3. 若 profile 显式配置 `podcast.wechat_embed: true`，立即运行 `pipeline.py podcast-pregen`：先插入同级 PODCAST-CARD，再生成 `dist/podcast/audio.mp3`。这是草稿前硬门，不得留到 `finalize`；未显式配置时保持历史主题曲单卡。
-4. 使用内置 `md_render.py` 生成微信 HTML，再运行 `format_layout.py 定稿.html --all --check`。schema2 的水印在逐图验收前制作，装配后只执行 `brand-stylebook-candidate --install-ledger`；不得再就地压缩或改写已验收图片。
-5. 只有 schema1 历史路线按其生成与水印合同执行下面的后处理，不能套到 schema2：
-```bash
-python "$SKILL/scripts/format_layout.py" 定稿.html --all --check
-node "$SKILL/scripts/add_logo.js" "素材/*.png"
-python "$SKILL/scripts/compress_images.py" 素材
-```
-静态正文图片使用 JPG/PNG；本篇采用的 GIF 通过永久素材接口上传，具体见 [article-motion.md](article-motion.md)。WebP/AVIF/HEIC/BMP/TIFF 不能原样传入静态正文图片接口。旧上传器曾吞掉 `40005` 并留下本地路径；现内置上传器遇错即停。三道防线已内建：
-`compress_images.py` 收图前自动转 PNG 并改写引用；`build_expected_draft` 推送前硬拦；
-`_compare_readback` 回读后兜底。
-
-数据图与精确拓扑图只允许根据已核实内容走独立本地确定性代码路径；两者都不得让生成模型编造数值，也不得冒充封面 / Hero / 信息图进入最终图证据集。
-
-## 4. 独立视觉 QA 与封存
-
-`SANSHENG_WRITE_VISUAL_QA_COMMAND` 必须指向一个独立看图进程，接受：
-
-```text
-<command> --request <_visual-qa-request.json> --output <candidate.json>
-```
-
-然后执行：
-
-```bash
-python "$SKILL/scripts/pipeline.py" visual-qa
-python "$SKILL/scripts/pipeline.py" seal visual
-```
-
-**觉得重渲多了就跑 `pipeline.py render-stats`**（只读不改状态）：按图打印渲染次数、
-QA 打回次数、产出过几张不同的图，并算出浪费量与排查顺序。
-🔴 **别凭印象判断哪张渲多了** —— 曾经那句「45 次渲染、6 张图、浪费 39 次」
-是事后手工数出来的，这个命令就是来替掉那个活的。
-四条成因按实测收益排序（frontmatter 泄漏 → SCENE 缺具体物象 → 文字共享 ≥2 字 →
-自带文字的物件），第 2-4 条 `compile-visuals` 就会拦；渲到一半才发现，
-先怀疑是不是手工改过 prompt 绕开了编译期。完整实验见
-`_ops/records/2026-08/生图首过率改造-实验与结论-20260816.md`。
-
-授权源是结构门与 `_visual-qa.json` 的共同结果，不是 Markdown 勾选框。
-QA request 会逐图携带目标 style、配方摘要、
-必备视觉特征、禁用视觉特征与所需 checks；审阅必须检查预期文字、意外杂字、裁切安全、主次层级、
-目标风格、品牌色板和同篇一致性，封面另验固定构图。模型审阅必须给出实际对象、数量、
-位置和版式观察；只返回布尔勾选不得放行。`_visual-qa.md` 只是派生的人读摘要。
-QA 资产集合从最终 HTML 与 Markdown 的实际引用共同计算；Hero 即使只由排版器写入 HTML，也必须送审。
-`text_match`、`no_unexpected_text`、`style_contract_match` 是不可移除的发布硬门；
-每条 `required_text` 必须在整图恰好出现一次。视觉编译后若 QA 代码字节变化，旧凭证立即失效。
-
-仓内自带两个同合同的看图适配器：默认 `scripts/visual_qa_claude.py`（Claude 无头进程自己看图，不依赖 Codex 额度）与备用
-`scripts/visual_qa_codex.py`；配置与三种静默失效（提示词没送达 / 糊字被脑补成通顺句 / 转写被打碎误杀好图）见 `visual-qa.md`。
-
-## 5. 唯一草稿箱事务
-
-```bash
-python "$SKILL/scripts/pipeline.py" release-check
-python "$SKILL/scripts/pipeline.py" release-to-draft
-```
-该命令不可拆分：
-1. 验证 release job。
-2. 执行全部发布前硬门并写 `_publish-ready.json`。
-3. 创建微信草稿；拿到 `media_id` 后立即写 `_release-attempt.json`。
-4. 调微信官方 `draft/get` 读回。
-5. 比对标题、摘要、作者、阅读原文、评论设置、正文规范化摘要、图片数量、上传后的图片地址、推广链接与封面 media ID。
-6. 全部一致才写 v2 `_publish-receipt.json` 并把 publish 标为 done；若含音频卡，同时写 `_wechat-audio-handoff.json`，绑定草稿 ID、两份音频路径与 SHA-256。🔴 **同时落朋友圈文案基线**（2026-09-23 作者要求）：命令成功后已写 `_moments-copy.md` 基线。Agent 必须当场按 publish.md §朋友圈内容协议改写、写回，并在**报告「已进草稿箱」的同一条回复**里逐字给出，作者可直接复制。不等永久链接——文案本来就不放文章链接行；`finalize` 续跑时保留已改写的终稿。
-读回失败时保留 attempt；同一 ready digest 重试只读回原草稿，不重复创建。产物发生变化后才会开启新 attempt。
-草稿回读通过后运行 `pipeline.py handoff-assets`，先补齐主题曲封面 / 播客封面（`audio_covers.py`，缺哪张生成哪张，写在文章编号文件夹第一层），再把主题曲（歌名原文件名）、`播客 | {文章标题}.mp3`、`cover.png`、`音乐封面.png`、`播客封面.png` 放在同一层。交付直接链接文章目录，不另建“手工上传”目录，也不要把这两张音频封面放进 `素材/`。机器副本 `dist/podcast/audio.mp3` 和发布回执留在原位。详见 `music.md`「上传文件统一放在文章文件夹」。🔴 **主仓镜像（2026-09-18）**：文章在 git worktree 里生产时，同一命令会自动把第一层上传文件、`素材/作者素材/`、`素材/视频/` 与 `dist/podcast/` 产物镜像到 `SANSHENG_WRITE_ARCHIVE_DIR/<同名目录>/`（作者只在那里找成品；这些文件被 `.gitignore` 挡住，合回主线带不过去）。同哈希跳过、不同内容不覆盖并报错、`--no-mirror` 可关。**回复里给作者的路径一律是主仓路径**，worktree 路径只在说明过程时提。
-## 6. 人工正式发布与自动收尾
-
-若启用了公众号播客卡，作者在微信编辑器的两个占位处分别插入主题曲与播客原生音频、删除占位文字，随后可直接正式发布。🔴 **主路径是发布后补验**（2026-09-23 审计 F4：作者插完音频都是直接发布，草稿随即被微信回收，草稿读回近 4 篇 4 次全败）：`finalize <永久链接>` 在前置检查里自动做正式文章双音频补验——优先 `freepublish/batchget` 精确定位 `article_id`、`freepublish/getarticle` 复核正式全文；账号对已发表内容 API 返回 `48001 api unauthorized` 时，才严格降级读取同一 `mp.weixin.qq.com` 永久页，公开页独立证明标题、摘要、公众号主体、阅读原文、封面 URL、全文语义、图片身份、推广链接与两个原生播放器，公开页不可见的署名、封面 media_id 和评论设置沿用此前已完整通过的官方草稿回执。校验固定顺序「导读 → 🎵 阅读配乐｜本文主题曲 → 🎧 音频版本｜本期播客 → 正文」，绑定本地双音频哈希与远端播放器身份，逐项记录证据覆盖面，通过后写独立的 `_wechat-published-audio-receipt.json`；不过就不收尾，报错里给出单独诊断命令 `pipeline.py wechat-published-audio-check <永久链接>`。微信 API 不返回播放器内的音频字节，凭证只证明可回读字段与本地文件一致，不声称已试听；无需作者确认试听。续跑时 `finalize` 每次写盘前都重读同一证据面，正式文章身份、永久链接、正文、播放器或本地音频任一变化都会令凭证失效。
-
-作者想在**发布前**自检时，保存草稿后可选运行 `python "$SKILL/scripts/pipeline.py" wechat-audio-check`（再次 `draft/get`，同样复核上述字段，写 `_wechat-audio-receipt.json`）；它只在正式文章补验不过、草稿又还在时给 `finalize` 兜底。草稿被回收返回 `40007 invalid media_id` 不是放宽发布门的理由，不得补写或复制任何音频凭证。主题曲与播客同级同宽、上下排列，不做手机端左右双栏。 自动收尾的完整清单见 [release-runtime-appendix.md](release-runtime-appendix.md)。
-
-## 失败处理与交付状态
-
-非零退出先修明确报错后重跑同一命令，长命令不另开终端、不直调 renderer；`adopt-final` 后先检查 `_asset-plan.json` 与 `_delivery-snapshot.json`，官网命令 exit 0 不等于部署完成。完整清单见 [release-runtime-appendix.md](release-runtime-appendix.md)。
-
-仅改外标题时，播客可通过真实冻结原文与原音频清单证明复用：正文及非标题元数据完全相同、原音频字节和原生成参数一致才有效。保留原生成标题与时间，不改写为本轮新生成。修改正文或生成参数仍失效。
+优先看本篇 observations 的 `pipeline.* / command_exit`，再看 `publish_preflight` 与 `draft_transaction` 的子步骤。父阶段包含子步骤，不能相加冒充总时间；人工等音乐、模型生成、本地检查、上传读回、网站排队分别统计。详细审计才读 [skill-review.md](skill-review.md)，不把复盘资料全部加载进日常发布。

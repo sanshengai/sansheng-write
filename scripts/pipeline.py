@@ -2492,6 +2492,24 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     iron-rules「发布前硬闸」的落地 -- 只查素材/文件齐备，不查推送证据
     （draft_media_id / wechat_url 归 `verify publish` 推送后验证）。"""
     errors = []
+    from time import perf_counter
+
+    def checked(name, fn):
+        started = perf_counter()
+        result = None
+        try:
+            result = fn()
+            return result
+        finally:
+            try:
+                from contracts import log_observation
+                log_observation("publish_preflight", name,
+                    "fail" if result is None or (isinstance(result, list) and result) or (isinstance(result, tuple) and isinstance(result[-1], list) and result[-1]) or (isinstance(result, dict) and result.get("errors")) else "ok",
+                    article=cwd.name, elapsed_ms=(perf_counter() - started) * 1000)
+            except Exception:
+                pass
+
+    stylebook = _stylebook_selected(cwd)
     if state is None and (cwd / STATE_FILE).exists():
         state = load_state(cwd)
     if state is not None:
@@ -2508,14 +2526,6 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
     if not (mat / "hero.png").exists():
         errors.append("缺 素材/hero.png（导读栏小图）")
     infos = list(mat.glob("infographic*.png")) if mat.exists() else []
-    if _stylebook_selected(cwd):
-        errors.extend(_stylebook_release_errors(cwd))
-        from stylebook_release import reading_errors
-        errors.extend(reading_errors(cwd))
-    elif _infographic_mode(cwd) == "author-shots":
-        errors.extend(_author_shots_errors(cwd))
-    elif len(infos) < 4:
-        errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
     if not (cwd / "定稿.html").exists():
         errors.append("缺 定稿.html（先走 layout 阶段）")
     else:
@@ -2533,35 +2543,50 @@ def _pre_publish_errors(cwd: Path, state: dict | None = None) -> list:
                     errors.append("定稿.html 双音频卡顺序错误（主题曲应在播客版之前）")
         except Exception as exc:
             errors.append(f"定稿.html 双音频卡检查异常：{exc}")
-    cover_route_errors = _cover_route_errors(cwd, allow_postprocessed=True)
-    errors.extend(f"cover_route: {e}" for e in cover_route_errors)
-    route_errors = _visual_route_errors(cwd, allow_postprocessed=True)
-    errors.extend(f"visual_route: {e}" for e in route_errors)
-    qa_evidence_errors = _visual_qa_evidence_errors(cwd)
+    # Run inexpensive structural checks before recursively verifying visual evidence.
+    try:
+        from contracts import verify_publish_assets
+        res = checked("asset_contract", lambda: verify_publish_assets(str(cwd)))
+        errors.extend(f"verify_publish_assets: {e}" for e in res.get("errors", []))
+    except Exception as exc:
+        errors.append(f"verify_publish_assets 异常：{exc}")
+    if errors:
+        return errors
+
+    if stylebook:
+        # In schema2 both route functions are exact aliases of stage_errors.
+        # Keep its unique extra-image check; do not rerun it under three names.
+        errors.extend(checked("stylebook_group", lambda: _stylebook_release_errors(cwd)))
+        from stylebook_release import reading_errors
+        errors.extend(checked("article_reading", lambda: reading_errors(cwd)))
+    elif _infographic_mode(cwd) == "author-shots":
+        errors.extend(_author_shots_errors(cwd))
+    elif len(infos) < 4:
+        errors.append(f"信息图 infographic*.png 仅 {len(infos)} 张（需 ≥4）")
+    if not stylebook:
+        errors.extend(f"cover_route: {e}" for e in checked("cover_route", lambda: _cover_route_errors(cwd, allow_postprocessed=True)))
+        errors.extend(f"visual_route: {e}" for e in checked("visual_route", lambda: _visual_route_errors(cwd, allow_postprocessed=True)))
+    qa_evidence_errors = checked("visual_qa_evidence", lambda: _visual_qa_evidence_errors(cwd))
     errors.extend(f"visual_qa: {e}" for e in qa_evidence_errors)
-    qa_errors = _visual_qa_errors(cwd) if not qa_evidence_errors else []
+    # schema2 final_byte_errors and validate_qa_result both call qa_errors,
+    # which checks the full current QA, not only image bytes.
+    qa_errors = checked("visual_qa", lambda: _visual_qa_errors(cwd)) if not stylebook and not qa_evidence_errors else []
     errors.extend(f"visual_qa: {e}" for e in qa_errors)
-    _, receipt_errors = verify_visual_receipt(cwd)
-    errors.extend(f"visual_receipt: {e}" for e in receipt_errors)
+    if not stylebook:
+        _, receipt_errors = checked("visual_receipt", lambda: verify_visual_receipt(cwd))
+        errors.extend(f"visual_receipt: {e}" for e in receipt_errors)
     try:
         sys.path.insert(0, str(Path(__file__).parent))
         from contracts import log_observation as _logobs_visual
         _logobs_visual(
             "verify_publish", "visual_qa",
-            "fail" if qa_errors else "ok",
-            f"errors={len(qa_errors)}", cwd.name,
+            "fail" if qa_errors or qa_evidence_errors else "ok",
+            f"errors={len(qa_errors) + len(qa_evidence_errors)}", cwd.name,
         )
     except Exception:
         pass
-    try:
-        sys.path.insert(0, str(Path(__file__).parent))
-        from contracts import verify_publish_assets
-        res = verify_publish_assets(str(cwd))
-        for e in res.get("errors", []):
-            errors.append(f"verify_publish_assets: {e}")
-    except Exception as e:
-        errors.append(f"verify_publish_assets 异常：{e}")
-    _, manifest_errors = build_publish_manifest(cwd)
+    # build_publish_manifest always verifies the current visual receipt itself.
+    _, manifest_errors = checked("publish_manifest", lambda: build_publish_manifest(cwd))
     errors.extend(f"publish_manifest: {e}" for e in manifest_errors)
     return errors
 
@@ -5070,13 +5095,19 @@ def _log_qa_verdict(cwd: Path, qa, errors: list) -> None:
 
 def cmd_release_to_draft(cwd: Path) -> None:
     """唯一草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
-    from release_job import validate_release_job
+    from release_job import rebind_release_job, validate_release_job
     from release_to_draft import release_to_draft, write_audio_handoff
 
     def preflight(root: Path):
+        # Rebind machine-only assembly here; release-check is diagnostic, not
+        # a mandatory second copy of the entire preflight before this command.
+        _, _, bind_errors = rebind_release_job(root)
+        if bind_errors:
+            return None, bind_errors
         _, job_errors = validate_release_job(root)
-        errors = list(job_errors)
-        errors.extend(_pre_publish_errors(root))
+        if job_errors:
+            return None, job_errors
+        errors = _pre_publish_errors(root)
         if errors:
             return None, errors
         return write_publish_ready(root)

@@ -1784,6 +1784,24 @@ def _compare_readback(
     return checks, errors
 
 
+def _timed_step(cwd: Path, name: str, action):
+    """Local timing only; never serialize article text or remote identifiers."""
+    from time import perf_counter
+    started = perf_counter()
+    outcome = "fail"
+    try:
+        result = action()
+        outcome = "fail" if (isinstance(result, tuple) and isinstance(result[-1], list) and result[-1]) else "ok"
+        return result
+    finally:
+        try:
+            from contracts import log_observation
+            log_observation("draft_transaction", name, outcome, article=cwd.name,
+                            elapsed_ms=(perf_counter() - started) * 1000)
+        except Exception:
+            pass
+
+
 def release_to_draft(
     cwd: Path,
     *,
@@ -1802,13 +1820,13 @@ def release_to_draft(
     if job.get("scope") != "wechat-draft" or job.get("formal_publish") is not False:
         return None, ["release job 只允许 scope=wechat-draft 且 formal_publish=false"]
 
-    ready, errors = preflight(cwd)
+    ready, errors = _timed_step(cwd, "preflight_and_seal", lambda: preflight(cwd))
     if errors or ready is None:
         return None, errors
     ready_digest = str(ready.get("manifest_digest") or "")
     if not ready_digest:
         return None, ["preflight 未返回 publish-ready digest"]
-    expected, expected_errors = build_expected_draft(cwd)
+    expected, expected_errors = _timed_step(cwd, "expected_draft", lambda: build_expected_draft(cwd))
     if expected_errors or expected is None:
         return None, expected_errors
     expected_digest = stable_digest(expected)
@@ -1831,7 +1849,7 @@ def release_to_draft(
     try:
         if not attempt:
             publish = publisher or _default_publisher(cwd)
-            result = publish(expected)
+            result = _timed_step(cwd, "upload_and_create", lambda: publish(expected))
             media_id = str(result.get("media_id") or "").strip()
             cover_media_id = str(result.get("cover_media_id") or "").strip()
             if not media_id or not cover_media_id:
@@ -1853,7 +1871,7 @@ def release_to_draft(
                 encoding="utf-8",
             )
         read = reader or _default_reader(cwd)
-        actual = read(str(attempt["draft_media_id"]), expected)
+        actual = _timed_step(cwd, "official_readback", lambda: read(str(attempt["draft_media_id"]), expected))
     except Exception as exc:
         return None, [str(exc)]
 
