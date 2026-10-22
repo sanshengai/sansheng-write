@@ -190,3 +190,5 @@ python "$SKILL/scripts/pipeline.py" release-to-draft
 ## 失败处理与交付状态
 
 非零退出先修明确报错后重跑同一命令，长命令不另开终端、不直调 renderer；`adopt-final` 后先检查 `_asset-plan.json` 与 `_delivery-snapshot.json`，官网命令 exit 0 不等于部署完成。完整清单见 [release-runtime-appendix.md](release-runtime-appendix.md)。
+
+仅改外标题时，播客可通过真实冻结原文与原音频清单证明复用：正文及非标题元数据完全相同、原音频字节和原生成参数一致才有效。保留原生成标题与时间，不改写为本轮新生成。修改正文或生成参数仍失效。

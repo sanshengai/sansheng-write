@@ -945,3 +945,8 @@
 [0.1.2]: https://github.com/sanshengai/sansheng-write/tree/v0.1.2
 [0.1.1]: https://github.com/sanshengai/sansheng-write/tree/v0.1.1
 [0.1.0]: https://github.com/sanshengai/sansheng-write/tree/v0.1.0
+
+
+### 未发布：恢复品牌宽幅封面
+
+恢复已约定的左右宽幅构图，显式区分品牌横幅与方形安全封面；不再用缩小全部内容满足方裁。保留旧格式并加入中央小图、空图反例。修复级候选，尚未创建 Release。

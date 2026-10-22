@@ -68,7 +68,7 @@ def cfg() -> dict:
     return distribute_channel("podcast")
 
 
-def generation_digest(article_dir: Path, c: dict | None = None) -> str:
+def generation_digest(article_dir: Path, c: dict | None = None, *, source_override: str | None = None, title_override: str | None = None) -> str:
     """绑定真正影响节目内容的输入；缺任何一项都不得复用旧音频。"""
     c = c or cfg()
     prompt = Path(str(c.get("focus_prompt") or "")).expanduser()
@@ -77,8 +77,8 @@ def generation_digest(article_dir: Path, c: dict | None = None) -> str:
     )
     payload = {
         "schema": PODCAST_GENERATOR_SCHEMA,
-        "source_digest": distribute.source_digest(article_dir, "podcast"),
-        "title": distribute.read_final_title(article_dir),
+        "source_digest": source_override if source_override is not None else distribute.source_digest(article_dir, "podcast"),
+        "title": title_override if title_override is not None else distribute.read_final_title(article_dir),
         "focus_prompt_sha256": prompt_sha,
         "language": str(c.get("language") or "zh"),
         "length": str(c.get("length") or "default"),
@@ -140,7 +140,7 @@ def generation_is_fresh(article_dir: Path, c: dict | None = None) -> bool:
         and entry.get("audio_sha256") == hashlib.sha256(mp3.read_bytes()).hexdigest()
     )
     if not state_fresh:
-        return False
+        return title_only_audio_is_fresh(article_dir, c, mp3, entry)
     manifest = _read_audio_manifest(mp3)
     if not manifest:
         # v1.6.0 and earlier had only the state receipt. Keep those articles usable;
@@ -719,6 +719,40 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "generate":
         return cmd_generate(d, a.keep_notebook)
     return cmd_publish(d, a.confirm)
+
+
+
+
+def title_only_audio_is_fresh(article_dir: Path, c: dict, mp3: Path, entry: dict) -> bool:
+    """Reuse audio only when original bytes/config are authenticated and only title changed.
+
+    Keep original generation receipt unchanged; this is reuse, not a new generation.
+    """
+    try:
+        from title_only_reuse import title_and_body
+        from assemble_release import author_content_sha256
+        manifest = _read_audio_manifest(mp3)
+        if (not mp3.is_file() or manifest.get("schema_version") != AUDIO_MANIFEST_SCHEMA
+                or manifest.get("audio_sha256") != hashlib.sha256(mp3.read_bytes()).hexdigest()
+                or manifest.get("audio_sha256") != entry.get("audio_sha256")
+                or manifest.get("generation_digest") != entry.get("generation_digest")
+                or manifest.get("bytes") != mp3.stat().st_size
+                or float(manifest.get("duration_seconds") or 0) <= 0):
+            return False
+        current_title, current_body = title_and_body((article_dir / "定稿.md").read_text())
+        for source in (article_dir / "素材/stylebook-sources").glob("*.md"):
+            if hashlib.sha256(source.read_bytes()).hexdigest() != source.stem:
+                continue
+            original = source.read_text()
+            if author_content_sha256(original) != manifest.get("source_digest"):
+                continue
+            old_title, old_body = title_and_body(original)
+            expected = generation_digest(article_dir, c, source_override=manifest["source_digest"], title_override=old_title)
+            if old_body == current_body and old_title != current_title and expected == manifest["generation_digest"]:
+                return True
+        return False
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
 
 
 if __name__ == "__main__":

@@ -5265,11 +5265,13 @@ def cmd_retitle(new_title: str, cwd: Path):
     changed = []
     meta = cwd / "article-meta.yaml"
     if meta.exists():
-        txt, n = re.subn(r'(?m)^title: ".*"$', f'title: "{new_title}"',
-                         meta.read_text(encoding="utf-8"), count=1)
-        if n:
-            meta.write_text(txt, encoding="utf-8")
-            changed.append("article-meta.yaml")
+        import yaml
+        meta_data = yaml.safe_load(meta.read_text(encoding="utf-8"))
+        if not isinstance(meta_data, dict):
+            raise ValueError("article-meta.yaml 必须是 YAML 对象")
+        meta_data["title"] = new_title
+        meta.write_text(yaml.safe_dump(meta_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        changed.append("article-meta.yaml")
     draft = cwd / "定稿.md"
     if draft.exists():
         txt = draft.read_text(encoding="utf-8")

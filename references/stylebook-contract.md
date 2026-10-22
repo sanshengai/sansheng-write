@@ -4,14 +4,16 @@
 
 ## 当前可执行的步骤
 
-使用 S02 深炭品牌封面时，先通过 image 的 `cover-flow` 编译方形母版请求，按完整编译词实际生成并查看；必要时返修母版，保留生成链。母版须通过 S02 方形边距预检，再将 `cover.square_master` 写为 `{ "path": "本篇相对路径.png", "receipt": "本篇相对路径.json" }`。来源 JSON 的 `steps` 顺序保存原始生成及至多两次返修，每步保留实际 `backend`、`invocation_status`、`tool_output`、完整 `call`、输出绝对 `path` 与 `sha256`；返修须引用上一张实际输出。write 核对原始编译词、链路和字节后才使用 image 的标准扩图词生成横版，并仍需检查最终横版与微信方形裁切。不能在横版生成失败后，把裁切成方形的结果冒充方形母版。
+S02@r4 恢复作者宽幅品牌构图：使用 `wechat-cover-brand-wide`（1880×800），合同必须显式声明 `recipe.layout.wide_canvas_only: true`，直接生成横版、不得填写 `square_master`。生成前对照已认可的品牌成品；验收横幅的标题、主体大小及完整构图，不能用中心小图通过方形安全检查。此格式不承诺居中方裁保留整幅内容，方形用途单独适配。普通 `wechat-cover-head` 的居中裁切与边距规则保持不变。
+
+历史 S02@r3 方形实验使用 `wechat-cover-head` 时，先通过 image 的 `cover-flow` 编译方形母版请求，按完整编译词实际生成并查看；必要时返修母版，保留生成链。母版须通过 S02 方形边距预检，再将 `cover.square_master` 写为 `{ "path": "本篇相对路径.png", "receipt": "本篇相对路径.json" }`。来源 JSON 的 `steps` 顺序保存原始生成及至多两次返修，每步保留实际 `backend`、`invocation_status`、`tool_output`、完整 `call`、输出绝对 `path` 与 `sha256`；返修须引用上一张实际输出。write 核对原始编译词、链路和字节后才使用 image 的标准扩图词生成横版，并仍需检查最终横版与微信方形裁切。不能在横版生成失败后，把裁切成方形的结果冒充方形母版。
 
 同一任务单采用 `schema_version: 2`、`workflow: stylebook-v1`：
 
 - `source.sha256`：`定稿.md` 的确切字节摘要；`source.author_content_sha256`：只去注册机器装配块后的作者正文摘要，使用 `assemble_release.author_content_sha256` 计算。
 - `article_plan`：画风库 v3/wxillus 的完整文章计划，`source.path` 指向当前 `定稿.md`。全文 coverage、原文引用和图意按画风库验证，允许零张正文图。
 - `group.style`：带修订号的样式，例如 `C31@r4`；与 `article_plan.style.code` 一致；封面沿用自己独立的作者默认。`group.palette` 与文章计划、封面一致；未调整时省略。逐图手动例外沿用画风库原有显式规则。
-- `cover`：独立的 `wechat-cover-head` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
+- `cover`：独立的 `wechat-cover-head` 或显式宽幅品牌合同 `wechat-cover-brand-wide` 编译清单，绑定同一原文摘要，验收封面承担的主题与标题要求。
   封面可选的风格：画风库 v0.4.0 起新增封面向风格（C74 丝网印海报、C75 暖纸克制双色、C76 杂志编辑封面、C77 深空等），选择器里按「公众号封面」用途列出，样图是标题写在图上的真实封面；不改写作 Skill 的默认。
   封面单独选画风：默认分别继承 write 作者配置；两者不同则显式标记独立封面。要用只做封面的画风（如 C90 深色系列封面：深色底、左侧品牌名＋系列标签＋大标题、右侧主体，适合做成系列的连载）时，在 `cover` 里写 `"own_style": true` 并把 `cover.style` 锁到该画风修订（如 `C90@r1`）；编译时对照生图 Skill本体，只接受「封面」用途里的画风，正文仍锁 `group.style`，色调不随整组。C90 直接出 2.35:1，不走方形扩图；次条或转发要的方形版、发 X 用的 16:9（`x-image`）各单独出一张，做法见画风库 `references/recipes.md` 第 1 节。
 - `renderer.backend`：`stylebook-service`（推荐）或 `host-imagegen`。前者由 `render-visuals` 直接调用画风库的 `raw-generate` 出图并按下面的规则回收，回执标 `source_strength: pipeline_invoked`；后者仍返回码 3 等待宿主自己调内置生图工具。两者不互相自动替换。

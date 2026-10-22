@@ -142,8 +142,11 @@ def prepare(cwd: Path, image_id: str, handoff: Path) -> dict:
     expected = re.fullmatch(r'「(.+)」(之后|之前)', items[image_id]['position'], re.S)
     source = value['source']
     chosen = group['assets'][image_id]
+    title_reuse = None
+    if source['article_sha256'] != batch['source']['sha256']:
+        from title_only_reuse import verify_title_only
+        title_reuse = verify_title_only(cwd, source['article_sha256'], batch['source']['sha256'])
     if (not expected or source['anchor'] != expected.group(1)
-            or source['article_sha256'] != batch['source']['sha256']
             or source['static_sha256'] != chosen['image_sha256']
             or source['style'] != chosen['style']
             or palette_identity(source['palette']) != palette_identity(chosen['palette'])):
@@ -175,6 +178,8 @@ def prepare(cwd: Path, image_id: str, handoff: Path) -> dict:
                                                 'preview': 'source/' + value['files']['preview']['path']}.items()},
                     'animation': animation(stage / 'final.gif'), 'preparation_note': note,
                     'preparer_sha256': sha(Path(__file__)), 'upload_preparer_sha256': sha(Path(wechat_api.__file__))}
+        if title_reuse:
+            identity['title_only_reuse'] = title_reuse
         key = digest(identity)
         target = cwd / '素材/motion-candidates' / key
         if target.exists():
@@ -193,11 +198,16 @@ def prepared(cwd: Path, path: Path, batch: dict, plan: dict) -> dict:
         raise ValueError('动态候选不属于本篇素材目录')
     value = json.loads(path.read_text())
     if (value.get('contract') != CONTRACT or value.get('state') != 'prepared_pending_user_adoption'
-            or path.parent.name != digest(value) or value['source']['article_sha256'] != batch['source']['sha256']
+            or path.parent.name != digest(value)
             or value['plan_sha256'] != sha(cwd / 'visual-plan.json')
             or value['preparer_sha256'] != sha(Path(__file__))
             or value['upload_preparer_sha256'] != sha(Path(wechat_api.__file__))):
         raise ValueError('动态候选的原文、计划或准备方法改变，须重新交接')
+    if value['source']['article_sha256'] != batch['source']['sha256']:
+        from title_only_reuse import verify_title_only
+        proof = verify_title_only(cwd, value['source']['article_sha256'], batch['source']['sha256'])
+        if value.get('title_only_reuse') != proof:
+            raise ValueError('动态媒体缺少当前改标题复用证明')
     bundle_path = local(path.parent, value['input']['path'])
     if sha(bundle_path) != value['input']['sha256']:
         raise ValueError('原始动态交接改变')

@@ -68,6 +68,37 @@ def _forbid_nlm(monkeypatch):
     monkeypatch.setattr(pe, "run_nlm", _boom)
 
 
+def test_title_only_reuse_at_publish_consumer_rejects_prose_and_audio_mutations(tmp_path, monkeypatch):
+    import contracts
+    art = _pregen_article(tmp_path)
+    draft = art / '定稿.md'
+    draft.write_text(draft.read_text() + '\n<!-- PODCAST-CARD-START -->播客<!-- PODCAST-CARD-END -->\n')
+    config = _podcast_cfg(art)
+    monkeypatch.setattr(pe, 'cfg', lambda: config)
+    mp3 = distribute.channel_dir(art, 'podcast') / 'audio.mp3'
+    pe._write_audio_manifest(art, mp3, config, {'codec_name':'mp3', 'duration_seconds':123.5})
+    frozen = art / '素材/stylebook-sources'
+    frozen.mkdir(parents=True)
+    original = draft.read_bytes()
+    (frozen / (hashlib.sha256(original).hexdigest() + '.md')).write_bytes(original)
+    draft.write_text(draft.read_text().replace('# 标题', '# 新标题', 1))
+    state = json.loads((art / '.state.json').read_text())
+    state['stages']['writing']['title_final'] = '新标题'
+    (art / '.state.json').write_text(json.dumps(state, ensure_ascii=False))
+    def podcast_errors():
+        return [e for e in contracts.verify_publish_assets(str(art))['errors'] if '播客' in e]
+    assert pe.generation_is_fresh(art, config)
+    assert not podcast_errors()
+    retained = draft.read_bytes()
+    draft.write_text(draft.read_text().replace('正文。', '正文已发生实质变更。'))
+    assert not pe.generation_is_fresh(art, config)
+    assert podcast_errors()
+    draft.write_bytes(retained)
+    mp3.write_bytes(mp3.read_bytes() + b'tampered')
+    assert not pe.generation_is_fresh(art, config)
+    assert podcast_errors()
+
+
 def test_generate_short_circuits_on_fresh_pregen(tmp_path, monkeypatch):
     art = _pregen_article(tmp_path)
     monkeypatch.setattr(pe, "cfg", lambda: _podcast_cfg(art))

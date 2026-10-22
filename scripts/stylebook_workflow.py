@@ -70,8 +70,8 @@ def validate(plan: dict) -> list[str]:
     if not isinstance(renderer, dict) or renderer.get("backend") not in ("host-imagegen", "stylebook-service"):
         errors.append("renderer.backend 只接受 host-imagegen 或 stylebook-service")
     cover = plan.get("cover")
-    if not isinstance(cover, dict) or cover.get("format") != "wechat-cover-head":
-        errors.append("cover 必须是 wechat-cover-head 编译清单")
+    if not isinstance(cover, dict) or cover.get("format") not in ("wechat-cover-head", "wechat-cover-brand-wide"):
+        errors.append("cover 必须是 wechat-cover-head 或声明宽幅合同的 wechat-cover-brand-wide 编译清单")
     elif isinstance(group, dict):
         if cover.get("own_style") is True:
             # 封面单独选画风（如 C90 深色系列封面）：只允许画风库「封面」用途里的画风，编译时对照本体核实
@@ -159,7 +159,14 @@ def compile_plan(cwd: Path, plan: dict) -> tuple[dict | None, list[str]]:
             return None, problems
         cover = copy.deepcopy(plan["cover"])
         square_master = cover.pop("square_master", None)
-        if re.fullmatch(r"S02@r[1-9]\d*", cover.get("style", "")) and square_master is None:
+        wide_cover = cover.get("format") == "wechat-cover-brand-wide"
+        if wide_cover:
+            cover_contract = contracts.load(cover["style"].split("@")[0])
+            if not (cover_contract.get("recipe", {}).get("layout", {}).get("wide_canvas_only") is True):
+                raise ValueError("品牌宽幅格式须由画风合同显式声明 wide_canvas_only，不能绕过普通封面裁切合同")
+            if square_master is not None:
+                raise ValueError("品牌宽幅直接构图，不接受方形母版扩图")
+        if re.fullmatch(r"S02@r[1-9]\d*", cover.get("style", "")) and not wide_cover and square_master is None:
             raise ValueError("S02 封面须先由 image cover-flow 生成并预检方形母版，再填 cover.square_master 的 path/receipt；不能跳过方形预览直接生成横图")
         if cover.pop("own_style", False):
             data = importlib.import_module("stylebook.data")
