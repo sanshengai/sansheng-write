@@ -1134,13 +1134,11 @@ def _archive_metadata(cwd: Path, state: dict, *, require_url: bool = False,
     title = meta.get("title", "")
     if not str(title).strip():
         errors.append("article-meta.yaml title 缺失（正式标题只认这一处）")
-    elif outward in OUTWARD_CATEGORIES:
-        expected_prefix = f"{OUTWARD_CATEGORIES[outward]} | "
-        if not str(title).startswith(expected_prefix):
-            errors.append(
-                f"title 必须与 outward_category 同源并带前缀 {expected_prefix!r}；"
-                "不要在发布时临时二次拼接"
-            )
+    else:
+        from title_policy import title_prefix_errors
+        errors.extend(title_prefix_errors(
+            title, outward, title_policy=meta.get("title_policy"), article_dir=cwd
+        ))
 
     digest = override.get("digest") or meta.get("digest", "") or ""
     if not str(digest).strip():

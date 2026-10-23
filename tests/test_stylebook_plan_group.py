@@ -1,5 +1,6 @@
 """Consumer-path mutations; synthetic model answers are not acceptance evidence."""
 import importlib
+import hashlib
 import json
 from pathlib import Path
 
@@ -17,8 +18,20 @@ BODY_CHECKS = ("reasonable", "position_ok", "shape_ok", "form_ok", "basis_ok",
 
 
 def plan_report(tmp_path, monkeypatch, *, body=True, fail=None, change=None, backend="ark_agent_plan",
-                actual=None):
-    setup_plan(tmp_path, monkeypatch, body=body)
+                actual=None, existing_media=False):
+    source_plan = setup_plan(tmp_path, monkeypatch, body=body)
+    if existing_media:
+        from scripts.assemble_release import author_content_sha256
+        (tmp_path / "素材").mkdir(exist_ok=True)
+        (tmp_path / "素材/shot.png").write_bytes(b"source media bytes; no pixel review")
+        source = tmp_path / "定稿.md"
+        source.write_text(source.read_text() + "\n![原图说明](素材/shot.png)\n![待补截图](素材/missing.png)\n")
+        sha = hashlib.sha256(source.read_bytes()).hexdigest()
+        source_plan["source"] = {"sha256": sha, "author_content_sha256": author_content_sha256(source.read_text())}
+        source_plan["article_plan"]["source"]["sha256"] = sha
+        source_plan["cover"]["source"]["sha256"] = sha
+        source_plan["article_plan"]["editorial_constraints"] = {"author_words": "保留真实截图，不用生成图替代。"}
+        (tmp_path / "visual-plan.json").write_text(json.dumps(source_plan, ensure_ascii=False))
     result, errors = compile_visual_plan(tmp_path)
     assert not errors
     monkeypatch.delenv("SANSHENG_IMAGE_QA_BACKEND", raising=False)
@@ -155,3 +168,29 @@ def test_review_on_a_different_backend_cannot_save_report(tmp_path, monkeypatch)
 def test_review_without_backend_field_cannot_save_report(tmp_path, monkeypatch):
     report, errors = plan_report(tmp_path, monkeypatch, actual="")
     assert report is None and any("后端" in error for error in errors)
+
+
+def test_existing_media_context_resolves_from_article_and_binds_bytes(tmp_path, monkeypatch):
+    report, errors = plan_report(tmp_path, monkeypatch, body=False, existing_media=True)
+    assert not errors
+    context = report["binding_values"]["existing_visuals"]
+    assert context["reference_count"] == 2
+    assert context["references"][0]["status"] == "local_bytes_verified"
+    assert context["references"][1]["status"] == "missing_or_unreadable"
+    assert report["binding_paths"]["existing-media:existing-01"] == str(tmp_path / "素材/shot.png")
+    peer = importlib.import_module("stylebook.qa.plan_review")
+    prompt = peer.prompt(report["binding_values"]["review_plan"], Path(report["binding_paths"]["article"]), "inline")
+    assert "保留真实截图，不用生成图替代。" in prompt
+    assert "原图说明" in prompt and "local_bytes_verified" in prompt
+    verify_plan_review(tmp_path, Path(report["report_path"]))
+    (tmp_path / "素材/shot.png").write_bytes(b"changed after review")
+    with pytest.raises(ValueError):
+        verify_plan_review(tmp_path, Path(report["report_path"]))
+
+
+def test_missing_media_becoming_available_requires_current_evidence(tmp_path, monkeypatch):
+    report, errors = plan_report(tmp_path, monkeypatch, body=False, existing_media=True)
+    assert not errors
+    (tmp_path / "素材/missing.png").write_bytes(b"now available")
+    with pytest.raises(ValueError):
+        verify_plan_review(tmp_path, Path(report["report_path"]))

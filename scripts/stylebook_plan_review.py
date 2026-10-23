@@ -29,6 +29,10 @@ def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
     article = stylebook_source.current_source(cwd, batch, plan)
     adapted = copy.deepcopy(plan["article_plan"])
     adapted["source"]["path"] = str(article.relative_to(cwd))
+    # Frozen Markdown keeps original relative media URLs; resolve against the article,
+    # not the immutable snapshot's subdirectory. The reviewer receives text evidence,
+    # never an implicit claim that it has inspected the images' pixels.
+    adapted["source"]["asset_base"] = str(cwd)
     errors, _ = modules["plan"].check(adapted, base_path=cwd)
     if errors:
         raise ValueError("；".join(errors))
@@ -49,8 +53,14 @@ def context(cwd: Path, backend: str) -> tuple[dict, dict, dict]:
     for task in batch["tasks"]:
         for path in task["reference_sha256"]:
             files[f"reference:{path}"] = Path(path)
+    peer_review = importlib.import_module("stylebook.qa.plan_review")
+    existing_visuals = peer_review.existing_visual_context(adapted, article)
+    for row in existing_visuals["references"]:
+        if row["status"] in ("local_bytes_verified", "empty_file"):
+            files[f"existing-media:{row['id']}"] = Path(row["resolved_path"])
     values = {"review_plan": adapted, "request_id": pending["request_id"],
-              "backend": backend, "review_mode": "independent_full_article_and_cover"}
+              "backend": backend, "review_mode": "independent_full_article_and_cover",
+              "existing_visuals": existing_visuals}
     return adapted, files, values
 
 

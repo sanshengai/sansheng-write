@@ -89,10 +89,11 @@ def _validate_final_and_meta(final_path: Path, meta_path: Path) -> tuple[dict, l
         errors.append(
             f"outward_category 缺失或非法（需 {sorted(OUTWARD_CATEGORIES)}）"
         )
-    elif title and not title.startswith(f"{OUTWARD_CATEGORIES[outward]} | "):
-        errors.append(
-            f"标题必须带对外分类前缀 {OUTWARD_CATEGORIES[outward]} | "
-        )
+    if title:
+        from title_policy import title_prefix_errors
+        errors.extend(title_prefix_errors(
+            title, outward, title_policy=meta.get("title_policy"), article_dir=final_path.parent
+        ))
     tags = meta.get("tags") or []
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         errors.append("tags 必须是字符串列表")

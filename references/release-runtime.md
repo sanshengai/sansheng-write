@@ -25,7 +25,7 @@ python3 "$SKILL/scripts/pipeline.py" adopt-final --final 定稿.md --meta articl
 
 接管后立即交付 [music.md](music.md) 的 MiniMax 主题曲生成单，作者生成音乐时继续配图。已有 MP3 先核来源并复用，不让作者重做。新文章 BGM 是硬门；Lyria 自动通道暂停。
 
-schema2 接管后由主控按 `stylebook-contract.md` 预置标准音频卡；启用播客且参数齐备时，立即用宿主后台任务启动 `podcast-pregen`，保存任务 ID/日志，继续图片制作，不等待音乐 MP3。调度与写入边界见 [orchestration.md](orchestration.md)。图片装配不重做播客；正文、标题或生成参数变化按同源合同判断。播客必须在草稿前齐备，不能留到 finalize。正文、选图、排版和发布由一个控制者写入；独立模型负责规定的审核，不控制发布命令。
+schema2 接管后由主控按 `stylebook-contract.md` 预置标准音频卡。先完成元数据、来源块、现有静态图的 PNG/JPG 上传格式与最终引用，并运行 `preflight` 修完静态问题；启用播客且这些输入及生成参数齐备时，再用宿主后台任务启动 `podcast-pregen`，保存任务 ID/日志，继续图片制作，不等待音乐 MP3。调度与写入边界见 [orchestration.md](orchestration.md)。受控图片装配不重做播客；作者 Markdown 中原有媒体链接也可能进入当前正文摘要，不要在生成后才改格式或路径。正文、标题或生成参数变化按同源合同判断。播客必须在草稿前齐备，不能留到 finalize。正文、选图、排版和发布由一个控制者写入；独立模型负责规定的审核，不控制发布命令。
 
 ## 2. 只读取实际视觉路线
 
@@ -46,6 +46,8 @@ schema2 接管后由主控按 `stylebook-contract.md` 预置标准音频卡；�
 封面或动图不满意属于候选问题，先修候选；不要一边更新制作方法一边验收同一个候选，避免方法摘要在长审核过程中改变。准备交草稿后冻结本次输入，发现变化先结束当前检查再重做受影响部分。
 
 ## 4. 一次命令交草稿
+
+恢复已有成品时，若 `status` 的上游阶段仍未完成，先对相应阶段运行 `verify <stage>`（例如 cover、infographic、bgm、layout、logo）；验证成功由程序标记完成，不手改状态，也不因旧标签而重做有效成品。然后执行下方唯一草稿写入口。
 
 ```bash
 python3 "$SKILL/scripts/pipeline.py" release-to-draft

@@ -93,3 +93,33 @@ def test_inline_hand_written_html_also_gets_theme_styles():
     html = M.convert('正文 <a href="https://x.com">链</a> 和 <b>粗</b> 与 <code>c</code>', primary=PRIMARY)["html"]
     assert re.search(r'<a href="https://x.com" style="color: #576b95; text-decoration: none;">链</a>', html)
     assert re.search(r'<code style="font-size: 90%; color: #d14;', html) and "<b>粗</b>" in html
+
+
+@pytest.mark.parametrize("label,title_attr,expected", [
+    ('![视频封面](素材/poster.png)', '', '视频封面'),
+    ('观看 **片段** ![封面](素材/poster.png)', '', '观看 片段 封面'),
+    ('![视频封面](素材/poster.png)', ' "播放片段"', '播放片段'),
+])
+def test_linked_image_keeps_image_out_of_link_title(tmp_path, label, title_attr, expected):
+    from html.parser import HTMLParser
+
+    class DOM(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.tags = []
+            self.text = []
+        def handle_starttag(self, tag, attrs):
+            self.tags.append((tag, dict(attrs)))
+        def handle_data(self, data):
+            self.text.append(data)
+
+    html = M.convert(f'[{label}](素材/clip.mp4{title_attr})',
+                     primary=PRIMARY, base_dir=tmp_path)["html"]
+    dom = DOM()
+    dom.feed(html)
+    anchors = [attrs for tag, attrs in dom.tags if tag == "a"]
+    images = [attrs for tag, attrs in dom.tags if tag == "img"]
+    assert len(anchors) == 1 and anchors[0]["title"] == expected
+    assert len(images) == 1 and images[0]["src"] == "素材/poster.png"
+    assert "style=" not in "".join(dom.text)
+    assert "MDIMGPH_" not in html

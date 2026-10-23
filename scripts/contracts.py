@@ -2845,7 +2845,8 @@ def _title_width(text: str) -> float:
     return width
 
 
-def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> dict:
+def audit_title_contract(title: str, *, structure_exempt_reason: str = '',
+                         title_policy=None, article_dir=None, outward_category: str = '') -> dict:
     """扫单个公众号外标题，返回 {'verdict', 'violations', 'warnings', 'notes'}。纯函数。
 
     不查字数上限（title.md：长度是习惯不是上限）；超过公众号接口的 32 字位只提示。
@@ -2858,14 +2859,16 @@ def audit_title_contract(title: str, *, structure_exempt_reason: str = '') -> di
     if not title:
         return {'verdict': 'skip', 'violations': [], 'warnings': [], 'notes': '标题为空，跳过'}
 
-    violations: list[str] = []
+    try:
+        from .title_policy import title_prefix_errors
+    except ImportError:
+        from title_policy import title_prefix_errors
+    violations = title_prefix_errors(
+        title, outward_category, title_policy=title_policy, article_dir=article_dir
+    )
 
     head, sep, body = title.partition(' | ')
     if not sep or head not in _TITLE_TAGS:
-        violations.append(
-            f'缺 2 字分类标签前缀（应为 `标签 | 标题主体`，标签 7 选 1：{"/".join(_TITLE_TAGS)}）'
-            ' → 见 title.md 第一步'
-        )
         body = title
 
     for pattern, diagnosis, fix in _TITLE_HARD:
@@ -2999,7 +3002,11 @@ def verify_title_contract(article_dir: str) -> dict:
         import re as _re
         hit = _re.search(r'^标题公式豁免[：:]\s*(.+)$', approval.read_text(encoding='utf-8'), _re.M)
         exempt = hit.group(1).strip() if hit else ''
-    return audit_title_contract(str(meta.get('title') or ''), structure_exempt_reason=exempt)
+    return audit_title_contract(
+        str(meta.get('title') or ''), structure_exempt_reason=exempt,
+        title_policy=meta.get('title_policy'), article_dir=article_dir,
+        outward_category=str(meta.get('outward_category') or '')
+    )
 
 
 def verify_cover_title_pair(article_dir: str) -> dict:

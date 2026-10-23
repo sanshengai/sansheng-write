@@ -109,5 +109,5 @@ python "$SKILL/scripts/learn_edits.py" build
 2. **自动比对**：作者拍板 `approve draft`，或 `adopt-final` 接管定稿时，脚本自动比对基线与定稿，生成 `过程记录/_learn-diff.txt`，并排进 `<profile>/flywheel/pending_learn.jsonl`。没有基线会明确提示“学不到东西”，连续 5 篇缺基线会报“飞轮可能断了”（`pipeline.py learn-queue`）。
 3. **开写前提炼**：`pipeline.py new` 会提醒有待学习的改稿。读对应 `_learn-diff.txt`，按下面 Step 3 的分层指引提炼 **1–2 条**候选规则；同义的复用已有 key。
 4. **按已有授权入库**：作者明确要求“学习这些修改 / 整合进 Skill”时，已授权本轮沉淀，不再重复确认。未获该授权的自动候选才集中问一次。个人偏好写入配置 profile 的 `lessons.yaml`，通用执行问题才改共享 Skill；先复用同义 key，再运行 `learn_edits.py build`。口述明确要求的规则可用 `pinned: true`，只从单篇推测的偏好保持软参考。完成真实待办后才运行 `pipeline.py learn-queue done <文章目录名>`。
-5. **不当作作者本人的声音**：作者只是让 Agent 按意见改稿时（终稿并非作者亲笔），diff 会是“Agent 执行意见后的样子”。提炼时只记改稿方向，不灌声纹库（diff 已默认 `--no-promote-voice`）。
+5. **不当作作者本人的声音**：作者只是让 Agent 按意见改稿时（终稿并非作者亲笔），diff 会是“Agent 执行意见后的样子”。提炼时只记改稿方向，不灌声纹库（diff 已默认 `--no-promote-voice`）。制作期间 `adopt-final` 也可能因音频卡、图片路径和格式变化重新排队；这些机械差异不进入作者偏好或声音样本。作者手改已完成学习的，核对新增差异后结清该篇待办。
 6. **验证下一次会读到**：运行当前文章的 `prep_writing.py`，检查新规则确实进入 `_prep-context.md`，再用本篇一处真实失败及修正示例核对规则是否足够具体。仅“写进文件”不算已接入初稿；注入验证通过也不能声称保证以后无需人工修改。

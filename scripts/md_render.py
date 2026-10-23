@@ -319,6 +319,13 @@ class Renderer:
                 href, idx, title = stack.pop()
                 inner = "".join(out[idx + 1:])
                 plain = re.sub(r"<[^>]+>", "", inner)
+                # A linked image's title is text, not an image placeholder.
+                # Otherwise fill_images later inserts <img> into the attribute.
+                plain = re.sub(
+                    r"MDIMGPH_\d+",
+                    lambda m: esc(self.images[m.group(0)]["alt"])
+                    if m.group(0) in self.images else m.group(0), plain,
+                )
                 if href == _html.unescape(plain):  # 链接文字就是网址：只留文字
                     del out[idx:]
                     out.append(inner)

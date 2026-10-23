@@ -13,6 +13,8 @@ seed: ""                     # 作者的真实开头 / 亲历细节 / 反常识�
 title: ""                    # 文章标题。🔴 `标签 | 对象 + 可得物`（A 默认；B 我做了什么 / C 选型 / D 事件）
                              #   可得物取自正文：做法、规则、清单、方案、选型结论、具体结果；不设字数上限
                              #   禁噪头词、悬念揭穿、翻转句、问句、只有观点、内部编号。见 references/title.md
+# 作者明确指定无分类前缀的原题时，按 references/title.md 记录 title_policy 证据。
+# 普通稿不填；该例外不替代正文审批，不自动改变 outward_category。
 style: ""                    # 主路由风格：填 profile/corpus/authors/ 里某本手册的名字（如 example-author）
 modifier_style: ""           # 叠加路由 (可选, 留空或填另一本手册名)
                              # 跟主路由组合使用 -- 在主调性基础上叠加风格修饰 (如小说式开场 / 教程类钩子)
