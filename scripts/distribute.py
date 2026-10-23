@@ -38,6 +38,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -995,6 +996,173 @@ def cmd_confirm(article_dir: Path, channel: str, url: str = "") -> int:
     return 0
 
 
+
+def _publication_file(root: Path, value: str | Path) -> Path:
+    """Evidence and assets must be nonempty regular files inside this article."""
+    root = root.resolve()
+    path = Path(value)
+    raw = path if path.is_absolute() else root / path
+    resolved = raw.resolve()
+    if not resolved.is_relative_to(root) or any(
+        item.is_symlink() for item in (raw, *raw.parents)
+        if item != root and item.is_relative_to(root)
+    ):
+        raise ValueError(f"发布证据越界或为符号链接：{value}")
+    if not resolved.is_file() or resolved.stat().st_size == 0:
+        raise ValueError(f"发布证据缺失或为空：{value}")
+    return resolved
+
+
+def cmd_record_published(article_dir: Path, channel: str, publication_receipt: str,
+                         authorization_words: str, authorization_file: str) -> int:
+    """Register an already published, authorized Agent action; never send a post.
+
+    This path deliberately does not synthesize ``filled`` or author confirmation.
+    Receipt observations remain the observer's responsibility, not network proof
+    independently obtained by this offline validator.
+    """
+    from social_handoff import validate as validate_handoff
+
+    try:
+        if channel != "weibo":
+            raise ValueError("record-published 当前仅支持微博图文")
+        root = article_dir.resolve()
+        pub_path = _publication_file(root, publication_receipt)
+        pub = json.loads(pub_path.read_text(encoding="utf-8"))
+        if not isinstance(pub, dict):
+            raise ValueError("正式发布回执必须为对象")
+        auth_path = _publication_file(root, authorization_file)
+        if not authorization_words.strip() or authorization_words not in auth_path.read_text(encoding="utf-8"):
+            raise ValueError("缺实际发布授权原话，或授权原话与证据文件不符")
+        if get_status(root, channel) not in ("verified", "filled", "dispatched", "sent"):
+            raise ValueError("须先完成本地渠道 verify；不得为登记伪造 filled")
+        state = (read_state(root).get("channels") or {}).get(channel) or {}
+        plan = _read_json(dist_dir(root) / PLAN_FILE)
+        plans = plan.get("channels") if isinstance(plan, dict) else None
+        spec = plans.get(channel) if isinstance(plans, dict) else None
+        digest = source_digest(root, channel)
+        if not isinstance(spec, dict) or state.get("source_digest") != digest or plan.get("source_digest") != digest:
+            raise ValueError("渠道计划、验证记录与当前定稿未绑定或已漂移")
+        url = pub.get("url", "")
+        match = re.fullmatch(r"https://weibo\.com/(\d+)/([A-Za-z0-9]+)", url) if isinstance(url, str) else None
+        if not match or pub.get("account_id") != match.group(1):
+            raise ValueError("微博正式 URL 或账号不匹配")
+        if (pub.get("platform") != channel or pub.get("status") != "published"
+                or pub.get("send_clicked") is not True
+                or pub.get("permalink_readback_verified") is not True
+                or pub.get("image_order_verified") is not True):
+            raise ValueError("缺实际发送、正式页面读回或图片顺序证据")
+        if not isinstance(pub.get("text_readback"), str) or not pub["text_readback"].strip():
+            raise ValueError("缺正式正文读回文本")
+        pref_ref = pub.get("local_prefill_receipt")
+        if not isinstance(pref_ref, str) or not pref_ref.strip():
+            raise ValueError("正式回执缺预填证据引用")
+        pref_path = _publication_file(root, pub_path.parent / pref_ref)
+        pref = json.loads(pref_path.read_text(encoding="utf-8"))
+        pref_channels = pref.get("channels") if isinstance(pref, dict) else None
+        ch = pref_channels.get(channel) if isinstance(pref_channels, dict) else None
+        if not isinstance(ch, dict) or not isinstance(ch.get("assets"), list):
+            raise ValueError("预填回执缺渠道资产")
+        assets = ch["assets"]
+        for item in assets:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                raise ValueError("预填资产条目不完整")
+            _publication_file(root, item["path"])
+        errors = validate_handoff(pref, root, [channel])
+        if errors:
+            raise ValueError("；".join(errors))
+        if ch.get("account_url") != f"https://weibo.com/u/{match.group(1)}":
+            raise ValueError("预填账号与正式发布账号不同")
+        try:
+            observed = datetime.fromisoformat(pref["observed_at"].replace("Z", "+00:00"))
+            published = datetime.fromisoformat(pub["published_at"].replace("Z", "+00:00"))
+            if observed.tzinfo is None or published.tzinfo is None or published < observed:
+                raise ValueError("发布与预填时间无时区或顺序错误")
+        except (KeyError, AttributeError, TypeError) as exc:
+            raise ValueError("缺有效发布/预填时间") from exc
+        images = [a for a in assets if a.get("role") == "image"]
+        expected = [str(p.relative_to(root)) for p in _social_images(root, channel)]
+        if [a["path"] for a in images] != expected:
+            raise ValueError("预填图片清单/顺序与当前渠道图片计划不一致")
+        count = len(images)
+        if not (4 <= count <= 9) or any(type(pub.get(k)) is not int or pub[k] != count
+                                      for k in ("images_expected", "images_published")):
+            raise ValueError("正式图片数量与预填计划不一致")
+        errors = _social_image_problems(root, channel, spec.get("constraints") or {})
+        if errors:
+            raise ValueError("；".join(errors))
+        def remote_ids(values):
+            if not isinstance(values, list) or len(values) != count:
+                raise ValueError("缺完整远程图片读回清单")
+            ids = []
+            for value in values:
+                if not isinstance(value, str):
+                    raise ValueError("远程图片地址无效")
+                parsed = urlsplit(value)
+                if parsed.scheme != "https" or not (parsed.hostname or "").endswith(".sinaimg.cn"):
+                    raise ValueError("远程图片不是微博图片地址")
+                ids.append(Path(parsed.path).name)
+            if len(set(ids)) != count:
+                raise ValueError("远程图片清单有重复")
+            return ids
+        if remote_ids(ch.get("uploaded_urls")) != remote_ids(pub.get("images")):
+            raise ValueError("发布后图片与预填图片的顺序/身份不一致")
+        copies = [a for a in assets if a.get("role") == "copy"]
+        if len(copies) != 1:
+            raise ValueError("须有唯一文案资产")
+        copy = _publication_file(root, copies[0]["path"]).read_text(encoding="utf-8").strip()
+        parsed_copy = (parse_social_copy(root).get(channel) or {}).get("body", "").strip()
+        if not copy or copy != parsed_copy:
+            raise ValueError("预填文案与当前渠道文案不一致")
+        # Platforms replace external URLs with link labels. Require the actual
+        # published href to resolve to that exact original URL before replacing.
+        rendered_copy = copy
+        links = pub.get("links") or []
+        if not isinstance(links, list):
+            raise ValueError("正式链接读回必须为列表")
+        for original in re.findall(r"https?://[^\s]+", copy):
+            labels = []
+            for link in links:
+                if not isinstance(link, dict):
+                    continue
+                href = link.get("href", "")
+                if not isinstance(href, str):
+                    continue
+                parsed = urlsplit(href)
+                target = (parse_qs(parsed.query).get("u") or [""])[0] if (
+                    parsed.scheme == "https" and parsed.hostname == "weibo.cn" and parsed.path == "/sinaurl"
+                ) else href
+                if target == original and isinstance(link.get("text"), str) and link["text"].strip():
+                    labels.append(link["text"])
+            if not labels:
+                raise ValueError("正式页面未读回原文链接目标")
+            rendered_copy = rendered_copy.replace(original, labels[0])
+        compact = lambda value: re.sub(r"\s+", "", value)
+        if compact(rendered_copy) not in compact(pub["text_readback"]):
+            raise ValueError("正式正文读回与本地文案不一致")
+        screenshot = _publication_file(root, pub_path.parent / str(pub.get("screenshot") or ""))
+        evidence = {"publication": pub_path, "prefill": pref_path,
+                    "authorization": auth_path, "screenshot": screenshot}
+        bound = {name: {"path": str(path.relative_to(root)),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                 for name, path in evidence.items()}
+        receipt_path = channel_dir(root, channel) / RECEIPT_FILE
+        old = _read_json(receipt_path)
+        if get_status(root, channel) == "sent" and old.get("post_url") != url:
+            raise ValueError("已有不同正式链接；不覆盖已发送记录")
+        receipt = {**old, "channel": channel, "sent_at": pub["published_at"], "post_url": url,
+                   "confirmed_by": "agent_authorized_readback", "recorded_at": _now(),
+                   "authorization_words": authorization_words, "evidence": bound,
+                   "assets": assets, "source_digest": digest, "registration_only": True}
+        _write_json(receipt_path, receipt)
+        set_status(root, channel, "sent", post_url=url, confirmed_by="agent_authorized_readback")
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"[distribute] ✗ 正式发布登记被拒：{exc}", file=sys.stderr)
+        return 2
+    print(f"[distribute] ✓ 已核验证据并登记微博正式链接：{url}（未发新帖）")
+    return 0
+
+
 def resolve_post_script(channel: str, cfg: dict) -> Path | None:
     """解析该渠道的发布脚本路径。
 
@@ -1089,6 +1257,12 @@ def main(argv: list[str] | None = None) -> int:
     p_con.add_argument("channel")
     p_con.add_argument("--url", default="", help="发出后的帖子链接（可选）")
 
+    p_record = sub.add_parser("record-published", help="凭授权与真实读回登记已发布微博，不发送新帖")
+    p_record.add_argument("channel", choices=["weibo"])
+    p_record.add_argument("--publication-receipt", required=True)
+    p_record.add_argument("--authorization-words", required=True, help="用户实际授权原话")
+    p_record.add_argument("--authorization-file", required=True, help="文章目录内的授权证据文件")
+
     p_dis = sub.add_parser("dispatch", help="派发到渠道（默认 dry-run）")
     p_dis.add_argument("channel")
     p_dis.add_argument("--confirm", action="store_true",
@@ -1115,6 +1289,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_dispatch(article_dir, args.channel, args.confirm)
     if args.cmd == "confirm":
         return cmd_confirm(article_dir, args.channel, args.url)
+    if args.cmd == "record-published":
+        return cmd_record_published(article_dir, args.channel, args.publication_receipt,
+                                    args.authorization_words, args.authorization_file)
     return 2
 
 

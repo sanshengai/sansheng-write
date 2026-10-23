@@ -173,6 +173,27 @@ python scripts/distribute.py --dir <文章目录> confirm weibo --url <帖子链
 日志在渠道目录 `dispatch.log`）；作者说发了，再 `confirm` 记为 `sent`。`filled` 不会被
 重跑的 `plan` 退回，也不能再次 `dispatch`，避免作者已发未确认时重复发帖。
 
+### 已授权 Agent 正式发送后的登记（微博）
+
+本篇、本渠道已经得到用户明确发布授权，且 Agent 已完成真实发送与正式页面读回时，用 `record-published` 登记。它只核验证据并把状态记为 `sent`，不打开浏览器、不发送新帖，也不把 Agent 的操作写成作者点击。原 `confirm` 仍仅用于作者已发送的流程；不要为了绕过它先伪造 `filled`。
+
+```bash
+python scripts/distribute.py --dir <文章目录> record-published weibo \
+  --publication-receipt dist/weibo/publish-receipt.json \
+  --authorization-file dist/weibo/authorization.md \
+  --authorization-words '用户实际授权本篇发微博的原话'
+```
+
+输入从实际观察保存，不能为通过校验补造：
+
+- 授权文件保留用户原话与会话来源；命令中的原话须与文件逐字对应。登录成功、正式文章链接、预填就绪都不自动成为发布授权。
+- `publish-receipt.json`：`platform: weibo`、`status: published`、`account_id`、正式 `url`、带时区的 `published_at`；实际发送后的 `send_clicked`、`permalink_readback_verified`、`image_order_verified` 均为 `true`；完整正文 `text_readback`、正式页链接 `links: [{text, href}]`、有序远程图 `images`、实际 `images_expected`/`images_published`；`local_prefill_receipt` 和 `screenshot` 相对该回执目录指向真实证据。
+- 预填回执沿用 [社媒交接验收](social-handoff.md)，再保留当前账号 `account_url: https://weibo.com/u/<账号数字ID>` 与有序 `uploaded_urls`。预填的 `send_clicked` 必须仍为 `false`，不能事后把预填记录改成发送记录。
+
+登记只接受已经 `verify` 的同源计划，检查本地文案与图片 SHA、4–9 张图片清单和顺序、正式页与预填页的同一账号和同一组微博图片、正文和原文链接目标、预填早于发布时间、非空截图。证据和素材须为文章目录内的普通文件，越界、符号链接、空文件、缺图、素材漂移、未发送或未读回均拒绝。失败不修改状态和渠道 `_receipt.json`；同一正式链接可重复登记，不覆盖另一个已发送链接。
+
+成功回执以 `confirmed_by: agent_authorized_readback` 区分作者手动确认，保存授权原话、证据路径及 SHA、素材清单和来源摘要。此入口验证的是归档证据的一致性，不能独立证明观察记录真实；Agent 仍必须亲自查看实际账号、发送结果和正式页，不能仅凭本地文件声称发布成功。当前仅支持微博图文。
+
 ## 7. 播客
 
 播客仍以 `定稿.md` 为内容上游。只有 profile 明确设置
