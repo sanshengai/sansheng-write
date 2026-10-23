@@ -288,3 +288,53 @@ def test_lint_x_title_passes_liked_titles():
     for t in ("德鲁克 5 本书，整理成 3 条今天能用的管理规则",
               "Claude 被封后，我的替补方案：Claude Code + Kimi Code + Antigravity"):
         assert xa.lint_x_title(t) == [], t
+
+
+def fake_wechat(slug):
+    # Synthetic IDs only; build the service URL without embedding a real article link.
+    from urllib.parse import urlunsplit
+    return urlunsplit(("https", "mp.weixin.qq.com", "/s/" + slug, "", ""))
+
+
+@pytest.mark.parametrize("location,content", [
+    (".state.json", {"stages": {"publish": {"wechat_url": fake_wechat("valid_article")}}}),
+    ("过程记录/_website-sync-receipt.json", {"latest": {"wechat_url": fake_wechat("valid_article")}}),
+    ("_website-sync-receipt.json", {"wechat_url": fake_wechat("valid_article")}),
+    ("过程记录/_wechat-published-audio-receipt.json", {"proof_kind": "wechat_published_article_audio", "remote_verified": True, "wechat_url": fake_wechat("valid_article")}),
+])
+def test_formal_wechat_sources_are_read(tmp_path, location, content):
+    import json
+    path = tmp_path / location
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(content))
+    assert xa.wechat_url(tmp_path) == fake_wechat("valid_article")
+    assert "公众号原文" in xa.tail_links(tmp_path, "Example", "", {})
+
+
+@pytest.mark.parametrize("location,content", [
+    ("过程记录/_publish-receipt.json", {"scope": "wechat-draft", "wechat_url": fake_wechat("valid_article")}),
+    ("过程记录/_wechat-published-audio-receipt.json", {"proof_kind": "wechat_published_article_audio", "remote_verified": False, "wechat_url": fake_wechat("valid_article")}),
+    ("过程记录/_wechat-published-audio-receipt.json", {"proof_kind": "wechat_draft_audio", "remote_verified": True, "wechat_url": fake_wechat("valid_article")}),
+    ("过程记录/_website-sync-receipt.json", {"wechat_url": "https://mp.weixin.qq.com.attacker.test/s/fake"}),
+    ("过程记录/_website-sync-receipt.json", {"attempts": [{"wechat_url": fake_wechat("old_attempt")}]}),
+])
+def test_draft_unverified_and_unrelated_sources_cannot_supply_wechat(tmp_path, location, content):
+    import json
+    path = tmp_path / location
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(content))
+    assert xa.wechat_url(tmp_path) == ""
+
+
+def test_state_formal_link_takes_priority_over_old_receipt(tmp_path):
+    import json
+    (tmp_path / ".state.json").write_text(json.dumps({"stages": {"publish": {"wechat_url": fake_wechat("current")}}}))
+    (tmp_path / "_website-sync-receipt.json").write_text(json.dumps({"wechat_url": fake_wechat("old")}))
+    assert xa.wechat_url(tmp_path).endswith("/current")
+
+
+def test_malformed_publication_containers_do_not_crash_or_leak_links(tmp_path):
+    import json
+    (tmp_path / ".state.json").write_text('{"stages":[]}')
+    (tmp_path / "_website-sync-receipt.json").write_text(json.dumps({"latest": [{"wechat_url": fake_wechat("untrusted")}]}))
+    assert xa.wechat_url(tmp_path) == ""

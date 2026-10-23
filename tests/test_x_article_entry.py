@@ -75,3 +75,17 @@ def test_creation_timeout_does_not_trigger_rebuild(monkeypatch):
     with pytest.raises(xa.ArticleCreateEntryError, match="不自动重建"):
         xa.build_draft_with_retry(object(), {}, [], Path("unused.png"))
     assert calls == ["clicked"]
+
+
+@pytest.mark.parametrize("html,expected", [
+    ('<button data-testid="SideNav_AccountSwitcher_Button">Example @sample_writer</button>', '@sample_writer'),
+    ('<button data-testid="SideNav_AccountSwitcher_Button"><img alt="Avatar"></button><a data-testid="AppTabBar_Profile_Link" href="/sample_writer">Profile</a>', '@sample_writer'),
+    ('<nav><a aria-label="个人资料" href="/sample_writer"><svg></svg></a></nav>', '@sample_writer'),
+    ('<main><article>@other_person <a href="/other_person">Profile</a></article></main>', ''),
+    ('<a data-testid="AppTabBar_Profile_Link" href="https://attacker.test/sample_writer">Profile</a>', ''),
+    ('<button data-testid="SideNav_AccountSwitcher_Button">@sample_writer</button><a data-testid="AppTabBar_Profile_Link" href="/another_writer">Profile</a>', ''),
+    ('<a data-testid="AppTabBar_Profile_Link" href="/home">Profile</a>', ''),
+])
+def test_account_identity_from_sidebar_controls_only(page, html, expected):
+    page.set_content(html)
+    assert xa.account_handle(page) == expected

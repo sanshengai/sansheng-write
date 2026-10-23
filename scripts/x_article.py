@@ -426,11 +426,30 @@ def site_url(article_dir: Path, template: str) -> str:
 
 
 def wechat_url(article_dir: Path) -> str:
-    f = _process_file(article_dir, "_website-sync-receipt.json")
-    if f.is_file():
-        m = re.search(r'"wechat_url":\s*"(https://mp\.weixin\.qq\.com/s/[^"]+)"', f.read_text(encoding="utf-8"))
-        if m:
-            return m.group(1)
+    """Read formal publication sources; draft receipts are never publication proof."""
+    def read(path):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    state = read(article_dir / ".state.json")
+    stages = state.get("stages")
+    publish = stages.get("publish") if isinstance(stages, dict) else None
+    publish = publish if isinstance(publish, dict) else {}
+    website = read(_process_file(article_dir, "_website-sync-receipt.json"))
+    latest = website.get("latest")
+    latest = latest if isinstance(latest, dict) else {}
+    audio = read(_process_file(article_dir, "_wechat-published-audio-receipt.json"))
+    candidates = [publish.get("wechat_url"), latest.get("wechat_url"), website.get("wechat_url")]
+    if audio.get("proof_kind") == "wechat_published_article_audio" and audio.get("remote_verified") is True:
+        candidates.append(audio.get("wechat_url"))
+    for value in candidates:
+        if isinstance(value, str):
+            value = value.strip()
+            if re.fullmatch(r"https://mp\.weixin\.qq\.com/s/(?:[A-Za-z0-9_-]+)(?:\?[^\s\"'<>]*)?", value):
+                return value
     return ""
 
 
@@ -972,9 +991,10 @@ def publish(page, caption: str, title: str = "") -> str:
                 return href
     page.goto("https://x.com/home")
     page.wait_for_timeout(3000)
-    handle = page.locator('[data-testid="SideNav_AccountSwitcher_Button"]').inner_text()
-    m = re.search(r"@(\w+)", handle)
-    page.goto(f"https://x.com/{m.group(1)}")
+    handle = account_handle(page)
+    if not handle:
+        raise SystemExit("发布结果待核验：无法从账号控件或个人资料导航确认当前账号，不推测个人主页。")
+    page.goto(f"https://x.com/{handle[1:]}")
     page.wait_for_timeout(6000)
     first = page.locator("article").first
     text = first.inner_text() if first.count() else ""
@@ -994,10 +1014,29 @@ def post_matches(post_text: str, caption: str, title: str) -> bool:
 
 
 def account_handle(page) -> str:
+    """Use account controls only; compact sidebars expose the profile href instead."""
     try:
-        text = page.locator('[data-testid="SideNav_AccountSwitcher_Button"]').inner_text()
-        m = re.search(r"@(\w+)", text)
-        return "@" + m.group(1) if m else ""
+        handles = set()
+        switchers = page.locator('[data-testid="SideNav_AccountSwitcher_Button"]')
+        for i in range(switchers.count()):
+            control = switchers.nth(i)
+            if not control.is_visible():
+                continue
+            text = control.inner_text() + " " + (control.get_attribute("aria-label") or "")
+            handles.update(re.findall(r"(?<![\w@])@([A-Za-z0-9_]{1,15})(?![A-Za-z0-9_])", text))
+        links = page.locator(
+            'a[data-testid="AppTabBar_Profile_Link"], '
+            'nav a[aria-label="Profile"], nav a[aria-label="个人资料"]'
+        )
+        for i in range(links.count()):
+            link = links.nth(i)
+            if not link.is_visible():
+                continue
+            match = re.fullmatch(r"(?:https://(?:x\.com|twitter\.com))?/([A-Za-z0-9_]{1,15})/?", link.get_attribute("href") or "")
+            if match and match.group(1).lower() not in {"home", "explore", "notifications", "messages", "compose", "settings", "i"}:
+                handles.add(match.group(1))
+        distinct = {handle.lower(): handle for handle in handles}
+        return "@" + next(iter(distinct.values())) if len(distinct) == 1 else ""
     except Exception:
         return ""
 
