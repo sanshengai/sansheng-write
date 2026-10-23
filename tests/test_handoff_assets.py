@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from scripts.evidence import sha256_file
+from scripts.evidence import sha256_file, stable_digest
 from scripts.handoff_assets import export_handoff_assets
 from scripts.music_manifest import write_music_manifest
 
@@ -30,8 +30,9 @@ def _article(tmp_path: Path, *, podcast: bool = False):
                 }
             ],
         },
-        "manifest_digest": "visual-manifest",
+        "manifest_digest": "",
     }
+    visual_receipt["manifest_digest"] = stable_digest(visual_receipt["manifest"])
     theme = article / "边界之歌.mp3"
     theme.write_bytes(b"theme-audio")
     (article / "article-meta.yaml").write_text("title: 边界之歌\n", encoding="utf-8")
@@ -256,3 +257,158 @@ def test_handoff_requires_theme_cover_and_podcast_cover(tmp_path):
     assert errors == [] and status == "created"
     assert (plain / "音乐封面.png").exists() and not (plain / "播客封面.png").exists()
 
+
+
+def _ready_upgrade(tmp_path):
+    article, visual, probe = _article(tmp_path, podcast=True)
+    kwargs = dict(duration_probe=probe, visual_verifier=visual)
+    assert export_handoff_assets(article, **kwargs) == (article, "created", [])
+    audio = article / "dist/podcast/audio.mp3"
+    audio.write_bytes(b"verified-new-podcast")
+    manifest_path = article / "dist/podcast/audio.manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.update(audio_sha256=sha256_file(audio), bytes=audio.stat().st_size)
+    manifest_path.write_text(json.dumps(manifest))
+    return article, kwargs, article / "播客 | 边界之歌.mp3", article / "过程记录/_handoff-receipt.json"
+
+
+def test_root_upgrade_preserves_old_receipt_and_bytes_then_is_idempotent(tmp_path):
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    old_receipt = receipt.read_bytes()
+    (article / "定稿.md").write_text("作者稿")
+    assert export_handoff_assets(article, **kwargs) == (article, "updated", [])
+    assert upload.read_bytes() == b"verified-new-podcast"
+    backups = list((article / "过程记录/handoff-history").glob("revision-*"))
+    assert len(backups) == 1
+    assert (backups[0] / upload.name).read_bytes() == b"podcast-audio"
+    assert (backups[0] / "previous-receipt.json").read_bytes() == old_receipt
+    assert (backups[0] / "next-receipt.json").read_bytes() == receipt.read_bytes()
+    assert (article / "定稿.md").read_text() == "作者稿"
+    assert export_handoff_assets(article, **kwargs) == (article, "unchanged", [])
+
+
+def test_root_upgrade_rejects_manually_edited_upload_before_writes(tmp_path):
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    upload.write_bytes(b"author-changed-this")
+    before = {p: p.read_bytes() for p in article.rglob("*") if p.is_file()}
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("不匹配旧" in e for e in errors)
+    assert {p: p.read_bytes() for p in article.rglob("*") if p.is_file()} == before
+
+
+def test_root_upgrade_refuses_missing_or_malformed_prior_ownership(tmp_path):
+    mutations = [
+        lambda r: r.update(schema_version=99),
+        lambda r: r["article"].update(directory="another-article"),
+        lambda r: r["assets"][2]["handoff"].update(sha256="broken"),
+        lambda r: r["assets"][2]["handoff"].update(bytes=True),
+        lambda r: r["assets"][2]["source"].update(sha256="0" * 64),
+        lambda r: r["assets"][2]["source"].update(path="../../outside.mp3"),
+        lambda r: r["assets"][2]["source"].pop("receipt_digest"),
+        lambda r: r["assets"][2]["source"].update(receipt_digest="bad-digest"),
+        lambda r: r["assets"].pop(2),  # Known filename alone is not ownership.
+        lambda r: r.update(assets=[]),
+    ]
+    for index, mutation in enumerate([None, "json", *mutations]):
+        root = tmp_path / str(index)
+        root.mkdir()
+        article, kwargs, upload, receipt = _ready_upgrade(root)
+        if mutation is None:
+            receipt.unlink()
+        elif mutation == "json":
+            receipt.write_text("not json")
+        else:
+            old = json.loads(receipt.read_text())
+            mutation(old)
+            receipt.write_text(json.dumps(old))
+        before = {p: p.read_bytes() for p in article.rglob("*") if p.is_file()}
+        target, _, errors = export_handoff_assets(article, **kwargs)
+        assert target is None and errors, index
+        assert {p: p.read_bytes() for p in article.rglob("*") if p.is_file()} == before
+
+
+def test_root_upgrade_requires_valid_new_manifest(tmp_path):
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    (article / "dist/podcast/audio.mp3").write_bytes(b"unverified-new-audio")
+    old_receipt = receipt.read_bytes()
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and errors
+    assert upload.read_bytes() == b"podcast-audio"
+    assert receipt.read_bytes() == old_receipt
+    assert not (article / "过程记录/handoff-history").exists()
+
+
+def test_root_upgrade_rejects_corrupt_staging_without_retiring_old_files(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    monkeypatch.setattr(handoff.shutil, "copyfile", lambda src, dst: Path(dst).write_bytes(b"bad"))
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("复制后校验失败" in e for e in errors)
+    assert upload.read_bytes() == b"podcast-audio"
+    assert not (article / "过程记录/handoff-history").exists()
+
+
+def test_root_upgrade_detects_edit_during_retirement_and_restores_it(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    old_receipt = receipt.read_bytes()
+    rename = handoff.os.rename
+    def race(source, destination):
+        if source == upload:
+            source.write_bytes(b"concurrent-edit-before-move")
+        return rename(source, destination)
+    monkeypatch.setattr(handoff.os, "rename", race)
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("并发修改" in e for e in errors)
+    assert upload.read_bytes() == b"concurrent-edit-before-move"
+    assert receipt.read_bytes() == old_receipt
+
+
+def test_root_upgrade_preserves_concurrent_install_and_old_backup(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    old_receipt = receipt.read_bytes()
+    link = handoff.os.link
+    def race(source, destination):
+        if destination == upload:
+            destination.write_bytes(b"concurrent-new-file")
+        return link(source, destination)
+    monkeypatch.setattr(handoff.os, "link", race)
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and any("并发文件保留" in e for e in errors)
+    assert upload.read_bytes() == b"concurrent-new-file"
+    assert receipt.read_bytes() == old_receipt
+    backup = next((article / "过程记录/handoff-history").glob("revision-*"))
+    assert (backup / upload.name).read_bytes() == b"podcast-audio"
+
+
+def test_root_upgrade_rolls_back_when_receipt_install_fails(tmp_path, monkeypatch):
+    import scripts.handoff_assets as handoff
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    old_receipt = receipt.read_bytes()
+    link = handoff.os.link
+    def fail_once(source, destination):
+        if destination == receipt and source.name == "_handoff-receipt.json":
+            raise OSError("simulated receipt install failure")
+        return link(source, destination)
+    monkeypatch.setattr(handoff.os, "link", fail_once)
+    target, _, errors = export_handoff_assets(article, **kwargs)
+    assert target is None and errors
+    assert upload.read_bytes() == b"podcast-audio"
+    assert receipt.read_bytes() == old_receipt
+    monkeypatch.setattr(handoff.os, "link", link)
+    assert export_handoff_assets(article, **kwargs) == (article, "updated", [])
+
+
+def test_old_byte_gate_mutation_would_overwrite_manual_edit(tmp_path, monkeypatch):
+    """Actual exporter rejects a manual edit; disable old-byte guard to prove coverage."""
+    import scripts.handoff_assets as handoff
+    article, kwargs, upload, receipt = _ready_upgrade(tmp_path)
+    upload.write_bytes(b"author-manual-edit")
+    assert export_handoff_assets(article, **kwargs)[0] is None
+    matches = handoff._matches_file
+    old_digest = next(a["handoff"]["sha256"] for a in json.loads(receipt.read_text())["assets"] if a["role"] == "podcast")
+    # Mutate only verification of old bytes; new source/staging checks remain real.
+    monkeypatch.setattr(handoff, "_matches_file", lambda path, expected: True if expected[1] == old_digest else matches(path, expected))
+    assert export_handoff_assets(article, **kwargs) == (article, "updated", [])
+    assert upload.read_bytes() == b"verified-new-podcast"

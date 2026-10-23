@@ -196,8 +196,8 @@ def source_text_for_channel(article_dir: Path, channel: str) -> str:
     text = read_final_text(article_dir)
     if channel != "podcast" or not text:
         return text
-    from assemble_release import strip_machine_assembly
-    return strip_machine_assembly(text)
+    from podcast_source import normalized_source
+    return normalized_source(article_dir, text)
 
 
 def source_digest(article_dir: Path, channel: str) -> str:
@@ -298,6 +298,10 @@ def _source_drifted(article_dir: Path, channel: str) -> bool:
     """
     if not _is_drifted(article_dir, channel):
         return False
+    if channel == "podcast":
+        from podcast_episode import generation_is_fresh
+        if generation_is_fresh(article_dir):
+            return False
     print(f"[distribute] ✗ 定稿.md 已变更，{CHANNELS[channel]['label']} 的文案已过期。", file=sys.stderr)
     print(f"             重跑 `distribute plan --only {channel}` 并复核该渠道文案。", file=sys.stderr)
     return True

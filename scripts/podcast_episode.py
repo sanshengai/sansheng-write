@@ -42,6 +42,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from profile_config import distribute_channel  # noqa: E402
 import distribute  # noqa: E402
+from podcast_source import SOURCE_REPRESENTATION, LEGACY_REPRESENTATION, normalized_source
 
 POLL_INTERVAL = 30
 POLL_TIMEOUT = 1800          # 30 分钟。长文比晨报慢，20 分钟不够。
@@ -71,7 +72,7 @@ def cfg() -> dict:
     return distribute_channel("podcast")
 
 
-def generation_digest(article_dir: Path, c: dict | None = None, *, source_override: str | None = None, title_override: str | None = None, focus_sha_override: str | None = None) -> str:
+def generation_digest(article_dir: Path, c: dict | None = None, *, source_override: str | None = None, title_override: str | None = None, focus_sha_override: str | None = None, source_representation: str = SOURCE_REPRESENTATION) -> str:
     """绑定真正影响节目内容的输入；缺任何一项都不得复用旧音频。"""
     c = c or cfg()
     prompt = Path(str(c.get("focus_prompt") or "")).expanduser()
@@ -87,6 +88,8 @@ def generation_digest(article_dir: Path, c: dict | None = None, *, source_overri
         "length": str(c.get("length") or "default"),
         "format": "deep_dive",
     }
+    if source_representation != LEGACY_REPRESENTATION:
+        payload["source_representation"] = source_representation
     return distribute._digest(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
@@ -111,10 +114,24 @@ def _write_audio_manifest(
     c: dict,
     probe: dict,
     *, source_digest: str | None = None, generation_input_digest: str | None = None,
+    frozen_text: str | None = None,
 ) -> Path:
     """Atomic generation receipt binding the reusable MP3 to its true inputs."""
+    text = frozen_text if frozen_text is not None else distribute.source_text_for_channel(article_dir, "podcast")
+    text_sha = distribute._digest(text)
+    if source_digest is not None and source_digest != text_sha:
+        raise ValueError("播客冻结来源与声明摘要不一致")
+    source_path = mp3.parent / "sources" / (text_sha + ".md")
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    if source_path.exists() and source_path.read_bytes() != text.encode("utf-8"):
+        raise ValueError("播客来源快照已变化，拒绝覆盖")
+    if not source_path.exists():
+        with source_path.open("xb") as fh:
+            fh.write(text.encode("utf-8"))
     payload = {
         "schema_version": AUDIO_MANIFEST_SCHEMA,
+        "source_representation": SOURCE_REPRESENTATION,
+        "source_snapshot": source_path.relative_to(article_dir).as_posix(),
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "source_digest": source_digest if source_digest is not None else distribute.source_digest(article_dir, "podcast"),
         "generation_digest": generation_input_digest if generation_input_digest is not None else generation_digest(article_dir, c),
@@ -133,32 +150,76 @@ def _write_audio_manifest(
     return path
 
 
+def _authenticated_sources(article_dir: Path, manifest: dict):
+    """Yield only snapshots authenticated against the original generation digest."""
+    from assemble_release import strip_machine_assembly
+    rep = manifest.get("source_representation", LEGACY_REPRESENTATION)
+    paths = []
+    if manifest.get("source_snapshot"):
+        source = (article_dir / manifest["source_snapshot"]).resolve()
+        if source.is_relative_to(article_dir.resolve()):
+            paths.append(source)
+    paths.extend((article_dir / "素材/stylebook-sources").glob("*.md"))
+    for source in paths:
+        try:
+            if not source.resolve().is_relative_to(article_dir.resolve()):
+                continue
+            raw = source.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != source.stem:
+                continue
+            original = raw.decode("utf-8")
+            input_text = (normalized_source(article_dir, original) if rep == SOURCE_REPRESENTATION
+                          else strip_machine_assembly(original))
+            if distribute._digest(input_text) == manifest.get("source_digest"):
+                yield input_text
+        except (OSError, UnicodeError, ValueError):
+            continue
+
+
 def generation_is_fresh(article_dir: Path, c: dict | None = None) -> bool:
+    """Validate original provenance, then exact input or evidenced media/title reuse."""
+    from assemble_release import strip_machine_assembly
+    from title_only_reuse import title_and_body
     c = c or cfg()
     mp3 = distribute.channel_dir(article_dir, "podcast") / "audio.mp3"
     entry = (distribute.read_state(article_dir).get("channels", {}).get("podcast") or {})
-    state_fresh = (
-        mp3.is_file()
-        and not distribute._is_drifted(article_dir, "podcast")
-        and entry.get("generation_digest") == generation_digest(article_dir, c)
-        and entry.get("audio_sha256") == hashlib.sha256(mp3.read_bytes()).hexdigest()
-    )
-    if not state_fresh:
-        return title_only_audio_is_fresh(article_dir, c, mp3, entry)
+    if not mp3.is_file() or not entry.get("source_digest"):
+        return False
+    audio_sha = hashlib.sha256(mp3.read_bytes()).hexdigest()
+    if entry.get("audio_sha256") != audio_sha:
+        return False
     manifest = _read_audio_manifest(mp3)
+    if manifest and (manifest.get("schema_version") != AUDIO_MANIFEST_SCHEMA
+                     or manifest.get("audio_sha256") != audio_sha
+                     or manifest.get("source_digest") != entry.get("source_digest")
+                     or manifest.get("generation_digest") != entry.get("generation_digest")
+                     or manifest.get("bytes") != mp3.stat().st_size
+                     or float(manifest.get("duration_seconds") or 0) <= 0):
+        return False
+    rep = manifest.get("source_representation", LEGACY_REPRESENTATION) if manifest else None
+    if rep not in {None, SOURCE_REPRESENTATION, LEGACY_REPRESENTATION}:
+        return False
+    current = (article_dir / "定稿.md").read_text(encoding="utf-8")
+    canonical = normalized_source(article_dir, current)
+    # State-only historical receipts retain exact-input compatibility. An
+    # equivalence claim always requires a strong manifest and original snapshot.
+    for version in ([rep] if rep else [SOURCE_REPRESENTATION, LEGACY_REPRESENTATION]):
+        text = canonical if version == SOURCE_REPRESENTATION else strip_machine_assembly(current)
+        digest = distribute._digest(text)
+        if (entry.get("source_digest") == digest
+                and entry.get("generation_digest") == generation_digest(
+                    article_dir, c, source_override=digest, source_representation=version)):
+            return not manifest or version == LEGACY_REPRESENTATION or bool(list(_authenticated_sources(article_dir, manifest)))
     if not manifest:
-        # v1.6.0 and earlier had only the state receipt. Keep those articles usable;
-        # the next real generation writes the stronger manifest automatically.
-        return True
-    return (
-        not manifest.get("_invalid")
-        and manifest.get("schema_version") == AUDIO_MANIFEST_SCHEMA
-        and manifest.get("source_digest") == distribute.source_digest(article_dir, "podcast")
-        and manifest.get("generation_digest") == generation_digest(article_dir, c)
-        and manifest.get("audio_sha256") == entry.get("audio_sha256")
-        and manifest.get("bytes") == mp3.stat().st_size
-        and float(manifest.get("duration_seconds") or 0) > 0
-    )
+        return False
+    current_title, current_body = title_and_body(canonical)
+    for original in _authenticated_sources(article_dir, manifest):
+        old_title, old_body = title_and_body(normalized_source(article_dir, original))
+        expected = generation_digest(article_dir, c, source_override=manifest["source_digest"],
+                                     title_override=old_title, source_representation=rep)
+        if old_body == current_body and expected == manifest["generation_digest"]:
+            return True
+    return False
 
 
 def probe_audio(path: Path) -> tuple[dict | None, str]:
@@ -596,7 +657,7 @@ def _generate_locked(article_dir: Path, keep_notebook: bool = False) -> int:
             candidate.replace(stale)
             _write_audio_manifest(article_dir, stale, c, audio_probe,
                                   source_digest=frozen_source,
-                                  generation_input_digest=frozen_generation)
+                                  generation_input_digest=frozen_generation, frozen_text=source_text)
             log("✗ 生成期间正文、标题或播客参数已变；保留候选，未覆盖原音频。")
             return 2
         candidate.replace(mp3)
@@ -607,7 +668,7 @@ def _generate_locked(article_dir: Path, keep_notebook: bool = False) -> int:
         #    崩溃，state 仍是旧 generation_digest，后续 freshness 会拒绝误复用。
         manifest = _write_audio_manifest(article_dir, mp3, c, audio_probe,
                                          source_digest=frozen_source,
-                                         generation_input_digest=frozen_generation)
+                                         generation_input_digest=frozen_generation, frozen_text=source_text)
         log(f"✓ generation manifest: {manifest.name}")
         write_sidecar(article_dir, mp3, title, c)
         distribute.set_status(article_dir, "podcast", "drafted",
@@ -776,20 +837,24 @@ def cmd_publish(article_dir: Path, confirm: bool = False) -> int:
         log("✗ feed 重建失败（音频已上传，修好后重跑本命令即可）")
         return 1
 
+    original_entry = distribute.read_state(article_dir).get("channels", {}).get("podcast") or {}
+    original_source = original_entry.get("source_digest")
+    original_generation = original_entry.get("generation_digest")
     distribute._write_json(out_dir / distribute.RECEIPT_FILE, {
         "channel": "podcast",
         "mode": "rss",
         "remote_stem": audio_name[:-4],
         "published_at": distribute._now(),
-        "source_digest": distribute.source_digest(article_dir, "podcast"),
-        "generation_digest": generation_digest(article_dir, c),
+        "source_digest": original_source,
+        "generation_digest": original_generation,
+        "current_input_digest": distribute.source_digest(article_dir, "podcast"),
         "audio_sha256": hashlib.sha256(mp3.read_bytes()).hexdigest(),
         "note": "已上传并重建 feed；平台侧 1-12 小时内抓取",
     })
     distribute.set_status(
         article_dir, "podcast", "dispatched",
-        source_digest=distribute.source_digest(article_dir, "podcast"),
-        generation_digest=generation_digest(article_dir, c),
+        source_digest=original_source,
+        generation_digest=original_generation,
         audio_sha256=hashlib.sha256(mp3.read_bytes()).hexdigest(),
     )
     log("✓ 已上线，平台 1-12 小时内自动抓取（不需要手动操作）")
@@ -827,35 +892,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def title_only_audio_is_fresh(article_dir: Path, c: dict, mp3: Path, entry: dict) -> bool:
-    """Reuse audio only when original bytes/config are authenticated and only title changed.
-
-    Keep original generation receipt unchanged; this is reuse, not a new generation.
-    """
-    try:
-        from title_only_reuse import title_and_body
-        from assemble_release import author_content_sha256
-        manifest = _read_audio_manifest(mp3)
-        if (not mp3.is_file() or manifest.get("schema_version") != AUDIO_MANIFEST_SCHEMA
-                or manifest.get("audio_sha256") != hashlib.sha256(mp3.read_bytes()).hexdigest()
-                or manifest.get("audio_sha256") != entry.get("audio_sha256")
-                or manifest.get("generation_digest") != entry.get("generation_digest")
-                or manifest.get("bytes") != mp3.stat().st_size
-                or float(manifest.get("duration_seconds") or 0) <= 0):
-            return False
-        current_title, current_body = title_and_body((article_dir / "定稿.md").read_text())
-        for source in (article_dir / "素材/stylebook-sources").glob("*.md"):
-            if hashlib.sha256(source.read_bytes()).hexdigest() != source.stem:
-                continue
-            original = source.read_text()
-            if author_content_sha256(original) != manifest.get("source_digest"):
-                continue
-            old_title, old_body = title_and_body(original)
-            expected = generation_digest(article_dir, c, source_override=manifest["source_digest"], title_override=old_title)
-            if old_body == current_body and old_title != current_title and expected == manifest["generation_digest"]:
-                return True
+    """Compatibility name; freshness now also verifies lossless local image changes."""
+    expected_mp3 = distribute.channel_dir(article_dir, "podcast") / "audio.mp3"
+    actual_entry = distribute.read_state(article_dir).get("channels", {}).get("podcast") or {}
+    if mp3.resolve() != expected_mp3.resolve() or entry != actual_entry:
         return False
-    except (OSError, ValueError, TypeError, KeyError):
-        return False
+    return generation_is_fresh(article_dir, c)
 
 
 if __name__ == "__main__":

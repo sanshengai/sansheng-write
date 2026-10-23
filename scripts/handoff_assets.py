@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """Expose receipt-bound upload assets at the article folder's top level.
 
-The export is a deterministic, immutable snapshot.  It never searches for
+External exports are immutable snapshots; root uploads can advance only from
+receipt-owned old bytes, with a retained recovery archive. It never searches for
 plausible files: cover comes from the sealed visual receipt, theme playback
 comes from ``_music-manifest.json``, and an optional podcast comes from its
 audio manifest.
@@ -471,7 +472,7 @@ def export_handoff_assets(
 def _export_in_article(
     article_dir: Path, receipt: dict[str, Any], specs: list[CopySpec]
 ) -> tuple[Path | None, str, list[str]]:
-    """Preserve all article files; never overwrite a conflicting upload asset."""
+    """Create missing uploads, or upgrade only receipt-owned, unchanged copies."""
     flat_specs = []
     for entry, spec in zip(receipt["assets"], specs):
         # An existing root-level song already has a useful name; do not make a
@@ -489,6 +490,7 @@ def _export_in_article(
     payloads[receipt_rel] = (len(receipt_bytes), hashlib.sha256(receipt_bytes).hexdigest())
     # Check the complete set before creating anything, including the receipt.
     missing = []
+    conflicts = []
     for name, (size, digest) in payloads.items():
         destination = article_dir / name
         if destination.is_symlink():
@@ -496,7 +498,9 @@ def _export_in_article(
         if not destination.exists():
             missing.append(name)
         elif not destination.is_file() or destination.stat().st_size != size or sha256_file(destination) != digest:
-            return None, "", [f"文章第一层已有不同内容，未覆盖：{name}；请核实旧文件后再处理"]
+            conflicts.append(name)
+    if conflicts:
+        return _upgrade_in_article(article_dir, flat_specs, payloads, receipt_rel, receipt_bytes, missing, conflicts)
     if not missing:
         return article_dir, "unchanged", []
     temp = Path(tempfile.mkdtemp(prefix=".handoff-tmp-", dir=article_dir))
@@ -531,6 +535,135 @@ def _export_in_article(
         return None, "", [str(exc)]
     finally:
         shutil.rmtree(temp)
+
+
+def _matches_file(path: Path, expected: tuple[int, str]) -> bool:
+    size, digest = expected
+    return (not path.is_symlink() and path.is_file()
+            and path.stat().st_size == size and sha256_file(path) == digest)
+
+
+def _previous_uploads(article_dir: Path, receipt: dict) -> dict[str, tuple[int, str]]:
+    """Parse the prior ownership contract; never infer ownership from filenames."""
+    if (receipt.get("schema_version") != HANDOFF_SCHEMA
+            or (receipt.get("article") or {}).get("directory") != article_dir.name
+            or not isinstance(receipt.get("assets"), list) or not receipt["assets"]):
+        raise HandoffError("旧 handoff 回执身份或结构无效")
+    assets = {}
+    roles = set()
+    for entry in receipt["assets"]:
+        role = entry.get("role")
+        handoff = entry.get("handoff") or {}
+        source = entry.get("source") or {}
+        name = str(handoff.get("path") or "")
+        digest = handoff.get("sha256")
+        size = handoff.get("bytes")
+        if (role not in {"cover", "theme", "podcast", "theme_cover", "podcast_cover"}
+                or role in roles or not name or Path(name).name != name or "\\" in name
+                or name == HANDOFF_RECEIPT_FILE
+                or name.casefold() in {v.casefold() for v in assets}
+                or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or type(size) is not int or size <= 0
+                or source.get("sha256") != digest or source.get("bytes") != size):
+            raise HandoffError("旧 handoff 回执的上传资产绑定无效")
+        source_name = str(source.get("path") or "")
+        if not source_name or not (article_dir / source_name).resolve().is_relative_to(article_dir):
+            raise HandoffError("旧 handoff 回执来源路径无效")
+        if role in {"cover", "theme", "podcast"}:
+            source_receipt_digest = source.get("receipt_digest")
+            if not isinstance(source_receipt_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", source_receipt_digest):
+                raise HandoffError("旧 handoff 回执缺有效来源凭证摘要")
+        roles.add(role)
+        assets[name] = (size, digest)
+    return assets
+
+
+def _upgrade_in_article(article_dir: Path, specs: list[CopySpec],
+                        payloads: dict[str, tuple[int, str]], receipt_rel: str,
+                        receipt_bytes: bytes, missing: list[str], conflicts: list[str]
+                        ) -> tuple[Path | None, str, list[str]]:
+    """Retire owned old bytes, install without overwriting, and retain recovery evidence."""
+    receipt_path = article_dir / receipt_rel
+    try:
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise HandoffError("缺可信旧 handoff 回执，已有不同内容未覆盖")
+        old_receipt_bytes = receipt_path.read_bytes()
+        old_assets = _previous_uploads(article_dir, json.loads(old_receipt_bytes))
+        old_payloads = {**old_assets, receipt_rel: (len(old_receipt_bytes), hashlib.sha256(old_receipt_bytes).hexdigest())}
+        for name in conflicts:
+            if name not in old_payloads or not _matches_file(article_dir / name, old_payloads[name]):
+                raise HandoffError(f"已有不同内容不匹配旧 handoff 回执，未覆盖：{name}")
+        for name in [*missing, *conflicts]:
+            if not (article_dir / name).parent.resolve().is_relative_to(article_dir):
+                raise HandoffError(f"上传目标父目录越界，未覆盖：{name}")
+        history = article_dir / "过程记录" / "handoff-history"
+        if not history.resolve().is_relative_to(article_dir):
+            raise HandoffError("handoff 历史目录越界，未覆盖")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, HandoffError) as exc:
+        return None, "", [str(exc)]
+
+    staged = Path(tempfile.mkdtemp(prefix=".handoff-tmp-", dir=article_dir))
+    backup = None
+    retired: list[str] = []
+    created: list[tuple[Path, int, str]] = []
+    order = [name for name in [*missing, *conflicts] if name != receipt_rel]
+    if receipt_rel in missing or receipt_rel in conflicts:
+        order.append(receipt_rel)  # Valid new receipt becomes visible last.
+    try:
+        for spec in specs:
+            if spec.destination not in order:
+                continue
+            candidate = staged / spec.destination
+            shutil.copyfile(spec.source, candidate)
+            if not _matches_file(candidate, (spec.bytes, spec.sha256)):
+                raise HandoffError(f"复制后校验失败：{spec.destination}")
+        if receipt_rel in order:
+            (staged / receipt_rel).parent.mkdir(parents=True, exist_ok=True)
+            (staged / receipt_rel).write_bytes(receipt_bytes)
+        # No mutation of live uploads until every candidate has been verified.
+        history.mkdir(parents=True, exist_ok=True)
+        backup = Path(tempfile.mkdtemp(prefix="revision-", dir=history))
+        (backup / "previous-receipt.json").write_bytes(old_receipt_bytes)
+        (backup / "next-receipt.json").write_bytes(receipt_bytes)
+        for name in conflicts:
+            destination = article_dir / name
+            if not _matches_file(destination, old_payloads[name]):
+                raise HandoffError(f"升级前目标被并发修改，未覆盖：{name}")
+            saved = backup / name
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(destination, saved)
+            retired.append(name)
+            # rename may have caught a concurrent edit between the check and move.
+            if not _matches_file(saved, old_payloads[name]):
+                raise HandoffError(f"升级时检测到并发修改，保留原字节：{name}")
+        for name in order:
+            destination = article_dir / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.link(staged / name, destination)  # Never replace a concurrent writer.
+            created.append((destination, destination.stat().st_ino, name))
+        return article_dir, "updated", []
+    except (OSError, HandoffError) as exc:
+        recovery_errors = []
+        for destination, inode, name in reversed(created):
+            if destination.exists() and destination.stat().st_ino == inode and _matches_file(destination, payloads[name]):
+                destination.unlink()
+        for name in reversed(retired):
+            destination = article_dir / name
+            if destination.exists() or destination.is_symlink():
+                recovery_errors.append(f"并发文件保留；旧版见 {backup / name}")
+                continue
+            # Restore a distinct copy so later editing does not alter the archive.
+            restore = staged / ("restore-" + hashlib.sha256(name.encode()).hexdigest())
+            try:
+                shutil.copyfile(backup / name, restore)
+                if sha256_file(restore) != sha256_file(backup / name):
+                    raise HandoffError("恢复副本摘要不一致")
+                os.link(restore, destination)
+            except (OSError, HandoffError) as restore_error:
+                recovery_errors.append(f"待恢复 {name}：{restore_error}；原件保留于 {backup / name}")
+        return None, "", [str(exc), *recovery_errors]
+    finally:
+        shutil.rmtree(staged)
 
 
 def _main() -> int:

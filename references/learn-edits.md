@@ -106,8 +106,16 @@ python "$SKILL/scripts/learn_edits.py" build
 飞轮不再等作者说“学习一下”：
 
 1. **存基线**：稿子交给作者之前运行 `pipeline.py deliver-draft`（存 `过程记录/_ai-draft.md`）。忘了也没关系——流水线第一次碰到这篇稿时会自动存一份，但那可能已经晚于作者的改动，所以交稿前手动存最稳。
-2. **自动比对**：作者拍板 `approve draft`，或 `adopt-final` 接管定稿时，脚本自动比对基线与定稿，生成 `过程记录/_learn-diff.txt`，并排进 `<profile>/flywheel/pending_learn.jsonl`。没有基线会明确提示“学不到东西”，连续 5 篇缺基线会报“飞轮可能断了”（`pipeline.py learn-queue`）。
-3. **开写前提炼**：`pipeline.py new` 会提醒有待学习的改稿。读对应 `_learn-diff.txt`，按下面 Step 3 的分层指引提炼 **1–2 条**候选规则；同义的复用已有 key。
-4. **按已有授权入库**：作者明确要求“学习这些修改 / 整合进 Skill”时，已授权本轮沉淀，不再重复确认。未获该授权的自动候选才集中问一次。个人偏好写入配置 profile 的 `lessons.yaml`，通用执行问题才改共享 Skill；先复用同义 key，再运行 `learn_edits.py build`。口述明确要求的规则可用 `pinned: true`，只从单篇推测的偏好保持软参考。完成真实待办后才运行 `pipeline.py learn-queue done <文章目录名>`。
-5. **不当作作者本人的声音**：作者只是让 Agent 按意见改稿时（终稿并非作者亲笔），diff 会是“Agent 执行意见后的样子”。提炼时只记改稿方向，不灌声纹库（diff 已默认 `--no-promote-voice`）。制作期间 `adopt-final` 也可能因音频卡、图片路径和格式变化重新排队；这些机械差异不进入作者偏好或声音样本。作者手改已完成学习的，核对新增差异后结清该篇待办。
+2. **登记作者原件再自动比对**：按 Step 1 保存真实作者原件及来源记录，再运行：
+
+   ```bash
+   python "$SKILL/scripts/flywheel_hooks.py" --dir <文章目录> capture-author \
+     --source <文章内作者原件.md> --evidence <文章内作者反馈记录.md> \
+     --source-kind author-edited
+   ```
+
+   作者口述意见由 Agent 执笔的稿用 `author-directed`，只学习方向。命令把原件和来源证据封存到 `过程记录/learning/`，按文章身份、作者稿与基线摘要排队，diff 路径以队列条目为准。`approve draft`、`adopt-final` 后续只读取该作者快照；重复接管不会重复排队，排版和换图不产生新作者样本。没有来源时返回 `needs_author_evidence`，不影响制作发布；审批通过本身不能证明文字是作者亲笔。没有初稿基线时仍如实提示无法比对。
+3. **开写前提炼**：`pipeline.py new` 会提醒有待学习的改稿。读队列条目 `diff` 指向的不可变修订差异，按下面 Step 3 的分层指引提炼 **1–2 条**候选规则；同义的复用已有 key。
+4. **按已有授权入库**：作者明确要求“学习这些修改 / 整合进 Skill”时，已授权本轮沉淀，不再重复确认。未获该授权的自动候选才集中问一次。个人偏好写入配置 profile 的 `lessons.yaml`，通用执行问题才改共享 Skill；先复用同义 key，再运行 `learn_edits.py build`。口述明确要求的规则可用 `pinned: true`，只从单篇推测的偏好保持软参考。完成真实待办后才运行 `pipeline.py learn-queue done <文章目录名或learning_id>`；同名多篇时用队列里的 `learning_id` 或 `article_uid`。该操作仅结清当前修订，不会吞掉之后新登记的作者修改。
+5. **不当作作者本人的声音**：作者只是让 Agent 按意见改稿时（终稿并非作者亲笔），diff 会是“Agent 执行意见后的样子”。提炼时只记改稿方向，不灌声纹库（diff 已默认 `--no-promote-voice`）。机器装配稿不作为自动比对的作者来源；来源标为 `author-directed` 时不得灌声纹。即使标为 `author-edited`，自动比对仍固定 `--no-promote-voice`，核对真实亲笔段落后才可按既有授权精选入库。旧版队列无来源字段的记录先核原件，不直接提升为声音样本。
 6. **验证下一次会读到**：运行当前文章的 `prep_writing.py`，检查新规则确实进入 `_prep-context.md`，再用本篇一处真实失败及修正示例核对规则是否足够具体。仅“写进文件”不算已接入初稿；注入验证通过也不能声称保证以后无需人工修改。

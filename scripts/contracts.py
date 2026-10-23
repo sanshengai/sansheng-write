@@ -1658,7 +1658,7 @@ def verify_publish_assets(article_dir: str) -> dict:
             import podcast_episode as _podcast_episode
             podcast_fresh = _podcast_episode.generation_is_fresh(base)
             if podcast_drifted and not podcast_fresh:
-                podcast_errors.append('播客音频与当前作者正文不一致（source digest 已漂移，且无可验证的仅改标题复用证据）')
+                podcast_errors.append('播客音频与当前作者正文不一致（source digest 已漂移，且无可验证的标题或媒体等价复用证据）')
             if not podcast_fresh:
                 podcast_errors.append(
                     '播客生成参数、主持提示词或音频字节已变化（generation digest 失效）'

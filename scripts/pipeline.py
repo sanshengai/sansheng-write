@@ -3097,7 +3097,9 @@ def cmd_approve(gate: str, cwd: Path, source_mode: str, note: str = "", *,
             import flywheel_hooks as _fw
             _item = _fw.queue_learning(cwd)
             if _item["status"] == "pending":
-                print("🔁 作者改过稿，已排入飞轮待学习队列")
+                print("🔁 已登记作者修订排入学习队列，按已有学习授权提炼")
+            elif _item["status"] == "needs_author_evidence":
+                print("ℹ️ 尚未登记作者原件，制作照常；需要学习时按 learn-edits 登记来源")
             elif _item["status"] == "no_baseline":
                 print("⚠️ 没有 AI 初稿快照，这一篇学不到东西（以后交稿前先运行 pipeline.py deliver-draft）")
         except Exception as _exc:  # noqa: BLE001
@@ -3445,10 +3447,14 @@ def _uncommitted_archive_outputs(cwd: Path, website_cwd: Path) -> list[str]:
         works = Path(works_file())
     except Exception:                                            # noqa: BLE001
         return []
-    targets = [works, cwd]
+    try:
+        from archive_inputs import article_inputs
+        targets = [works, *article_inputs(cwd)]
+    except (OSError, ValueError) as exc:
+        return [f"归档输入无效：{exc}"]
     for name in ("articles.md", "works-dashboard.html", "recommend_articles.html"):
         targets.append(works.parent / name)
-    args = ["git", "-C", str(website_cwd), "status", "--porcelain", "--"]
+    args = ["git", "--literal-pathspecs", "-C", str(website_cwd), "status", "--porcelain", "--"]
     args += [str(t) for t in targets]
     try:
         probe = subprocess.run(
@@ -3544,7 +3550,7 @@ def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[st
 
     此前 finalize 写完作品库与派生视图，紧接着就因「归档产物未提交」拒绝同步官网，
     连续三篇首跑都这样失败，要人工提交再重跑。这里在同一步里提交：
-    只收作品库、三份派生视图与本篇目录，逐个文件列出，不用目录通配；作品库里若还有
+    只收作品库、三份派生视图与本篇实际输入闭包，不扫描整篇目录；作品库里若还有
     别篇的未提交改动就不提交，退回人工。返回 (commit sha, 错误列表)。
     """
     from profile_config import works_file
@@ -3562,9 +3568,13 @@ def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[st
                       "不自动提交，避免卷入别的会话的改动"]
     targets = [works] + [works.parent / name for name in
                          ("articles.md", "works-dashboard.html", "recommend_articles.html")]
-    targets = [t for t in targets if t.exists()] + [cwd.resolve()]
+    try:
+        from archive_inputs import article_inputs
+        targets += article_inputs(cwd)
+    except (OSError, ValueError) as exc:
+        return None, [f"归档输入无效：{exc}"]
     probe = subprocess.run(
-        ["git", "-C", str(top), "status", "--porcelain", "-z", "--untracked-files=all", "--"]
+        ["git", "--literal-pathspecs", "-C", str(top), "status", "--porcelain", "-z", "--untracked-files=all", "--"]
         + [str(t) for t in targets],
         capture_output=True, timeout=60,
     )
@@ -3581,19 +3591,19 @@ def _commit_archive_outputs(cwd: Path, website_cwd: Path, code: str) -> tuple[st
         status, path = entry[:2], entry[3:]
         if status[0] in "RC":
             index += 1  # 改名条目后面跟着旧路径
-        if "D" in status:
-            continue
+        if "D" in status or status[0] in "RC":
+            return None, [f"归档输入删除或改名需显式处理：{path}"]
         files.append(path)
     if not files:
         return None, []
     pathspec = ("\0".join(files) + "\0").encode("utf-8")
-    add = subprocess.run(["git", "-C", str(top), "add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+    add = subprocess.run(["git", "--literal-pathspecs", "-C", str(top), "add", "--pathspec-from-file=-", "--pathspec-file-nul"],
                          input=pathspec, capture_output=True, timeout=120)
     if add.returncode != 0:
         return None, [f"git add 失败：{add.stderr.decode('utf-8', 'replace')[:200]}"]
     message = f"chore(write): {code or cwd.name} 归档产物入库（finalize 自动文件级提交）"
     commit = subprocess.run(
-        ["git", "-C", str(top), "commit", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
+        ["git", "--literal-pathspecs", "-C", str(top), "commit", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
         input=pathspec, capture_output=True, timeout=120,
     )
     if commit.returncode != 0:
@@ -4439,6 +4449,18 @@ def _preflight_checks(cwd: Path) -> list[tuple[str, str, str]]:
     except Exception as exc:
         add("warn", "加粗密度", f"检查异常：{exc}")
 
+    # Render only in memory: reuse the publishing consumer's format contract
+    # before paid generation; do not write HTML or transform source images.
+    try:
+        from md_render import convert
+        from release_to_draft import _unsupported_local_images
+        unsupported = _unsupported_local_images(convert(text, base_dir=cwd)["html"])
+        add("fail" if unsupported else "ok", "微信图片格式",
+            "发布入口不支持：" + "、".join(unsupported) + "；先确定上传格式和正文引用，再开始播客/视觉封存"
+            if unsupported else "当前引用未发现发布入口不支持的格式")
+    except Exception as exc:
+        add("fail", "微信图片格式", f"静态检查未完成：{exc}")
+
     # --- 5. 开篇重点标识（排版阶段的硬门，此处前移；与排版门共用同一判据）---
     from contracts import audit_opening_anchors
     opening_audit = audit_opening_anchors(text)
@@ -4628,7 +4650,10 @@ def cmd_adopt_final(cwd: Path, final_path: str, meta_path: str) -> None:
     try:  # 飞轮：定稿时自动比对 AI 初稿，排队等下一篇开写前提炼
         import flywheel_hooks as _fw
         _item = _fw.queue_learning(cwd, Path(final_path))
-        print({"pending": "🔁 作者改过稿，已排入飞轮待学习队列（下一篇开写前提炼候选规则、请作者确认）",
+        print({"pending": "🔁 已登记作者修订排入学习队列，按已有学习授权提炼",
+               "needs_author_evidence": "ℹ️ 尚未登记作者原件，制作照常；需要学习时按 learn-edits 登记来源",
+               "already_queued": "ℹ️ 本次作者修订已在学习队列中",
+               "already_learned": "ℹ️ 本次作者修订已完成学习",
                "no_baseline": "⚠️ 没有 AI 初稿快照，这一篇学不到东西（以后交稿前先运行 pipeline.py deliver-draft）",
                "unchanged": "ℹ️ 定稿与初稿相同，无需学习"}.get(_item["status"], f"飞轮：{_item['status']}"))
     except Exception as _exc:  # noqa: BLE001
