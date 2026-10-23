@@ -809,6 +809,37 @@ def _delete_same_title_drafts(page, title: str):
         page.wait_for_timeout(1500)
 
 
+class ArticleCreateEntryError(RuntimeError):
+    """Missing/changed list-page controls must not trigger destructive rebuilds."""
+
+
+def _article_create_button(page):
+    """Resolve a unique visible, enabled Articles create control without waiting."""
+    buttons = page.get_by_role("main").get_by_role(
+        "button", name=re.compile(r"^(?:create|write|" + re.escape(T["write"]) + r")$", re.I)
+    )
+    visible = [buttons.nth(i) for i in range(buttons.count()) if buttons.nth(i).is_visible()]
+    enabled = [button for button in visible if button.is_enabled()]
+    if len(enabled) == 1:
+        return enabled[0]
+    reason = "缺少可见入口" if not visible else "入口未启用" if not enabled else "存在多个可用入口"
+    raise ArticleCreateEntryError(
+        f"X Articles 创建入口异常：{reason}（create / write / {T['write']}）。"
+        "未创建新稿；请检查当前页面、登录状态与 Articles 权限或界面变更，不自动重建。"
+    )
+
+
+def _open_new_article(page):
+    try:
+        _article_create_button(page).click(timeout=5000)
+    except ArticleCreateEntryError:
+        raise
+    except Exception as exc:
+        raise ArticleCreateEntryError(
+            f"X Articles 创建入口点击失败，不自动重建：{type(exc).__name__}: {exc}"
+        ) from exc
+
+
 def build_draft(page, parsed: dict, plan: list, cover: Path) -> str:
     """整篇一次粘贴（块样式最保真），媒体/分割线位置先放占位段，再逐个替换。"""
     page.goto("https://x.com/compose/articles")
@@ -816,8 +847,9 @@ def build_draft(page, parsed: dict, plan: list, cover: Path) -> str:
     if T["not_found"] in page.inner_text("body"):
         raise SystemExit("文章列表页 404：账号当前没有 Articles 权限（Premium+ 失效或在审查中）。"
                          "先在 X 设置 → Premium 与 Grok 应用里核对订阅和账号绑定，再重跑。")
+    _article_create_button(page)  # Diagnose before any existing-draft cleanup.
     _delete_same_title_drafts(page, parsed["title"])
-    page.get_by_text(T["write"], exact=True).first.click()
+    _open_new_article(page)
     page.wait_for_timeout(6000)
     draft_url = page.url
     page.locator(T["title_field"]).click()
@@ -877,6 +909,8 @@ def build_draft_with_retry(page, parsed: dict, plan: list, cover: Path, tries: i
     for attempt in range(1, tries + 1):
         try:
             return build_draft(page, parsed, plan, cover)
+        except ArticleCreateEntryError:
+            raise
         except (SystemExit, Exception) as e:  # noqa: BLE001 - 只放行瞬态错误
             msg = str(e)
             if not any(k in msg for k in transient) or attempt == tries:
