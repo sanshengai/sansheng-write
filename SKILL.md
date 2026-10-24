@@ -26,7 +26,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 
 - 作者拍板用 `approve blueprint|draft --words "<实际原话>"` 记录；`adopt-final` 接管定稿，不创造审批。已有授权持续有效，不重复询问；委托 Agent 完成交付不写成“作者已经看过当前新片”。
 - 内容、来源、作者授权、最终文件和官方草稿读回必须真实。禁止手改状态或伪造通过记录。失败先修根因；相同输入、相同失败连续出现时先诊断，不机械重渲。
-- 默认自动终点为微信草稿箱，唯一写入口 `release-to-draft`。公众号只走 API；浏览器操作需作者单独要求。API 不支持的原生组件交付文件和插入说明。正式发布、原创与赞赏由作者操作。
+- 默认自动终点为微信草稿箱，内置写入口 `release-to-draft` 只走 API。作者已选择独立发布器时，按 [发布交接](references/publish-handoff.md) 使用 `export-publish`，由发布器在授权内补原生媒体；同稿只选一条写入路线。未选择该路线时，浏览器操作需作者要求，原生组件交付文件和插入说明；正式发布、原创与赞赏沿用原边界。
 - 生图、排版或发布前读 [iron-rules.md](references/iron-rules.md)；实际制作路线从 [image-routing.md](references/image-routing.md) 进入。旧 schema1 仅用于历史文章或显式选择。
 - 新文章主题曲按 [music.md](references/music.md) 交付 MiniMax 生成单，作者已给的音乐按真实来源复用。Lyria 自动通道暂停。启用公众号播客时，保持“导读 → 主题曲卡 → 播客卡 → 正文”，音频在交草稿前齐备。
 - schema2 的已确认正文可先运行 `podcast-pregen`，与图片制作并行；按正文、标题、提示词及生成参数核对音频来源，图片装配变化不要求重新生成播客。同一篇的正文、选图、排版与发布写操作由一个控制者负责。

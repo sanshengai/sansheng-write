@@ -10,7 +10,7 @@
 3. BGM 是发布硬门；缺 MP3、AUDIO-CARD 或 `_music-manifest.json` 就没完成，`skip bgm` 被拒绝。默认在定稿接管成功后立即交付 MiniMax 手动生成单（作者生成音乐与配图并行）并等待 MP3，Lyria 自动通道暂停；硬门校验文件与真实来源，不绑定厂商；旧歌换播放通道时不得伪造其 provider/model 出身。
 4. `podcast.wechat_embed: true` 时，播客 MP3、PODCAST-CARD、同源生成摘要与人工插入后的官方读回凭证同为发布硬门。**主路径是发布后补验**：`finalize` 拿永久链接自动生成独立的正式文章凭证——优先 `freepublish/batchget` + `freepublish/getarticle`；只有已发表内容 API 返回 `48001` 才可改用同一微信官方公开页 + 原官方草稿回执的显式证据链。发布前 `draft/get` 草稿读回（`wechat-audio-check`）是可选自检，只在补验不过且草稿仍在时兜底。两条路径都必须绑定双播放器身份与本地音频哈希；不要求作者确认试听，自动核验不过不得 `finalize` 收尾，也不得补写、复制或让两种凭证互相冒充。
 5. writing、cover、infographic、bgm、layout、publish 不可 skip；不存在 `--force`、`--legacy` 或作者授权例外。截图密集的文章可在 `article-meta.yaml` 声明 `infographic_mode: author-shots`：信息图 ≥4 的合同改由「正文引用 ≥4 张作者供图且文件存在」兑现，`verify infographic` 仍会拒绝不达标的稿，这不是 skip。
-6. 草稿箱唯一入口是 `release-to-draft`；非零退出时禁止直调发布接口。
+6. 内置草稿箱入口是 `release-to-draft`；已选独立发布器时使用复用相同生产预检的 `export-publish`。任何生产预检非零退出都禁止直调发布接口或底层导出器绕过；同稿只允许一个发布写入者。
 7. 正式发布、原创和赞赏由作者人工完成；永久链接用 `finalize` 收尾。
 8. 公众号首屏固定为「导读 → 主题曲卡 → 播客卡 → 正文」；两卡是同级选项、同宽上下排，不互相从属，也不做左右双栏。
 9. `weave` 声明“开篇与文末”的地址必须以可复制明文各出现一次，且 `draft/get` 回读仍为两次。

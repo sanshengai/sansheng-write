@@ -5116,26 +5116,35 @@ def _log_qa_verdict(cwd: Path, qa, errors: list) -> None:
         pass
 
 
-def cmd_release_to_draft(cwd: Path) -> None:
-    """唯一草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
+def prepare_publish_handoff(root: Path):
+    """Producer gates shared by the existing uploader and optional external handoff."""
     from release_job import rebind_release_job, validate_release_job
+    _, _, bind_errors = rebind_release_job(root)
+    if bind_errors:
+        return None, bind_errors
+    _, job_errors = validate_release_job(root)
+    if job_errors:
+        return None, job_errors
+    errors = _pre_publish_errors(root)
+    if errors:
+        return None, errors
+    return write_publish_ready(root)
+
+
+def cmd_export_publish(cwd: Path, export_args: list[str]) -> int:
+    import publish_handoff
+    ready, errors = prepare_publish_handoff(cwd)
+    if errors or not ready or not ready.get('manifest_digest'):
+        print(json.dumps({'ok':False,'errors':errors or ['生产端发布预检未给出有效封存凭证']},ensure_ascii=False))
+        return 2
+    return publish_handoff.main(export_args)
+
+
+def cmd_release_to_draft(cwd: Path) -> None:
+    """内置草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
     from release_to_draft import release_to_draft, write_audio_handoff
 
-    def preflight(root: Path):
-        # Rebind machine-only assembly here; release-check is diagnostic, not
-        # a mandatory second copy of the entire preflight before this command.
-        _, _, bind_errors = rebind_release_job(root)
-        if bind_errors:
-            return None, bind_errors
-        _, job_errors = validate_release_job(root)
-        if job_errors:
-            return None, job_errors
-        errors = _pre_publish_errors(root)
-        if errors:
-            return None, errors
-        return write_publish_ready(root)
-
-    receipt, errors = release_to_draft(cwd, preflight=preflight)
+    receipt, errors = release_to_draft(cwd, preflight=prepare_publish_handoff)
     if errors or receipt is None:
         state = load_state(cwd)
         info = state["stages"].setdefault("publish", {})
@@ -5880,11 +5889,10 @@ def _main_impl():
     elif args.cmd == "release-to-draft":
         cmd_release_to_draft(cwd)
     elif args.cmd == "export-publish":
-        import publish_handoff
         export_args = ["--dir", str(cwd), "--targets", args.targets, "--job-id", args.job_id]
         if args.media:
             export_args.extend(["--media", args.media])
-        sys.exit(publish_handoff.main(export_args))
+        sys.exit(cmd_export_publish(cwd,export_args))
     elif args.cmd == "handoff-assets":
         from audio_covers import ensure_audio_covers
         from handoff_assets import export_handoff_assets

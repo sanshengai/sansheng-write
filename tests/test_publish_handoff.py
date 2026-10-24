@@ -3,12 +3,30 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import contextlib
+import io
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from publish_handoff import HandoffError, export_handoff
 
 
 class HandoffTests(unittest.TestCase):
+    def test_pipeline_export_cannot_bypass_producer_preflight(self):
+        import pipeline
+        with patch.object(pipeline,'prepare_publish_handoff',return_value=(None,['未定稿'])), \
+             patch('publish_handoff.main') as export_main, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(pipeline.cmd_export_publish(Path('.'),[]),2)
+            export_main.assert_not_called()
+        with patch.object(pipeline,'prepare_publish_handoff',return_value=({},[])), \
+             patch('publish_handoff.main') as export_main, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(pipeline.cmd_export_publish(Path('.'),[]),2)
+            export_main.assert_not_called()
+        with patch.object(pipeline,'prepare_publish_handoff',return_value=({'manifest_digest':'fixture'},[])), \
+             patch('publish_handoff.main',return_value=0) as export_main:
+            self.assertEqual(pipeline.cmd_export_publish(Path('.'),['fixture']),0)
+            export_main.assert_called_once_with(['fixture'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
