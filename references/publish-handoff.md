@@ -1,4 +1,6 @@
-# 独立发布器交接
+# 把成品交给 sansheng-distribute
+
+统一分发技能名称为`sansheng-distribute`。此处交接合同不变；按分发端已验收的平台能力执行，名称确定不代表全部平台已可用。
 
 Write 保留创作、排版与媒体位置的责任。独立发布器接收中性交接包，负责账号、上传、原生组件插入、草稿/发表与读回。此入口可选；现有 `release-to-draft` 和公开用户的默认配置不变，不要求安装任何私有 Skill。`pipeline.py export-publish` 复用内置路线的接管校验、发布预检和封存；底层 `export_handoff()` 只做合同转换，不能替代生产预检。
 
