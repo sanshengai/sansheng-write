@@ -5625,6 +5625,10 @@ def _main_impl():
         "handoff-assets",
         help="从正式回执将封面、主题曲及可选播客交付到文章目录第一层",
     )
+    p_publish_export = sub.add_parser("export-publish", help="导出定稿及媒体位置交接包；不上传、不改变原排版")
+    p_publish_export.add_argument("--targets", required=True, help="含 targets 数组的平台/账号/终点配置")
+    p_publish_export.add_argument("--media", help="含 media 数组的显式音视频文件与插入锚点")
+    p_publish_export.add_argument("--job-id", default="article-publish")
     p_handoff.add_argument(
         "--target-root",
         default="",
@@ -5875,6 +5879,12 @@ def _main_impl():
         cmd_render_stats(cwd)
     elif args.cmd == "release-to-draft":
         cmd_release_to_draft(cwd)
+    elif args.cmd == "export-publish":
+        import publish_handoff
+        export_args = ["--dir", str(cwd), "--targets", args.targets, "--job-id", args.job_id]
+        if args.media:
+            export_args.extend(["--media", args.media])
+        sys.exit(publish_handoff.main(export_args))
     elif args.cmd == "handoff-assets":
         from audio_covers import ensure_audio_covers
         from handoff_assets import export_handoff_assets

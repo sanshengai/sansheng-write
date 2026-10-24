@@ -17,6 +17,7 @@ allowed-tools: [Bash, Read, Write, Edit, Glob, Grep, mcp__anysearch__search, mcp
 | 新文章、选题、大纲、正文 | [autopilot.md](references/autopilot.md)，按当前阶段读取写作资料；作者确认定稿后再进入制作 |
 | 局部改文字、换图、调排版 | 只读取对应阶段；已有“交到草稿箱”授权时继续交付，否则止于指定修改 |
 | 已有定稿，继续制作或交草稿 | [release-runtime.md](references/release-runtime.md)；先 `pipeline.py --dir <文章目录> status`，核对当前产物后从未完成处继续 |
+| 已有排版，交给独立发布器 | [发布交接](references/publish-handoff.md)；`export-publish` 锁定原稿、素材和插入位置，不替代平台验收 |
 | 已正式发表，提供永久链接 | `finalize <链接>`，依 [publish.md](references/publish.md) 完成已授权收尾；不自动触发新的社媒分发 |
 
 “完整流程”指本篇已启用、已授权的内容全部完成，不等于把全部可选模块各跑一次。恢复时区分作者正文、图片、版式、音频和发布信息的变化；未改变的有效产物复用。`status` 的旧阶段标签不是当前文件已通过的证据，消费者验收才是准据。
