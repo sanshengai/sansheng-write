@@ -5140,9 +5140,39 @@ def cmd_export_publish(cwd: Path, export_args: list[str]) -> int:
     return publish_handoff.main(export_args)
 
 
+def cmd_import_publish(cwd: Path, receipt_path: str) -> int:
+    from publish_return import import_return
+    from release_to_draft import write_audio_handoff
+    try:
+        receipt = import_return(cwd, receipt_path)
+        handoff, errors = write_audio_handoff(cwd, receipt['draft_media_id'],
+                                            external_job_key=receipt['external_publisher']['job_key'])
+        if errors:
+            raise ValueError('; '.join(errors))
+        candidate = copy.deepcopy(load_state(cwd))
+        candidate['stages'].setdefault('publish', {}).update(
+            draft_media_id=receipt['draft_media_id'],remote_verified=True,
+            formal_publish=False,release_scope='wechat-draft',publisher='external')
+        passed, errors = verify_stage('publish',cwd,candidate)
+        if not passed:
+            raise ValueError('; '.join(errors))
+        _record_stage_success(cwd,candidate,'publish')
+        save_state(cwd,candidate)
+        print(json.dumps(dict(ok=True,draft_media_id=receipt['draft_media_id'],
+                              state='draft_ready',formal_publish=False),ensure_ascii=False))
+        return 0
+    except (ValueError,OSError,KeyError,TypeError) as exc:
+        print(json.dumps(dict(ok=False,error=str(exc)),ensure_ascii=False))
+        return 2
+
+
 def cmd_release_to_draft(cwd: Path) -> None:
     """内置草稿箱提交入口：全部本地硬门 + draft/add + draft/get。"""
     from release_to_draft import release_to_draft, write_audio_handoff
+
+    external = process_file(cwd, '_external-publish-receipt.json')
+    if external.exists():
+        raise SystemExit(cmd_import_publish(cwd, str(external)))
 
     receipt, errors = release_to_draft(cwd, preflight=prepare_publish_handoff)
     if errors or receipt is None:
@@ -5639,6 +5669,8 @@ def _main_impl():
     p_publish_export.add_argument("--media", help="含 media 数组的显式音视频文件与插入锚点")
     p_publish_export.add_argument("--job-id", default="article-publish")
     p_publish_export.add_argument("--existing-draft", help="显式认领已核验的旧公众号草稿 ID")
+    p_publish_import = sub.add_parser("import-publish", help="接收发布器已核验草稿回执，不上传或重复建稿")
+    p_publish_import.add_argument("--receipt", required=True)
     p_handoff.add_argument(
         "--target-root",
         default="",
@@ -5896,6 +5928,8 @@ def _main_impl():
         if args.existing_draft:
             export_args.extend(["--existing-draft", args.existing_draft])
         sys.exit(cmd_export_publish(cwd,export_args))
+    elif args.cmd == "import-publish":
+        sys.exit(cmd_import_publish(cwd,args.receipt))
     elif args.cmd == "handoff-assets":
         from audio_covers import ensure_audio_covers
         from handoff_assets import export_handoff_assets

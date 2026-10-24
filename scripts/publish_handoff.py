@@ -62,6 +62,8 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
     root = Path(article_dir).resolve()
     original = local(root, '定稿.html')
     markup = original.read_text(encoding='utf-8')
+    from release_to_draft import _extract_content
+    markup = _extract_content(markup)
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', job_id):
         raise HandoffError('job_id 必须为稳定英文/数字标识')
     if not isinstance(targets, list) or not targets:
@@ -72,8 +74,6 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
             raise HandoffError('认领必须指定唯一公众号目标')
         from legacy_draft_handoff import load_existing
         adoption = load_existing(root, existing_draft, local=local, sha=sha, error=HandoffError)
-        from release_to_draft import _extract_content
-        markup = _extract_content(markup)
     if not adoption and any(t.get('platform') == 'wechat' for t in targets):
         # Existing submissions belong to the old transaction until explicitly adopted.
         # Empty/corrupt receipts are uncertainty, not permission to create another draft.
@@ -129,7 +129,7 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
         token = f'【发布媒体:{ident}】'
         # Comment anchors become visible text, so the editor need not preserve DOM IDs.
         markup = markup.replace(anchor, token)
-        slots.append(dict(id=ident, asset_id=ident, document_id='article', role=item.get('role', ident)))
+        slots.append(dict(id=ident, asset_id=ident, document_id='article', role=item.get('role', ident), source_anchor=anchor))
         if adoption:
             # A comment is not an observable editor location. Do not guess its position.
             if visible(anchor) != anchor or any(c in anchor for c in '<>&') or adoption['article']['content'].count(anchor) != 1:

@@ -294,7 +294,7 @@ def _relative(path: Path, root: Path) -> str:
         return str(path.resolve())
 
 
-def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None, list[str]]:
+def write_audio_handoff(cwd: Path, media_id: str, *, external_job_key: str | None = None) -> tuple[dict[str, Any] | None, list[str]]:
     """写出微信编辑器人工接管清单；只含相对路径与哈希，不泄露本机目录。"""
     md = cwd / "定稿.md"
     text = md.read_text(encoding="utf-8") if md.is_file() else ""
@@ -346,6 +346,18 @@ def write_audio_handoff(cwd: Path, media_id: str) -> tuple[dict[str, Any] | None
         "next_command": "pipeline.py finalize <永久链接>",
         "optional_precheck": "pipeline.py wechat-audio-check",
     }
+    destination = process_file(cwd, AUDIO_HANDOFF_FILE)
+    if external_job_key:
+        # The handoff digest is consumed by both draft and public audio checks.
+        # Preserve the exact existing evidence on retries, including a legacy
+        # handoff already bound to this draft and these source assets.
+        if destination.exists():
+            existing = json.loads(destination.read_text(encoding="utf-8"))
+            if (existing.get("schema_version") == payload["schema_version"]
+                    and existing.get("draft_media_id") == media_id
+                    and existing.get("roles") == roles):
+                return existing, []
+        payload.update(status="external_media_verified", external_job_key=external_job_key)
     process_file(cwd, AUDIO_HANDOFF_FILE, for_write=True).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

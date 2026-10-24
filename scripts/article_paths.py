@@ -33,6 +33,7 @@ PROCESS_FILES = frozenset({
     "_visual-qa-request.json", "_visual-qa.json", "_visual-qa.md",
     "_visual-qa.candidate.json", "_visual-qa.raw.json",
     "_release-job.json", "_release-attempt.json",
+    "_external-publish-receipt.json",
     "_wechat-audio-handoff.json", "_wechat-audio-receipt.json",
     "_wechat-published-audio-receipt.json",
     "_handoff-receipt.json", "_music-manifest.json",

@@ -560,6 +560,9 @@ def write_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None, 
 def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None, list[str]]:
     cwd = Path(cwd)
     path = process_file(cwd, PUBLISH_RECEIPT_FILE)
+    external_path = process_file(cwd, '_external-publish-receipt.json')
+    if external_path.exists():
+        path = external_path
     if not path.exists():
         return None, [f"缺 {PUBLISH_RECEIPT_FILE}，draft_media_id 未绑定本地发布产物"]
     try:
@@ -567,6 +570,15 @@ def verify_publish_receipt(cwd: Path, draft_media_id: str) -> tuple[dict | None,
     except Exception as exc:
         return None, [f"{PUBLISH_RECEIPT_FILE} 解析失败：{exc}"]
     manifest, errors = build_publish_manifest(cwd)
+    if external_path.exists():
+        try:
+            if __package__:
+                from .publish_return import validate_return
+            else:
+                from publish_return import validate_return
+            validate_return(cwd, receipt)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            errors.append(f'外部发布回传已失效：{exc}')
     if receipt.get("draft_media_id") != draft_media_id:
         errors.append("publish receipt 的 draft_media_id 与 state 不一致")
     if receipt.get("manifest_digest") != stable_digest(manifest) and not (
