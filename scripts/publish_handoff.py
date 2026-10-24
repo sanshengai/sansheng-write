@@ -72,6 +72,8 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
             raise HandoffError('认领必须指定唯一公众号目标')
         from legacy_draft_handoff import load_existing
         adoption = load_existing(root, existing_draft, local=local, sha=sha, error=HandoffError)
+        from release_to_draft import _extract_content
+        markup = _extract_content(markup)
     if not adoption and any(t.get('platform') == 'wechat' for t in targets):
         # Existing submissions belong to the old transaction until explicitly adopted.
         # Empty/corrupt receipts are uncertainty, not permission to create another draft.
