@@ -5638,6 +5638,7 @@ def _main_impl():
     p_publish_export.add_argument("--targets", required=True, help="含 targets 数组的平台/账号/终点配置")
     p_publish_export.add_argument("--media", help="含 media 数组的显式音视频文件与插入锚点")
     p_publish_export.add_argument("--job-id", default="article-publish")
+    p_publish_export.add_argument("--existing-draft", help="显式认领已核验的旧公众号草稿 ID")
     p_handoff.add_argument(
         "--target-root",
         default="",
@@ -5892,6 +5893,8 @@ def _main_impl():
         export_args = ["--dir", str(cwd), "--targets", args.targets, "--job-id", args.job_id]
         if args.media:
             export_args.extend(["--media", args.media])
+        if args.existing_draft:
+            export_args.extend(["--existing-draft", args.existing_draft])
         sys.exit(cmd_export_publish(cwd,export_args))
     elif args.cmd == "handoff-assets":
         from audio_covers import ensure_audio_covers
