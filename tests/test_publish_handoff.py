@@ -27,6 +27,23 @@ class HandoffTests(unittest.TestCase):
             self.assertEqual(pipeline.cmd_export_publish(Path('.'),['fixture']),0)
             export_main.assert_called_once_with(['fixture'])
 
+    def test_existing_wechat_attempt_is_never_exported_as_new_draft(self):
+        for prefix in ('', '过程记录'):
+            for name in ('_release-attempt.json', '_publish-receipt.json'):
+                for content in ('', '{broken', '{"draft_media_id":"fixture-existing"}'):
+                    with self.subTest(prefix=prefix,name=name,content=content):
+                        path=self.root/prefix/name;path.parent.mkdir(exist_ok=True)
+                        path.write_text(content)
+                        with self.assertRaisesRegex(HandoffError,'已有内置公众号提交记录'):
+                            export_handoff(self.root,self.targets,media=self.media)
+                        path.unlink()
+        self.assertFalse((self.root/'过程记录/publish').exists())
+
+    def test_wechat_history_does_not_block_other_platform_handoff(self):
+        (self.root/'_publish-receipt.json').write_text('{"draft_media_id":"fixture-existing"}')
+        target=dict(self.targets[0],id='x',platform='x',endpoint='publish')
+        self.assertTrue(export_handoff(self.root,[target],media=self.media).is_file())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

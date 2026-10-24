@@ -66,6 +66,13 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
         raise HandoffError('job_id 必须为稳定英文/数字标识')
     if not isinstance(targets, list) or not targets:
         raise HandoffError('targets 不能为空')
+    if any(t.get('platform') == 'wechat' for t in targets):
+        # Existing submissions belong to the old transaction until explicitly adopted.
+        # Empty/corrupt receipts are uncertainty, not permission to create another draft.
+        legacy = [root / prefix / name for prefix in ('', '过程记录')
+                  for name in ('_release-attempt.json', '_publish-receipt.json')]
+        if any(path.exists() or path.is_symlink() for path in legacy):
+            raise HandoffError('已有内置公众号提交记录；先沿原入口只读恢复。旧草稿认领尚未验收，禁止导出为新建稿以免重复发送')
     if media is not None and not isinstance(media, list):
         raise HandoffError('media 必须为数组')
     declarations = [dict(x) for x in (media or [])]
