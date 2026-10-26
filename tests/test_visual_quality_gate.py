@@ -206,8 +206,11 @@ def test_publish_preflight_requires_visual_qa_record(tmp_path):
     article = _minimal_visual_article(tmp_path)
     _png(article / "素材" / "cover.png", 1024, 436)
     _png(article / "素材" / "hero.png", 1024, 1024)
-    (article / "定稿.md").write_text("正文", encoding="utf-8")
-    (article / "定稿.html").write_text("<html><body>正文</body></html>", encoding="utf-8")
+    pictures = sorted((article / "素材").glob("infographic*.png"))
+    body = "正文\n\n" + "\n".join(f"![测试图]({p.relative_to(article)})" for p in pictures)
+    (article / "定稿.md").write_text("---\ntitle: 测试文章\ndescription: 测试摘要\n---\n" + body, encoding="utf-8")
+    images = "".join(f'<img src="{p.relative_to(article)}">' for p in pictures)
+    (article / "定稿.html").write_text("<html><body>正文" + images + "</body></html>", encoding="utf-8")
     errors = pipeline._pre_publish_errors(article)
     assert any("_visual-qa.json" in e for e in errors), errors
 

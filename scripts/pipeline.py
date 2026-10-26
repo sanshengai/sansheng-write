@@ -5669,6 +5669,7 @@ def _main_impl():
     p_publish_export.add_argument("--media", help="含 media 数组的显式音视频文件与插入锚点")
     p_publish_export.add_argument("--job-id", default="article-publish")
     p_publish_export.add_argument("--existing-draft", help="显式认领已核验的旧公众号草稿 ID")
+    p_publish_export.add_argument("--image-dependencies", help="显式跨文章图片 path/sha256 清单")
     p_publish_import = sub.add_parser("import-publish", help="接收发布器已核验草稿回执，不上传或重复建稿")
     p_publish_import.add_argument("--receipt", required=True)
     p_handoff.add_argument(
@@ -5927,6 +5928,8 @@ def _main_impl():
             export_args.extend(["--media", args.media])
         if args.existing_draft:
             export_args.extend(["--existing-draft", args.existing_draft])
+        if args.image_dependencies:
+            export_args.extend(["--image-dependencies", args.image_dependencies])
         sys.exit(cmd_export_publish(cwd,export_args))
     elif args.cmd == "import-publish":
         sys.exit(cmd_import_publish(cwd,args.receipt))

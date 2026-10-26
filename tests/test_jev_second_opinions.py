@@ -378,4 +378,25 @@ def test_no_direct_api_calls_outside_client():
     """四个业务文件不许绕过接入层直连 Jev。"""
     for name in ("contracts.py", "learn_edits.py", "evidence.py", "distribute.py"):
         src = (SKILL / "scripts" / name).read_text(encoding="utf-8")
-        assert "typesafe.ai" not in src and "urllib" not in src, name
+        assert "typesafe.ai" not in src and not _direct_network_import(src), name
+
+
+def _direct_network_import(source):
+    import ast
+    network = {"urllib.request", "http.client", "requests", "httpx", "aiohttp", "urllib3"}
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules = [item.name for item in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            modules = [node.module or ""] + [(node.module or "") + "." + item.name for item in node.names]
+        else:
+            continue
+        if any(m == n or m.startswith(n + ".") for m in modules for n in network):
+            return True
+    return False
+
+
+def test_network_guard_allows_url_parsing_but_refuses_transport_imports():
+    assert not _direct_network_import("from urllib.parse import parse_qs, urlsplit")
+    for source in ("import urllib.request", "from urllib import request", "from urllib.request import urlopen", "import requests", "from http import client"):
+        assert _direct_network_import(source)

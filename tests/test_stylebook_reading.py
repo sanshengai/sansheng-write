@@ -70,7 +70,25 @@ def prepared(tmp_path, monkeypatch):
 
 
 def test_reading_seal_reaches_actual_release_consumer_then_refuses_changed_html(tmp_path, monkeypatch):
+    # Build valid metadata before compiling/sealing any visual source. The
+    # consumer now stops at structural errors before reaching reading checks.
+    import test_stylebook_plan_group as group_fixture
+    from scripts.assemble_release import author_content_sha256
+    original_plan = group_fixture.setup_plan
+    def structured_plan(root, patch, **kwargs):
+        plan = original_plan(root, patch, **kwargs)
+        draft = root/'定稿.md'
+        draft.write_text('---\ntitle: 测试文章\ndescription: 测试摘要\n---\n' + draft.read_text())
+        source_sha = sha(draft)
+        plan['source'] = {'sha256': source_sha, 'author_content_sha256': author_content_sha256(draft.read_text())}
+        plan['article_plan']['source']['sha256'] = source_sha
+        plan['cover']['source']['sha256'] = source_sha
+        (root/'visual-plan.json').write_text(json.dumps(plan,ensure_ascii=False))
+        return plan
+    monkeypatch.setattr(group_fixture, 'setup_plan', structured_plan)
     path,_ = prepared(tmp_path,monkeypatch)
+    hero = tmp_path/'素材/hero.png'
+    Image.new('RGB', (64,64), 'ivory').save(hero)
     assert reading_errors(tmp_path)
     before = pipeline._pre_publish_errors(tmp_path)
     assert any('整篇阅读' in e for e in before)
@@ -81,7 +99,10 @@ def test_reading_seal_reaches_actual_release_consumer_then_refuses_changed_html(
     assert not reading_errors(tmp_path)
     after = pipeline._pre_publish_errors(tmp_path)
     assert not any('整篇阅读' in e for e in after)
-    assert any('hero.png' in e for e in after)  # Other requirements still apply.
+    hero_bytes = hero.read_bytes()
+    hero.unlink()
+    assert any('hero.png' in e for e in pipeline._pre_publish_errors(tmp_path))
+    hero.write_bytes(hero_bytes)
     with (tmp_path/'定稿.html').open('a') as out: out.write('<p>Changed reading layout</p>')
     assert reading_errors(tmp_path)
     assert any('整篇阅读' in e for e in pipeline._pre_publish_errors(tmp_path))

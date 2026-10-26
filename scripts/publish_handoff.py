@@ -57,7 +57,7 @@ def visible(text):
     return re.sub(r'\s+', ' ', ''.join(p.parts)).strip()
 
 
-def export_handoff(article_dir, targets, *, media=None, job_id='article-publish', existing_draft=None):
+def export_handoff(article_dir, targets, *, media=None, job_id='article-publish', existing_draft=None, image_dependencies=None):
     """Media declarations name exact anchors; do not infer a location from filenames."""
     root = Path(article_dir).resolve()
     original = local(root, '定稿.html')
@@ -144,6 +144,23 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
         if re.search(r'<!--\s*VIDEO\s*:|删除本段文字[^<]*插入|【发布媒体:', remainder):
             raise HandoffError('仍有未声明的媒体占位，不能交给发布端猜测')
 
+    # Only src is canonical in the derived package; discard stale checkout hints.
+    markup = re.sub(r'(<img\b[^>]*?)\sdata-local-path\s*=\s*([\"\']).*?\2', r'\1', markup, flags=re.I | re.S)
+    # Outside images need an explicit byte-locked allowlist; local() stays strict.
+    dependencies = {}
+    if image_dependencies is not None and (not isinstance(image_dependencies, list) or not image_dependencies):
+        raise HandoffError('image_dependencies 必须是非空数组')
+    for item in image_dependencies or []:
+        if not isinstance(item, dict) or not isinstance(item.get('path'), str):
+            raise HandoffError('图片依赖须明确 path 与 sha256')
+        source = Path(item['path'])
+        expected = item.get('sha256', '')
+        if not source.is_absolute() or not re.fullmatch(r'[a-f0-9]{64}', expected) or not source.is_file() or sha(source) != expected:
+            raise HandoffError('显式图片依赖缺失或哈希不符')
+        if source.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp', '.gif'}:
+            raise HandoffError('显式依赖仅限图片')
+        dependencies[source.resolve()] = (source, expected)
+    used_dependencies = set()
     # Collect and bind every local HTML image. Rewrite only its path in the derived copy.
     image_refs = []
     pattern = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)([\"\'])(.*?)(\2)', re.I | re.S)
@@ -154,11 +171,32 @@ def export_handoff(article_dir, targets, *, media=None, job_id='article-publish'
             continue
         if parsed.scheme or parsed.netloc or parsed.query:
             raise HandoffError(f'不支持的图片引用：{raw}')
-        p = local(root, unquote(parsed.path))
+        resolved = (root / unquote(parsed.path)).resolve()
+        if not resolved.is_relative_to(root) and resolved in dependencies:
+            source, expected = dependencies[resolved]
+            payload = source.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != expected:
+                raise HandoffError('图片依赖在封存期间发生变化')
+            folder = root/'过程记录'/'publish-image-dependencies'
+            folder.mkdir(parents=True, exist_ok=True)
+            p = folder/(expected + source.suffix.lower())
+            if not p.resolve().is_relative_to(root) or p.is_symlink():
+                raise HandoffError('图片依赖暂存路径越界')
+            if p.exists() and p.read_bytes() != payload:
+                raise HandoffError('图片依赖副本已漂移，拒绝覆盖')
+            if not p.exists():
+                with p.open('xb') as stream:
+                    stream.write(payload)
+            p = local(root, p)
+            used_dependencies.add(resolved)
+        else:
+            p = local(root, unquote(parsed.path))
         ident = 'image-' + hashlib.sha256(p.relative_to(root).as_posix().encode()).hexdigest()[:12]
         if ident not in ids:
             add_asset(ident, p, 'image')
         image_refs.append((match.group(0), match.group(1), match.group(2), p))
+    if set(dependencies) != used_dependencies:
+        raise HandoffError('图片依赖清单含未被正文引用的文件')
     if (root/'素材/cover.png').is_file():
         add_asset('cover', '素材/cover.png', 'image')
 
@@ -237,11 +275,13 @@ def main(argv=None):
     parser.add_argument('--media', help='含 media 数组的 JSON；视频须明确 anchor 与本地文件')
     parser.add_argument('--job-id', default='article-publish')
     parser.add_argument('--existing-draft', help='显式认领已核验旧草稿的 ID；只导出，不新建')
+    parser.add_argument('--image-dependencies', help='显式跨文章图片 image_dependencies 数组，每项 path/sha256')
     args = parser.parse_args(argv)
     try:
         targets = json.loads(Path(args.targets).read_text(encoding='utf-8'))['targets']
         media = json.loads(Path(args.media).read_text(encoding='utf-8'))['media'] if args.media else None
-        path = export_handoff(args.dir, targets, media=media, job_id=args.job_id, existing_draft=args.existing_draft)
+        dependencies = json.loads(Path(args.image_dependencies).read_text(encoding='utf-8'))['image_dependencies'] if args.image_dependencies else None
+        path = export_handoff(args.dir, targets, media=media, job_id=args.job_id, existing_draft=args.existing_draft, image_dependencies=dependencies)
         print(json.dumps(dict(ok=True, manifest=str(path)), ensure_ascii=False))
         return 0
     except (HandoffError, OSError, ValueError, KeyError, TypeError) as exc:

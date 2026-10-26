@@ -71,6 +71,16 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(len(data['assets']), 2)
         self.assertEqual(data['documents'][-1]['source_document_ids'], ['source-html','source-md'])
 
+    def test_derived_images_drop_stale_uploader_path_hints(self):
+        p=self.root/'定稿.html'
+        original=p.read_text()
+        for image in ('src="素材/photo.png" data-local-path="/old-checkout/photo.png"',
+                      'data-local-path="/old-checkout/photo.png" src="素材/photo.png"'):
+            with self.subTest(image=image):
+                p.write_text(original.replace('src="素材/photo.png"',image))
+                self.assertNotIn('data-local-path',self.export().with_name('article.html').read_text())
+                self.assertIn('data-local-path',p.read_text())
+
     def test_missing_and_duplicate_anchor_refused(self):
         for body in ('<p>无位置</p>', '<!-- VIDEO: demo -->'*2):
             (self.root/'定稿.html').write_text(body)
@@ -84,6 +94,32 @@ class HandoffTests(unittest.TestCase):
     def test_symlink_escape_refused(self):
         (self.root/'demo.mp4').unlink(); (self.root/'demo.mp4').symlink_to(__file__)
         with self.assertRaisesRegex(HandoffError, '越界'): self.export()
+
+    def test_external_images_need_exact_explicit_dependencies(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as other:
+            image = Path(other)/'cover.png'; image.write_bytes(b'explicit-image')
+            original=(self.root/'定稿.html').read_text()+f'<img src="{image}">'
+            (self.root/'定稿.html').write_text(original)
+            for deps in (None, [], [dict(path=str(image),sha256='0'*64)]):
+                with self.subTest(deps=deps), self.assertRaises(HandoffError):
+                    export_handoff(self.root,self.targets,media=self.media,image_dependencies=deps)
+            deps=[dict(path=str(image),sha256=hashlib.sha256(image.read_bytes()).hexdigest())]
+            result=export_handoff(self.root,self.targets,media=self.media,image_dependencies=deps)
+            data=json.loads(result.read_text())
+            staged=next(a for a in data['assets'] if 'publish-image-dependencies' in a['path'])
+            self.assertEqual((self.root/staged['path']).read_bytes(),image.read_bytes())
+            self.assertEqual((self.root/'定稿.html').read_text(),original)
+            self.assertNotIn(str(image),result.with_name('article.html').read_text())
+            image.write_bytes(b'changed')
+            with self.assertRaisesRegex(HandoffError,'哈希不符'):
+                export_handoff(self.root,self.targets,media=self.media,image_dependencies=deps)
+
+    def test_unused_external_image_dependency_refused(self):
+        import hashlib
+        image=self.root/'素材/photo.png'
+        with self.assertRaisesRegex(HandoffError,'未被正文引用'):
+            export_handoff(self.root,self.targets,media=self.media,image_dependencies=[dict(path=str(image),sha256=hashlib.sha256(image.read_bytes()).hexdigest())])
 
     def test_source_revision_and_destination_are_locked(self):
         first = self.export()

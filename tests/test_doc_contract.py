@@ -26,14 +26,20 @@ def test_release_runtime_is_short_single_source_with_all_hard_commands():
     assert len(text.splitlines()) <= 190
     for command in (
         "adopt-final",
-        "compile-visuals",
-        "render-visuals",
-        "visual-qa",
-        "seal visual",
         "release-to-draft",
         "finalize",
     ):
         assert command in text
+    # Runtime is an index: legacy and schema2 commands live behind explicit
+    # route links rather than forcing both workflows into the short entry.
+    for reference in ("release-legacy.md", "stylebook-contract.md"):
+        assert f"]({reference})" in text
+        route = _text(ROOT / "references" / reference)
+        for command in ("compile-visuals", "render-visuals"):
+            assert command in route
+    legacy = _text(ROOT / "references/release-legacy.md")
+    for command in ("visual-qa", "seal visual"):
+        assert command in legacy
 
 
 def test_active_release_docs_bind_internal_planner_to_baoyu_semantic_producers():
